@@ -1,0 +1,5 @@
+{
+  "name": "발주 및 송장_최종",
+  "description": "통합 주문서를 업체별 발주서로 변환하고, 품목 정보를 관리하는 앱입니다.",
+  "requestFramePermissions": []
+}
