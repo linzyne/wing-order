@@ -39,24 +39,19 @@ export const usePricingConfig = () => {
 // ===== Daily Workspace Hook =====
 export const useDailyWorkspace = () => {
   const [workspace, setWorkspace] = useState<DailyWorkspaceData | null>(null);
-  const skipNextUpdate = useRef(false);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     const unsubscribe = subscribeDailyWorkspace((data) => {
-      if (skipNextUpdate.current) {
-        skipNextUpdate.current = false;
-        return;
-      }
       setWorkspace(data);
+      setIsReady(true);
     });
     return unsubscribe;
   }, []);
 
   const updateField = useCallback(async (field: string, value: any) => {
-    skipNextUpdate.current = true;
-    setWorkspace(prev => prev ? { ...prev, [field]: value } : { fakeOrderInput: '', manualTransfers: [], sessionWorkflows: {}, sessionAdjustments: {}, [field]: value });
     await updateDailyWorkspaceField(field, value);
   }, []);
 
-  return { workspace, updateField };
+  return { workspace, updateField, isReady };
 };

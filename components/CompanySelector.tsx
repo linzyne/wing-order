@@ -36,7 +36,7 @@ interface SessionData {
 interface CompanySelectorProps { pricingConfig: PricingConfig; }
 
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
-    const { workspace, updateField } = useDailyWorkspace();
+    const { workspace, updateField, isReady } = useDailyWorkspace();
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
         const initial: Record<string, SessionData[]> = {};
@@ -81,40 +81,46 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
     const [newTransfer, setNewTransfer] = useState({ label: '', bankName: '', accountNumber: '', amount: '' });
 
-    // Firestore에서 workspace 데이터 동기화
-    const isLocalFakeUpdate = useRef(false);
-    const isLocalTransferUpdate = useRef(false);
+    // Firestore 동기화 - 값 비교로 에코 방지
+    const lastWrittenFakeRef = useRef('');
+    const lastWrittenTransfersRef = useRef('[]');
 
     useEffect(() => {
         if (!workspace) return;
-        if (!isLocalFakeUpdate.current && workspace.fakeOrderInput !== undefined) {
+        if (workspace.fakeOrderInput !== undefined && workspace.fakeOrderInput !== lastWrittenFakeRef.current) {
             setFakeOrderInput(workspace.fakeOrderInput);
+            lastWrittenFakeRef.current = workspace.fakeOrderInput;
         }
-        isLocalFakeUpdate.current = false;
-        if (!isLocalTransferUpdate.current && workspace.manualTransfers !== undefined) {
-            setManualTransfers(workspace.manualTransfers);
+        if (workspace.manualTransfers !== undefined) {
+            const wsStr = JSON.stringify(workspace.manualTransfers);
+            if (wsStr !== lastWrittenTransfersRef.current) {
+                setManualTransfers(workspace.manualTransfers);
+                lastWrittenTransfersRef.current = wsStr;
+            }
         }
-        isLocalTransferUpdate.current = false;
     }, [workspace]);
 
     // fakeOrderInput 변경 → Firestore에 debounce로 저장
     const fakeOrderDebounceRef = useRef<ReturnType<typeof setTimeout>>();
     useEffect(() => {
+        if (!isReady) return;
+        if (fakeOrderInput === lastWrittenFakeRef.current) return;
         if (fakeOrderDebounceRef.current) clearTimeout(fakeOrderDebounceRef.current);
         fakeOrderDebounceRef.current = setTimeout(() => {
-            isLocalFakeUpdate.current = true;
+            lastWrittenFakeRef.current = fakeOrderInput;
             updateField('fakeOrderInput', fakeOrderInput);
         }, 300);
         return () => { if (fakeOrderDebounceRef.current) clearTimeout(fakeOrderDebounceRef.current); };
-    }, [fakeOrderInput]);
+    }, [fakeOrderInput, isReady]);
 
     // manualTransfers 변경 → Firestore에 저장
-    const isInitialTransferLoad = useRef(true);
     useEffect(() => {
-        if (isInitialTransferLoad.current) { isInitialTransferLoad.current = false; return; }
-        isLocalTransferUpdate.current = true;
+        if (!isReady) return;
+        const currentStr = JSON.stringify(manualTransfers);
+        if (currentStr === lastWrittenTransfersRef.current) return;
+        lastWrittenTransfersRef.current = currentStr;
         updateField('manualTransfers', manualTransfers);
-    }, [manualTransfers]);
+    }, [manualTransfers, isReady]);
 
     // 가구매 명단 분석 (입력된 번호 vs 실제 발견된 번호)
     const fakeOrderAnalysis = useMemo(() => {

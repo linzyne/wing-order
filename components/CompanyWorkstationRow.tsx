@@ -74,27 +74,34 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig);
 
-    // Firestore에서 workspace 데이터 동기화
-    const isLocalWorkflowUpdate = useRef(false);
-    const isLocalAdjUpdate = useRef(false);
+    // Firestore 동기화 - 값 비교로 에코 방지
+    const lastFirestoreWorkflowRef = useRef('');
+    const lastFirestoreAdjRef = useRef('');
 
     useEffect(() => {
         if (!workspace) return;
-        if (!isLocalWorkflowUpdate.current && workspace.sessionWorkflows?.[sessionId]) {
-            setWorkflow(workspace.sessionWorkflows[sessionId]);
+        if (workspace.sessionWorkflows?.[sessionId]) {
+            const wsStr = JSON.stringify(workspace.sessionWorkflows[sessionId]);
+            if (wsStr !== lastFirestoreWorkflowRef.current) {
+                setWorkflow(workspace.sessionWorkflows[sessionId]);
+                lastFirestoreWorkflowRef.current = wsStr;
+            }
         }
-        isLocalWorkflowUpdate.current = false;
-        if (!isLocalAdjUpdate.current && workspace.sessionAdjustments?.[sessionId]) {
-            setSessionAdjustments(workspace.sessionAdjustments[sessionId]);
+        if (workspace.sessionAdjustments?.[sessionId]) {
+            const wsStr = JSON.stringify(workspace.sessionAdjustments[sessionId]);
+            if (wsStr !== lastFirestoreAdjRef.current) {
+                setSessionAdjustments(workspace.sessionAdjustments[sessionId]);
+                lastFirestoreAdjRef.current = wsStr;
+            }
         }
-        isLocalAdjUpdate.current = false;
     }, [workspace, sessionId]);
 
     // workflow 변경 → Firestore에 저장
     const isInitialWorkflowLoad = useRef(true);
     useEffect(() => {
         if (isInitialWorkflowLoad.current) { isInitialWorkflowLoad.current = false; return; }
-        isLocalWorkflowUpdate.current = true;
+        const currentStr = JSON.stringify(workflow);
+        if (currentStr === lastFirestoreWorkflowRef.current) return;
         const currentWorkflows = workspace?.sessionWorkflows || {};
         updateField('sessionWorkflows', { ...currentWorkflows, [sessionId]: workflow });
     }, [workflow, sessionId]);
@@ -103,7 +110,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const isInitialAdjLoad = useRef(true);
     useEffect(() => {
         if (isInitialAdjLoad.current) { isInitialAdjLoad.current = false; return; }
-        isLocalAdjUpdate.current = true;
+        const currentStr = JSON.stringify(sessionAdjustments);
+        if (currentStr === lastFirestoreAdjRef.current) return;
         const currentAdjs = workspace?.sessionAdjustments || {};
         updateField('sessionAdjustments', { ...currentAdjs, [sessionId]: sessionAdjustments });
     }, [sessionAdjustments, sessionId]);
