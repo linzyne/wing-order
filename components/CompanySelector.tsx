@@ -488,18 +488,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                     ))}
                                 </div>
                             </div>
-                            <form onSubmit={handleAddManualOrder} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                                <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
+                            <form onSubmit={handleAddManualOrder} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-1">
+                                <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs font-bold text-white outline-none">
                                     <option value="">업체 선택</option>
                                     {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
                                 </select>
-                                <input placeholder="수령자" value={manualInput.recipientName} onChange={e => setManualInput({...manualInput, recipientName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <input placeholder="전화번호" value={manualInput.phone} onChange={e => setManualInput({...manualInput, phone: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <input placeholder="주소" value={manualInput.address} onChange={e => setManualInput({...manualInput, address: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <input placeholder="품목명" value={manualInput.productName} onChange={e => setManualInput({...manualInput, productName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <div className="flex gap-2">
-                                    <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-16 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                    <button type="submit" className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-xl text-xs transition-all shadow-lg">추가</button>
+                                <input placeholder="수령자" value={manualInput.recipientName} onChange={e => setManualInput({...manualInput, recipientName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs font-bold text-white outline-none" />
+                                <input placeholder="전화번호" value={manualInput.phone} onChange={e => setManualInput({...manualInput, phone: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs font-bold text-white outline-none" />
+                                <input placeholder="주소" value={manualInput.address} onChange={e => setManualInput({...manualInput, address: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs font-bold text-white outline-none" />
+                                <input placeholder="품목명" value={manualInput.productName} onChange={e => setManualInput({...manualInput, productName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs font-bold text-white outline-none" />
+                                <div className="flex gap-1">
+                                    <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-14 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs font-bold text-white outline-none" />
+                                    <button type="submit" className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-black rounded text-xs transition-all shadow-lg">추가</button>
                                 </div>
                             </form>
                             {manualOrders.length > 0 && (
@@ -676,12 +676,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                     </div>
                 </div>
                 {!isBulkMode ? (
-                    <form onSubmit={handleAddManualTransfer} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-                        <input type="text" placeholder="은행명" value={newTransfer.bankName} onChange={e => setNewTransfer({...newTransfer, bankName: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-bold text-white focus:outline-none" />
-                        <input type="text" placeholder="계좌번호" value={newTransfer.accountNumber} onChange={e => setNewTransfer({...newTransfer, accountNumber: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none" />
-                        <input type="number" placeholder="금액" value={newTransfer.amount} onChange={e => setNewTransfer({...newTransfer, amount: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-black text-rose-500 focus:outline-none" />
-                        <input type="text" placeholder="입금자명" value={newTransfer.label} onChange={e => setNewTransfer({...newTransfer, label: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-bold text-white focus:outline-none" />
-                        <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-black py-2 rounded-lg transition-all shadow-lg text-xs">추가</button>
+                    <form onSubmit={handleAddManualTransfer} className="grid grid-cols-1 md:grid-cols-5 gap-1 items-end">
+                        <input type="text" placeholder="은행명" value={newTransfer.bankName} onChange={e => setNewTransfer({...newTransfer, bankName: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs font-bold text-white outline-none" />
+                        <input type="text" placeholder="계좌번호" value={newTransfer.accountNumber} onChange={e => setNewTransfer({...newTransfer, accountNumber: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs font-mono font-bold text-white outline-none" />
+                        <input type="number" placeholder="금액" value={newTransfer.amount} onChange={e => setNewTransfer({...newTransfer, amount: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs font-black text-rose-500 outline-none" />
+                        <input type="text" placeholder="입금자명" value={newTransfer.label} onChange={e => setNewTransfer({...newTransfer, label: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs font-bold text-white outline-none" />
+                        <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white font-black py-1 rounded transition-all shadow-lg text-xs">추가</button>
                     </form>
                 ) : (
                     <div className="space-y-3">

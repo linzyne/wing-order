@@ -30,6 +30,20 @@
         0% { opacity: 0; transform: scale(0.95); }
         100% { opacity: 1; transform: scale(1); }
       }
+      /* Excel-like cell editing */
+      input:not([type="file"]):not([type="checkbox"]):not([type="radio"]),
+      textarea,
+      select {
+        transition: border-color 0.1s, box-shadow 0.1s;
+      }
+      input:not([type="file"]):not([type="checkbox"]):not([type="radio"]):focus,
+      textarea:focus,
+      select:focus {
+        border-color: #3b82f6 !important;
+        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+        outline: none !important;
+        ring: none !important;
+      }
       .custom-scrollbar::-webkit-scrollbar {
         width: 6px;
       }
