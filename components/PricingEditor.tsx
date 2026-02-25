@@ -540,13 +540,13 @@ const ProductTable: React.FC<{
 }> = React.memo(({ products, onAddProduct, onDeleteProduct, onOpenProductEditor }) => (
     <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
         <table className="w-full text-sm text-left">
-            <thead className="bg-zinc-900/50 text-zinc-600 font-black uppercase tracking-widest text-[11px]">
+            <thead className="bg-zinc-900/50 text-zinc-600 font-black uppercase tracking-widest text-[12px]">
                 <tr>
-                    <th className="px-3 py-1.5 w-[40%]">품목 명칭</th>
-                    <th className="px-3 py-1.5 text-right w-[15%]">공급가</th>
-                    <th className="px-3 py-1.5 text-right w-[15%]">판매가</th>
-                    <th className="px-3 py-1.5 text-right w-[10%]">마진</th>
-                    <th className="px-3 py-1.5 text-center w-[20%]">관리</th>
+                    <th className="px-4 py-2 w-[40%]">품목 명칭</th>
+                    <th className="px-4 py-2 text-right w-[15%]">공급가</th>
+                    <th className="px-4 py-2 text-right w-[15%]">판매가</th>
+                    <th className="px-4 py-2 text-right w-[10%]">마진</th>
+                    <th className="px-4 py-2 text-center w-[20%]">관리</th>
                 </tr>
             </thead>
             <tbody className="divide-y divide-zinc-900">
@@ -554,25 +554,25 @@ const ProductTable: React.FC<{
                     const product = products[productKey];
                     return (
                         <tr key={productKey} className="hover:bg-zinc-900/40 transition-colors">
-                            <td className="px-3 py-1">
-                                <div className="font-bold text-zinc-200 text-xs">{product.displayName}</div>
+                            <td className="px-4 py-2">
+                                <div className="font-bold text-zinc-200 text-sm">{product.displayName}</div>
                                 {product.aliases && product.aliases.length > 0 && (
-                                    <div className="text-[9px] text-zinc-600 truncate max-w-xs">{product.aliases.join(', ')}</div>
+                                    <div className="text-[10px] text-zinc-600 truncate max-w-xs">{product.aliases.join(', ')}</div>
                                 )}
                             </td>
-                            <td className="px-3 py-1 text-right font-black text-rose-500 text-xs">
+                            <td className="px-4 py-2 text-right font-black text-rose-500 text-sm">
                                 {product.supplyPrice.toLocaleString()}원
                             </td>
-                            <td className="px-3 py-1 text-right font-bold text-zinc-300 text-xs">
+                            <td className="px-4 py-2 text-right font-bold text-zinc-300 text-sm">
                                 {(product.sellingPrice || 0).toLocaleString()}원
                             </td>
-                            <td className="px-3 py-1 text-right font-bold text-emerald-400 text-xs">
+                            <td className="px-4 py-2 text-right font-bold text-emerald-400 text-sm">
                                 {(product.margin || 0).toLocaleString()}원
                             </td>
-                            <td className="px-3 py-1 text-center">
+                            <td className="px-4 py-2 text-center">
                                 <div className="flex items-center justify-center gap-4">
                                     <button onClick={() => onOpenProductEditor(productKey, product)} className="text-indigo-400 hover:text-indigo-300 font-black text-[11px] underline underline-offset-2">상세</button>
-                                    <button onClick={() => onDeleteProduct(productKey)} className="text-zinc-700 hover:text-red-500 transition-colors"><TrashIcon className="w-3.5 h-3.5" /></button>
+                                    <button onClick={() => onDeleteProduct(productKey)} className="text-zinc-700 hover:text-red-500 transition-colors"><TrashIcon className="w-4 h-4" /></button>
                                 </div>
                             </td>
                         </tr>

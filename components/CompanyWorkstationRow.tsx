@@ -116,17 +116,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         updateField('sessionAdjustments', { ...currentAdjs, [sessionId]: sessionAdjustments });
     }, [sessionAdjustments, sessionId]);
 
-    const [debugInfo, setDebugInfo] = useState<string>('');
-
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);
         const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
         const hasFakeOrdersChanged = isFirstSession && fakeOrderNumbers !== lastFakeOrdersRef.current;
         const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
-
-        const debugMsg = `[${companyName}] isFirst=${isFirstSession}, masterFile=${!!masterFile}, isDetected=${isDetected}, fileChanged=${!!hasFileChanged}, fakeChanged=${hasFakeOrdersChanged}, manualChanged=${hasManualOrdersChanged}, lastRef=${!!lastProcessedMasterRef.current}`;
-        console.log(`[DEBUG] 자동트리거: ${debugMsg}`);
-        setDebugInfo(`감지=${isDetected ? '✓' : '✗'} | 파일=${!!masterFile ? '✓' : '✗'} | 트리거=${(hasFileChanged || hasFakeOrdersChanged || hasManualOrdersChanged) ? '✓' : '✗'}`);
 
         if (hasFileChanged) {
             if (masterFile) {
@@ -347,11 +341,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </span>
                                     ))}
                                 </div>
-                                {debugInfo && (
-                                    <div className="text-[8px] text-amber-600 font-mono bg-amber-950/20 px-2 py-0.5 rounded border border-amber-900/30">
-                                        {debugInfo}
-                                    </div>
-                                )}
                             </>
                         ) : (
                             <div className="flex items-center gap-2 pl-4 border-l-2 border-zinc-800 py-1">
