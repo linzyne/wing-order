@@ -128,13 +128,22 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         console.log(`[DEBUG] 자동트리거: ${debugMsg}`);
         setDebugInfo(`감지=${isDetected ? '✓' : '✗'} | 파일=${!!masterFile ? '✓' : '✗'} | 트리거=${(hasFileChanged || hasFakeOrdersChanged || hasManualOrdersChanged) ? '✓' : '✗'}`);
 
-        if (hasFileChanged || hasFakeOrdersChanged || hasManualOrdersChanged) {
+        if (hasFileChanged) {
             if (masterFile) {
                 lastProcessedMasterRef.current = masterFile;
                 lastFakeOrdersRef.current = fakeOrderNumbers;
                 lastManualOrdersRef.current = manualOrdersStr;
                 handleLocalFileChange(masterFile);
             }
+        } else if ((hasFakeOrdersChanged || hasManualOrdersChanged) && lastProcessedMasterRef.current) {
+            // 가구매/수동주문 변경: 이미 파일 처리가 된 이후에만 재처리
+            lastFakeOrdersRef.current = fakeOrderNumbers;
+            lastManualOrdersRef.current = manualOrdersStr;
+            handleLocalFileChange(lastProcessedMasterRef.current);
+        } else {
+            // Firestore 초기 로드 등 - ref만 업데이트 (재처리 안함)
+            lastFakeOrdersRef.current = fakeOrderNumbers;
+            lastManualOrdersRef.current = manualOrdersStr;
         }
     }, [masterFile, isDetected, isFirstSession, fakeOrderNumbers, manualOrders]);
 
@@ -184,18 +193,27 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         else { setCopiedExcelId(id); setTimeout(() => setCopiedExcelId(null), 2000); }
     };
 
+    const isProcessingRef = useRef(false);
     const handleLocalFileChange = async (file: File) => {
+        if (isProcessingRef.current) return;
+        isProcessingRef.current = true;
         if (file && file !== masterFile) setLocalFile(file);
         setIsLocalProcessing(true);
-        const processResponse = await processSingleCompanyFile(file, companyName, fakeOrderNumbers, manualOrders);
-        if (processResponse) {
-            setLocalResult(processResponse.result);
-            setExcludedList(processResponse.excluded);
-        } else {
+        try {
+            const processResponse = await processSingleCompanyFile(file, companyName, fakeOrderNumbers, manualOrders);
+            if (processResponse) {
+                setLocalResult(processResponse.result);
+                setExcludedList(processResponse.excluded);
+            } else {
+                setLocalResult(null);
+            }
+        } catch (error) {
+            console.error(`[${companyName}] 처리 오류:`, error);
             setLocalResult(null);
         }
         setIsLocalProcessing(false);
-        resetMerge(); 
+        isProcessingRef.current = false;
+        resetMerge();
     };
 
     const handleRunMerge = () => {

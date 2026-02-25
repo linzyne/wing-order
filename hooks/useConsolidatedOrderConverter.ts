@@ -502,8 +502,8 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig) => {
     const [fileName, setFileName] = useState<string>('');
 
     const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = []) => {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         try {
+            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
             let json: any[][] = [];
             let headers: any[] = [];
 
