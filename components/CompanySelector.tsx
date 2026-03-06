@@ -77,6 +77,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
     const [showFakeOrderInput, setShowFakeOrderInput] = useState(false);
     const [showFakeDetail, setShowFakeDetail] = useState(false);
 
+    const [lotteFile, setLotteFile] = useState<File | null>(null);
+    const [lotteResult, setLotteResult] = useState<{ matched: number; total: number; notFound: string[] } | null>(null);
+
     const [manualTransfers, setManualTransfers] = useState<ManualTransfer[]>([]);
 
     const [newTransfer, setNewTransfer] = useState({ label: '', bankName: '', accountNumber: '', amount: '' });
@@ -176,6 +179,75 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
     };
 
     const clearMasterFile = () => { setMasterOrderFile(null); setDetectedCompanies(new Set()); };
+
+    const handleLotteFileUpload = async (file: File) => {
+        if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
+        setLotteFile(file);
+        setLotteResult(null);
+        try {
+            // 가구매 명단에서 주문번호 추출
+            const fakeOrderNums = new Set<string>();
+            fakeOrderInput.split('\n').forEach(line => {
+                const matches = line.match(/[A-Z0-9-]{5,}/g);
+                if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
+            });
+            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
+
+            // 롯데택배 파일 읽기: J열(idx 9)=주문번호, G열(idx 6)=운송장번호
+            const lotteData = await file.arrayBuffer();
+            const lotteWb = XLSX.read(lotteData, { type: 'array' });
+            const lotteWs = lotteWb.Sheets[lotteWb.SheetNames[0]];
+            const lotteAoa: any[][] = XLSX.utils.sheet_to_json(lotteWs, { header: 1 });
+
+            const trackingMap = new Map<string, string>();
+            for (let i = 1; i < lotteAoa.length; i++) {
+                const row = lotteAoa[i];
+                if (!row) continue;
+                const orderNum = String(row[9] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                const trackingNum = String(row[6] || '').trim();
+                if (orderNum && trackingNum && trackingNum.length >= 5) {
+                    trackingMap.set(orderNum, trackingNum);
+                }
+            }
+
+            // 원본 주문서 읽기
+            const masterData = await masterOrderFile.arrayBuffer();
+            const masterWb = XLSX.read(masterData, { type: 'array' });
+            const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
+            const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
+
+            // C열(idx 2)=주문번호, D열(idx 3)=택배사, E열(idx 4)=운송장번호
+            let matchedCount = 0;
+            const notFoundOrders: string[] = [];
+            for (let i = 1; i < masterAoa.length; i++) {
+                const row = masterAoa[i];
+                if (!row) continue;
+                const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (!fakeOrderNums.has(orderNum)) continue;
+                const tracking = trackingMap.get(orderNum);
+                if (tracking) {
+                    while (row.length < 5) row.push('');
+                    row[3] = '롯데택배';
+                    row[4] = tracking;
+                    matchedCount++;
+                } else {
+                    notFoundOrders.push(String(row[2] || ''));
+                }
+            }
+
+            setLotteResult({ matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders });
+
+            // 수정된 원본 주문서 다운로드
+            const newWs = XLSX.utils.aoa_to_sheet(masterAoa);
+            const newWb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(newWb, newWs, '주문서');
+            const dateStr = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(newWb, `${dateStr}_가구매_운송장입력완료.xlsx`);
+        } catch (err: any) {
+            console.error('롯데택배 처리 오류:', err);
+            alert('롯데택배 파일 처리 중 오류가 발생했습니다: ' + err.message);
+        }
+    };
 
     const handleAddManualOrder = (e: React.FormEvent) => {
         e.preventDefault();
@@ -599,11 +671,41 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
                     {showFakeOrderInput ? (
                         <div className="space-y-3 animate-fade-in">
-                            <textarea 
+                            <textarea
                                 autoFocus value={fakeOrderInput} onChange={(e) => setFakeOrderInput(e.target.value)}
                                 placeholder="예: 홍길동 20231010-00001"
                                 className="w-full h-24 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
                             />
+                            <div className="flex items-center gap-2">
+                                <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${lotteFile ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
+                                    <ArrowDownTrayIcon className="w-4 h-4" />
+                                    <span>{lotteFile ? lotteFile.name : '롯데택배 파일 업로드'}</span>
+                                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLotteFileUpload(f); }} />
+                                </label>
+                                {lotteFile && (
+                                    <button onClick={() => { setLotteFile(null); setLotteResult(null); }} className="p-2 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
+                                        <ArrowPathIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                            {lotteResult && (
+                                <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">매칭 {lotteResult.matched}건</span>
+                                        <span className="text-zinc-500 text-[9px] font-black">/ 가구매 {lotteResult.total}건</span>
+                                        {lotteResult.notFound.length > 0 && (
+                                            <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">미매칭 {lotteResult.notFound.length}건</span>
+                                        )}
+                                    </div>
+                                    {lotteResult.notFound.length > 0 && (
+                                        <div className="mt-2 flex flex-wrap gap-1">
+                                            {lotteResult.notFound.map(num => (
+                                                <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded text-[9px] font-mono">{num}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="flex items-center justify-center h-24 border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-800/20 transition-all" onClick={() => setShowFakeOrderInput(true)}>
