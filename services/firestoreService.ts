@@ -19,6 +19,9 @@ export const subscribePricingConfig = (
     } else {
       callback(null);
     }
+  }, (error) => {
+    console.error('[Firestore] PricingConfig 구독 오류:', error);
+    callback(null);
   });
 };
 
@@ -75,6 +78,9 @@ export const subscribeDailyWorkspace = (
   const docRef = doc(db, 'dailyWorkspace', getTodayDocId());
   return onSnapshot(docRef, (snapshot) => {
     callback(snapshot.exists() ? snapshot.data() as DailyWorkspaceData : null);
+  }, (error) => {
+    console.error('[Firestore] DailyWorkspace 구독 오류:', error);
+    callback(null);
   });
 };
 
