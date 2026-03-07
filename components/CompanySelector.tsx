@@ -11,12 +11,6 @@ import { subscribeManualOrders, saveManualOrders } from '../services/firestoreSe
 
 declare var XLSX: any;
 
-const getTimeScore = (timeStr?: string): number => {
-    if (!timeStr) return 9999;
-    const [hh, mm] = timeStr.split(':').map(Number);
-    return hh * 60 + mm;
-};
-
 const PREFERRED_ORDER = ['연두', '웰그린', '고랭지김치', '제이제이', '팜플로우', '꽃게', '신선마켓', '답도', '귤_초록', '홍게', '황금향', '귤', '홍게2'];
 
 const QUICK_RECIPIENTS = [
@@ -437,12 +431,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         const depositRows: any[][] = [];
         let total = 0;
         const sortedCompanyNames = Object.keys(pricingConfig).sort((a, b) => {
-            const deadlineA = pricingConfig[a]?.deadline;
-            const deadlineB = pricingConfig[b]?.deadline;
-            if (deadlineA || deadlineB) return getTimeScore(deadlineA) - getTimeScore(deadlineB);
             const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
             if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-            return indexA !== -1 ? -1 : indexB !== -1 ? 1 : a.localeCompare(b);
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return a.localeCompare(b);
         });
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
@@ -464,12 +457,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         const wb = XLSX.utils.book_new();
         const summarySheetData: any[][] = [];
         const sortedCompanyNames = Object.keys(pricingConfig).sort((a, b) => {
-            const deadlineA = pricingConfig[a]?.deadline;
-            const deadlineB = pricingConfig[b]?.deadline;
-            if (deadlineA || deadlineB) return getTimeScore(deadlineA) - getTimeScore(deadlineB);
             const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
             if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-            return indexA !== -1 ? -1 : indexB !== -1 ? 1 : a.localeCompare(b);
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return a.localeCompare(b);
         });
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
@@ -773,12 +765,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                         </div>
                         <div className="flex flex-wrap gap-2 mt-1">
                             {Object.keys(pricingConfig).sort((a, b) => {
-                                const deadlineA = pricingConfig[a]?.deadline;
-                                const deadlineB = pricingConfig[b]?.deadline;
-                                if (deadlineA || deadlineB) return getTimeScore(deadlineA) - getTimeScore(deadlineB);
                                 const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
                                 if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                                return indexA !== -1 ? -1 : indexB !== -1 ? 1 : a.localeCompare(b);
+                                if (indexA !== -1) return -1;
+                                if (indexB !== -1) return 1;
+                                return a.localeCompare(b);
                             }).flatMap(name => (companySessions[name] || []).map(s => {
                                 const amount = totalsMap[s.id] || 0;
                                 if (amount === 0) return null;
@@ -879,12 +870,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                         </thead>
                         <tbody className="divide-y divide-zinc-900">
                             {Object.keys(pricingConfig).sort((a, b) => {
-                                const deadlineA = pricingConfig[a]?.deadline;
-                                const deadlineB = pricingConfig[b]?.deadline;
-                                if (deadlineA || deadlineB) return getTimeScore(deadlineA) - getTimeScore(deadlineB);
                                 const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
                                 if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                                return indexA !== -1 ? -1 : indexB !== -1 ? 1 : a.localeCompare(b);
+                                if (indexA !== -1) return -1;
+                                if (indexB !== -1) return 1;
+                                return a.localeCompare(b);
                             }).map(company => (
                                 <React.Fragment key={company}>
                                     {(companySessions[company] || []).map((session, sIdx) => (
