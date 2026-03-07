@@ -1,6 +1,7 @@
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { PricingConfig, DailySales } from '../types';
+import { DEFAULT_PRICING_CONFIG } from '../pricing';
 
 const MIGRATION_FLAG = 'firestore_migration_done';
 
@@ -73,4 +74,41 @@ export const migrateLocalStorageToFirestore = async (): Promise<boolean> => {
 
   localStorage.setItem(MIGRATION_FLAG, 'true');
   return migrated;
+};
+
+// 코드의 sellingPrice/margin을 Firestore에 자동 병합
+export const syncPricingFields = async (): Promise<boolean> => {
+  try {
+    const docRef = doc(db, 'config', 'pricingConfig');
+    const snapshot = await getDoc(docRef);
+    if (!snapshot.exists()) return false;
+
+    const firestoreConfig = snapshot.data().data as PricingConfig;
+    let updated = false;
+
+    for (const [companyName, defaultCompany] of Object.entries(DEFAULT_PRICING_CONFIG)) {
+      if (!firestoreConfig[companyName]) continue;
+      for (const [productKey, defaultProduct] of Object.entries(defaultCompany.products)) {
+        const fsProduct = firestoreConfig[companyName].products[productKey];
+        if (!fsProduct) continue;
+        if (defaultProduct.sellingPrice && !fsProduct.sellingPrice) {
+          fsProduct.sellingPrice = defaultProduct.sellingPrice;
+          updated = true;
+        }
+        if (defaultProduct.margin && !fsProduct.margin) {
+          fsProduct.margin = defaultProduct.margin;
+          updated = true;
+        }
+      }
+    }
+
+    if (updated) {
+      await setDoc(docRef, { data: firestoreConfig, updatedAt: Timestamp.now() });
+      console.log('[Sync] sellingPrice/margin Firestore 동기화 완료');
+    }
+    return updated;
+  } catch (e) {
+    console.error('[Sync] sellingPrice/margin 동기화 실패:', e);
+    return false;
+  }
 };

@@ -108,7 +108,7 @@ const parseDateFromRow = (row: any[], dateColIdx: number): string | null => {
 };
 
 const findBestMatchForProduct = async (
-    ai: GoogleGenAI,
+    ai: GoogleGenAI | null,
     cache: Map<string, [string, ProductPricing] | null>,
     companyName: string,
     rawProductName: string,
@@ -188,22 +188,27 @@ const findBestMatchForProduct = async (
         return result;
     }
 
-    const availableDisplayNames = availableEntries.map(([, product]) => product.displayName);
-    const prompt = `주문서 상품명 '${rawProductName}'와 가장 일치하는 품목을 골라줘. 품목 리스트:\n${availableDisplayNames.join('\n')}\n정확한 이름만 답변해줘.`;
-    try {
-        const response = await ai.models.generateContent({
-            model: 'gemini-3-flash-preview',
-            contents: prompt,
-            config: { temperature: 0 }
-        });
-        const matchedDisplayName = response.text?.trim();
-        const matchedEntry = availableEntries.find(([, product]) => product.displayName === matchedDisplayName);
-        if (matchedEntry) {
-            const result: [string, ProductPricing] = [matchedEntry[0], matchedEntry[1]];
-            cache.set(cacheKey, result);
-            return result;
-        }
-    } catch (e) { }
+    if (ai) {
+        const availableDisplayNames = availableEntries.map(([, product]) => product.displayName);
+        const prompt = `주문서 상품명 '${rawProductName}'와 가장 일치하는 품목을 골라줘. 품목 리스트:\n${availableDisplayNames.join('\n')}\n정확한 이름만 답변해줘.`;
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 8000);
+            const response = await ai.models.generateContent({
+                model: 'gemini-3-flash-preview',
+                contents: prompt,
+                config: { temperature: 0 }
+            });
+            clearTimeout(timeout);
+            const matchedDisplayName = response.text?.trim();
+            const matchedEntry = availableEntries.find(([, product]) => product.displayName === matchedDisplayName);
+            if (matchedEntry) {
+                const result: [string, ProductPricing] = [matchedEntry[0], matchedEntry[1]];
+                cache.set(cacheKey, result);
+                return result;
+            }
+        } catch (e) { }
+    }
 
     const fallbackResult = fallbackMatcher(pricingConfig, companyName, rawProductName);
     cache.set(cacheKey, fallbackResult as [string, ProductPricing] | null);
@@ -211,7 +216,7 @@ const findBestMatchForProduct = async (
 };
 
 const generateWorkbookForCompany = async (
-    ai: GoogleGenAI,
+    ai: GoogleGenAI | null,
     cache: Map<string, [string, ProductPricing] | null>,
     pricingConfig: PricingConfig,
     json: any[][],
@@ -308,7 +313,7 @@ const generateWorkbookForCompany = async (
     }
 };
 
-function getHeaderForCompany(companyName: string, config: CompanyConfig): string[] {
+export function getHeaderForCompany(companyName: string, config: CompanyConfig): string[] {
     if (companyName === '팜플로우') return ['출고번호', '받으시는 분 이름', '받으시는 분 전화', '받는분 주소', '배송메세지', '품목명', '수량', '보내시는 분', '보내시는 분 전화', '보내시는분 주소', '메모1', '택배사', '송장번호'];
     if (companyName === '웰그린') return ['', '쇼핑몰주문번호', '쇼핑몰', '상품명', '옵션(품목명)', '수량', '배송메세지', '', '', '받는분성명', '주문자', '받는분연락처', '주문자연락처', '', '우편번호', '받는분주소(전체, 분할)', '', '판매처연락처', '판매처주소'];
     if (companyName === '답도' || companyName === '한라봉_답도') return ['주문번호', '기재안해도됨', '송하인', '송하인 연락처', '수취인', '수취인 연락처', '주소', '상품명', '수량', '배송 메세지', '송장번호'];
@@ -503,7 +508,8 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig) => {
 
     const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = []) => {
         try {
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY || '' });
+            const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
+            const ai = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
             let json: any[][] = [];
             let headers: any[] = [];
 

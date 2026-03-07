@@ -13,15 +13,19 @@ import { DEFAULT_PRICING_CONFIG } from '../pricing';
 export const usePricingConfig = () => {
   const [config, setConfig] = useState<PricingConfig>(DEFAULT_PRICING_CONFIG);
   const [isLoading, setIsLoading] = useState(true);
+  const [configSource, setConfigSource] = useState<'loading' | 'firestore' | 'default'>('loading');
 
   useEffect(() => {
     const unsubscribe = subscribePricingConfig((firestoreConfig) => {
       if (firestoreConfig) {
+        console.log('[Config] Firestore에서 로드 완료, 업체 수:', Object.keys(firestoreConfig).length);
         setConfig(firestoreConfig);
+        setConfigSource('firestore');
       } else {
-        // Firestore에 데이터가 없으면 기본값으로 초기화
+        console.warn('[Config] Firestore 데이터 없음 → 기본값 사용');
         savePricingConfigToFirestore(DEFAULT_PRICING_CONFIG);
         setConfig(DEFAULT_PRICING_CONFIG);
+        setConfigSource('default');
       }
       setIsLoading(false);
     });
@@ -33,7 +37,7 @@ export const usePricingConfig = () => {
     await savePricingConfigToFirestore(newConfig);
   }, []);
 
-  return { config, saveConfig, isLoading };
+  return { config, saveConfig, isLoading, configSource };
 };
 
 // ===== Daily Workspace Hook =====

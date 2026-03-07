@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useInvoiceMerger } from '../hooks/useInvoiceMerger';
-import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany } from '../hooks/useConsolidatedOrderConverter';
+import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
@@ -9,6 +9,7 @@ import {
 } from './icons';
 import type { PricingConfig, ExcludedOrder, ManualOrder } from '../types';
 import { useDailyWorkspace } from '../hooks/useFirestore';
+import type { SessionResultData } from '../services/firestoreService';
 
 declare var XLSX: any;
 
@@ -29,6 +30,7 @@ interface CompanyWorkstationRowProps {
     companyName: string;
     roundNumber: number;
     isFirstSession: boolean;
+    isLastSession: boolean;
     pricingConfig: PricingConfig;
     vendorFile: File | null;
     masterFile: File | null;
@@ -43,11 +45,12 @@ interface CompanyWorkstationRowProps {
     onAddSession: () => void;
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
+    onDownloadMergedOrder?: () => void;
 }
 
-const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({ 
-    sessionId, companyName, roundNumber, isFirstSession, pricingConfig, vendorFile, masterFile, isDetected, fakeOrderNumbers, manualOrders = [],
-    isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment
+const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
+    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFile, masterFile, isDetected, fakeOrderNumbers, manualOrders = [],
+    isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder
 }) => {
     const [showSummary, setShowSummary] = useState(false);
     const [showExcluded, setShowExcluded] = useState(false);
@@ -70,6 +73,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const lastProcessedMasterRef = useRef<File | null>(null);
     const lastFakeOrdersRef = useRef<string>('');
     const lastManualOrdersRef = useRef<string>('');
+
+    // Synced data (디바이스 2 - 로컬 처리 없을 때만)
+    const syncedData = (!localResult && !isLocalProcessing) ? workspace?.sessionResults?.[sessionId] : undefined;
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig);
@@ -120,44 +126,78 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const manualOrdersStr = JSON.stringify(manualOrders);
         const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
         const hasFakeOrdersChanged = isFirstSession && fakeOrderNumbers !== lastFakeOrdersRef.current;
-        const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
+        const hasManualOrdersChanged = isLastSession && manualOrdersStr !== lastManualOrdersRef.current;
 
         if (hasFileChanged) {
             if (masterFile) {
                 lastProcessedMasterRef.current = masterFile;
                 lastFakeOrdersRef.current = fakeOrderNumbers;
                 lastManualOrdersRef.current = manualOrdersStr;
-                handleLocalFileChange(masterFile);
+                handleLocalFileChange(masterFile, true);
             }
         } else if ((hasFakeOrdersChanged || hasManualOrdersChanged) && lastProcessedMasterRef.current) {
             // 가구매/수동주문 변경: 이미 파일 처리가 된 이후에만 재처리
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
-            handleLocalFileChange(lastProcessedMasterRef.current);
+            handleLocalFileChange(lastProcessedMasterRef.current, false);
         } else {
             // Firestore 초기 로드 등 - ref만 업데이트 (재처리 안함)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
         }
-    }, [masterFile, isDetected, isFirstSession, fakeOrderNumbers, manualOrders]);
+    }, [masterFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders]);
 
     useEffect(() => {
-        if (onResultUpdate) {
-            const orderTotal = localResult ? Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0) : 0;
-            const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
-            onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
-        }
-        if (onDataUpdate) {
-            onDataUpdate(
-                sessionId, 
-                localResult?.rows || [], 
-                mergeResults?.rows || [], 
-                mergeResults?.uploadRows || [], 
-                localResult?.depositSummaryExcel || '',
-                mergeResults?.header
-            );
-        }
+        if (!localResult) return;
+        const orderTotal = Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
+        const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
+        onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header);
     }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments]);
+
+    // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
+    const saveResultDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+    const lastSavedResultRef = useRef('');
+    useEffect(() => {
+        if (!localResult) return;
+        if (saveResultDebounceRef.current) clearTimeout(saveResultDebounceRef.current);
+        saveResultDebounceRef.current = setTimeout(() => {
+            const orderTotal = Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
+            const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
+            const resultData: SessionResultData = {
+                orderRows: localResult.rows || [],
+                invoiceRows: mergeResults?.rows || [],
+                uploadInvoiceRows: mergeResults?.uploadRows || [],
+                header: mergeResults?.header || [],
+                summaryExcel: localResult.depositSummaryExcel || '',
+                depositSummary: localResult.depositSummary || '',
+                depositSummaryExcel: localResult.depositSummaryExcel || '',
+                totalPrice: orderTotal + adjTotal,
+                excludedCount: excludedList.length,
+                excludedDetails: excludedList,
+                orderCount: Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.count || 0), 0 as number),
+                itemSummary: localResult.summary as any,
+            };
+            const resultStr = JSON.stringify(resultData);
+            if (resultStr === lastSavedResultRef.current) return;
+            lastSavedResultRef.current = resultStr;
+            const currentResults = workspace?.sessionResults || {};
+            updateField('sessionResults', { ...currentResults, [sessionId]: resultData });
+        }, 500);
+        return () => { if (saveResultDebounceRef.current) clearTimeout(saveResultDebounceRef.current); };
+    }, [localResult, mergeResults, excludedList, sessionAdjustments, sessionId]);
+
+    // Synced data → parent 콜백 (디바이스 2: Firestore에서 로드)
+    const lastSyncedCallbackRef = useRef('');
+    useEffect(() => {
+        if (localResult) { lastSyncedCallbackRef.current = ''; return; }
+        if (!syncedData) return;
+        const key = `${syncedData.totalPrice}-${syncedData.orderCount}-${syncedData.excludedCount}`;
+        if (key === lastSyncedCallbackRef.current) return;
+        lastSyncedCallbackRef.current = key;
+        onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
+        onDataUpdate(sessionId, syncedData.orderRows, syncedData.invoiceRows, syncedData.uploadInvoiceRows, syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined);
+    }, [workspace, localResult, sessionId]);
 
     useEffect(() => {
         const activeFile = localFile || (isFirstSession ? masterFile : null);
@@ -188,13 +228,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const isProcessingRef = useRef(false);
-    const handleLocalFileChange = async (file: File) => {
+    const handleLocalFileChange = async (file: File, confirmManualOrders = false) => {
         if (isProcessingRef.current) return;
         isProcessingRef.current = true;
         if (file && file !== masterFile) setLocalFile(file);
         setIsLocalProcessing(true);
+        let ordersToInclude = manualOrders;
+        if (confirmManualOrders && manualOrders.length > 0) {
+            const orderList = manualOrders.map(o => `  • ${o.recipientName} - ${o.productName} x${o.qty}`).join('\n');
+            if (!confirm(`[${companyName}] 수동발주 ${manualOrders.length}건을 발주서에 포함할까요?\n\n${orderList}`)) {
+                ordersToInclude = [];
+            }
+        }
         try {
-            const processResponse = await processSingleCompanyFile(file, companyName, fakeOrderNumbers, manualOrders);
+            const processResponse = await processSingleCompanyFile(file, companyName, fakeOrderNumbers, ordersToInclude);
             if (processResponse) {
                 setLocalResult(processResponse.result);
                 setExcludedList(processResponse.excluded);
@@ -367,6 +414,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
                                     <div className="h-6 w-px bg-zinc-800" />
                                     <button onClick={handleDownloadOrder} className="bg-white text-zinc-950 px-3 py-1 rounded font-black text-[10px] hover:bg-rose-50 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
+                                    {onDownloadMergedOrder && isFirstSession && (
+                                        <button onClick={onDownloadMergedOrder} className="bg-indigo-500 text-white px-3 py-1 rounded font-black text-[10px] hover:bg-indigo-600 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>합산</span></button>
+                                    )}
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
@@ -384,7 +434,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             <label className="flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border border-zinc-800 bg-zinc-900/30 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400 transition-all shadow-inner whitespace-nowrap">
                                 <DocumentArrowUpIcon className="w-4 h-4 text-zinc-700" />
                                 <span>발주서 업로드</span>
-                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleLocalFileChange(e.target.files[0])} />
+                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleLocalFileChange(e.target.files[0], true)} />
                             </label>
                         )}
                     </div>

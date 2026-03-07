@@ -4,9 +4,10 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon } from './icons';
-import { getKeywordsForCompany } from '../hooks/useConsolidatedOrderConverter';
+import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { saveDailySales } from '../hooks/useSalesTracker';
 import { useDailyWorkspace } from '../hooks/useFirestore';
+import { subscribeManualOrders, saveManualOrders } from '../services/firestoreService';
 
 declare var XLSX: any;
 
@@ -63,6 +64,30 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
     const [bulkText, setBulkText] = useState('');
 
     const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
+    const lastWrittenManualOrdersRef = useRef('[]');
+
+    // 수동발주 Firestore 영구 저장 - 구독
+    useEffect(() => {
+        const unsubscribe = subscribeManualOrders((orders) => {
+            const str = JSON.stringify(orders);
+            if (str !== lastWrittenManualOrdersRef.current) {
+                setManualOrders(orders as ManualOrder[]);
+                lastWrittenManualOrdersRef.current = str;
+            }
+        });
+        return unsubscribe;
+    }, []);
+
+    // 수동발주 변경 → Firestore에 저장
+    const isInitialManualOrdersLoad = useRef(true);
+    useEffect(() => {
+        if (isInitialManualOrdersLoad.current) { isInitialManualOrdersLoad.current = false; return; }
+        const currentStr = JSON.stringify(manualOrders);
+        if (currentStr === lastWrittenManualOrdersRef.current) return;
+        lastWrittenManualOrdersRef.current = currentStr;
+        saveManualOrders(manualOrders);
+    }, [manualOrders]);
+
     const [manualInput, setManualInput] = useState({
         companyName: '', recipientName: '', phone: '', address: '', productName: '', qty: '1'
     });
@@ -363,6 +388,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         const allActiveIds = (Object.values(companySessions).flat() as SessionData[]).map(s => s.id);
         if (selectedSessionIds.size === allActiveIds.length) setSelectedSessionIds(new Set());
         else setSelectedSessionIds(new Set(allActiveIds));
+    };
+
+    const handleDownloadMergedOrder = (companyName: string) => {
+        const sessions = companySessions[companyName] || [];
+        const mergedRows: any[][] = [];
+        sessions.forEach(s => {
+            if (allOrderRows[s.id] && allOrderRows[s.id].length > 0) mergedRows.push(...allOrderRows[s.id]);
+        });
+        if (mergedRows.length === 0) { alert('합산할 발주 데이터가 없습니다.'); return; }
+        const companyConfig = pricingConfig[companyName];
+        if (!companyConfig) return;
+        const header = getHeaderForCompany(companyName, companyConfig);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...mergedRows]);
+        ws['!cols'] = header.map(() => ({ wch: 15 }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '발주서');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `${dateStr} ${companyName} 합산발주서.xlsx`);
     };
 
     const handleDownloadMergedUploadInvoices = () => {
@@ -844,13 +887,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                 return indexA !== -1 ? -1 : indexB !== -1 ? 1 : a.localeCompare(b);
                             }).map(company => (
                                 <React.Fragment key={company}>
-                                    {companySessions[company].map((session, sIdx) => (
-                                        <CompanyWorkstationRow 
-                                            key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} pricingConfig={pricingConfig}
+                                    {(companySessions[company] || []).map((session, sIdx) => (
+                                        <CompanyWorkstationRow
+                                            key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                             vendorFile={vendorFiles[session.id] || null} masterFile={masterOrderFile} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
-                                            manualOrders={manualOrders.filter(o => o.companyName === company)} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
+                                            manualOrders={sIdx === (companySessions[company] || []).length - 1 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                             onVendorFileChange={(file) => handleVendorFileChange(session.id, file)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                             onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
+                                            onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
                                         />
                                     ))}
                                 </React.Fragment>

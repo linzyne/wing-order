@@ -5,11 +5,11 @@ import PricingEditor from './components/PricingEditor';
 import SalesTracker from './components/SalesTracker';
 import { ChartBarIcon, WrenchScrewdriverIcon, Cog6ToothIcon } from './components/icons';
 import { usePricingConfig } from './hooks/useFirestore';
-import { migrateLocalStorageToFirestore } from './services/migration';
+import { migrateLocalStorageToFirestore, syncPricingFields } from './services/migration';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('converter');
-  const { config: pricingConfig, saveConfig, isLoading } = usePricingConfig();
+  const { config: pricingConfig, saveConfig, isLoading, configSource } = usePricingConfig();
 
   const handleConfigChange = (newConfig: typeof pricingConfig) => {
     saveConfig(newConfig);
@@ -19,6 +19,7 @@ const App: React.FC = () => {
     migrateLocalStorageToFirestore().then((migrated) => {
       if (migrated) console.log('[App] localStorage → Firestore 마이그레이션 완료');
     });
+    syncPricingFields();
   }, []);
 
   if (isLoading) {
@@ -84,6 +85,12 @@ const App: React.FC = () => {
             </button>
           </nav>
         </header>
+
+        {configSource === 'default' && (
+          <div className="mb-4 px-4 py-3 bg-amber-900/30 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-bold text-center">
+            Firestore 연결 실패 - 기본 설정 사용 중 (브라우저 콘솔 확인)
+          </div>
+        )}
 
         <main className="w-full">
           {activeTab === 'converter' && <CompanySelector pricingConfig={pricingConfig} />}

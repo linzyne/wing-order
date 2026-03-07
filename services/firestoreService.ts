@@ -62,11 +62,27 @@ export const deleteDailySalesFromFirestore = async (
 
 // ===== Daily Workspace =====
 
+export interface SessionResultData {
+  orderRows: any[][];
+  invoiceRows: any[][];
+  uploadInvoiceRows: any[][];
+  header: any[];
+  summaryExcel: string;
+  depositSummary: string;
+  depositSummaryExcel: string;
+  totalPrice: number;
+  excludedCount: number;
+  excludedDetails: any[];
+  orderCount: number;
+  itemSummary: Record<string, { count: number; totalPrice: number }>;
+}
+
 export interface DailyWorkspaceData {
   fakeOrderInput: string;
   manualTransfers: any[];
   sessionWorkflows: Record<string, { order: boolean; deposit: boolean; invoice: boolean }>;
   sessionAdjustments: Record<string, any[]>;
+  sessionResults?: Record<string, SessionResultData>;
   updatedAt?: any;
 }
 
@@ -99,4 +115,23 @@ export const getDailyWorkspace = async (): Promise<DailyWorkspaceData | null> =>
   const docRef = doc(db, 'dailyWorkspace', getTodayDocId());
   const snapshot = await getDoc(docRef);
   return snapshot.exists() ? snapshot.data() as DailyWorkspaceData : null;
+};
+
+// ===== Pending Manual Orders (날짜 무관, 삭제 전까지 유지) =====
+
+export const subscribeManualOrders = (
+  callback: (orders: any[]) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', 'pendingManualOrders');
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().orders || []) : []);
+  }, (error) => {
+    console.error('[Firestore] ManualOrders 구독 오류:', error);
+    callback([]);
+  });
+};
+
+export const saveManualOrders = async (orders: any[]): Promise<void> => {
+  const docRef = doc(db, 'config', 'pendingManualOrders');
+  await setDoc(docRef, { orders, updatedAt: Timestamp.now() });
 };
