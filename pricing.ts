@@ -9,12 +9,12 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
     bankName: '우리은행',
     accountNumber: '1005103634084',
     products: {
-      '포기김치 3kg': { supplyPrice: 16300, displayName: '포기김치 3kg' },
-      '포기김치 5kg': { supplyPrice: 21300, displayName: '포기김치 5kg' },
-      '포기김치 10kg': { supplyPrice: 33000, displayName: '포기김치 10kg' },
-      '총각김치 2kg': { supplyPrice: 11800, displayName: '총각김치 2kg' },
-      '총각김치 5kg': { supplyPrice: 23800, displayName: '총각김치 5kg' },
-      '총각김치 10kg': { supplyPrice: 43400, displayName: '총각김치 10kg' }
+      '포기김치 3kg': { supplyPrice: 16300, sellingPrice: 21290, margin: 2508, displayName: '포기김치 3kg' },
+      '포기김치 5kg': { supplyPrice: 21300, sellingPrice: 28640, margin: 4001, displayName: '포기김치 5kg' },
+      '포기김치 10kg': { supplyPrice: 33000, sellingPrice: 45280, margin: 7000, displayName: '포기김치 10kg' },
+      '총각김치 2kg': { supplyPrice: 12600, sellingPrice: 19800, margin: 4891, displayName: '총각김치 2kg' },
+      '총각김치 5kg': { supplyPrice: 23800, sellingPrice: 39800, margin: 11359, displayName: '총각김치 5kg' },
+      '총각김치 10kg': { supplyPrice: 44000, sellingPrice: 69800, margin: 17661, displayName: '총각김치 10kg' }
     }
   },
   '웰그린': {
