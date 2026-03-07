@@ -17,7 +17,7 @@ const getTimeScore = (timeStr?: string): number => {
     return hh * 60 + mm;
 };
 
-const PREFERRED_ORDER = ['연두', '웰그린', '고랭지김치', '답도', '제이제이', '신선마켓', '귤_제주', '귤_초록', '홍게', '꽃게', '황금향', '귤'];
+const PREFERRED_ORDER = ['연두', '웰그린', '고랭지김치', '제이제이', '팜플로우', '꽃게', '신선마켓', '답도', '귤_초록', '홍게', '황금향', '귤', '홍게2'];
 
 const QUICK_RECIPIENTS = [
     { name: '김지아', phone: '01094496343', address: '인천시 연수수 해송로30번길 19, 306-802' },
