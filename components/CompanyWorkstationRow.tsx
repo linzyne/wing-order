@@ -41,7 +41,7 @@ interface CompanyWorkstationRowProps {
     onSelectToggle?: (sessionId: string) => void;
     onVendorFileChange: (file: File | null) => void;
     onResultUpdate: (sessionId: string, totalPrice: number, excludedCount?: number, excludedDetails?: ExcludedOrder[]) => void;
-    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[]) => void;
+    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>) => void;
     onAddSession: () => void;
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
@@ -152,7 +152,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const orderTotal = Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
         onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
-        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header);
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header, localResult.registeredProductNames);
     }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
@@ -177,6 +177,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 excludedDetails: excludedList,
                 orderCount: Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.count || 0), 0 as number),
                 itemSummary: localResult.summary as any,
+                registeredProductNames: localResult.registeredProductNames || {},
             };
             const resultStr = JSON.stringify(resultData);
             if (resultStr === lastSavedResultRef.current) return;
@@ -196,7 +197,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (key === lastSyncedCallbackRef.current) return;
         lastSyncedCallbackRef.current = key;
         onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
-        onDataUpdate(sessionId, syncedData.orderRows, syncedData.invoiceRows, syncedData.uploadInvoiceRows, syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined);
+        onDataUpdate(sessionId, syncedData.orderRows, syncedData.invoiceRows, syncedData.uploadInvoiceRows, syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames);
     }, [workspace, localResult, sessionId]);
 
     useEffect(() => {

@@ -14,6 +14,7 @@ export type ProcessedResult = {
     depositSummaryExcel: string;
     dailySummaries: { date: string, content: string }[];
     rows: any[][];
+    registeredProductNames: Record<string, string>;
 };
 
 export const getKeywordsForCompany = (companyName: string): string[] => {
@@ -237,6 +238,7 @@ const generateWorkbookForCompany = async (
 
         let headerRow: string[] = [];
         let outputRows: any[][] = [];
+        const registeredProductNames: Record<string, string> = {};
 
         if (json.length > 0) {
             const headers = json[0].map(h => String(h).trim());
@@ -275,6 +277,9 @@ const generateWorkbookForCompany = async (
                     summary[productKey].count += qty;
                     summary[productKey].totalPrice += qty * config.supplyPrice;
                     stats.add(config.displayName, qty, config.supplyPrice, parseDateFromRow(row, dateColIdx));
+                    if (!registeredProductNames[config.displayName]) {
+                        registeredProductNames[config.displayName] = String(row[groupColIdx] || '').trim();
+                    }
                     await pushToOutputRows(companyName, outputRows, row, config, qty, pricingConfig);
                 }
             }
@@ -306,7 +311,7 @@ const generateWorkbookForCompany = async (
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
 
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

@@ -362,12 +362,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         setAllExcludedDetails(prev => ({ ...prev, [sessionId]: excludedDetails }));
     }, []);
 
-    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[]) => {
+    const [allRegisteredNames, setAllRegisteredNames] = useState<Record<string, Record<string, string>>>({});
+
+    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>) => {
         setAllOrderRows(prev => ({ ...prev, [sessionId]: orderRows }));
         setAllInvoiceRows(prev => ({ ...prev, [sessionId]: invoiceRows }));
         setAllUploadInvoiceRows(prev => ({ ...prev, [sessionId]: uploadInvoiceRows }));
         if (header) setAllHeaders(prev => ({ ...prev, [sessionId]: header }));
         setAllSummaries(prev => ({ ...prev, [sessionId]: summaryExcel }));
+        if (registeredProductNames) setAllRegisteredNames(prev => ({ ...prev, [sessionId]: registeredProductNames }));
     }, []);
 
     const handleToggleSessionSelection = (sessionId: string) => {
@@ -501,7 +504,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         if (invoiceSheetData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(invoiceSheetData), "송장시트");
 
         // 마진시트 생성: 요약시트의 품목별 판매가, 공급가, 마진 정보
-        const marginSheetData: any[][] = [['업체명', '품목명', '수량', '판매가', '공급가', '마진(개당)', '총마진']];
+        // 업체별 등록상품명 매핑 (displayName -> K열 값)
+        const mergedRegNames: Record<string, Record<string, string>> = {};
+        sortedCompanyNames.forEach(name => {
+            (companySessions[name] || []).forEach(s => {
+                if (allRegisteredNames[s.id]) {
+                    if (!mergedRegNames[name]) mergedRegNames[name] = {};
+                    Object.assign(mergedRegNames[name], allRegisteredNames[s.id]);
+                }
+            });
+        });
+
+        const marginSheetData: any[][] = [['등록상품명', '품목명', '수량', '판매가', '공급가', '마진(개당)', '총마진']];
         let marginCurrentCompany = '';
         for (const row of summarySheetData) {
             const firstCell = String(row[0] || '').trim();
@@ -524,7 +538,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                 break;
                             }
                         }
-                        marginSheetData.push([marginCurrentCompany, productName, count, sellingPrice, supplyPrice, margin, margin * count]);
+                        const regName = mergedRegNames[marginCurrentCompany]?.[productName] || marginCurrentCompany;
+                        marginSheetData.push([regName, productName, count, sellingPrice, supplyPrice, margin, margin * count]);
                     }
                 }
             }

@@ -75,6 +75,7 @@ export interface SessionResultData {
   excludedDetails: any[];
   orderCount: number;
   itemSummary: Record<string, { count: number; totalPrice: number }>;
+  registeredProductNames?: Record<string, string>;
 }
 
 export interface DailyWorkspaceData {
