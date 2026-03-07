@@ -87,10 +87,20 @@ export const syncPricingFields = async (): Promise<boolean> => {
     let updated = false;
 
     for (const [companyName, defaultCompany] of Object.entries(DEFAULT_PRICING_CONFIG)) {
-      if (!firestoreConfig[companyName]) continue;
+      // 새 업체 추가
+      if (!firestoreConfig[companyName]) {
+        firestoreConfig[companyName] = defaultCompany;
+        updated = true;
+        continue;
+      }
       for (const [productKey, defaultProduct] of Object.entries(defaultCompany.products)) {
         const fsProduct = firestoreConfig[companyName].products[productKey];
-        if (!fsProduct) continue;
+        // 새 품목 추가
+        if (!fsProduct) {
+          firestoreConfig[companyName].products[productKey] = defaultProduct;
+          updated = true;
+          continue;
+        }
         if (defaultProduct.sellingPrice && !fsProduct.sellingPrice) {
           fsProduct.sellingPrice = defaultProduct.sellingPrice;
           updated = true;
