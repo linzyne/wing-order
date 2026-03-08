@@ -8,6 +8,7 @@ import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolid
 import { saveDailySales } from '../hooks/useSalesTracker';
 import { useDailyWorkspace } from '../hooks/useFirestore';
 import { subscribeManualOrders, saveManualOrders } from '../services/firestoreService';
+import { useAIManualOrder } from '../hooks/useAIManualOrder';
 
 declare var XLSX: any;
 
@@ -85,6 +86,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
     const [manualInput, setManualInput] = useState({
         companyName: '', recipientName: '', phone: '', address: '', productName: '', qty: '1'
     });
+
+    const [isAIMode, setIsAIMode] = useState(false);
+    const [aiInput, setAiInput] = useState('');
+    const { parsedOrders, isLoading: aiLoading, error: aiError, parseNaturalLanguage, clearParsedOrders, updateParsedOrder, removeParsedOrder } = useAIManualOrder(pricingConfig, QUICK_RECIPIENTS);
 
     const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(() => {
         const initialIds = new Set<string>();
@@ -599,31 +604,97 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                         
                         <div className="bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                                <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                    <PlusCircleIcon className="w-4 h-4 text-rose-500" />
-                                    수동 발주 추가 (엑셀 양식 자동 맞춤)
-                                </h3>
-                                <div className="flex flex-wrap gap-2">
-                                    <span className="text-zinc-600 text-[9px] font-black uppercase self-center mr-1">빠른 선택 :</span>
-                                    {QUICK_RECIPIENTS.map(p => (
-                                        <button key={p.name} type="button" onClick={() => handleQuickSelect(p)} className="px-3 py-1 bg-zinc-800 hover:bg-rose-500 hover:text-white border border-zinc-700 rounded-full text-[10px] font-black text-zinc-400 transition-all shadow-sm">{p.name}</button>
-                                    ))}
+                                <div className="flex items-center gap-3">
+                                    <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                                        <PlusCircleIcon className="w-4 h-4 text-rose-500" />
+                                        수동 발주 추가
+                                    </h3>
+                                    <div className="flex bg-zinc-900 rounded-lg border border-zinc-800 p-0.5">
+                                        <button onClick={() => setIsAIMode(false)} className={`px-3 py-1 rounded-md text-[10px] font-black transition-all ${!isAIMode ? 'bg-rose-500 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}>수동 입력</button>
+                                        <button onClick={() => setIsAIMode(true)} className={`px-3 py-1 rounded-md text-[10px] font-black transition-all ${isAIMode ? 'bg-violet-500 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'}`}>AI 입력</button>
+                                    </div>
                                 </div>
+                                {!isAIMode && (
+                                    <div className="flex flex-wrap gap-2">
+                                        <span className="text-zinc-600 text-[9px] font-black uppercase self-center mr-1">빠른 선택 :</span>
+                                        {QUICK_RECIPIENTS.map(p => (
+                                            <button key={p.name} type="button" onClick={() => handleQuickSelect(p)} className="px-3 py-1 bg-zinc-800 hover:bg-rose-500 hover:text-white border border-zinc-700 rounded-full text-[10px] font-black text-zinc-400 transition-all shadow-sm">{p.name}</button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
-                            <form onSubmit={handleAddManualOrder} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                                <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
-                                    <option value="">업체 선택</option>
-                                    {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
-                                </select>
-                                <input placeholder="수령자" value={manualInput.recipientName} onChange={e => setManualInput({...manualInput, recipientName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <input placeholder="전화번호" value={manualInput.phone} onChange={e => setManualInput({...manualInput, phone: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <input placeholder="주소" value={manualInput.address} onChange={e => setManualInput({...manualInput, address: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <input placeholder="품목명" value={manualInput.productName} onChange={e => setManualInput({...manualInput, productName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <div className="flex gap-2">
-                                    <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-16 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                    <button type="submit" className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-xl text-xs transition-all shadow-lg">추가</button>
+
+                            {!isAIMode ? (
+                                <form onSubmit={handleAddManualOrder} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                                    <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
+                                        <option value="">업체 선택</option>
+                                        {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
+                                    </select>
+                                    <input placeholder="수령자" value={manualInput.recipientName} onChange={e => setManualInput({...manualInput, recipientName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                                    <input placeholder="전화번호" value={manualInput.phone} onChange={e => setManualInput({...manualInput, phone: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                                    <input placeholder="주소" value={manualInput.address} onChange={e => setManualInput({...manualInput, address: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                                    <input placeholder="품목명" value={manualInput.productName} onChange={e => setManualInput({...manualInput, productName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                                    <div className="flex gap-2">
+                                        <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-16 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                                        <button type="submit" className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-xl text-xs transition-all shadow-lg">추가</button>
+                                    </div>
+                                </form>
+                            ) : (
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex gap-2">
+                                        <textarea
+                                            value={aiInput}
+                                            onChange={e => setAiInput(e.target.value)}
+                                            placeholder="예: 연두 포기김치 3kg를 김지아 집으로 보내줘&#10;예: 김성아한테 웰그린 당근 3kg 2개, 연두 총각김치 5kg 1개"
+                                            className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-xs font-bold text-white focus:ring-1 focus:ring-violet-500/30 outline-none resize-none min-h-[80px] placeholder:text-zinc-700"
+                                            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && aiInput.trim()) { e.preventDefault(); parseNaturalLanguage(aiInput.trim()); } }}
+                                        />
+                                        <button
+                                            onClick={() => aiInput.trim() && parseNaturalLanguage(aiInput.trim())}
+                                            disabled={aiLoading || !aiInput.trim()}
+                                            className="px-4 bg-violet-500 hover:bg-violet-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black rounded-xl text-xs transition-all shadow-lg self-end h-10"
+                                        >
+                                            {aiLoading ? '분석중...' : 'AI 분석'}
+                                        </button>
+                                    </div>
+                                    {aiError && <p className="text-rose-400 text-[11px] font-bold">{aiError}</p>}
+                                    {parsedOrders.length > 0 && (
+                                        <div className="bg-zinc-900/60 rounded-xl border border-violet-500/20 p-4 flex flex-col gap-2">
+                                            <h4 className="text-violet-400 text-[10px] font-black uppercase tracking-widest mb-1">AI 파싱 결과 (수정 가능)</h4>
+                                            {parsedOrders.map((o, i) => (
+                                                <div key={i} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 items-center bg-zinc-950/60 rounded-lg p-2 border border-zinc-800 animate-pop-in">
+                                                    <select value={o.companyName} onChange={e => updateParsedOrder(i, { companyName: e.target.value })} className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-[11px] font-bold text-white outline-none">
+                                                        <option value="">업체</option>
+                                                        {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
+                                                    </select>
+                                                    <input value={o.recipientName} onChange={e => updateParsedOrder(i, { recipientName: e.target.value })} placeholder="수령자" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-[11px] font-bold text-white outline-none" />
+                                                    <input value={o.phone} onChange={e => updateParsedOrder(i, { phone: e.target.value })} placeholder="전화번호" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-[11px] font-bold text-white outline-none" />
+                                                    <input value={o.address} onChange={e => updateParsedOrder(i, { address: e.target.value })} placeholder="주소" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-[11px] font-bold text-white outline-none" />
+                                                    <input value={o.productName} onChange={e => updateParsedOrder(i, { productName: e.target.value })} placeholder="품목명" className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-[11px] font-bold text-white outline-none" />
+                                                    <div className="flex gap-1 items-center">
+                                                        <input type="number" value={o.qty} onChange={e => updateParsedOrder(i, { qty: parseInt(e.target.value) || 1 })} className="w-14 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1.5 text-[11px] font-bold text-white outline-none" />
+                                                        <button onClick={() => removeParsedOrder(i)} className="text-zinc-600 hover:text-rose-500 transition-colors p-1"><TrashIcon className="w-3 h-3" /></button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            <div className="flex justify-end gap-2 mt-2">
+                                                <button onClick={() => { clearParsedOrders(); setAiInput(''); }} className="px-4 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 font-black rounded-lg text-[11px] transition-all">취소</button>
+                                                <button onClick={() => {
+                                                    const newOrders: ManualOrder[] = parsedOrders.map(o => ({
+                                                        id: `mo-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+                                                        companyName: o.companyName, recipientName: o.recipientName,
+                                                        phone: o.phone, address: o.address, productName: o.productName, qty: o.qty
+                                                    }));
+                                                    setManualOrders(prev => [...prev, ...newOrders]);
+                                                    clearParsedOrders();
+                                                    setAiInput('');
+                                                }} className="px-4 py-1.5 bg-violet-500 hover:bg-violet-600 text-white font-black rounded-lg text-[11px] transition-all shadow-lg">전체 추가 ({parsedOrders.length}건)</button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            </form>
+                            )}
+
                             {manualOrders.length > 0 && (
                                 <div className="mt-4 flex flex-wrap gap-2">
                                     {manualOrders.map(o => (
