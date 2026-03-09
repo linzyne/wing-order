@@ -30,11 +30,9 @@ export const getKeywordsForCompany = (companyName: string, pricingConfig?: Prici
 
     const keywords = new Set<string>(hardcoded[companyName] || companyName.split(',').map(s => s.trim()));
 
-    // pricingConfig에서 품목 키, displayName, aliases를 동적으로 추가
+    // pricingConfig에서 사용자가 설정한 aliases(별칭)만 동적으로 추가
     if (pricingConfig?.[companyName]?.products) {
-        for (const [productKey, product] of Object.entries(pricingConfig[companyName].products)) {
-            keywords.add(productKey);
-            if (product.displayName) keywords.add(product.displayName);
+        for (const product of Object.values(pricingConfig[companyName].products)) {
             if (product.aliases) product.aliases.forEach(a => { if (a) keywords.add(a); });
         }
     }
