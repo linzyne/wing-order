@@ -180,7 +180,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             const groupColIdx = 10;
             const companiesInFile = new Set<string>();
             const companyKeywordsMap = new Map<string, string[]>();
-            Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name)));
+            Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
             for (let i = 1; i < json.length; i++) {
                 const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '');
                 if (!groupVal) continue;

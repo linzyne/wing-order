@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import type { ProcessingStatus } from '../types';
+import type { ProcessingStatus, PricingConfig } from '../types';
 import { getKeywordsForCompany } from './useConsolidatedOrderConverter';
 
 declare var XLSX: any;
@@ -97,7 +97,7 @@ export const useInvoiceMerger = () => {
         return invoiceMap;
     };
 
-    const processFiles = useCallback(async (vendorFile: File, orderFile: File, companyName: string, skipGroupCheck: boolean = true) => {
+    const processFiles = useCallback(async (vendorFile: File, orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig) => {
         try {
             setStatus('processing'); setError(null);
             const orderWb = XLSX.read(await orderFile.arrayBuffer(), { type: 'array' });
@@ -122,7 +122,7 @@ export const useInvoiceMerger = () => {
             let uploadCount = 0, mgmtCount = 0;
             const failures: FailureDetail[] = [];
 
-            const targetKeywords = getKeywordsForCompany(companyName);
+            const targetKeywords = getKeywordsForCompany(companyName, pricingConfig);
 
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;

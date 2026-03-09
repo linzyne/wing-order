@@ -17,23 +17,29 @@ export type ProcessedResult = {
     registeredProductNames: Record<string, string>;
 };
 
-export const getKeywordsForCompany = (companyName: string): string[] => {
-    if (companyName === '제이제이' || companyName === '귤_제이') {
-        return ['귤_제이', '은갈치', '순살 갈치', '한라봉_J'];
+export const getKeywordsForCompany = (companyName: string, pricingConfig?: PricingConfig): string[] => {
+    const hardcoded: Record<string, string[]> = {
+        '제이제이': ['귤_제이', '은갈치', '순살 갈치', '한라봉_J'],
+        '귤_제이': ['귤_제이', '은갈치', '순살 갈치', '한라봉_J'],
+        '연두': ['총각김치', '포기김치', '배추김치'],
+        '답도': ['한라봉', '답도', '한라봉_답도'],
+        '한라봉_답도': ['한라봉', '답도', '한라봉_답도'],
+        '웰그린': ['구좌 당근', '과일선물세트', '부사 사과', '부사사과'],
+        '팜플로우': ['과일선물세트'],
+    };
+
+    const keywords = new Set<string>(hardcoded[companyName] || companyName.split(',').map(s => s.trim()));
+
+    // pricingConfig에서 품목 키, displayName, aliases를 동적으로 추가
+    if (pricingConfig?.[companyName]?.products) {
+        for (const [productKey, product] of Object.entries(pricingConfig[companyName].products)) {
+            keywords.add(productKey);
+            if (product.displayName) keywords.add(product.displayName);
+            if (product.aliases) product.aliases.forEach(a => { if (a) keywords.add(a); });
+        }
     }
-    if (companyName === '연두') {
-        return ['총각김치', '포기김치', '배추김치'];
-    }
-    if (companyName === '답도' || companyName === '한라봉_답도') {
-        return ['한라봉', '답도', '한라봉_답도'];
-    }
-    if (companyName === '웰그린') {
-        return ['구좌 당근', '과일선물세트', '부사 사과', '부사사과'];
-    }
-    if (companyName === '팜플로우') {
-        return ['과일선물세트'];
-    }
-    return companyName.split(',').map(s => s.trim());
+
+    return Array.from(keywords);
 };
 
 class StatsManager {
@@ -527,7 +533,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig) => {
                     const headerRowIdx = findHeaderRowIndex(fullJson);
                     headers = fullJson[headerRowIdx];
                     const groupColIdx = 10;
-                    const targetKeywords = getKeywordsForCompany(targetCompanyName);
+                    const targetKeywords = getKeywordsForCompany(targetCompanyName, pricingConfig);
 
                     console.log(`[DEBUG][${targetCompanyName}] 키워드: ${JSON.stringify(targetKeywords)}, 헤더행: ${headerRowIdx}, 전체행수: ${fullJson.length}`);
 

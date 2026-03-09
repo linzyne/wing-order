@@ -261,7 +261,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const handleRunMerge = () => {
         const activeFile = localFile || (isFirstSession ? masterFile : null);
         if (activeFile && vendorFile) {
-            processFiles(vendorFile, activeFile, companyName, false);
+            processFiles(vendorFile, activeFile, companyName, false, pricingConfig);
         }
     };
 
@@ -302,7 +302,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const currentStat = mergeResults?.companyStats?.[companyName];
-    const keywords = getKeywordsForCompany(companyName);
+    const keywords = getKeywordsForCompany(companyName, pricingConfig);
     const deadline = pricingConfig[companyName]?.deadline;
     const isAllDone = workflow.order && workflow.deposit && workflow.invoice;
 
