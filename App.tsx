@@ -93,9 +93,15 @@ const App: React.FC = () => {
         )}
 
         <main className="w-full">
-          {activeTab === 'converter' && <CompanySelector pricingConfig={pricingConfig} />}
-          {activeTab === 'pricing' && <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} />}
-          {activeTab === 'sales' && <SalesTracker />}
+          <div style={{ display: activeTab === 'converter' ? undefined : 'none' }}>
+            <CompanySelector pricingConfig={pricingConfig} />
+          </div>
+          <div style={{ display: activeTab === 'pricing' ? undefined : 'none' }}>
+            <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} />
+          </div>
+          <div style={{ display: activeTab === 'sales' ? undefined : 'none' }}>
+            <SalesTracker />
+          </div>
         </main>
         
         <footer className="text-center mt-12 text-zinc-600 font-bold text-xs pb-8">
