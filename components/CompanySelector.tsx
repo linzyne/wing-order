@@ -103,6 +103,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
     const [lotteFile, setLotteFile] = useState<File | null>(null);
     const [lotteResult, setLotteResult] = useState<{ matched: number; total: number; notFound: string[] } | null>(null);
+    const [lotteMatchedRows, setLotteMatchedRows] = useState<any[][] | null>(null);
 
     const [manualTransfers, setManualTransfers] = useState<ManualTransfer[]>([]);
 
@@ -208,6 +209,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
         setLotteFile(file);
         setLotteResult(null);
+        setLotteMatchedRows(null);
         try {
             // 가구매 명단에서 주문번호 추출
             const fakeOrderNums = new Set<string>();
@@ -241,7 +243,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
 
             // C열(idx 2)=주문번호, D열(idx 3)=택배사, E열(idx 4)=운송장번호
-            let matchedCount = 0;
+            const header = masterAoa[0] || [];
+            const matchedRows: any[][] = [header];
             const notFoundOrders: string[] = [];
             for (let i = 1; i < masterAoa.length; i++) {
                 const row = masterAoa[i];
@@ -250,27 +253,31 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                 if (!fakeOrderNums.has(orderNum)) continue;
                 const tracking = trackingMap.get(orderNum);
                 if (tracking) {
-                    while (row.length < 5) row.push('');
-                    row[3] = '롯데택배';
-                    row[4] = tracking;
-                    matchedCount++;
+                    const newRow = [...row];
+                    while (newRow.length < 5) newRow.push('');
+                    newRow[3] = '롯데택배';
+                    newRow[4] = tracking;
+                    matchedRows.push(newRow);
                 } else {
                     notFoundOrders.push(String(row[2] || ''));
                 }
             }
 
+            const matchedCount = matchedRows.length - 1; // 헤더 제외
             setLotteResult({ matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders });
-
-            // 수정된 원본 주문서 다운로드
-            const newWs = XLSX.utils.aoa_to_sheet(masterAoa);
-            const newWb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(newWb, newWs, '주문서');
-            const dateStr = new Date().toISOString().slice(0, 10);
-            XLSX.writeFile(newWb, `${dateStr}_가구매_운송장입력완료.xlsx`);
+            if (matchedCount > 0) setLotteMatchedRows(matchedRows);
         } catch (err: any) {
             console.error('롯데택배 처리 오류:', err);
             alert('롯데택배 파일 처리 중 오류가 발생했습니다: ' + err.message);
         }
+    };
+
+    const handleLotteDownload = () => {
+        if (!lotteMatchedRows) return;
+        const ws = XLSX.utils.aoa_to_sheet(lotteMatchedRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '주문서');
+        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_가구매_운송장입력완료.xlsx`);
     };
 
     const handleAddManualOrder = (e: React.FormEvent) => {
@@ -804,13 +811,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                     <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLotteFileUpload(f); }} />
                                 </label>
                                 {lotteFile && (
-                                    <button onClick={() => { setLotteFile(null); setLotteResult(null); }} className="p-2 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
+                                    <button onClick={() => { setLotteFile(null); setLotteResult(null); setLotteMatchedRows(null); }} className="p-2 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
                                         <ArrowPathIcon className="w-3.5 h-3.5" />
                                     </button>
                                 )}
                             </div>
                             {lotteResult && (
-                                <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in">
+                                <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in space-y-2">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">매칭 {lotteResult.matched}건</span>
                                         <span className="text-zinc-500 text-[9px] font-black">/ 가구매 {lotteResult.total}건</span>
@@ -819,11 +826,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                         )}
                                     </div>
                                     {lotteResult.notFound.length > 0 && (
-                                        <div className="mt-2 flex flex-wrap gap-1">
+                                        <div className="flex flex-wrap gap-1">
                                             {lotteResult.notFound.map(num => (
                                                 <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded text-[9px] font-mono">{num}</span>
                                             ))}
                                         </div>
+                                    )}
+                                    {lotteMatchedRows && (
+                                        <button onClick={handleLotteDownload} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black transition-colors shadow-lg">
+                                            <ArrowDownTrayIcon className="w-4 h-4" />
+                                            운송장 입력완료 다운로드 ({lotteResult.matched}건)
+                                        </button>
                                     )}
                                 </div>
                             )}
