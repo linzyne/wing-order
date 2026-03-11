@@ -47,12 +47,15 @@ interface CompanyWorkstationRowProps {
     onAddAdjustment: (companyName: string, amount: string) => void;
     onDownloadMergedOrder?: () => void;
     previousRoundItems?: { round: number; summary: Record<string, { count: number; totalPrice: number }> }[];
+    manualOrdersRejected?: boolean;
+    onManualOrdersApproval?: (companyName: string, approved: boolean) => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFile, masterFile, isDetected, fakeOrderNumbers, manualOrders = [],
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder,
-    previousRoundItems = []
+    previousRoundItems = [],
+    manualOrdersRejected = false, onManualOrdersApproval
 }) => {
     const [showSummary, setShowSummary] = useState(false);
     const [showExcluded, setShowExcluded] = useState(false);
@@ -355,9 +358,18 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (file && file !== masterFile) setLocalFile(file);
         setIsLocalProcessing(true);
         let ordersToInclude = manualOrders;
-        if (confirmManualOrders && manualOrders.length > 0) {
-            const orderList = manualOrders.map(o => `  • ${o.recipientName} - ${o.productName} x${o.qty}`).join('\n');
-            if (!confirm(`[${companyName}] 수동발주 ${manualOrders.length}건을 발주서에 포함할까요?\n\n${orderList}`)) {
+        if (manualOrders.length > 0) {
+            if (confirmManualOrders) {
+                // 명시적 트리거 (파일 업로드) - 항상 확인 다이얼로그 표시
+                const orderList = manualOrders.map(o => `  • ${o.recipientName} - ${o.productName} x${o.qty}`).join('\n');
+                if (!confirm(`[${companyName}] 수동발주 ${manualOrders.length}건을 발주서에 포함할까요?\n\n${orderList}`)) {
+                    ordersToInclude = [];
+                    onManualOrdersApproval?.(companyName, false);
+                } else {
+                    onManualOrdersApproval?.(companyName, true);
+                }
+            } else if (manualOrdersRejected) {
+                // 자동 트리거 - 이전에 취소한 경우 수동발주 제외
                 ordersToInclude = [];
             }
         }

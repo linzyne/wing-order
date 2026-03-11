@@ -386,6 +386,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
     const [allRegisteredNames, setAllRegisteredNames] = useState<Record<string, Record<string, string>>>({});
 
+    // 수동발주 취소/승인 상태 (업체별)
+    const [manualOrdersRejectedCompanies, setManualOrdersRejectedCompanies] = useState<Set<string>>(new Set());
+    const handleManualOrdersApproval = useCallback((companyName: string, approved: boolean) => {
+        setManualOrdersRejectedCompanies(prev => {
+            const next = new Set(prev);
+            if (approved) next.delete(companyName);
+            else next.add(companyName);
+            return next;
+        });
+    }, []);
+
     const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>) => {
         setAllOrderRows(prev => ({ ...prev, [sessionId]: orderRows }));
         setAllInvoiceRows(prev => ({ ...prev, [sessionId]: invoiceRows }));
@@ -1236,6 +1247,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                                 onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
                                                 onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
                                                 previousRoundItems={prevItems}
+                                                manualOrdersRejected={manualOrdersRejectedCompanies.has(company)}
+                                                onManualOrdersApproval={handleManualOrdersApproval}
                                             />
                                         );
                                     })}
