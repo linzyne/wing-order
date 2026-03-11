@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import type { DailySales, SalesRecord, PricingConfig, DepositRecord } from '../types';
+import type { DailySales, SalesRecord, PricingConfig, DepositRecord, MarginRecord } from '../types';
 import {
   loadAllSalesHistory,
   upsertDailySales,
@@ -23,7 +23,6 @@ const upsertHistory = async (dailySales: DailySales) => {
 export const saveDailySales = async (
   date: string,
   allSummaries: Record<string, string>,
-  totalsMap: Record<string, number>,
   pricingConfig: PricingConfig,
   companySessions: Record<string, { id: string; companyName: string; round: number }[]>,
   extraData?: {
@@ -31,9 +30,12 @@ export const saveDailySales = async (
     invoiceRows?: any[][];
     depositRecords?: DepositRecord[];
     depositTotal?: number;
+    marginRecords?: MarginRecord[];
+    marginTotal?: number;
   }
 ): Promise<DailySales> => {
-  const records: SalesRecord[] = [];
+  // 같은 업체+상품은 합산 (1차, 2차 등 여러 세션 데이터를 병합)
+  const recordMap = new Map<string, SalesRecord>();
 
   Object.entries(companySessions).forEach(([companyName, sessions]) => {
     const companyConfig = pricingConfig[companyName];
@@ -54,7 +56,6 @@ export const saveDailySales = async (
           if (productName && countMatch) {
             const count = parseInt(countMatch[1]);
             const totalPrice = parseInt(priceStr) || 0;
-            const supplyPrice = count > 0 ? Math.round(totalPrice / count) : 0;
 
             let margin = 0;
             if (companyConfig.products) {
@@ -64,12 +65,23 @@ export const saveDailySales = async (
               if (productEntry?.margin) margin = productEntry.margin;
             }
 
-            records.push({ date, company: companyName, product: productName, count, supplyPrice, totalPrice, margin });
+            const key = `${companyName}::${productName}`;
+            const existing = recordMap.get(key);
+            if (existing) {
+              existing.count += count;
+              existing.totalPrice += totalPrice;
+              existing.supplyPrice = existing.count > 0 ? Math.round(existing.totalPrice / existing.count) : 0;
+            } else {
+              const supplyPrice = count > 0 ? Math.round(totalPrice / count) : 0;
+              recordMap.set(key, { date, company: companyName, product: productName, count, supplyPrice, totalPrice, margin });
+            }
           }
         }
       });
     });
   });
+
+  const records = Array.from(recordMap.values());
 
   const totalAmount = records.reduce((sum, r) => sum + r.totalPrice, 0);
   const dailySales: DailySales = {
@@ -78,6 +90,8 @@ export const saveDailySales = async (
     invoiceRows: extraData?.invoiceRows,
     depositRecords: extraData?.depositRecords,
     depositTotal: extraData?.depositTotal,
+    marginRecords: extraData?.marginRecords,
+    marginTotal: extraData?.marginTotal,
   };
 
   await upsertHistory(dailySales);

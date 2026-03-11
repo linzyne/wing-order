@@ -100,7 +100,7 @@ const App: React.FC = () => {
             <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} />
           </div>
           <div style={{ display: activeTab === 'sales' ? undefined : 'none' }}>
-            <SalesTracker />
+            <SalesTracker isActive={activeTab === 'sales'} />
           </div>
         </main>
         

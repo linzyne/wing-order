@@ -43,14 +43,28 @@ export const loadAllSalesHistory = async (): Promise<DailySales[]> => {
     orderBy('date', 'desc')
   );
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(d => d.data() as DailySales);
+  return snapshot.docs.map(d => {
+    const data = d.data() as any;
+    // Firestore에 JSON 문자열로 저장된 중첩 배열을 역직렬화
+    if (typeof data.orderRows === 'string') {
+      try { data.orderRows = JSON.parse(data.orderRows); } catch { data.orderRows = undefined; }
+    }
+    if (typeof data.invoiceRows === 'string') {
+      try { data.invoiceRows = JSON.parse(data.invoiceRows); } catch { data.invoiceRows = undefined; }
+    }
+    return data as DailySales;
+  });
 };
 
 export const upsertDailySales = async (
   dailySales: DailySales
 ): Promise<void> => {
   const docRef = doc(db, 'salesHistory', dailySales.date);
-  await setDoc(docRef, dailySales);
+  // Firestore는 중첩 배열을 지원하지 않으므로 JSON 문자열로 직렬화
+  const serialized: any = { ...dailySales };
+  if (serialized.orderRows) serialized.orderRows = JSON.stringify(serialized.orderRows);
+  if (serialized.invoiceRows) serialized.invoiceRows = JSON.stringify(serialized.invoiceRows);
+  await setDoc(docRef, serialized);
 };
 
 export const deleteDailySalesFromFirestore = async (

@@ -66,6 +66,16 @@ export interface DepositRecord {
   label?: string;
 }
 
+export interface MarginRecord {
+  registeredName: string; // 등록상품명
+  productName: string;    // 품목명
+  count: number;          // 수량
+  sellingPrice: number;   // 판매가
+  supplyPrice: number;    // 공급가
+  marginPerUnit: number;  // 마진(개당)
+  totalMargin: number;    // 총마진
+}
+
 export interface DailySales {
   date: string;
   records: SalesRecord[];
@@ -77,4 +87,6 @@ export interface DailySales {
   invoiceHeaders?: string[];
   depositRecords?: DepositRecord[];
   depositTotal?: number;
+  marginRecords?: MarginRecord[];
+  marginTotal?: number;
 }

@@ -291,14 +291,13 @@ const generateWorkbookForCompany = async (
 
         for (const mo of manualOrders) {
             const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, mo.productName, companyConfig.products, findProductConfig, pricingConfig);
-            if (productConfigTuple) {
-                const [productKey, config] = productConfigTuple;
-                if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
-                summary[productKey].count += mo.qty;
-                summary[productKey].totalPrice += mo.qty * config.supplyPrice;
-                stats.add(config.displayName, mo.qty, config.supplyPrice, todayStr);
-                await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig);
-            }
+            // 매칭 실패 시에도 수동 주문은 반드시 포함 (원래 입력 품목명 사용)
+            const [productKey, config] = productConfigTuple || [mo.productName, { displayName: mo.productName, supplyPrice: 0 } as ProductPricing];
+            if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
+            summary[productKey].count += mo.qty;
+            summary[productKey].totalPrice += mo.qty * config.supplyPrice;
+            stats.add(config.displayName, mo.qty, config.supplyPrice, todayStr);
+            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig);
         }
 
         headerRow = getHeaderForCompany(companyName, companyConfig);

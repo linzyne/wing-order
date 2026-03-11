@@ -1,15 +1,20 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
-import type { DepositRecord } from '../types';
+import type { DepositRecord, MarginRecord } from '../types';
 
 declare var XLSX: any;
 
-type ViewMode = 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits';
+type ViewMode = 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits' | 'margin';
 type DateMode = 'month' | 'range';
 
-const SalesTracker: React.FC = () => {
+const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const { salesHistory, refresh, remove } = useSalesTracker();
+
+  // 탭 활성화 시 데이터 새로고침
+  useEffect(() => {
+    if (isActive) refresh();
+  }, [isActive, refresh]);
   const [viewMode, setViewMode] = useState<ViewMode>('byDate');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -88,6 +93,20 @@ const SalesTracker: React.FC = () => {
       if (d.depositTotal) total += d.depositTotal;
     });
     if (total === 0) total = records.reduce((s, r) => s + r.amount, 0);
+    return { records, total };
+  }, [filteredHistory]);
+
+  // 마진 데이터 합산
+  const allMarginData = useMemo(() => {
+    const records: (MarginRecord & { date: string })[] = [];
+    let total = 0;
+    filteredHistory.forEach(d => {
+      if (d.marginRecords) {
+        d.marginRecords.forEach(r => records.push({ ...r, date: d.date }));
+      }
+      if (d.marginTotal) total += d.marginTotal;
+    });
+    if (total === 0) total = records.reduce((s, r) => s + r.totalMargin, 0);
     return { records, total };
   }, [filteredHistory]);
 
@@ -461,6 +480,137 @@ const SalesTracker: React.FC = () => {
     );
   };
 
+  /** 마진시트 렌더링 */
+  const renderMarginView = () => {
+    const { records, total } = allMarginData;
+    if (records.length === 0) {
+      return (
+        <div className="p-12 text-center">
+          <p className="text-zinc-600 font-bold text-sm">해당 기간의 마진 데이터가 없습니다.</p>
+        </div>
+      );
+    }
+
+    // 날짜별로 그룹핑
+    const byDate = new Map<string, (MarginRecord & { date: string })[]>();
+    records.forEach(r => {
+      const list = byDate.get(r.date) || [];
+      list.push(r);
+      byDate.set(r.date, list);
+    });
+
+    // 품목별 마진 합산
+    const productMarginMap = new Map<string, { count: number; totalMargin: number; sellingPrice: number; supplyPrice: number; marginPerUnit: number }>();
+    records.forEach(r => {
+      const existing = productMarginMap.get(r.productName) || { count: 0, totalMargin: 0, sellingPrice: r.sellingPrice, supplyPrice: r.supplyPrice, marginPerUnit: r.marginPerUnit };
+      existing.count += r.count;
+      existing.totalMargin += r.totalMargin;
+      productMarginMap.set(r.productName, existing);
+    });
+    const productMarginSummary = Array.from(productMarginMap.entries()).sort(([, a], [, b]) => b.totalMargin - a.totalMargin);
+
+    return (
+      <div className="divide-y divide-zinc-900">
+        {/* 총 마진 요약 */}
+        <div className="px-6 py-4 flex items-center justify-between bg-zinc-900/30">
+          <span className="text-zinc-400 font-black text-xs">기간 총 마진</span>
+          <span className="text-emerald-400 font-black text-lg">{total.toLocaleString()}원</span>
+        </div>
+
+        {/* 품목별 마진 요약 테이블 */}
+        <div className="p-6">
+          <h4 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">품목별 마진 요약</h4>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
+                <th className="pb-3 pr-4">품목</th>
+                <th className="pb-3 pr-4 text-right">수량</th>
+                <th className="pb-3 pr-4 text-right">판매가</th>
+                <th className="pb-3 pr-4 text-right">공급가</th>
+                <th className="pb-3 pr-4 text-right">개당 마진</th>
+                <th className="pb-3 text-right">총마진</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-zinc-900/50">
+              {productMarginSummary.map(([name, d]) => (
+                <tr key={name} className="text-xs hover:bg-zinc-900/30 transition-colors">
+                  <td className="py-3 pr-4 font-bold text-zinc-200">{name}</td>
+                  <td className="py-3 pr-4 text-right text-zinc-400 font-bold">{d.count}개</td>
+                  <td className="py-3 pr-4 text-right text-zinc-400 font-mono">{d.sellingPrice.toLocaleString()}원</td>
+                  <td className="py-3 pr-4 text-right text-zinc-500 font-mono">{d.supplyPrice.toLocaleString()}원</td>
+                  <td className="py-3 pr-4 text-right text-emerald-500 font-bold">{d.marginPerUnit.toLocaleString()}원</td>
+                  <td className="py-3 text-right text-emerald-400 font-black">{d.totalMargin.toLocaleString()}원</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-zinc-700 text-sm">
+                <td className="pt-3 font-black text-zinc-400">합계</td>
+                <td className="pt-3 text-right font-black text-zinc-400">{records.reduce((s, r) => s + r.count, 0)}개</td>
+                <td className="pt-3" colSpan={3}></td>
+                <td className="pt-3 text-right font-black text-emerald-500">{total.toLocaleString()}원</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        {/* 날짜별 상세 */}
+        {Array.from(byDate.entries()).map(([date, recs]) => {
+          const dayTotal = recs.reduce((s, r) => s + r.totalMargin, 0);
+          return (
+            <div key={`margin-${date}`}>
+              <button
+                onClick={() => toggleDate(`margin-${date}`)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-white font-black text-sm">{formatDate(date)}</span>
+                  <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full font-black border border-emerald-500/20">
+                    {recs.length}개 품목
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-emerald-400 font-black text-sm">{dayTotal.toLocaleString()}원</span>
+                  {expandedDates.has(`margin-${date}`) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
+                </div>
+              </button>
+              {expandedDates.has(`margin-${date}`) && (
+                <div className="px-6 pb-4 animate-fade-in">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest">
+                        <th className="pb-2 pr-4">등록상품명</th>
+                        <th className="pb-2 pr-4">품목</th>
+                        <th className="pb-2 pr-4 text-right">수량</th>
+                        <th className="pb-2 pr-4 text-right">판매가</th>
+                        <th className="pb-2 pr-4 text-right">공급가</th>
+                        <th className="pb-2 pr-4 text-right">개당 마진</th>
+                        <th className="pb-2 text-right">총마진</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-900/50">
+                      {recs.map((r, i) => (
+                        <tr key={i} className="text-xs">
+                          <td className="py-2 pr-4 font-bold text-rose-400">{r.registeredName}</td>
+                          <td className="py-2 pr-4 font-bold text-zinc-300">{r.productName}</td>
+                          <td className="py-2 pr-4 text-right text-zinc-400 font-bold">{r.count}개</td>
+                          <td className="py-2 pr-4 text-right text-zinc-400 font-mono">{r.sellingPrice.toLocaleString()}</td>
+                          <td className="py-2 pr-4 text-right text-zinc-500 font-mono">{r.supplyPrice.toLocaleString()}</td>
+                          <td className="py-2 pr-4 text-right text-emerald-500 font-bold">{r.marginPerUnit.toLocaleString()}</td>
+                          <td className="py-2 text-right text-emerald-400 font-black">{r.totalMargin.toLocaleString()}원</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const tabs: [ViewMode, string][] = [
     ['byDate', '날짜별'],
     ['byProduct', '품목별'],
@@ -468,6 +618,7 @@ const SalesTracker: React.FC = () => {
     ['orders', '발주내역'],
     ['invoices', '송장내역'],
     ['deposits', '입금내역'],
+    ['margin', '마진시트'],
   ];
 
   return (
@@ -740,6 +891,7 @@ const SalesTracker: React.FC = () => {
           {viewMode === 'orders' && renderOrdersView()}
           {viewMode === 'invoices' && renderInvoicesView()}
           {viewMode === 'deposits' && renderDepositsView()}
+          {viewMode === 'margin' && renderMarginView()}
         </section>
       )}
     </div>

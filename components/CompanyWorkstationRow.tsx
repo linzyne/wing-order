@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useInvoiceMerger } from '../hooks/useInvoiceMerger';
 import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import {
@@ -41,16 +41,18 @@ interface CompanyWorkstationRowProps {
     onSelectToggle?: (sessionId: string) => void;
     onVendorFileChange: (file: File | null) => void;
     onResultUpdate: (sessionId: string, totalPrice: number, excludedCount?: number, excludedDetails?: ExcludedOrder[]) => void;
-    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>) => void;
+    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>) => void;
     onAddSession: () => void;
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
     onDownloadMergedOrder?: () => void;
+    previousRoundItems?: { round: number; summary: Record<string, { count: number; totalPrice: number }> }[];
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFile, masterFile, isDetected, fakeOrderNumbers, manualOrders = [],
-    isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder
+    isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder,
+    previousRoundItems = []
 }) => {
     const [showSummary, setShowSummary] = useState(false);
     const [showExcluded, setShowExcluded] = useState(false);
@@ -69,6 +71,111 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [sessionAdjustments, setSessionAdjustments] = useState<SessionAdjustment[]>([]);
 
     const [workflow, setWorkflow] = useState<WorkflowStatus>({ order: false, deposit: false, invoice: false });
+    const [showPrevRoundItems, setShowPrevRoundItems] = useState(false);
+
+    // 전체 차수 합산 정산
+    const combinedSummary = useMemo(() => {
+        const merged: Record<string, { count: number; totalPrice: number }> = {};
+        for (const item of previousRoundItems) {
+            for (const [key, stat] of Object.entries(item.summary) as [string, { count: number; totalPrice: number }][]) {
+                if (!merged[key]) merged[key] = { count: 0, totalPrice: 0 };
+                merged[key].count += stat.count;
+                merged[key].totalPrice += stat.totalPrice;
+            }
+        }
+        if (localResult?.summary) {
+            for (const [key, stat] of Object.entries(localResult.summary) as [string, { count: number; totalPrice: number }][]) {
+                if (!merged[key]) merged[key] = { count: 0, totalPrice: 0 };
+                merged[key].count += stat.count;
+                merged[key].totalPrice += stat.totalPrice;
+            }
+        }
+        return merged;
+    }, [previousRoundItems, localResult?.summary]);
+
+    // 합산 정산 텍스트 (정산요약과 동일한 양식)
+    const combinedDepositText = useMemo(() => {
+        if (Object.keys(combinedSummary).length === 0) return '';
+        const today = new Date();
+        const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+        const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
+        const entries = Object.entries(combinedSummary) as [string, { count: number; totalPrice: number }][];
+        const totalCount = entries.reduce((a, [, b]) => a + b.count, 0);
+        let grandTotal = entries.reduce((a, [, b]) => a + b.totalPrice, 0);
+
+        const lines: string[] = [];
+        lines.push(`${dateTitle} (${companyName}) - 1~${roundNumber}차 합산`);
+        lines.push(`총주문수\t${totalCount}개`);
+        lines.push('');
+        entries
+            .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+            .forEach(([name, stat]) => {
+                lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+            });
+
+        // 현재 차수 추가분 표시
+        if (localResult?.summary && Object.keys(localResult.summary).length > 0) {
+            const addedItems = Object.entries(localResult.summary)
+                .map(([key, stat]: [string, any]) => `${key} ${stat.count}개 ${stat.totalPrice.toLocaleString()}원`)
+                .join(', ');
+            lines.push('');
+            lines.push(`(${roundNumber}차 추가 : ${addedItems})`);
+        }
+
+        lines.push('');
+        lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
+        lines.push('(입금자 안군농원)');
+        return lines.join('\n');
+    }, [combinedSummary, localResult?.summary, companyName, roundNumber]);
+
+    // 최종 차수 정산 요약용 누적 텍스트 (기존 정산요약과 동일 양식, 합산 데이터)
+    const cumulativeDepositText = useMemo(() => {
+        if (!isLastSession || previousRoundItems.length === 0 || !localResult || Object.keys(combinedSummary).length === 0) return null;
+        const today = new Date();
+        const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+        const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
+        const entries = Object.entries(combinedSummary) as [string, { count: number; totalPrice: number }][];
+        const totalCount = entries.reduce((a, [, b]) => a + b.count, 0);
+        const grandTotal = entries.reduce((a, [, b]) => a + b.totalPrice, 0);
+        const lines: string[] = [];
+        lines.push(`${dateTitle} (${companyName})`);
+        lines.push(`총주문수\t${totalCount}개`);
+        lines.push('');
+        entries
+            .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+            .forEach(([name, stat]) => {
+                lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+            });
+        lines.push('');
+        lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
+        lines.push('(입금자 안군농원)');
+        return lines.join('\n');
+    }, [isLastSession, previousRoundItems, localResult, combinedSummary, companyName]);
+
+    const cumulativeDepositExcelText = useMemo(() => {
+        if (!isLastSession || previousRoundItems.length === 0 || !localResult || Object.keys(combinedSummary).length === 0) return null;
+        const today = new Date();
+        const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+        const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
+        const entries = Object.entries(combinedSummary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })) as [string, { count: number; totalPrice: number }][];
+        const totalCount = entries.reduce((acc, [, s]) => acc + s.count, 0);
+        const grandTotal = entries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
+        const lines: string[] = [];
+        entries.forEach(([name, stat], idx) => {
+            let col1 = idx === 0 ? dateTitle : idx === 1 ? `총 ${totalCount}개` : '';
+            let line = `${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
+            if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
+            lines.push(line);
+        });
+        return lines.join('\n');
+    }, [isLastSession, previousRoundItems, localResult, combinedSummary]);
+
+    const [copiedCombinedId, setCopiedCombinedId] = useState<string | null>(null);
+    const handleCopyCombined = () => {
+        navigator.clipboard.writeText(combinedDepositText);
+        setCopiedCombinedId(sessionId);
+        setTimeout(() => setCopiedCombinedId(null), 2000);
+    };
 
     const lastProcessedMasterRef = useRef<File | null>(null);
     const lastFakeOrdersRef = useRef<string>('');
@@ -135,24 +242,35 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 lastManualOrdersRef.current = manualOrdersStr;
                 handleLocalFileChange(masterFile, true);
             }
-        } else if ((hasFakeOrdersChanged || hasManualOrdersChanged) && lastProcessedMasterRef.current) {
-            // 가구매/수동주문 변경: 이미 파일 처리가 된 이후에만 재처리
+        } else if (hasFakeOrdersChanged && lastProcessedMasterRef.current) {
+            // 가구매 변경: 이미 파일 처리가 된 이후에만 재처리
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
             handleLocalFileChange(lastProcessedMasterRef.current, false);
+        } else if (hasManualOrdersChanged) {
+            // 수동주문 변경: 파일 없이도 처리 가능 (수동주문만으로 발주서 생성)
+            lastFakeOrdersRef.current = fakeOrderNumbers;
+            // lastManualOrdersRef는 handleLocalFileChange 내에서 처리 시작 후 업데이트
+            // (isProcessingRef에 의해 차단되면 ref를 갱신하지 않아 다음 cycle에 재시도)
+            if (manualOrders.length > 0 || lastProcessedMasterRef.current) {
+                const fileToUse = lastProcessedMasterRef.current || (isFirstSession && isDetected ? masterFile : null);
+                handleLocalFileChange(fileToUse, false);
+            } else {
+                lastManualOrdersRef.current = manualOrdersStr;
+            }
         } else {
             // Firestore 초기 로드 등 - ref만 업데이트 (재처리 안함)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
         }
-    }, [masterFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders]);
+    }, [masterFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, isLocalProcessing]);
 
     useEffect(() => {
         if (!localResult) return;
         const orderTotal = Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
         onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
-        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header, localResult.registeredProductNames);
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header, localResult.registeredProductNames, localResult.summary);
     }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
@@ -197,7 +315,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (key === lastSyncedCallbackRef.current) return;
         lastSyncedCallbackRef.current = key;
         onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
-        onDataUpdate(sessionId, syncedData.orderRows, syncedData.invoiceRows, syncedData.uploadInvoiceRows, syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames);
+        onDataUpdate(sessionId, syncedData.orderRows, syncedData.invoiceRows, syncedData.uploadInvoiceRows, syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary);
     }, [workspace, localResult, sessionId]);
 
     useEffect(() => {
@@ -229,9 +347,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const isProcessingRef = useRef(false);
-    const handleLocalFileChange = async (file: File, confirmManualOrders = false) => {
+    const handleLocalFileChange = async (file: File | null, confirmManualOrders = false) => {
         if (isProcessingRef.current) return;
         isProcessingRef.current = true;
+        // 처리 시작 시점에 수동주문 ref 갱신 (race condition 방지)
+        lastManualOrdersRef.current = JSON.stringify(manualOrders);
         if (file && file !== masterFile) setLocalFile(file);
         setIsLocalProcessing(true);
         let ordersToInclude = manualOrders;
@@ -391,14 +511,36 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </div>
                             </>
                         ) : (
-                            <div className="flex items-center gap-2 pl-4 border-l-2 border-zinc-800 py-1">
-                                <span className="text-zinc-700 text-[12px] font-black">ㄴ</span>
-                                <div className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-indigo-500/20 whitespace-nowrap">
-                                    {roundNumber}차 추가 발주
+                            <div className="pl-4 border-l-2 border-zinc-800 py-1">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-zinc-700 text-[12px] font-black">ㄴ</span>
+                                    <div className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-indigo-500/20 whitespace-nowrap">
+                                        {roundNumber}차 추가 발주
+                                    </div>
+                                    {previousRoundItems.length > 0 && (
+                                        <button
+                                            onClick={() => setShowPrevRoundItems(!showPrevRoundItems)}
+                                            className="text-zinc-600 hover:text-indigo-400 text-[9px] font-black flex items-center gap-0.5 transition-colors"
+                                        >
+                                            {showPrevRoundItems ? <ChevronUpIcon className="w-3 h-3" /> : <ChevronDownIcon className="w-3 h-3" />}
+                                            합산 / 추가 내역
+                                        </button>
+                                    )}
+                                    <button onClick={onRemoveSession} className="text-zinc-800 hover:text-red-500 transition-colors p-1">
+                                        <TrashIcon className="w-4 h-4" />
+                                    </button>
                                 </div>
-                                <button onClick={onRemoveSession} className="text-zinc-800 hover:text-red-500 transition-colors p-1">
-                                    <TrashIcon className="w-4 h-4" />
-                                </button>
+                                {showPrevRoundItems && previousRoundItems.length > 0 && combinedDepositText && (
+                                    <div className="mt-1.5 animate-fade-in">
+                                        <div className="bg-zinc-950/50 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 relative">
+                                            <div className="flex justify-between items-center mb-1">
+                                                <div className="text-emerald-400 text-[9px] font-black">1~{roundNumber}차 합산 정산</div>
+                                                <button onClick={handleCopyCombined} className={`text-[9px] font-black px-2 py-0.5 rounded border transition-all ${copiedCombinedId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-rose-400 border-zinc-700 hover:text-white'}`}>{copiedCombinedId ? '복사됨!' : '카톡용'}</button>
+                                            </div>
+                                            <pre className="text-[10px] font-mono text-zinc-300 whitespace-pre-wrap leading-tight">{combinedDepositText}</pre>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -509,20 +651,23 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 <div className="flex justify-between items-center mb-3">
                                     <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest">정산 요약</h5>
                                     <div className="flex gap-1.5">
-                                        <button onClick={() => handleCopy(sessionId, localResult.depositSummary, 'kakao')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-rose-400 border-zinc-700 hover:text-white'}`}>{copiedId === sessionId ? '복사됨!' : '카톡용'}</button>
-                                        <button onClick={() => handleCopy(sessionId, localResult.depositSummaryExcel, 'excel')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedExcelId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-indigo-400 border-zinc-700 hover:text-white'}`}>{copiedExcelId === sessionId ? '복사됨!' : '엑셀용'}</button>
+                                        <button onClick={() => handleCopy(sessionId, cumulativeDepositText || localResult.depositSummary, 'kakao')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-rose-400 border-zinc-700 hover:text-white'}`}>{copiedId === sessionId ? '복사됨!' : '카톡용'}</button>
+                                        <button onClick={() => handleCopy(sessionId, cumulativeDepositExcelText || localResult.depositSummaryExcel, 'excel')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedExcelId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-indigo-400 border-zinc-700 hover:text-white'}`}>{copiedExcelId === sessionId ? '복사됨!' : '엑셀용'}</button>
                                     </div>
                                 </div>
                                 <pre className="text-[12px] font-mono text-zinc-200 whitespace-pre-wrap leading-tight bg-zinc-950/50 p-4 rounded-lg border border-zinc-800/50 max-h-[300px] overflow-auto custom-scrollbar">
                                     {(() => {
-                                        const orderTotal = localResult ? Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0) : 0;
+                                        const isCumulative = cumulativeDepositText !== null;
+                                        const baseTotal = isCumulative
+                                            ? (Object.values(combinedSummary) as { count: number; totalPrice: number }[]).reduce((a, b) => a + b.totalPrice, 0)
+                                            : (localResult ? Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0) : 0);
                                         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
-                                        let text = localResult.depositSummary;
+                                        let text = isCumulative ? cumulativeDepositText : localResult.depositSummary;
                                         if (sessionAdjustments.length > 0) {
                                             const adjRows = sessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
                                             text = text.replace('총 합계', `[추가/차감 내역]\n${adjRows}\n\n총 합계`)
                                                        .replace(/(총 합계\s+)([\d,]+)(원)/, (match, p1, p2, p3) => {
-                                                           return `${p1}${(orderTotal + adjTotal).toLocaleString()}${p3}`;
+                                                           return `${p1}${(baseTotal + adjTotal).toLocaleString()}${p3}`;
                                                        });
                                         }
                                         return text;
