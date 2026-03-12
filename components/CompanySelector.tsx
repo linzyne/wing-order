@@ -105,6 +105,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
     const [lotteResult, setLotteResult] = useState<{ matched: number; total: number; notFound: string[] } | null>(null);
     const [lotteMatchedRows, setLotteMatchedRows] = useState<any[][] | null>(null);
 
+    const [agentFile, setAgentFile] = useState<File | null>(null);
+    const [agentResult, setAgentResult] = useState<{ matched: number; total: number; notFound: string[] } | null>(null);
+    const [agentMatchedRows, setAgentMatchedRows] = useState<any[][] | null>(null);
+
     const [manualTransfers, setManualTransfers] = useState<ManualTransfer[]>([]);
 
     const [newTransfer, setNewTransfer] = useState({ label: '', bankName: '', accountNumber: '', amount: '' });
@@ -292,6 +296,78 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_가구매_운송장입력완료.xlsx`);
     };
 
+    const handleAgentFileUpload = async (file: File) => {
+        if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
+        setAgentFile(file);
+        setAgentResult(null);
+        setAgentMatchedRows(null);
+        try {
+            const fakeOrderNums = new Set<string>();
+            fakeOrderInput.split('\n').forEach(line => {
+                const matches = line.match(/[A-Z0-9-]{5,}/g);
+                if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
+            });
+            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
+
+            // 택배대행 파일 읽기: A열(idx 0)=주문번호, P열(idx 15)=운송장번호
+            const agentData = await file.arrayBuffer();
+            const agentWb = XLSX.read(agentData, { type: 'array' });
+            const agentWs = agentWb.Sheets[agentWb.SheetNames[0]];
+            const agentAoa: any[][] = XLSX.utils.sheet_to_json(agentWs, { header: 1 });
+
+            const trackingMap = new Map<string, string>();
+            for (let i = 1; i < agentAoa.length; i++) {
+                const row = agentAoa[i];
+                if (!row) continue;
+                const orderNum = String(row[0] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                const trackingNum = String(row[15] || '').trim();
+                if (orderNum && trackingNum && trackingNum.length >= 5) {
+                    trackingMap.set(orderNum, trackingNum);
+                }
+            }
+
+            const masterData = await masterOrderFile.arrayBuffer();
+            const masterWb = XLSX.read(masterData, { type: 'array' });
+            const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
+            const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
+
+            const header = masterAoa[0] || [];
+            const matchedRows: any[][] = [header];
+            const notFoundOrders: string[] = [];
+            for (let i = 1; i < masterAoa.length; i++) {
+                const row = masterAoa[i];
+                if (!row) continue;
+                const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (!fakeOrderNums.has(orderNum)) continue;
+                const tracking = trackingMap.get(orderNum);
+                if (tracking) {
+                    const newRow = [...row];
+                    while (newRow.length < 5) newRow.push('');
+                    newRow[3] = '롯데택배';
+                    newRow[4] = tracking;
+                    matchedRows.push(newRow);
+                } else {
+                    notFoundOrders.push(String(row[2] || ''));
+                }
+            }
+
+            const matchedCount = matchedRows.length - 1;
+            setAgentResult({ matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders });
+            if (matchedCount > 0) setAgentMatchedRows(matchedRows);
+        } catch (err: any) {
+            console.error('택배대행 운송장 처리 오류:', err);
+            alert('택배대행 운송장 파일 처리 중 오류가 발생했습니다: ' + err.message);
+        }
+    };
+
+    const handleAgentDownload = () => {
+        if (!agentMatchedRows) return;
+        const ws = XLSX.utils.aoa_to_sheet(agentMatchedRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '주문서');
+        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_가구매_택배대행_운송장완료.xlsx`);
+    };
+
     const handleDeliveryAgentDownload = async () => {
         if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
         // 가구매 명단에서 주문번호 추출
@@ -361,6 +437,76 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         } catch (err: any) {
             console.error('택배대행 처리 오류:', err);
             alert('택배대행 파일 생성 중 오류가 발생했습니다: ' + err.message);
+        }
+    };
+
+    const handleLotteTemplateDownload = async () => {
+        if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
+        const fakeOrderNums = new Set<string>();
+        fakeOrderInput.split('\n').forEach(line => {
+            const matches = line.match(/[A-Z0-9-]{5,}/g);
+            if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
+        });
+        if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
+
+        try {
+            const masterData = await masterOrderFile.arrayBuffer();
+            const masterWb = XLSX.read(masterData, { type: 'array' });
+            const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
+            const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
+
+            const templateHeader = ['주문번호', '보내는사람(지정)', '전화번호1(지정)', '우편번호(지정)', '주소(지정)', '받는사람', '전화번호1', '전화번호2', '우편번호', '주소', '상품명1', '상품상세1', '수량(A타입)', '배송시작시간', '도착구분', '운임', '운송장번호'];
+            const rows: any[][] = [templateHeader];
+            const notFoundOrders: string[] = [];
+
+            for (let i = 1; i < masterAoa.length; i++) {
+                const row = masterAoa[i];
+                if (!row) continue;
+                const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (!fakeOrderNums.has(orderNum)) continue;
+
+                const recipientName = String(row[26] || '').trim();
+                const phone = String(row[27] || '').trim();
+                const address = String(row[29] || '').trim();
+                const originalOrderNum = String(row[2] || '').trim();
+
+                if (!recipientName) { notFoundOrders.push(originalOrderNum); continue; }
+
+                rows.push([
+                    originalOrderNum,               // 주문번호
+                    '안군농원',                       // 보내는사람(지정)
+                    '01050447749',                   // 전화번호1(지정)
+                    '',                              // 우편번호(지정)
+                    '인천시 연수구 송도동 214, D동 2206-1호', // 주소(지정)
+                    recipientName,                   // 받는사람
+                    phone,                           // 전화번호1
+                    '',                              // 전화번호2
+                    '',                              // 우편번호
+                    address,                         // 주소
+                    '완구류',                         // 상품명1
+                    '',                              // 상품상세1
+                    '',                              // 수량(A타입)
+                    '',                              // 배송시작시간
+                    '',                              // 도착구분
+                    '',                              // 운임
+                    '',                              // 운송장번호
+                ]);
+            }
+
+            const matchedCount = rows.length - 1;
+            if (matchedCount === 0) { alert('원본 주문서에서 가구매 명단과 매칭되는 주문을 찾지 못했습니다.'); return; }
+
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_롯데택배.xlsx`);
+
+            if (notFoundOrders.length > 0) {
+                alert(`롯데택배 ${matchedCount}건 다운로드 완료!\n\n배송정보 누락: ${notFoundOrders.join(', ')}`);
+            }
+        } catch (err: any) {
+            console.error('롯데택배 템플릿 처리 오류:', err);
+            alert('롯데택배 파일 생성 중 오류가 발생했습니다: ' + err.message);
         }
     };
 
@@ -556,6 +702,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             });
         });
         manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label]); total += t.amount; });
+        if (fakeOrderAnalysis.inputNumbers.size > 0) {
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2200;
+            depositRows.push(['카카오뱅크', '3333-18-8744855', deliveryFee, `택배대행(${fakeOrderAnalysis.inputNumbers.size}건)`]);
+            total += deliveryFee;
+        }
         if (depositRows.length === 0) { alert('선택된 업체 중 입금할 내역이 없습니다.'); return; }
         depositRows.push([], ['', '합계', total]);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(depositRows), "입금내역");
@@ -596,6 +747,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             });
         });
         manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount]); depTotal += t.amount; });
+        if (fakeOrderAnalysis.inputNumbers.size > 0) {
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2200;
+            depositRows.push(['카카오뱅크', '3333-18-8744855', deliveryFee]);
+            depTotal += deliveryFee;
+        }
         if (depositRows.length > 0) depositRows.push([], ['', '합계', depTotal]);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(depositRows), "입금내역");
         const orderSheetData: any[][] = [];
@@ -650,6 +806,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                 }
             }
         }
+        // 가구매 물류비 추가
+        if (agentResult && agentResult.matched > 0) {
+            marginSheetData.push(['', '물류비(택배대행)', agentResult.matched, '', '', -2200, -(agentResult.matched * 2200)]);
+        }
+        if (lotteResult && lotteResult.matched > 0) {
+            marginSheetData.push(['', '물류비(롯데택배)', lotteResult.matched, '', '', -2300, -(lotteResult.matched * 2300)]);
+        }
+
         if (marginSheetData.length > 1) {
             const totalMargin = marginSheetData.slice(1).reduce((sum: number, r: any[]) => sum + (r[6] || 0), 0);
             marginSheetData.push([]);
@@ -717,6 +881,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             depositRows.push({ bankName: t.bankName, accountNumber: t.accountNumber, amount: t.amount });
             depTotal += t.amount;
         });
+        if (fakeOrderAnalysis.inputNumbers.size > 0) {
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2200;
+            depositRows.push({ bankName: '카카오뱅크', accountNumber: '3333-18-8744855', amount: deliveryFee });
+            depTotal += deliveryFee;
+        }
 
         // 마진 데이터 수집
         const mergedRegNames: Record<string, Record<string, string>> = {};
@@ -1247,6 +1416,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                     <ArrowDownTrayIcon className="w-4 h-4" />
                                     <span>택배대행 다운로드 ({fakeOrderAnalysis.inputNumbers.size}건)</span>
                                 </button>
+                                <button
+                                    onClick={handleLotteTemplateDownload}
+                                    disabled={!masterOrderFile || fakeOrderAnalysis.inputNumbers.size === 0}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed bg-indigo-950/30 border-indigo-500/30 text-indigo-400 hover:bg-indigo-900/40 hover:border-indigo-500/50"
+                                >
+                                    <ArrowDownTrayIcon className="w-4 h-4" />
+                                    <span>롯데택배 다운로드 ({fakeOrderAnalysis.inputNumbers.size}건)</span>
+                                </button>
                             </div>
                             <div className="flex items-center gap-2">
                                 <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${lotteFile ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
@@ -1280,6 +1457,42 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                         <button onClick={handleLotteDownload} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black transition-colors shadow-lg">
                                             <ArrowDownTrayIcon className="w-4 h-4" />
                                             운송장 입력완료 다운로드 ({lotteResult.matched}건)
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                            <div className="flex items-center gap-2">
+                                <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${agentFile ? 'bg-teal-950/30 border-teal-500/30 text-teal-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-teal-500/40 hover:text-teal-400'}`}>
+                                    <ArrowDownTrayIcon className="w-4 h-4" />
+                                    <span>{agentFile ? agentFile.name : '택배대행 운송장 업로드'}</span>
+                                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAgentFileUpload(f); }} />
+                                </label>
+                                {agentFile && (
+                                    <button onClick={() => { setAgentFile(null); setAgentResult(null); setAgentMatchedRows(null); }} className="p-2 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
+                                        <ArrowPathIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                            {agentResult && (
+                                <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in space-y-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">매칭 {agentResult.matched}건</span>
+                                        <span className="text-zinc-500 text-[9px] font-black">/ 가구매 {agentResult.total}건</span>
+                                        {agentResult.notFound.length > 0 && (
+                                            <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">미매칭 {agentResult.notFound.length}건</span>
+                                        )}
+                                    </div>
+                                    {agentResult.notFound.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                            {agentResult.notFound.map(num => (
+                                                <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded text-[9px] font-mono">{num}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {agentMatchedRows && (
+                                        <button onClick={handleAgentDownload} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-[10px] font-black transition-colors shadow-lg">
+                                            <ArrowDownTrayIcon className="w-4 h-4" />
+                                            택배대행 운송장완료 다운로드 ({agentResult.matched}건)
                                         </button>
                                     )}
                                 </div>
