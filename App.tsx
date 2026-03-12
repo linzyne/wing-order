@@ -34,8 +34,8 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="bg-zinc-950 min-h-screen flex flex-col items-center p-2 font-sans text-zinc-100">
-      <div className="w-full max-w-5xl mx-auto py-4 animate-fade-in">
+    <div className="bg-zinc-950 min-h-screen p-2 font-sans text-zinc-100">
+      <div className="w-full max-w-5xl py-4 animate-fade-in">
         <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-2 gap-4">
           <div className="flex items-center gap-5">
             <div className="bg-zinc-900 p-3 rounded-[1.2rem] shadow-2xl border border-zinc-800">
