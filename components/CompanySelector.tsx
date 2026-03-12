@@ -292,6 +292,78 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_가구매_운송장입력완료.xlsx`);
     };
 
+    const handleDeliveryAgentDownload = async () => {
+        if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
+        // 가구매 명단에서 주문번호 추출
+        const fakeOrderNums = new Set<string>();
+        fakeOrderInput.split('\n').forEach(line => {
+            const matches = line.match(/[A-Z0-9-]{5,}/g);
+            if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
+        });
+        if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
+
+        try {
+            // 원본 주문서 읽기
+            const masterData = await masterOrderFile.arrayBuffer();
+            const masterWb = XLSX.read(masterData, { type: 'array' });
+            const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
+            const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
+
+            // 택배대행 템플릿 헤더
+            const templateHeader = ['주문번호', '받는사람', '전화번호1', '전화번호2', '우편번호', '주소', '상품명1', '상품상세1', '수량(A타입)', '배송메시지', '불필요항목', '불필요항목', '불필요항목', '보내는사람(지정)', '전화번호1(지정)', '송장번호'];
+            const rows: any[][] = [templateHeader];
+            const notFoundOrders: string[] = [];
+
+            for (let i = 1; i < masterAoa.length; i++) {
+                const row = masterAoa[i];
+                if (!row) continue;
+                const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (!fakeOrderNums.has(orderNum)) continue;
+
+                const recipientName = String(row[26] || '').trim();
+                const phone = String(row[27] || '').trim();
+                const address = String(row[29] || '').trim();
+                const originalOrderNum = String(row[2] || '').trim();
+
+                if (!recipientName) { notFoundOrders.push(originalOrderNum); continue; }
+
+                rows.push([
+                    originalOrderNum,   // 주문번호
+                    recipientName,      // 받는사람
+                    phone,              // 전화번호1
+                    '',                 // 전화번호2
+                    '',                 // 우편번호
+                    address,            // 주소
+                    '완구류',            // 상품명1 (고정)
+                    '',                 // 상품상세1
+                    '',                 // 수량(A타입)
+                    '',                 // 배송메시지
+                    '',                 // 불필요항목
+                    '',                 // 불필요항목
+                    '',                 // 불필요항목
+                    '주노엘',           // 보내는사람(지정) (고정)
+                    '010-5044-7749',    // 전화번호1(지정) (고정)
+                    '',                 // 송장번호
+                ]);
+            }
+
+            const matchedCount = rows.length - 1;
+            if (matchedCount === 0) { alert('원본 주문서에서 가구매 명단과 매칭되는 주문을 찾지 못했습니다.'); return; }
+
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_택배대행.xlsx`);
+
+            if (notFoundOrders.length > 0) {
+                alert(`택배대행 ${matchedCount}건 다운로드 완료!\n\n배송정보 누락: ${notFoundOrders.join(', ')}`);
+            }
+        } catch (err: any) {
+            console.error('택배대행 처리 오류:', err);
+            alert('택배대행 파일 생성 중 오류가 발생했습니다: ' + err.message);
+        }
+    };
+
     const handleAddManualOrder = (e: React.FormEvent) => {
         e.preventDefault();
         if (!manualInput.companyName || !manualInput.recipientName || !manualInput.productName) {
@@ -792,8 +864,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
     return (
         <div className="space-y-6 animate-fade-in">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <section className="lg:col-span-2 bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
+            <div>
+                <section className="bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
                     <div className="flex flex-col gap-6">
                         <div className="flex flex-col md:flex-row items-center gap-6">
                             <div className="flex-1 w-full">
@@ -938,142 +1010,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                         </div>
                     </div>
                 </section>
-
-                <section className="bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md relative overflow-hidden">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-rose-500/10 p-2 rounded-lg"><BoltIcon className="w-4 h-4 text-rose-500" /></div>
-                            <h3 className="text-zinc-200 font-black text-xs uppercase tracking-widest flex items-center gap-2">
-                                가구매 명단 설정
-                                {fakeOrderAnalysis.inputNumbers.size > 0 && (
-                                    <div className="flex gap-1">
-                                        <span className="bg-zinc-800 text-zinc-400 text-[9px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700">
-                                            총 {fakeOrderAnalysis.inputNumbers.size}명
-                                        </span>
-                                        <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
-                                            매칭 {fakeOrderAnalysis.matched.length}
-                                        </span>
-                                        {fakeOrderAnalysis.missing.length > 0 && (
-                                            <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
-                                                미발견 {fakeOrderAnalysis.missing.length}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </h3>
-                        </div>
-                        <div className="flex gap-2">
-                            <button onClick={() => setShowFakeDetail(!showFakeDetail)} className={`p-1 transition-colors ${showFakeDetail ? 'text-rose-500' : 'text-zinc-600 hover:text-white'}`} title="상세 누락 내역">
-                                <DocumentCheckIcon className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => setShowFakeOrderInput(!showFakeOrderInput)} className="text-zinc-500 hover:text-white transition-colors">
-                                {showFakeOrderInput ? <ChevronUpIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4" />}
-                            </button>
-                        </div>
-                    </div>
-
-                    {showFakeDetail && fakeOrderAnalysis.inputNumbers.size > 0 && (
-                        <div className="mb-4 bg-zinc-950/80 p-4 rounded-xl border border-zinc-800 animate-fade-in max-h-[300px] overflow-auto custom-scrollbar">
-                            <div className="space-y-4">
-                                {fakeOrderAnalysis.missing.length > 0 && (
-                                    <div>
-                                        <h4 className="text-rose-500 font-black text-xs mb-3 tracking-widest flex items-center gap-2">
-                                            <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
-                                            파일에서 찾지 못한 주문 ({fakeOrderAnalysis.missing.length}건)
-                                        </h4>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            {fakeOrderAnalysis.missing.map(num => {
-                                                const name = fakeOrderAnalysis.nameMap[num];
-                                                return (
-                                                    <div key={num} className="flex items-center justify-between bg-rose-950/30 border border-rose-500/20 px-4 py-3 rounded-xl">
-                                                        <div className="flex items-center gap-3">
-                                                            {name && <span className="text-sm font-black text-white">{name}</span>}
-                                                            <span className="text-xs font-mono text-rose-400">{num}</span>
-                                                        </div>
-                                                        <span className="text-[11px] text-rose-500 font-bold bg-rose-950/50 px-2.5 py-1 rounded-lg border border-rose-500/20">주문서에서 미발견 - 업체 발주 누락 또는 주문번호 오류</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-                                <div>
-                                    <h4 className="text-emerald-500 font-black text-xs mb-3 tracking-widest flex items-center gap-2">
-                                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                                        정상 제외 완료 ({fakeOrderAnalysis.matched.length}건)
-                                    </h4>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {fakeOrderAnalysis.matched.map(num => {
-                                            const detail = fakeOrderAnalysis.foundDetails[num];
-                                            return (
-                                                <div key={num} className="flex items-center justify-between bg-zinc-900/50 px-4 py-3 rounded-xl border border-zinc-800/50">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-sm font-black text-white">{detail.recipientName}</span>
-                                                        <span className="text-xs font-mono text-zinc-500">{num}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-zinc-400 font-bold">{detail.productName}</span>
-                                                        <span className="text-[11px] bg-zinc-800 text-emerald-500 px-2.5 py-1 rounded-full font-black border border-emerald-500/20">{detail.companyName}</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {showFakeOrderInput ? (
-                        <div className="space-y-3 animate-fade-in">
-                            <textarea
-                                autoFocus value={fakeOrderInput} onChange={(e) => setFakeOrderInput(e.target.value)}
-                                placeholder="예: 홍길동 20231010-00001"
-                                className="w-full h-24 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
-                            />
-                            <div className="flex items-center gap-2">
-                                <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${lotteFile ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
-                                    <ArrowDownTrayIcon className="w-4 h-4" />
-                                    <span>{lotteFile ? lotteFile.name : '롯데택배 파일 업로드'}</span>
-                                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLotteFileUpload(f); }} />
-                                </label>
-                                {lotteFile && (
-                                    <button onClick={() => { setLotteFile(null); setLotteResult(null); setLotteMatchedRows(null); }} className="p-2 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
-                                        <ArrowPathIcon className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
-                            </div>
-                            {lotteResult && (
-                                <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in space-y-2">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">매칭 {lotteResult.matched}건</span>
-                                        <span className="text-zinc-500 text-[9px] font-black">/ 가구매 {lotteResult.total}건</span>
-                                        {lotteResult.notFound.length > 0 && (
-                                            <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">미매칭 {lotteResult.notFound.length}건</span>
-                                        )}
-                                    </div>
-                                    {lotteResult.notFound.length > 0 && (
-                                        <div className="flex flex-wrap gap-1">
-                                            {lotteResult.notFound.map(num => (
-                                                <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded text-[9px] font-mono">{num}</span>
-                                            ))}
-                                        </div>
-                                    )}
-                                    {lotteMatchedRows && (
-                                        <button onClick={handleLotteDownload} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black transition-colors shadow-lg">
-                                            <ArrowDownTrayIcon className="w-4 h-4" />
-                                            운송장 입력완료 다운로드 ({lotteResult.matched}건)
-                                        </button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center h-24 border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-800/20 transition-all" onClick={() => setShowFakeOrderInput(true)}>
-                            <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">명단 입력하기</span>
-                        </div>
-                    )}
-                </section>
             </div>
 
             <section className="bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
@@ -1209,6 +1145,151 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                         <div className="bg-zinc-800 p-2 rounded-xl border border-zinc-700"><BuildingStorefrontIcon className="w-5 h-5 text-rose-500" /></div>
                         <h2 className="text-xl font-black text-white tracking-tight uppercase">Workstation</h2>
                     </div>
+                </div>
+                <div className="p-6 border-b border-zinc-900">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-rose-500/10 p-2 rounded-lg"><BoltIcon className="w-4 h-4 text-rose-500" /></div>
+                            <h3 className="text-zinc-200 font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                                가구매 명단 설정
+                                {fakeOrderAnalysis.inputNumbers.size > 0 && (
+                                    <div className="flex gap-1">
+                                        <span className="bg-zinc-800 text-zinc-400 text-[9px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700">
+                                            총 {fakeOrderAnalysis.inputNumbers.size}명
+                                        </span>
+                                        <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
+                                            매칭 {fakeOrderAnalysis.matched.length}
+                                        </span>
+                                        {fakeOrderAnalysis.missing.length > 0 && (
+                                            <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
+                                                미발견 {fakeOrderAnalysis.missing.length}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </h3>
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={() => setShowFakeDetail(!showFakeDetail)} className={`p-1 transition-colors ${showFakeDetail ? 'text-rose-500' : 'text-zinc-600 hover:text-white'}`} title="상세 누락 내역">
+                                <DocumentCheckIcon className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setShowFakeOrderInput(!showFakeOrderInput)} className="text-zinc-500 hover:text-white transition-colors">
+                                {showFakeOrderInput ? <ChevronUpIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4" />}
+                            </button>
+                        </div>
+                    </div>
+
+                    {showFakeDetail && fakeOrderAnalysis.inputNumbers.size > 0 && (
+                        <div className="mb-4 bg-zinc-950/80 p-4 rounded-xl border border-zinc-800 animate-fade-in max-h-[300px] overflow-auto custom-scrollbar">
+                            <div className="space-y-4">
+                                {fakeOrderAnalysis.missing.length > 0 && (
+                                    <div>
+                                        <h4 className="text-rose-500 font-black text-xs mb-3 tracking-widest flex items-center gap-2">
+                                            <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
+                                            파일에서 찾지 못한 주문 ({fakeOrderAnalysis.missing.length}건)
+                                        </h4>
+                                        <div className="grid grid-cols-1 gap-2">
+                                            {fakeOrderAnalysis.missing.map(num => {
+                                                const name = fakeOrderAnalysis.nameMap[num];
+                                                return (
+                                                    <div key={num} className="flex items-center justify-between bg-rose-950/30 border border-rose-500/20 px-4 py-3 rounded-xl">
+                                                        <div className="flex items-center gap-3">
+                                                            {name && <span className="text-sm font-black text-white">{name}</span>}
+                                                            <span className="text-xs font-mono text-rose-400">{num}</span>
+                                                        </div>
+                                                        <span className="text-[11px] text-rose-500 font-bold bg-rose-950/50 px-2.5 py-1 rounded-lg border border-rose-500/20">주문서에서 미발견 - 업체 발주 누락 또는 주문번호 오류</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                                <div>
+                                    <h4 className="text-emerald-500 font-black text-xs mb-3 tracking-widest flex items-center gap-2">
+                                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
+                                        정상 제외 완료 ({fakeOrderAnalysis.matched.length}건)
+                                    </h4>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {fakeOrderAnalysis.matched.map(num => {
+                                            const detail = fakeOrderAnalysis.foundDetails[num];
+                                            return (
+                                                <div key={num} className="flex items-center justify-between bg-zinc-900/50 px-4 py-3 rounded-xl border border-zinc-800/50">
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-sm font-black text-white">{detail.recipientName}</span>
+                                                        <span className="text-xs font-mono text-zinc-500">{num}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs text-zinc-400 font-bold">{detail.productName}</span>
+                                                        <span className="text-[11px] bg-zinc-800 text-emerald-500 px-2.5 py-1 rounded-full font-black border border-emerald-500/20">{detail.companyName}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showFakeOrderInput ? (
+                        <div className="space-y-3 animate-fade-in">
+                            <textarea
+                                autoFocus value={fakeOrderInput} onChange={(e) => setFakeOrderInput(e.target.value)}
+                                placeholder="예: 홍길동 20231010-00001"
+                                className="w-full h-24 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
+                            />
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleDeliveryAgentDownload}
+                                    disabled={!masterOrderFile || fakeOrderAnalysis.inputNumbers.size === 0}
+                                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed bg-amber-950/30 border-amber-500/30 text-amber-400 hover:bg-amber-900/40 hover:border-amber-500/50"
+                                >
+                                    <ArrowDownTrayIcon className="w-4 h-4" />
+                                    <span>택배대행 다운로드 ({fakeOrderAnalysis.inputNumbers.size}건)</span>
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${lotteFile ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
+                                    <ArrowDownTrayIcon className="w-4 h-4" />
+                                    <span>{lotteFile ? lotteFile.name : '롯데택배 파일 업로드'}</span>
+                                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleLotteFileUpload(f); }} />
+                                </label>
+                                {lotteFile && (
+                                    <button onClick={() => { setLotteFile(null); setLotteResult(null); setLotteMatchedRows(null); }} className="p-2 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
+                                        <ArrowPathIcon className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
+                            </div>
+                            {lotteResult && (
+                                <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in space-y-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">매칭 {lotteResult.matched}건</span>
+                                        <span className="text-zinc-500 text-[9px] font-black">/ 가구매 {lotteResult.total}건</span>
+                                        {lotteResult.notFound.length > 0 && (
+                                            <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">미매칭 {lotteResult.notFound.length}건</span>
+                                        )}
+                                    </div>
+                                    {lotteResult.notFound.length > 0 && (
+                                        <div className="flex flex-wrap gap-1">
+                                            {lotteResult.notFound.map(num => (
+                                                <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded text-[9px] font-mono">{num}</span>
+                                            ))}
+                                        </div>
+                                    )}
+                                    {lotteMatchedRows && (
+                                        <button onClick={handleLotteDownload} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black transition-colors shadow-lg">
+                                            <ArrowDownTrayIcon className="w-4 h-4" />
+                                            운송장 입력완료 다운로드 ({lotteResult.matched}건)
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-center h-24 border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-800/20 transition-all" onClick={() => setShowFakeOrderInput(true)}>
+                            <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">명단 입력하기</span>
+                        </div>
+                    )}
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
