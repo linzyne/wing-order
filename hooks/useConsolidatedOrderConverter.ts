@@ -1,7 +1,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder } from '../types';
+import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder, UnmatchedOrder } from '../types';
 import { findProductConfig } from '../pricing';
 
 declare var XLSX: any;
@@ -175,8 +175,8 @@ const findBestMatchForProduct = async (
         return result;
     }
 
-    // 정규화 매칭: 쉼표/마침표/공백 차이를 무시하고 displayName으로 매칭
-    const normalize = (s: string) => s.toLowerCase().replace(/[,.\s]/g, '');
+    // 정규화 매칭: 쉼표/마침표/공백/특수문자(★☆※) 차이를 무시하고 displayName으로 매칭
+    const normalize = (s: string) => s.toLowerCase().replace(/[★☆※,.\s]/g, '');
     const normalizedRaw = normalize(rawProductName);
     let bestNormMatch: { entry: [string, ProductPricing]; len: number } | null = null;
     for (const entry of availableEntries) {
@@ -212,10 +212,15 @@ const findBestMatchForProduct = async (
                 cache.set(cacheKey, result);
                 return result;
             }
-        } catch (e) { }
+        } catch (e) {
+            console.warn(`[매칭][${companyName}] AI 매칭 실패 (타임아웃/에러): '${rawProductName}'`, e);
+        }
     }
 
     const fallbackResult = fallbackMatcher(pricingConfig, companyName, rawProductName);
+    if (!fallbackResult) {
+        console.warn(`[매칭][${companyName}] ⚠️ 매칭 완전 실패 - 발주서 누락됨: '${rawProductName}'`);
+    }
     cache.set(cacheKey, fallbackResult as [string, ProductPricing] | null);
     return fallbackResult as [string, ProductPricing] | null;
 };
@@ -228,7 +233,8 @@ const generateWorkbookForCompany = async (
     companyName: string,
     fakeOrderNumbers: Set<string>,
     excludedOrders: ExcludedOrder[],
-    manualOrders: ManualOrder[] = []
+    manualOrders: ManualOrder[] = [],
+    unmatchedOrders: UnmatchedOrder[] = []
 ): Promise<[string, ProcessedResult | null]> => {
     try {
         const companyConfig = pricingConfig[companyName];
@@ -285,6 +291,9 @@ const generateWorkbookForCompany = async (
                         registeredProductNames[config.displayName] = String(row[groupColIdx] || '').trim();
                     }
                     await pushToOutputRows(companyName, outputRows, row, config, qty, pricingConfig);
+                } else {
+                    console.error(`[발주서][${companyName}] ❌ 품목 매칭 실패로 주문 누락! 수취인: ${recipientName}, 상품: ${rawProductName}, 주문번호: ${orderNumber}`);
+                    unmatchedOrders.push({ companyName, recipientName, productName: rawProductName, phone, orderNumber });
                 }
             }
         }
@@ -560,9 +569,10 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig) => {
             });
 
             const localExcluded: ExcludedOrder[] = [];
-            const [, result] = await generateWorkbookForCompany(ai, new Map(), pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders);
+            const localUnmatched: UnmatchedOrder[] = [];
+            const [, result] = await generateWorkbookForCompany(ai, new Map(), pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched);
 
-            return { result, excluded: localExcluded };
+            return { result, excluded: localExcluded, unmatched: localUnmatched };
         } catch (err) {
             console.error(err);
             return null;

@@ -7,7 +7,7 @@ import {
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
     PlusCircleIcon, TrashIcon
 } from './icons';
-import type { PricingConfig, ExcludedOrder, ManualOrder } from '../types';
+import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder } from '../types';
 import { useDailyWorkspace } from '../hooks/useFirestore';
 import type { SessionResultData } from '../services/firestoreService';
 
@@ -63,6 +63,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [copiedExcelId, setCopiedExcelId] = useState<string | null>(null);
     const [localResult, setLocalResult] = useState<ProcessedResult | null>(null);
     const [excludedList, setExcludedList] = useState<ExcludedOrder[]>([]);
+    const [unmatchedList, setUnmatchedList] = useState<UnmatchedOrder[]>([]);
     const [isLocalProcessing, setIsLocalProcessing] = useState(false);
     const [localFile, setLocalFile] = useState<File | null>(null);
     
@@ -375,8 +376,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             if (processResponse) {
                 setLocalResult(processResponse.result);
                 setExcludedList(processResponse.excluded);
+                setUnmatchedList(processResponse.unmatched || []);
             } else {
                 setLocalResult(null);
+                setUnmatchedList([]);
             }
         } catch (error) {
             console.error(`[${companyName}] 처리 오류:`, error);
@@ -394,11 +397,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
     };
 
-    const resetLocalFile = () => { 
-        setLocalFile(null); 
-        setLocalResult(null); 
+    const resetLocalFile = () => {
+        setLocalFile(null);
+        setLocalResult(null);
         setExcludedList([]);
-        resetMerge(); 
+        setUnmatchedList([]);
+        resetMerge();
         onResultUpdate(sessionId, 0, 0, []);
     };
 
@@ -570,6 +574,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <button onClick={onDownloadMergedOrder} className="bg-indigo-500 text-white px-3 py-1 rounded font-black text-[10px] hover:bg-indigo-600 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>합산</span></button>
                                     )}
                                 </div>
+                                {unmatchedList.length > 0 && (
+                                    <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-amber-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 매칭 실패 {unmatchedList.length}건 누락
+                                        </div>
+                                        <div className="mt-1 space-y-0.5">
+                                            {unmatchedList.map((u, idx) => (
+                                                <div key={idx} className="text-[9px] text-amber-300/80 font-mono truncate">
+                                                    {u.recipientName} - {u.productName}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                     {excludedList.length > 0 && (

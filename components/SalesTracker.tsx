@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
-import type { DepositRecord, MarginRecord } from '../types';
+import type { DepositRecord, MarginRecord, ExpenseRecord } from '../types';
 
 declare var XLSX: any;
 
@@ -107,6 +107,19 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
       if (d.marginTotal) total += d.marginTotal;
     });
     if (total === 0) total = records.reduce((s, r) => s + r.totalMargin, 0);
+    return { records, total };
+  }, [filteredHistory]);
+
+  // 비용 데이터 합산
+  const allExpenseData = useMemo(() => {
+    const records: (ExpenseRecord & { date: string })[] = [];
+    let total = 0;
+    filteredHistory.forEach(d => {
+      if (d.expenseRecords) {
+        d.expenseRecords.forEach(r => records.push({ ...r, date: d.date }));
+        total += d.expenseRecords.reduce((s, r) => s + r.amount, 0);
+      }
+    });
     return { records, total };
   }, [filteredHistory]);
 
@@ -511,11 +524,25 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
 
     return (
       <div className="divide-y divide-zinc-900">
-        {/* 총 마진 요약 */}
+        {/* 총 마진/비용/순이익 요약 */}
         <div className="px-6 py-4 flex items-center justify-between bg-zinc-900/30">
           <span className="text-zinc-400 font-black text-xs">기간 총 마진</span>
           <span className="text-emerald-400 font-black text-lg">{total.toLocaleString()}원</span>
         </div>
+        {allExpenseData.total > 0 && (
+          <>
+            <div className="px-6 py-3 flex items-center justify-between bg-zinc-900/20">
+              <span className="text-zinc-400 font-black text-xs">기간 총 비용</span>
+              <span className="text-orange-400 font-black text-lg">-{allExpenseData.total.toLocaleString()}원</span>
+            </div>
+            <div className="px-6 py-3 flex items-center justify-between bg-zinc-900/40">
+              <span className="text-zinc-400 font-black text-xs">순이익</span>
+              <span className={`font-black text-lg ${total - allExpenseData.total >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                {(total - allExpenseData.total).toLocaleString()}원
+              </span>
+            </div>
+          </>
+        )}
 
         {/* 품목별 마진 요약 테이블 */}
         <div className="p-6">

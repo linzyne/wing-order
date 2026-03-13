@@ -257,17 +257,18 @@ export const findProductConfig = (
   }
   if (bestAliasMatch) return processProduct(bestAliasMatch.key);
 
+  const stripSpecial = (s: string) => s.replace(/[★☆※]/g, '');
   for (const productKey of sortedProductKeys) {
     const productConfig = companyProducts[productKey];
     if (!productConfig) continue;
     const keyword = productConfig.displayName;
-    if (keyword && lowerProductName.includes(keyword.toLowerCase())) {
+    if (keyword && stripSpecial(lowerProductName).includes(stripSpecial(keyword.toLowerCase()))) {
       return processProduct(productKey);
     }
   }
 
-  // 정규화 매칭: 쉼표/마침표/공백 차이를 무시
-  const normalize = (s: string) => s.toLowerCase().replace(/[,.\s]/g, '');
+  // 정규화 매칭: 쉼표/마침표/공백/특수문자(★☆※) 차이를 무시
+  const normalize = (s: string) => s.toLowerCase().replace(/[★☆※,.\s]/g, '');
   const normalizedProductName = normalize(productName);
   let bestNormMatch: { key: string; len: number } | null = null;
   for (const productKey of sortedProductKeys) {
@@ -283,7 +284,7 @@ export const findProductConfig = (
   if (bestNormMatch) return processProduct(bestNormMatch.key);
 
   for (const productKey of sortedProductKeys) {
-    if (lowerProductName.includes(productKey.toLowerCase())) {
+    if (stripSpecial(lowerProductName).includes(stripSpecial(productKey.toLowerCase()))) {
         return processProduct(productKey);
     }
   }

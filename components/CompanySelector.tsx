@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
-import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales } from '../types';
+import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace } from '../hooks/useFirestore';
@@ -53,6 +53,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
 
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
+    const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [detectedCompanies, setDetectedCompanies] = useState<Set<string>>(new Set());
 
     const [isBulkMode, setIsBulkMode] = useState(false);
@@ -80,7 +81,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         const currentStr = JSON.stringify(manualOrders);
         if (currentStr === lastWrittenManualOrdersRef.current) return;
         lastWrittenManualOrdersRef.current = currentStr;
-        saveManualOrders(manualOrders);
+        saveManualOrders(manualOrders).catch(e => console.error('[Firestore] 수동발주 저장 실패:', e));
     }, [manualOrders]);
 
     const [manualInput, setManualInput] = useState({
@@ -113,21 +114,46 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
     const [newTransfer, setNewTransfer] = useState({ label: '', bankName: '', accountNumber: '', amount: '' });
 
+    // 비용(지출내역) 관리
+    const EXPENSE_CATEGORIES = ['임대료', '통신비', '소모품비', '물류비', '마케팅', '식비', '기타', '이자'];
+    const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+    const [newExpense, setNewExpense] = useState({ category: '물류비', amount: '', description: '' });
+
     // Firestore 동기화 - 값 비교로 에코 방지
     const lastWrittenFakeRef = useRef('');
     const lastWrittenTransfersRef = useRef('[]');
+    const lastWrittenExpensesRef = useRef('[]');
+    // 저장 중 구독 업데이트 차단 (stale snapshot이 로컬 변경을 덮어쓰는 것 방지)
+    const savingFieldsUntil = useRef<Record<string, number>>({});
+    // isReady를 ref로 관리하여 save effect의 dependency에서 제외 (race condition 방지)
+    const isReadyRef = useRef(false);
+    useEffect(() => { isReadyRef.current = isReady; }, [isReady]);
 
     useEffect(() => {
         if (!workspace) return;
+        const now = Date.now();
         if (workspace.fakeOrderInput !== undefined && workspace.fakeOrderInput !== lastWrittenFakeRef.current) {
-            setFakeOrderInput(workspace.fakeOrderInput);
-            lastWrittenFakeRef.current = workspace.fakeOrderInput;
+            if (now >= (savingFieldsUntil.current['fakeOrderInput'] || 0)) {
+                setFakeOrderInput(workspace.fakeOrderInput);
+                lastWrittenFakeRef.current = workspace.fakeOrderInput;
+            }
         }
         if (workspace.manualTransfers !== undefined) {
-            const wsStr = JSON.stringify(workspace.manualTransfers);
-            if (wsStr !== lastWrittenTransfersRef.current) {
-                setManualTransfers(workspace.manualTransfers);
-                lastWrittenTransfersRef.current = wsStr;
+            if (now >= (savingFieldsUntil.current['manualTransfers'] || 0)) {
+                const wsStr = JSON.stringify(workspace.manualTransfers);
+                if (wsStr !== lastWrittenTransfersRef.current) {
+                    setManualTransfers(workspace.manualTransfers);
+                    lastWrittenTransfersRef.current = wsStr;
+                }
+            }
+        }
+        if (workspace.expenses !== undefined) {
+            if (now >= (savingFieldsUntil.current['expenses'] || 0)) {
+                const wsStr = JSON.stringify(workspace.expenses);
+                if (wsStr !== lastWrittenExpensesRef.current) {
+                    setExpenses(workspace.expenses);
+                    lastWrittenExpensesRef.current = wsStr;
+                }
             }
         }
     }, [workspace]);
@@ -135,24 +161,42 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
     // fakeOrderInput 변경 → Firestore에 debounce로 저장
     const fakeOrderDebounceRef = useRef<ReturnType<typeof setTimeout>>();
     useEffect(() => {
-        if (!isReady) return;
+        if (!isReadyRef.current) return;
         if (fakeOrderInput === lastWrittenFakeRef.current) return;
         if (fakeOrderDebounceRef.current) clearTimeout(fakeOrderDebounceRef.current);
         fakeOrderDebounceRef.current = setTimeout(() => {
+            savingFieldsUntil.current['fakeOrderInput'] = Date.now() + 30000;
             lastWrittenFakeRef.current = fakeOrderInput;
-            updateField('fakeOrderInput', fakeOrderInput);
+            updateField('fakeOrderInput', fakeOrderInput)
+                .then(() => { setTimeout(() => { savingFieldsUntil.current['fakeOrderInput'] = 0; }, 1500); })
+                .catch(e => { savingFieldsUntil.current['fakeOrderInput'] = 0; console.error('[Firestore] fakeOrderInput 저장 실패:', e); });
         }, 300);
         return () => { if (fakeOrderDebounceRef.current) clearTimeout(fakeOrderDebounceRef.current); };
-    }, [fakeOrderInput, isReady]);
+    }, [fakeOrderInput]);
 
     // manualTransfers 변경 → Firestore에 저장
     useEffect(() => {
-        if (!isReady) return;
+        if (!isReadyRef.current) return;
         const currentStr = JSON.stringify(manualTransfers);
         if (currentStr === lastWrittenTransfersRef.current) return;
+        savingFieldsUntil.current['manualTransfers'] = Date.now() + 30000;
         lastWrittenTransfersRef.current = currentStr;
-        updateField('manualTransfers', manualTransfers);
-    }, [manualTransfers, isReady]);
+        updateField('manualTransfers', manualTransfers)
+            .then(() => { setTimeout(() => { savingFieldsUntil.current['manualTransfers'] = 0; }, 1500); })
+            .catch(e => { savingFieldsUntil.current['manualTransfers'] = 0; console.error('[Firestore] manualTransfers 저장 실패:', e); });
+    }, [manualTransfers]);
+
+    // expenses 변경 → Firestore에 저장
+    useEffect(() => {
+        if (!isReadyRef.current) return;
+        const currentStr = JSON.stringify(expenses);
+        if (currentStr === lastWrittenExpensesRef.current) return;
+        savingFieldsUntil.current['expenses'] = Date.now() + 30000;
+        lastWrittenExpensesRef.current = currentStr;
+        updateField('expenses', expenses)
+            .then(() => { setTimeout(() => { savingFieldsUntil.current['expenses'] = 0; }, 1500); })
+            .catch(e => { savingFieldsUntil.current['expenses'] = 0; console.error('[Firestore] expenses 저장 실패:', e); });
+    }, [expenses]);
 
     // 가구매 명단 분석 (입력된 번호 vs 실제 발견된 번호)
     const fakeOrderAnalysis = useMemo(() => {
@@ -186,6 +230,85 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         return { inputNumbers, matched, missing, foundDetails, nameMap };
     }, [fakeOrderInput, allExcludedDetails]);
 
+    // 마스터 주문서 품목별 건수 분석 (가구매 제외 / 가구매 분리)
+    const masterProductSummary = useMemo(() => {
+        if (!masterOrderData || masterOrderData.length < 2) return null;
+        const fakeNums = new Set<string>();
+        fakeOrderInput.split('\n').forEach(line => {
+            const matches = line.trim().match(/[A-Z0-9-]{5,}/g);
+            if (matches) matches.forEach(m => fakeNums.add(m.trim()));
+        });
+        // 업체-키워드 맵 생성
+        const companyKeywordsMap = new Map<string, string[]>();
+        Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+        const productToCompany: Record<string, string> = {};
+        const realOrders: Record<string, number> = {};
+        const fakeOrders: Record<string, number> = {};
+        for (let i = 1; i < masterOrderData.length; i++) {
+            const row = masterOrderData[i];
+            if (!row) continue;
+            const orderNum = String(row[2] || '').trim();
+            const groupName = String(row[10] || '').trim();
+            const qty = parseInt(String(row[22] || '1'), 10) || 1;
+            if (!groupName) continue;
+            // 업체명 매핑
+            if (!productToCompany[groupName]) {
+                const groupNorm = groupName.replace(/\s+/g, '');
+                for (const [name, keywords] of companyKeywordsMap.entries()) {
+                    if (keywords.some(k => groupNorm.includes(k.replace(/\s+/g, '')))) {
+                        productToCompany[groupName] = name;
+                        break;
+                    }
+                }
+            }
+            if (fakeNums.has(orderNum)) {
+                fakeOrders[groupName] = (fakeOrders[groupName] || 0) + qty;
+            } else {
+                realOrders[groupName] = (realOrders[groupName] || 0) + qty;
+            }
+        }
+        const realTotal = Object.values(realOrders).reduce((a, b) => a + b, 0);
+        const fakeTotal = Object.values(fakeOrders).reduce((a, b) => a + b, 0);
+        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany };
+    }, [masterOrderData, fakeOrderInput, pricingConfig]);
+
+    // 전체 비용 목록: 수동 입력 + 자동 물류비(택배대행/롯데택배/가구매 기본)
+    const allExpenses = useMemo(() => {
+        const autoExpenses: ExpenseRecord[] = [];
+        const hasAgent = agentResult && agentResult.matched > 0;
+        const hasLotte = lotteResult && lotteResult.matched > 0;
+
+        if (hasAgent) {
+            autoExpenses.push({
+                id: 'auto-agent',
+                category: '물류비',
+                amount: agentResult.matched * 2200,
+                description: `택배대행 ${agentResult.matched}건`,
+                isAuto: true,
+            });
+        }
+        if (hasLotte) {
+            autoExpenses.push({
+                id: 'auto-lotte',
+                category: '물류비',
+                amount: lotteResult.matched * 2300,
+                description: `롯데택배 ${lotteResult.matched}건`,
+                isAuto: true,
+            });
+        }
+        // 운송장 매칭 전이라도 가구매 명단이 있으면 기본 물류비 자동 추가
+        if (!hasAgent && !hasLotte && fakeOrderAnalysis.inputNumbers.size > 0) {
+            autoExpenses.push({
+                id: 'auto-fake-default',
+                category: '물류비',
+                amount: fakeOrderAnalysis.inputNumbers.size * 2200,
+                description: `가구매 택배 ${fakeOrderAnalysis.inputNumbers.size}건`,
+                isAuto: true,
+            });
+        }
+        return [...autoExpenses, ...expenses];
+    }, [expenses, agentResult, lotteResult, fakeOrderAnalysis.inputNumbers.size]);
+
     const handleMasterUpload = async (file: File) => {
         setMasterOrderFile(file);
         try {
@@ -216,10 +339,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             console.log(`[DEBUG][감지] 업체-키워드 맵: ${JSON.stringify([...companyKeywordsMap.entries()])}`);
             console.log(`[DEBUG][감지] 감지된 업체: ${JSON.stringify([...companiesInFile])}`);
             setDetectedCompanies(companiesInFile);
+            setMasterOrderData(json);
+
+            // 기존 수동 입금내역이 있으면 포함 여부 확인
+            if (manualTransfers.length > 0) {
+                const transferList = manualTransfers.map(t => `  • ${t.label || '수동 입금'} - ${t.amount.toLocaleString()}원`).join('\n');
+                const totalAmount = manualTransfers.reduce((sum, t) => sum + t.amount, 0);
+                if (!confirm(`기존 수동 입금내역 ${manualTransfers.length}건 (총 ${totalAmount.toLocaleString()}원)이 있습니다.\n포함하시겠습니까?\n\n${transferList}\n\n[확인] 유지  |  [취소] 삭제`)) {
+                    setManualTransfers([]);
+                }
+            }
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setDetectedCompanies(new Set()); };
+    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); };
 
     const handleLotteFileUpload = async (file: File) => {
         if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
@@ -401,7 +534,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                 const address = String(row[29] || '').trim();
                 const originalOrderNum = String(row[2] || '').trim();
 
-                if (!recipientName) { notFoundOrders.push(originalOrderNum); continue; }
+                if (!recipientName) { notFoundOrders.push(originalOrderNum); }
 
                 rows.push([
                     originalOrderNum,   // 주문번호
@@ -432,7 +565,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_택배대행.xlsx`);
 
             if (notFoundOrders.length > 0) {
-                alert(`택배대행 ${matchedCount}건 다운로드 완료!\n\n배송정보 누락: ${notFoundOrders.join(', ')}`);
+                alert(`택배대행 ${matchedCount}건 다운로드 완료!\n\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
             }
         } catch (err: any) {
             console.error('택배대행 처리 오류:', err);
@@ -470,7 +603,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                 const address = String(row[29] || '').trim();
                 const originalOrderNum = String(row[2] || '').trim();
 
-                if (!recipientName) { notFoundOrders.push(originalOrderNum); continue; }
+                if (!recipientName) { notFoundOrders.push(originalOrderNum); }
 
                 rows.push([
                     originalOrderNum,               // 주문번호
@@ -502,7 +635,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_롯데택배.xlsx`);
 
             if (notFoundOrders.length > 0) {
-                alert(`롯데택배 ${matchedCount}건 다운로드 완료!\n\n배송정보 누락: ${notFoundOrders.join(', ')}`);
+                alert(`롯데택배 ${matchedCount}건 다운로드 완료!\n\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
             }
         } catch (err: any) {
             console.error('롯데택배 템플릿 처리 오류:', err);
@@ -777,7 +910,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             });
         });
 
-        const marginSheetData: any[][] = [['등록상품명', '품목명', '수량', '판매가', '공급가', '마진(개당)', '총마진']];
+        const marginSheetData: any[][] = [['등록상품명', '품목명', '수량', '판매가', '공급가', '마진(개당)', '총마진', '지출금액', '지출내역']];
         let marginCurrentCompany = '';
         for (const row of summarySheetData) {
             const firstCell = String(row[0] || '').trim();
@@ -801,23 +934,35 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                             }
                         }
                         const regName = mergedRegNames[marginCurrentCompany]?.[productName] || marginCurrentCompany;
-                        marginSheetData.push([regName, productName, count, sellingPrice, supplyPrice, margin, margin * count]);
+                        marginSheetData.push([regName, productName, count, sellingPrice, supplyPrice, margin, margin * count, '', '']);
                     }
                 }
             }
         }
-        // 가구매 물류비 추가
-        if (agentResult && agentResult.matched > 0) {
-            marginSheetData.push(['', '물류비(택배대행)', agentResult.matched, '', '', -2200, -(agentResult.matched * 2200)]);
+
+        // 총 마진
+        const totalMargin = marginSheetData.length > 1
+            ? marginSheetData.slice(1).reduce((sum: number, r: any[]) => sum + (r[6] || 0), 0)
+            : 0;
+        if (marginSheetData.length > 1) {
+            marginSheetData.push([]);
+            marginSheetData.push(['', '', '', '', '', '총 마진', totalMargin, '', '']);
         }
-        if (lotteResult && lotteResult.matched > 0) {
-            marginSheetData.push(['', '물류비(롯데택배)', lotteResult.matched, '', '', -2300, -(lotteResult.matched * 2300)]);
+
+        // 비용 섹션 (allExpenses 통합: 자동 물류비 + 수동 비용)
+        if (allExpenses.length > 0) {
+            marginSheetData.push([]);
+            marginSheetData.push(['', '[비용]', '', '', '', '', '', '', '']);
+            allExpenses.forEach(exp => {
+                marginSheetData.push(['', exp.category, '', '', '', '', '', exp.amount, exp.description]);
+            });
+            const totalExpense = allExpenses.reduce((sum, e) => sum + e.amount, 0);
+            marginSheetData.push([]);
+            marginSheetData.push(['', '', '', '', '', '총 비용', '', totalExpense, '']);
+            marginSheetData.push(['', '', '', '', '', '순이익', '', totalMargin - totalExpense, '']);
         }
 
         if (marginSheetData.length > 1) {
-            const totalMargin = marginSheetData.slice(1).reduce((sum: number, r: any[]) => sum + (r[6] || 0), 0);
-            marginSheetData.push([]);
-            marginSheetData.push(['', '', '', '', '', '총 마진', totalMargin]);
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(marginSheetData), "마진시트");
         }
 
@@ -1003,6 +1148,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
             depositTotal: depTotal > 0 ? depTotal : undefined,
             marginRecords: marginRecords.length > 0 ? marginRecords : undefined,
             marginTotal: marginTotal > 0 ? marginTotal : undefined,
+            expenseRecords: allExpenses.length > 0 ? allExpenses : undefined,
         };
 
         setSaveStatus('saving');
@@ -1035,14 +1181,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         <div className="space-y-6 animate-fade-in">
             <div>
                 <section className="bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
-                    <div className="flex flex-col gap-6">
-                        <div className="flex flex-col md:flex-row items-center gap-6">
-                            <div className="flex-1 w-full">
-                                <FileUpload 
+                    <div className="flex flex-col lg:flex-row gap-6">
+                        <div className="lg:w-[320px] shrink-0 flex flex-col gap-4">
+                                <FileUpload
                                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }}
                                     onDrop={(e) => { const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
                                 />
-                            </div>
                             {masterOrderFile && (
                                 <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 shadow-inner flex flex-col gap-3 min-w-[200px] animate-pop-in">
                                     <div className="flex justify-between items-center">
@@ -1053,11 +1197,71 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                     <div className="flex items-center gap-2">
                                         <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black">{detectedCompanies.size}개 업체 탐지</span>
                                     </div>
+                                    {masterProductSummary && (
+                                        <div className="mt-1 flex gap-6 items-start">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({masterProductSummary.realTotal}건)</div>
+                                                <div>
+                                                    {(() => {
+                                                        const grouped: Record<string, [string, number][]> = {};
+                                                        Object.entries(masterProductSummary.realOrders).forEach(([name, count]) => {
+                                                            const company = masterProductSummary.productToCompany[name] || '기타';
+                                                            if (!grouped[company]) grouped[company] = [];
+                                                            grouped[company].push([name, count as number]);
+                                                        });
+                                                        Object.values(grouped).forEach(items => items.sort((a, b) => b[1] - a[1]));
+                                                        return Object.entries(grouped).sort(([,a],[,b]) => b.reduce((s,x)=>s+x[1],0) - a.reduce((s,x)=>s+x[1],0)).map(([company, items]) => {
+                                                            const companyTotal = items.reduce((s, x) => s + x[1], 0);
+                                                            return (
+                                                            <div key={company}>
+                                                                <div className="text-sm text-zinc-300 font-black">{company} {companyTotal}건</div>
+                                                                {items.map(([name, count]) => (
+                                                                    <div key={name} className="flex text-sm pl-3">
+                                                                        <span className="text-zinc-400">{name}</span>
+                                                                        <span className="text-white font-black ml-1">{count}건</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        );});
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            {masterProductSummary.fakeTotal > 0 && (
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({masterProductSummary.fakeTotal}건)</div>
+                                                    <div>
+                                                        {(() => {
+                                                            const grouped: Record<string, [string, number][]> = {};
+                                                            Object.entries(masterProductSummary.fakeOrders).forEach(([name, count]) => {
+                                                                const company = masterProductSummary.productToCompany[name] || '기타';
+                                                                if (!grouped[company]) grouped[company] = [];
+                                                                grouped[company].push([name, count as number]);
+                                                            });
+                                                            Object.values(grouped).forEach(items => items.sort((a, b) => b[1] - a[1]));
+                                                            return Object.entries(grouped).sort(([,a],[,b]) => b.reduce((s,x)=>s+x[1],0) - a.reduce((s,x)=>s+x[1],0)).map(([company, items]) => {
+                                                                const companyTotal = items.reduce((s, x) => s + x[1], 0);
+                                                                return (
+                                                                <div key={company}>
+                                                                    <div className="text-sm text-zinc-400 font-black">{company} {companyTotal}건</div>
+                                                                    {items.map(([name, count]) => (
+                                                                        <div key={name} className="flex text-sm pl-3">
+                                                                            <span className="text-zinc-500">{name}</span>
+                                                                            <span className="text-amber-400 font-black ml-1">{count}건</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            );});
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
                         
-                        <div className="bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
+                        <div className="flex-1 bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                                 <div className="flex items-center gap-3">
                                     <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
@@ -1181,8 +1385,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                 </section>
             </div>
 
-            <section className="bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
-                <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
+            <div className="flex flex-col lg:flex-row gap-6">
+            <section className="flex-1 bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
+                <div className="flex flex-col gap-6">
                     <div className="flex flex-col gap-4 w-full">
                         <div className="flex items-center gap-6">
                             <div className="bg-rose-500/10 p-4 rounded-[1.5rem] border border-rose-500/20 shadow-inner"><span className="text-3xl">💰</span></div>
@@ -1260,8 +1465,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                     </div>
                 </div>
             </section>
-            
-            <section className="bg-zinc-900/40 rounded-[2.5rem] p-6 border border-zinc-800 shadow-xl overflow-hidden">
+
+            <section className="lg:w-[400px] shrink-0 bg-zinc-900/40 rounded-[2.5rem] p-6 border border-zinc-800 shadow-xl overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                         <div className="bg-indigo-500/10 p-2 rounded-lg"><BoltIcon className="w-4 h-4 text-indigo-500" /></div>
@@ -1273,7 +1478,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                     </div>
                 </div>
                 {!isBulkMode ? (
-                    <form onSubmit={handleAddManualTransfer} className="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+                    <form onSubmit={handleAddManualTransfer} className="grid grid-cols-2 gap-2 items-end">
                         <input type="text" placeholder="은행명" value={newTransfer.bankName} onChange={e => setNewTransfer({...newTransfer, bankName: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-bold text-white focus:outline-none" />
                         <input type="text" placeholder="계좌번호" value={newTransfer.accountNumber} onChange={e => setNewTransfer({...newTransfer, accountNumber: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-mono font-bold text-white focus:outline-none" />
                         <input type="number" placeholder="금액" value={newTransfer.amount} onChange={e => setNewTransfer({...newTransfer, amount: e.target.value})} className="bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs font-black text-rose-500 focus:outline-none" />
@@ -1307,6 +1512,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                     </div>
                 )}
             </section>
+            </div>
 
             <section className="bg-zinc-900/20 rounded-[2.5rem] border border-zinc-900 overflow-hidden shadow-2xl">
                 <div className="p-6 border-b border-zinc-900 bg-zinc-900/40 flex items-center justify-between">
@@ -1314,8 +1520,113 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                         <div className="bg-zinc-800 p-2 rounded-xl border border-zinc-700"><BuildingStorefrontIcon className="w-5 h-5 text-rose-500" /></div>
                         <h2 className="text-xl font-black text-white tracking-tight uppercase">Workstation</h2>
                     </div>
+                    {(() => {
+                        const totalOrders: number = Object.values(allOrderRows).reduce<number>((sum, rows) => sum + (rows as any[][]).length, 0);
+                        const totalAmount: number = Object.values(totalsMap).reduce<number>((sum, v) => sum + (v as number), 0);
+                        return totalOrders > 0 ? (
+                            <div className="flex items-center gap-3 text-xs font-black">
+                                <span className="bg-rose-500/10 text-rose-400 px-3 py-1.5 rounded-full">{totalOrders}건</span>
+                                <span className="bg-zinc-800 text-zinc-400 px-3 py-1.5 rounded-full">{totalAmount.toLocaleString()}원</span>
+                            </div>
+                        ) : null;
+                    })()}
                 </div>
-                <div className="p-6 border-b border-zinc-900">
+                {/* 비용(지출내역) 섹션 */}
+                <div className="p-6 border-b border-zinc-900 bg-orange-950/30 border-l-[3px] border-l-orange-500">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="bg-orange-500/10 p-2 rounded-lg"><ChartBarIcon className="w-4 h-4 text-orange-500" /></div>
+                        <h3 className="text-zinc-200 font-black text-xs uppercase tracking-widest flex items-center gap-2">
+                            비용 관리
+                            {allExpenses.length > 0 && (
+                                <span className="bg-orange-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
+                                    {allExpenses.length}건 · {allExpenses.reduce((s, e) => s + e.amount, 0).toLocaleString()}원
+                                </span>
+                            )}
+                        </h3>
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
+                        <select
+                            value={newExpense.category}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, category: e.target.value }))}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50"
+                        >
+                            {EXPENSE_CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                        </select>
+                        <input
+                            type="text"
+                            value={newExpense.amount}
+                            onChange={(e) => {
+                                const v = e.target.value.replace(/[^0-9]/g, '');
+                                setNewExpense(prev => ({ ...prev, amount: v }));
+                            }}
+                            placeholder="금액"
+                            className="w-28 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-orange-500/50 text-right"
+                        />
+                        <input
+                            type="text"
+                            value={newExpense.description}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, description: e.target.value }))}
+                            placeholder="지출내역"
+                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-orange-500/50"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && newExpense.amount && parseInt(newExpense.amount) > 0) {
+                                    setExpenses(prev => [...prev, {
+                                        id: `exp-${Date.now()}`,
+                                        category: newExpense.category,
+                                        amount: parseInt(newExpense.amount),
+                                        description: newExpense.description,
+                                    }]);
+                                    setNewExpense(prev => ({ ...prev, amount: '', description: '' }));
+                                }
+                            }}
+                        />
+                        <button
+                            onClick={() => {
+                                if (!newExpense.amount || parseInt(newExpense.amount) <= 0) return;
+                                setExpenses(prev => [...prev, {
+                                    id: `exp-${Date.now()}`,
+                                    category: newExpense.category,
+                                    amount: parseInt(newExpense.amount),
+                                    description: newExpense.description,
+                                }]);
+                                setNewExpense(prev => ({ ...prev, amount: '', description: '' }));
+                            }}
+                            className="bg-orange-600 hover:bg-orange-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5"
+                        >
+                            <PlusCircleIcon className="w-3.5 h-3.5" />추가
+                        </button>
+                    </div>
+                    {allExpenses.length > 0 && (
+                        <div className="space-y-1.5">
+                            {allExpenses.map((exp) => (
+                                <div key={exp.id} className={`flex items-center justify-between px-4 py-2.5 rounded-xl border ${exp.isAuto ? 'bg-teal-950/20 border-teal-500/20' : 'bg-zinc-950/50 border-zinc-800/50'}`}>
+                                    <div className="flex items-center gap-3">
+                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${exp.isAuto ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30' : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'}`}>
+                                            {exp.category}
+                                        </span>
+                                        <span className="text-[11px] text-zinc-400">{exp.description}</span>
+                                        {exp.isAuto && <span className="text-[9px] text-teal-600 font-bold">자동</span>}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[11px] font-mono font-bold text-zinc-300">{exp.amount.toLocaleString()}원</span>
+                                        {!exp.isAuto && (
+                                            <button onClick={() => setExpenses(prev => prev.filter(e => e.id !== exp.id))} className="text-zinc-700 hover:text-rose-500 transition-colors">
+                                                <TrashIcon className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="flex justify-end pt-2 pr-4">
+                                <span className="text-[10px] font-black text-orange-400">
+                                    총 비용: {allExpenses.reduce((s, e) => s + e.amount, 0).toLocaleString()}원
+                                </span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-6 border-b border-zinc-900 bg-rose-950/30 border-l-[3px] border-l-rose-500">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
                             <div className="bg-rose-500/10 p-2 rounded-lg"><BoltIcon className="w-4 h-4 text-rose-500" /></div>
@@ -1401,12 +1712,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                     )}
 
                     {showFakeOrderInput ? (
-                        <div className="space-y-3 animate-fade-in">
-                            <textarea
-                                autoFocus value={fakeOrderInput} onChange={(e) => setFakeOrderInput(e.target.value)}
-                                placeholder="예: 홍길동 20231010-00001"
-                                className="w-full h-24 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
-                            />
+                        <div className="flex flex-col lg:flex-row gap-4 animate-fade-in">
+                            <div className="flex-1">
+                                <textarea
+                                    autoFocus value={fakeOrderInput} onChange={(e) => setFakeOrderInput(e.target.value)}
+                                    placeholder="예: 홍길동 20231010-00001"
+                                    className="w-full h-full min-h-[96px] bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
+                                />
+                            </div>
+                            <div className="flex-1 space-y-3">
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={handleDeliveryAgentDownload}
@@ -1497,6 +1811,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                     )}
                                 </div>
                             )}
+                            </div>
                         </div>
                     ) : (
                         <div className="flex items-center justify-center h-24 border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-800/20 transition-all" onClick={() => setShowFakeOrderInput(true)}>
@@ -1514,7 +1829,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                         <span>업체 정보</span>
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 w-[30%] text-center whitespace-nowrap">발주서</th>
+                                <th className="px-6 py-4 w-[30%] text-center whitespace-nowrap">
+                                    발주서
+                                    {(() => {
+                                        const total: number = Object.values(allOrderRows).reduce<number>((s, r) => s + (r as any[][]).length, 0);
+                                        return total > 0 ? <span className="ml-2 text-white font-black text-xl normal-case tracking-normal">{total}건</span> : null;
+                                    })()}
+                                </th>
                                 <th className="px-6 py-4 w-[35%] text-center whitespace-nowrap">송장 매칭</th>
                             </tr>
                         </thead>

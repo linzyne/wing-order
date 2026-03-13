@@ -37,6 +37,14 @@ export interface ExcludedOrder {
   orderNumber: string;
 }
 
+export interface UnmatchedOrder {
+  companyName: string;
+  recipientName: string;
+  productName: string;
+  phone: string;
+  orderNumber: string;
+}
+
 export interface ManualOrder {
   id: string;
   companyName: string;
@@ -76,6 +84,14 @@ export interface MarginRecord {
   totalMargin: number;    // 총마진
 }
 
+export interface ExpenseRecord {
+  id: string;
+  category: string;    // 임대료, 통신비, 소모품비, 물류비, 마케팅, 식비, 기타, 이자
+  amount: number;      // 지출 금액
+  description: string; // 지출 내역
+  isAuto?: boolean;    // 택배대행/롯데택배 자동 생성 여부
+}
+
 export interface DailySales {
   date: string;
   records: SalesRecord[];
@@ -89,4 +105,5 @@ export interface DailySales {
   depositTotal?: number;
   marginRecords?: MarginRecord[];
   marginTotal?: number;
+  expenseRecords?: ExpenseRecord[];
 }

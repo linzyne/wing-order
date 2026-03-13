@@ -10,18 +10,18 @@ import type { PricingConfig, DailySales } from '../types';
 // ===== Pricing Config =====
 
 export const subscribePricingConfig = (
-  callback: (config: PricingConfig | null) => void
+  callback: (config: PricingConfig | null, connected: boolean) => void
 ): Unsubscribe => {
   const docRef = doc(db, 'config', 'pricingConfig');
   return onSnapshot(docRef, (snapshot) => {
     if (snapshot.exists()) {
-      callback(snapshot.data().data as PricingConfig);
+      callback(snapshot.data().data as PricingConfig, true);
     } else {
-      callback(null);
+      callback(null, true); // 문서 없음 (초기화 필요)
     }
   }, (error) => {
     console.error('[Firestore] PricingConfig 구독 오류:', error);
-    callback(null);
+    callback(null, false); // 에러 - 덮어쓰기 금지
   });
 };
 
@@ -95,6 +95,7 @@ export interface SessionResultData {
 export interface DailyWorkspaceData {
   fakeOrderInput: string;
   manualTransfers: any[];
+  expenses?: any[];
   sessionWorkflows: Record<string, { order: boolean; deposit: boolean; invoice: boolean }>;
   sessionAdjustments: Record<string, any[]>;
   sessionResults?: Record<string, SessionResultData>;

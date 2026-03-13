@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PricingConfig, CompanyConfig, ProductPricing } from '../types';
 import {
     TrashIcon, PlusCircleIcon, DocumentArrowUpIcon, BuildingStorefrontIcon,
@@ -8,6 +8,13 @@ import {
 } from './icons';
 
 declare var XLSX: any;
+
+// undefined 값 제거 (Firestore는 undefined를 지원하지 않음)
+const stripUndefined = <T extends Record<string, any>>(obj: T): T => {
+    return Object.fromEntries(
+        Object.entries(obj).filter(([_, v]) => v !== undefined)
+    ) as T;
+};
 
 // Updated DialogType to include 'message' in 'productEditor' variant
 type DialogType =
@@ -197,7 +204,11 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
     });
     const [isInfoExpanded, setIsInfoExpanded] = useState(false);
 
-    const handleUpdate = (newConfig: PricingConfig) => onConfigChange(newConfig);
+    // 항상 최신 config를 참조하기 위한 ref (stale closure 방지)
+    const configRef = useRef(config);
+    useEffect(() => { configRef.current = config; }, [config]);
+
+    const handleUpdate = useCallback((newConfig: PricingConfig) => onConfigChange(newConfig), [onConfigChange]);
 
     const handleAddCompany = () => {
         setDialog({
@@ -206,13 +217,14 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
             placeholder: '예: 고랭지김치',
             onConfirm: (companyName) => {
                 if (!companyName) return;
-                const newConfig = { ...config };
-                if (newConfig[companyName]) {
+                const cur = configRef.current;
+                if (cur[companyName]) {
                     setDialog({ type: 'alert', message: '이미 있는 이름이에요! ✨', onConfirm: () => setDialog(null) });
                     return;
                 }
+                const newConfig = JSON.parse(JSON.stringify(cur));
                 newConfig[companyName] = { phone: '', bankName: '', accountNumber: '', products: { '기본 품목': { displayName: '기본 품목', supplyPrice: 0 } } };
-                handleUpdate(newConfig);
+                onConfigChange(newConfig);
                 setDialog(null);
             },
             onCancel: () => setDialog(null),
@@ -224,9 +236,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
             type: 'confirm',
             message: `정말로 '${companyName}' 그룹을 삭제할까요? 🥺`,
             onConfirm: () => {
-                const newConfig = { ...config };
+                const newConfig = JSON.parse(JSON.stringify(configRef.current));
                 delete newConfig[companyName];
-                handleUpdate(newConfig);
+                onConfigChange(newConfig);
                 setDialog(null);
             },
             onCancel: () => setDialog(null),
@@ -235,31 +247,31 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
 
     const handleUpdateCompanyName = (oldName: string, newName: string) => {
         if (oldName === newName) return;
-        if (config[newName]) {
+        const cur = configRef.current;
+        if (cur[newName]) {
             setDialog({ type: 'alert', message: '이미 있는 이름이에요! 🥺', onConfirm: () => setDialog(null) });
-            handleUpdate({ ...config });
             return;
         }
-        const newConfig = { ...config };
+        const newConfig = JSON.parse(JSON.stringify(cur));
         newConfig[newName] = newConfig[oldName];
         delete newConfig[oldName];
         handleUpdate(newConfig);
     };
 
     const handleUpdatePhone = (companyName: string, phone: string) => {
-        const newConfig = { ...config };
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].phone = phone;
         handleUpdate(newConfig);
     };
 
     const handleUpdateBank = (companyName: string, bank: string) => {
-        const newConfig = { ...config };
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].bankName = bank;
         handleUpdate(newConfig);
     };
 
     const handleUpdateAccount = (companyName: string, account: string) => {
-        const newConfig = { ...config };
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].accountNumber = account;
         handleUpdate(newConfig);
     };
@@ -271,14 +283,14 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
             placeholder: '예: 배추김치 5kg',
             onConfirm: (displayName) => {
                 if (!displayName) return;
-                const newConfig = { ...config };
+                const newConfig = JSON.parse(JSON.stringify(configRef.current));
                 const productKey = displayName;
                 if (newConfig[companyName].products[productKey]) {
                     setDialog({ type: 'alert', message: '이미 같은 품목이 있어요! ✨', onConfirm: () => setDialog(null) });
                     return;
                 }
                 newConfig[companyName].products[productKey] = { displayName, supplyPrice: 0 };
-                handleUpdate(newConfig);
+                onConfigChange(newConfig);
                 setDialog(null);
             },
             onCancel: () => setDialog(null),
@@ -290,9 +302,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
             type: 'confirm',
             message: `'${productKey}' 품목을 삭제할까요? 🧺`,
             onConfirm: () => {
-                const newConfig = { ...config };
+                const newConfig = JSON.parse(JSON.stringify(configRef.current));
                 delete newConfig[companyName].products[productKey];
-                handleUpdate(newConfig);
+                onConfigChange(newConfig);
                 setDialog(null);
             },
             onCancel: () => setDialog(null),
@@ -300,19 +312,21 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
     };
 
     const handleUpdateProduct = (companyName: string, productKey: string, newProduct: ProductPricing) => {
-        const newConfig = JSON.parse(JSON.stringify(config));
-        const newProductKey = newProduct.displayName;
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        const cleanProduct = stripUndefined(newProduct);
+        const newProductKey = cleanProduct.displayName;
         if (productKey === newProductKey) {
-            newConfig[companyName].products[productKey] = newProduct;
+            newConfig[companyName].products[productKey] = cleanProduct;
         } else {
             if (newConfig[companyName].products[newProductKey]) {
                 setDialog({ type: 'alert', message: '이미 존재하는 품목명입니다. 🥺', onConfirm: () => setDialog(null) });
                 return;
             }
             delete newConfig[companyName].products[productKey];
-            newConfig[companyName].products[newProductKey] = newProduct;
+            newConfig[companyName].products[newProductKey] = cleanProduct;
         }
         handleUpdate(newConfig);
+        setDialog(null);
     };
 
     const toggleCompany = (companyName: string) => setExpandedCompanies(prev => ({ ...prev, [companyName]: !prev[companyName] }));
@@ -413,6 +427,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
                 </div>
             </div>
 
+            <div className="flex items-center gap-4 px-2 text-sm font-black text-zinc-500">
+                <span>그룹 <span className="text-rose-500">{Object.keys(config).length}</span>개</span>
+                <span className="text-zinc-800">|</span>
+                <span>품목 <span className="text-rose-500">{Object.values(config).reduce((sum: number, c: CompanyConfig) => sum + Object.keys(c.products).length, 0)}</span>건</span>
+            </div>
+
             {Object.keys(config).length === 0 ? (
                 <div className="text-center py-24 bg-zinc-900/20 border-2 border-dashed border-zinc-800 rounded-[3rem]">
                     <div className="bg-zinc-800 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8 shadow-inner border border-zinc-700">
@@ -438,14 +458,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
                             onOpenProductEditor={(productKey, product) => setDialog({
                                 type: 'productEditor',
-                                /* Fix: provide message which was missing in original logic for this type variant */
                                 message: '품목 정보 수정 ✍️',
                                 companyName,
                                 productKey,
-                                product,
+                                product: { ...product },
                                 onConfirm: (originalProductKey, newProduct) => {
                                     handleUpdateProduct(companyName, originalProductKey, newProduct);
-                                    setDialog(null);
                                 },
                                 onCancel: () => setDialog(null)
                             })}
