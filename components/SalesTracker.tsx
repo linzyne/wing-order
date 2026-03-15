@@ -27,7 +27,7 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
 
   // 날짜 범위 모드
   const [dateMode, setDateMode] = useState<DateMode>('month');
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const [rangeStart, setRangeStart] = useState(todayStr.slice(0, 8) + '01');
   const [rangeEnd, setRangeEnd] = useState(todayStr);
 

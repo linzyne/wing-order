@@ -155,7 +155,8 @@ export const useInvoiceMerger = () => {
             }
             const mgmtWb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(mgmtWb, XLSX.utils.aoa_to_sheet(mgmtRows), "기록용");
             const uploadWb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(uploadWb, XLSX.utils.aoa_to_sheet(uploadRows), "업로드용");
-            const dateStr = new Date().toISOString().slice(0, 10);
+            const now = new Date();
+            const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
             setResults({ 
                 mgmtWorkbook: mgmtWb, 
                 uploadWorkbook: uploadWb, 

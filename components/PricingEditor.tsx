@@ -336,7 +336,8 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
     const handleExport = () => {
         const dataStr = JSON.stringify(config, null, 2);
         const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-        const exportFileDefaultName = `윙발주_백업_${new Date().toISOString().slice(0, 10)}.json`;
+        const d = new Date();
+        const exportFileDefaultName = `윙발주_백업_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json`;
         const linkElement = document.createElement('a');
         linkElement.setAttribute('href', dataUri);
         linkElement.setAttribute('download', exportFileDefaultName);
