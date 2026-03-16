@@ -288,16 +288,21 @@ const generateWorkbookForCompany = async (
                     rawProductName += ' ' + String(row[optionColIdx]).trim();
                 }
                 // 등록상품명 "열무김치" + 데이터 "연두김치": kg 무게 찾아서 "열무김치 Xkg"로 변환
-                if (hasYeolmuProducts && (rawProductName.includes('연두김치') || productName === '연두김치' || /^\d+\s*kg$/i.test(productName))) {
+                if (hasYeolmuProducts && (rawProductName.includes('연두김치') || productName === '연두김치' || /^\d+\s*kg/i.test(productName))) {
+                    let foundWeight: string | null = null;
+                    // 1) rawProductName에서 kg 추출
                     const kgMatch = rawProductName.match(/(\d+)\s*kg/i);
-                    if (kgMatch) {
-                        rawProductName = `열무김치 ${kgMatch[1]}kg`;
-                    } else {
-                        for (let col = 12; col <= 21; col++) {
-                            const m = String(row[col] || '').match(/(\d+)\s*kg/i);
-                            if (m) { rawProductName = `열무김치 ${m[1]}kg`; break; }
+                    if (kgMatch) foundWeight = kgMatch[1];
+                    // 2) 못 찾으면 행 전체에서 "Xkg" 또는 "Xkg 1박스"로 시작하는 셀 탐색
+                    if (!foundWeight) {
+                        for (let col = 0; col < row.length; col++) {
+                            if (col === groupColIdx || col === productColIdx) continue;
+                            const val = String(row[col] || '').trim();
+                            const m = val.match(/^(\d+)\s*kg/i);
+                            if (m) { foundWeight = m[1]; break; }
                         }
                     }
+                    if (foundWeight) rawProductName = `열무김치 ${foundWeight}kg`;
                 }
                 const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig);
 
