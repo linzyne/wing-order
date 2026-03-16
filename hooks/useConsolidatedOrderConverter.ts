@@ -261,7 +261,11 @@ const generateWorkbookForCompany = async (
             const sourceOrderNumberIdx = 2;
             const recipientNameCol = 26;
             const recipientPhoneCol = 27;
-            const optionColIdx = headers.findIndex(h => h.includes('옵션정보'));
+            let optionColIdx = headers.findIndex(h => h.includes('옵션정보'));
+            if (optionColIdx === -1) {
+                optionColIdx = headers.findIndex(h => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
+            }
+            const hasYeolmuProducts = Object.values(companyConfig.products).some(p => p.displayName.startsWith('열무김치'));
 
             for (let i = 1; i < json.length; i++) {
                 const row = json[i];
@@ -282,6 +286,10 @@ const generateWorkbookForCompany = async (
                 let rawProductName = `${row[groupColIdx] || ''} ${row[productColIdx] || ''}`.trim();
                 if (optionColIdx !== -1 && row[optionColIdx]) {
                     rawProductName += ' ' + String(row[optionColIdx]).trim();
+                }
+                // 등록상품명이 "열무김치"인 경우: 상품명이 단위(kg)만 있으면 앞에 "열무김치" 붙이기
+                if (hasYeolmuProducts && /^\d+\s*kg$/i.test(productName)) {
+                    rawProductName = `열무김치 ${productName}`;
                 }
                 const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig);
 
