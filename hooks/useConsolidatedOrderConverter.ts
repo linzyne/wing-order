@@ -261,6 +261,7 @@ const generateWorkbookForCompany = async (
             const sourceOrderNumberIdx = 2;
             const recipientNameCol = 26;
             const recipientPhoneCol = 27;
+            const optionColIdx = headers.findIndex(h => h.includes('옵션정보'));
 
             for (let i = 1; i < json.length; i++) {
                 const row = json[i];
@@ -278,7 +279,10 @@ const generateWorkbookForCompany = async (
                 const qty = parseInt(String(row[quantityColIdx] || row[22]), 10);
                 if (isNaN(qty) || qty < 1) continue;
 
-                const rawProductName = `${row[groupColIdx] || ''} ${row[productColIdx] || ''}`.trim();
+                let rawProductName = `${row[groupColIdx] || ''} ${row[productColIdx] || ''}`.trim();
+                if (optionColIdx !== -1 && row[optionColIdx]) {
+                    rawProductName += ' ' + String(row[optionColIdx]).trim();
+                }
                 const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig);
 
                 if (productConfigTuple) {
