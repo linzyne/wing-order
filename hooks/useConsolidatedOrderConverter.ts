@@ -287,9 +287,17 @@ const generateWorkbookForCompany = async (
                 if (optionColIdx !== -1 && row[optionColIdx]) {
                     rawProductName += ' ' + String(row[optionColIdx]).trim();
                 }
-                // 등록상품명이 "열무김치"인 경우: 상품명이 단위(kg)만 있으면 앞에 "열무김치" 붙이기
-                if (hasYeolmuProducts && /^\d+\s*kg$/i.test(productName)) {
-                    rawProductName = `열무김치 ${productName}`;
+                // 등록상품명 "열무김치" + 데이터 "연두김치": kg 무게 찾아서 "열무김치 Xkg"로 변환
+                if (hasYeolmuProducts && (rawProductName.includes('연두김치') || productName === '연두김치' || /^\d+\s*kg$/i.test(productName))) {
+                    const kgMatch = rawProductName.match(/(\d+)\s*kg/i);
+                    if (kgMatch) {
+                        rawProductName = `열무김치 ${kgMatch[1]}kg`;
+                    } else {
+                        for (let col = 12; col <= 21; col++) {
+                            const m = String(row[col] || '').match(/(\d+)\s*kg/i);
+                            if (m) { rawProductName = `열무김치 ${m[1]}kg`; break; }
+                        }
+                    }
                 }
                 const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig);
 
