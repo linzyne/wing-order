@@ -315,6 +315,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 itemSummary: localResult.summary as any,
                 registeredProductNames: localResult.registeredProductNames || {},
                 orderItems: localResult.orderItems || [],
+                unmatchedOrders: unmatchedList.length > 0 ? unmatchedList : undefined,
             };
             const resultStr = JSON.stringify(resultData);
             if (resultStr === lastSavedResultRef.current) return;
@@ -323,7 +324,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             updateField('sessionResults', { ...currentResults, [sessionId]: resultData });
         }, 500);
         return () => { if (saveResultDebounceRef.current) clearTimeout(saveResultDebounceRef.current); };
-    }, [localResult, mergeResults, excludedList, sessionAdjustments, sessionId]);
+    }, [localResult, mergeResults, excludedList, unmatchedList, sessionAdjustments, sessionId]);
 
     // Synced data → parent 콜백 (디바이스 2: Firestore에서 로드)
     const lastSyncedCallbackRef = useRef('');
@@ -335,6 +336,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lastSyncedCallbackRef.current = key;
         onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
         onDataUpdate(sessionId, syncedData.orderRows, syncedData.invoiceRows, syncedData.uploadInvoiceRows, syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary);
+        if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 
     useEffect(() => {

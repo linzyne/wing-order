@@ -109,6 +109,7 @@ export interface SessionResultData {
   itemSummary: Record<string, { count: number; totalPrice: number }>;
   registeredProductNames?: Record<string, string>;
   orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[];
+  unmatchedOrders?: { companyName: string; recipientName: string; productName: string; phone: string; orderNumber: string }[];
 }
 
 export interface DailyWorkspaceData {
