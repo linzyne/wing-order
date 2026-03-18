@@ -6,10 +6,28 @@ import SalesTracker from './components/SalesTracker';
 import { ChartBarIcon, WrenchScrewdriverIcon, Cog6ToothIcon } from './components/icons';
 import { usePricingConfig } from './hooks/useFirestore';
 import { migrateLocalStorageToFirestore, syncPricingFields } from './services/migration';
+import type { BusinessId } from './types';
+
+const BUSINESS_OPTIONS: { id: BusinessId; label: string }[] = [
+  { id: '안군농원', label: '안군농원' },
+  { id: '조에', label: '조에농원' },
+];
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('converter');
-  const { config: pricingConfig, saveConfig, isLoading, configSource } = usePricingConfig();
+  const [currentBusiness, setCurrentBusiness] = useState<BusinessId>(() => {
+    const saved = localStorage.getItem('selectedBusiness');
+    return (saved === '안군농원' || saved === '조에') ? saved : '안군농원';
+  });
+
+  const handleBusinessChange = (newBusiness: BusinessId) => {
+    if (newBusiness === currentBusiness) return;
+    if (!window.confirm(`사업자를 "${BUSINESS_OPTIONS.find(b => b.id === newBusiness)?.label}"(으)로 전환하시겠습니까?`)) return;
+    localStorage.setItem('selectedBusiness', newBusiness);
+    setCurrentBusiness(newBusiness);
+  };
+
+  const { config: pricingConfig, saveConfig, isLoading, configSource } = usePricingConfig(currentBusiness);
 
   const handleConfigChange = (newConfig: typeof pricingConfig) => {
     saveConfig(newConfig);
@@ -19,8 +37,8 @@ const App: React.FC = () => {
     migrateLocalStorageToFirestore().then((migrated) => {
       if (migrated) console.log('[App] localStorage → Firestore 마이그레이션 완료');
     });
-    syncPricingFields();
-  }, []);
+    syncPricingFields(currentBusiness);
+  }, [currentBusiness]);
 
   if (isLoading) {
     return (
@@ -46,6 +64,21 @@ const App: React.FC = () => {
                 윙 <span className="text-rose-500">발주매니저</span>
               </h1>
               <p className="text-zinc-500 font-bold text-[10px] mt-0.5 uppercase tracking-wider">Automated Order Management</p>
+            </div>
+            <div className="flex ml-4 p-1 bg-zinc-900 rounded-xl border border-zinc-800">
+              {BUSINESS_OPTIONS.map(b => (
+                <button
+                  key={b.id}
+                  onClick={() => handleBusinessChange(b.id)}
+                  className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
+                    currentBusiness === b.id
+                      ? 'bg-rose-500 text-white shadow-lg'
+                      : 'text-zinc-500 hover:text-white'
+                  }`}
+                >
+                  {b.label}
+                </button>
+              ))}
             </div>
           </div>
           
@@ -92,15 +125,15 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <main className="w-full">
+        <main className="w-full" key={currentBusiness}>
           <div style={{ display: activeTab === 'converter' ? undefined : 'none' }}>
-            <CompanySelector pricingConfig={pricingConfig} />
+            <CompanySelector pricingConfig={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} />
           </div>
           <div style={{ display: activeTab === 'pricing' ? undefined : 'none' }}>
-            <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} />
+            <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} />
           </div>
           <div style={{ display: activeTab === 'sales' ? undefined : 'none' }}>
-            <SalesTracker isActive={activeTab === 'sales'} />
+            <SalesTracker isActive={activeTab === 'sales'} businessId={currentBusiness} />
           </div>
         </main>
         

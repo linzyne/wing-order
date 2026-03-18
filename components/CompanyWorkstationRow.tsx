@@ -8,6 +8,7 @@ import {
     PlusCircleIcon, TrashIcon
 } from './icons';
 import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder } from '../types';
+import { BUSINESS_INFO } from '../types';
 import { useDailyWorkspace } from '../hooks/useFirestore';
 import type { SessionResultData } from '../services/firestoreService';
 
@@ -34,6 +35,7 @@ interface CompanyWorkstationRowProps {
     pricingConfig: PricingConfig;
     vendorFile: File | null;
     masterFile: File | null;
+    batchFile?: File | null;
     isDetected: boolean;
     fakeOrderNumbers: string;
     manualOrders?: ManualOrder[];
@@ -46,16 +48,20 @@ interface CompanyWorkstationRowProps {
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
     onDownloadMergedOrder?: () => void;
+    onDownloadMergedInvoice?: (type: 'mgmt' | 'upload') => void;
     previousRoundItems?: { round: number; summary: Record<string, { count: number; totalPrice: number }> }[];
     manualOrdersRejected?: boolean;
     onManualOrdersApproval?: (companyName: string, approved: boolean) => void;
+    businessId?: string;
+    onConfigChange: (newConfig: PricingConfig) => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
-    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFile, masterFile, isDetected, fakeOrderNumbers, manualOrders = [],
-    isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder,
+    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFile, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
+    isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     previousRoundItems = [],
-    manualOrdersRejected = false, onManualOrdersApproval
+    manualOrdersRejected = false, onManualOrdersApproval,
+    businessId, onConfigChange
 }) => {
     const [showSummary, setShowSummary] = useState(false);
     const [showExcluded, setShowExcluded] = useState(false);
@@ -66,8 +72,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [unmatchedList, setUnmatchedList] = useState<UnmatchedOrder[]>([]);
     const [isLocalProcessing, setIsLocalProcessing] = useState(false);
     const [localFile, setLocalFile] = useState<File | null>(null);
+    const [isAddingKeyword, setIsAddingKeyword] = useState(false);
+    const [newKeyword, setNewKeyword] = useState('');
+    const newKeywordRef = useRef('');
+    const pricingConfigRef = useRef(pricingConfig);
+    pricingConfigRef.current = pricingConfig;
     
-    const { workspace, updateField } = useDailyWorkspace();
+    const { workspace, updateField } = useDailyWorkspace(businessId);
 
     // 수동 차감/추가 내역 상태
     const [adjAmount, setAdjAmount] = useState('');
@@ -128,7 +139,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
         lines.push('');
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
-        lines.push('(입금자 안군농원)');
+        lines.push(`(입금자 ${BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원'})`);
         return lines.join('\n');
     }, [combinedSummary, localResult?.summary, companyName, roundNumber]);
 
@@ -152,7 +163,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             });
         lines.push('');
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
-        lines.push('(입금자 안군농원)');
+        lines.push(`(입금자 ${BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원'})`);
         return lines.join('\n');
     }, [isLastSession, previousRoundItems, localResult, combinedSummary, companyName]);
 
@@ -182,6 +193,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const lastProcessedMasterRef = useRef<File | null>(null);
+    const lastProcessedBatchRef = useRef<File | null>(null);
     const lastFakeOrdersRef = useRef<string>('');
     const lastManualOrdersRef = useRef<string>('');
 
@@ -189,7 +201,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const syncedData = (!localResult && !isLocalProcessing) ? workspace?.sessionResults?.[sessionId] : undefined;
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
-    const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig);
+    const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig, businessId);
 
     // Firestore 동기화 - 값 비교로 에코 방지
     const lastFirestoreWorkflowRef = useRef('');
@@ -236,10 +248,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);
         const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
+        const hasBatchFileChanged = batchFile && batchFile !== lastProcessedBatchRef.current;
         const hasFakeOrdersChanged = isFirstSession && fakeOrderNumbers !== lastFakeOrdersRef.current;
         const hasManualOrdersChanged = isLastSession && manualOrdersStr !== lastManualOrdersRef.current;
 
-        if (hasFileChanged) {
+        if (hasBatchFileChanged && batchFile) {
+            // N차 일괄 업로드: 가구매 제외 없이 처리
+            lastProcessedBatchRef.current = batchFile;
+            handleLocalFileChange(batchFile, false, '');
+        } else if (hasFileChanged) {
             if (masterFile) {
                 lastProcessedMasterRef.current = masterFile;
                 lastFakeOrdersRef.current = fakeOrderNumbers;
@@ -264,7 +281,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
         }
-    }, [masterFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, isLocalProcessing]);
+    }, [masterFile, batchFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, isLocalProcessing]);
 
     useEffect(() => {
         if (!localResult) return;
@@ -294,9 +311,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 totalPrice: orderTotal + adjTotal,
                 excludedCount: excludedList.length,
                 excludedDetails: excludedList,
-                orderCount: Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.count || 0), 0 as number),
+                orderCount: (Object.values(localResult.summary) as any[]).reduce((a: number, b: any) => a + (b.count || 0), 0),
                 itemSummary: localResult.summary as any,
                 registeredProductNames: localResult.registeredProductNames || {},
+                orderItems: localResult.orderItems || [],
             };
             const resultStr = JSON.stringify(resultData);
             if (resultStr === lastSavedResultRef.current) return;
@@ -348,7 +366,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const isProcessingRef = useRef(false);
-    const handleLocalFileChange = async (file: File | null, confirmManualOrders = false) => {
+    const handleLocalFileChange = async (file: File | null, confirmManualOrders = false, overrideFakeOrders?: string) => {
         if (isProcessingRef.current) return;
         isProcessingRef.current = true;
         // 처리 시작 시점에 수동주문 ref 갱신 (race condition 방지)
@@ -372,7 +390,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             }
         }
         try {
-            const processResponse = await processSingleCompanyFile(file, companyName, fakeOrderNumbers, ordersToInclude);
+            const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
+            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude);
             if (processResponse) {
                 setLocalResult(processResponse.result);
                 setExcludedList(processResponse.excluded);
@@ -432,6 +451,29 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const toggleStep = (step: keyof WorkflowStatus) => {
         setWorkflow(prev => ({ ...prev, [step]: !prev[step] }));
+    };
+
+    const handleAddKeyword = () => {
+        const kw = newKeywordRef.current.trim();
+        newKeywordRef.current = '';
+        setNewKeyword('');
+        setIsAddingKeyword(false);
+        if (!kw) return;
+        const cfg = pricingConfigRef.current;
+        if (!cfg[companyName]) return;
+        const newConfig = JSON.parse(JSON.stringify(cfg));
+        if (!newConfig[companyName].keywords) newConfig[companyName].keywords = [];
+        if (!newConfig[companyName].keywords.includes(kw)) {
+            newConfig[companyName].keywords.push(kw);
+            onConfigChange(newConfig);
+        }
+    };
+
+    const handleDeleteKeyword = (kw: string) => {
+        const newConfig = JSON.parse(JSON.stringify(pricingConfig));
+        const current = newConfig[companyName].keywords || [];
+        newConfig[companyName].keywords = current.filter((k: string) => k !== kw);
+        onConfigChange(newConfig);
     };
 
     const currentStat = mergeResults?.companyStats?.[companyName];
@@ -515,12 +557,27 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     )}
                                 </div>
 
-                                <div className="flex flex-wrap gap-1">
+                                <div className="flex flex-wrap gap-1 items-center">
                                     {keywords.map(kw => (
-                                        <span key={kw} className="text-[9px] bg-zinc-900/80 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-800 font-bold tracking-tight">
+                                        <span key={kw} className="text-[9px] bg-zinc-900/80 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-800 font-bold tracking-tight group/kw flex items-center gap-1">
                                             {kw}
+                                            <button onClick={() => handleDeleteKeyword(kw)} className="text-zinc-700 hover:text-rose-500 hidden group-hover/kw:inline transition-colors"><TrashIcon className="w-2.5 h-2.5" /></button>
                                         </span>
                                     ))}
+                                    {isAddingKeyword ? (
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={newKeyword}
+                                            onChange={e => { setNewKeyword(e.target.value); newKeywordRef.current = e.target.value; }}
+                                            onKeyDown={e => { if (e.key === 'Enter') handleAddKeyword(); if (e.key === 'Escape') { newKeywordRef.current = ''; setIsAddingKeyword(false); setNewKeyword(''); } }}
+                                            onBlur={() => handleAddKeyword()}
+                                            placeholder="키워드 입력"
+                                            className="text-[9px] bg-zinc-950 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-700 font-bold w-20 outline-none focus:border-rose-500/50"
+                                        />
+                                    ) : (
+                                        <button onClick={() => setIsAddingKeyword(true)} className="text-[9px] bg-zinc-900/50 text-zinc-600 hover:text-rose-400 px-1.5 py-0.5 rounded border border-dashed border-zinc-800 hover:border-rose-500/30 font-bold transition-colors">+</button>
+                                    )}
                                 </div>
                             </>
                         ) : (
@@ -643,6 +700,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <button onClick={() => { onVendorFileChange(null); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
                                     </div>
                                 </div>
+                                {onDownloadMergedInvoice && isFirstSession && (
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <button onClick={() => onDownloadMergedInvoice('mgmt')} className="bg-indigo-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-indigo-600 shadow-md flex items-center gap-1"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산 기록용</span></button>
+                                        <button onClick={() => onDownloadMergedInvoice('upload')} className="bg-indigo-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-indigo-600 shadow-md flex items-center gap-1"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산 업로드용</span></button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -702,17 +765,60 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </pre>
                             </div>
                             <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 shadow-xl">
-                                <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">품목별 합계</h5>
-                                <div className="space-y-1.5 max-h-[300px] overflow-auto custom-scrollbar pr-1.5">
-                                    {Object.entries(localResult.summary).map(([key, val]: any) => (
-                                        <div key={key} className="flex justify-between items-center bg-zinc-950/80 p-2.5 rounded border border-zinc-800/50">
-                                            <span className="text-zinc-300 font-bold text-sm">{key}</span>
-                                            <div className="flex gap-4">
-                                                <span className="text-zinc-500 font-black text-[11px]">{val.count}건</span>
-                                                <span className="text-rose-500 font-black text-[11px]">{val.totalPrice.toLocaleString()}원</span>
+                                <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">원본 품목 검증 <span className="text-zinc-600">({(localResult.orderItems || []).length}건)</span></h5>
+                                <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800/50 max-h-[300px] overflow-auto custom-scrollbar">
+                                    {(() => {
+                                        const items = localResult.orderItems || [];
+                                        const summary = localResult.summary || {};
+                                        const extractSizes = (s: string) => {
+                                            const matches = s.match(/(\d+(?:\.\d+)?)\s*kg/gi) || [];
+                                            return matches.map(m => m.replace(/\s/g, '').toLowerCase());
+                                        };
+                                        // matchedProductKey별로 원본 옵션 그룹핑
+                                        const grouped: Record<string, Record<string, number>> = {};
+                                        items.forEach(item => {
+                                            const mk = item.matchedProductKey || 'unknown';
+                                            if (!grouped[mk]) grouped[mk] = {};
+                                            const rawKey = `${item.registeredProductName} ${item.registeredOptionName}`.trim();
+                                            grouped[mk][rawKey] = (grouped[mk][rawKey] || 0) + item.qty;
+                                        });
+                                        const summaryKeys = Object.keys(summary);
+                                        let totalItems = 0;
+                                        return (
+                                            <div className="space-y-2">
+                                                {summaryKeys.map((key, idx) => {
+                                                    const expectedCount = summary[key]?.count || 0;
+                                                    const rawEntries = grouped[key] || {};
+                                                    const matchedSizes = extractSizes(key);
+                                                    const entryList = Object.entries(rawEntries);
+                                                    const actualTotal = entryList.reduce((a, [, c]) => a + c, 0);
+                                                    totalItems += actualTotal;
+                                                    return (
+                                                        <div key={idx}>
+                                                            <div className="flex justify-between text-[12px] font-mono text-zinc-200 font-bold">
+                                                                <span>{key}</span>
+                                                                <span>{expectedCount}개</span>
+                                                            </div>
+                                                            {entryList.map(([rawName, cnt], j) => {
+                                                                const rawSizes = extractSizes(rawName);
+                                                                const isBad = matchedSizes.length > 0 && rawSizes.length > 0 && !rawSizes.some(rs => matchedSizes.includes(rs));
+                                                                return (
+                                                                    <div key={j} className={`flex justify-between text-[11px] font-mono pl-3 ${isBad ? 'text-red-400 font-bold' : 'text-zinc-500'}`}>
+                                                                        <span>{isBad ? '! ' : '  '}{rawName}</span>
+                                                                        <span>{cnt}개</span>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    );
+                                                })}
+                                                <div className="border-t border-zinc-800 pt-2 mt-2 flex justify-between text-[12px] font-mono text-zinc-200 font-bold">
+                                                    <span>총 주문수</span>
+                                                    <span>{totalItems}개</span>
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        );
+                                    })()}
                                 </div>
                             </div>
                         </div>

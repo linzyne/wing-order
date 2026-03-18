@@ -2,9 +2,17 @@
 import { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder, UnmatchedOrder } from '../types';
+import { BUSINESS_INFO } from '../types';
 import { findProductConfig } from '../pricing';
 
 declare var XLSX: any;
+
+export interface OrderItem {
+    registeredProductName: string; // 등록상품명 (원본 엑셀)
+    registeredOptionName: string;  // 등록옵션명 (원본 엑셀)
+    matchedProductKey: string;     // 매칭된 품목키 (summary 키와 동일)
+    qty: number;
+}
 
 export type ProcessedResult = {
     workbook: any;
@@ -15,9 +23,11 @@ export type ProcessedResult = {
     dailySummaries: { date: string, content: string }[];
     rows: any[][];
     registeredProductNames: Record<string, string>;
+    orderItems: OrderItem[];
 };
 
 export const getKeywordsForCompany = (companyName: string, pricingConfig?: PricingConfig): string[] => {
+    // 하드코딩 폴백 (기존 사용자 localStorage에 keywords 없을 때)
     const hardcoded: Record<string, string[]> = {
         '제이제이': ['귤_제이', '은갈치', '순살 갈치', '한라봉_J'],
         '귤_제이': ['귤_제이', '은갈치', '순살 갈치', '한라봉_J'],
@@ -28,9 +38,14 @@ export const getKeywordsForCompany = (companyName: string, pricingConfig?: Prici
         '팜플로우': ['과일선물세트'],
     };
 
-    const keywords = new Set<string>(hardcoded[companyName] || companyName.split(',').map(s => s.trim()));
+    // config에 keywords가 있으면 우선 사용, 없으면 하드코딩 폴백
+    const configKeywords = pricingConfig?.[companyName]?.keywords;
+    const base = configKeywords && configKeywords.length > 0
+        ? configKeywords
+        : (hardcoded[companyName] || companyName.split(',').map(s => s.trim()));
+    const keywords = new Set<string>(base);
 
-    // pricingConfig에서 사용자가 설정한 aliases(별칭)만 동적으로 추가
+    // pricingConfig에서 사용자가 설정한 aliases(별칭)도 동적으로 추가
     if (pricingConfig?.[companyName]?.products) {
         for (const product of Object.values(pricingConfig[companyName].products)) {
             if (product.aliases) product.aliases.forEach(a => { if (a) keywords.add(a); });
@@ -43,6 +58,8 @@ export const getKeywordsForCompany = (companyName: string, pricingConfig?: Prici
 class StatsManager {
     total: Record<string, { count: number, totalPrice: number }> = {};
     daily: Record<string, Record<string, { count: number, totalPrice: number }>> = {};
+    senderName: string;
+    constructor(senderName: string = '안군농원') { this.senderName = senderName; }
 
     add(displayName: string, count: number, price: number, dateStr: string | null) {
         if (!this.total[displayName]) this.total[displayName] = { count: 0, totalPrice: 0 };
@@ -67,7 +84,7 @@ class StatsManager {
                 lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
                 grandTotal += stat.totalPrice;
             });
-        lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, '(입금자 안군농원)');
+        lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${this.senderName})`);
         return lines.join('\n');
     }
 
@@ -234,13 +251,15 @@ const generateWorkbookForCompany = async (
     fakeOrderNumbers: Set<string>,
     excludedOrders: ExcludedOrder[],
     manualOrders: ManualOrder[] = [],
-    unmatchedOrders: UnmatchedOrder[] = []
+    unmatchedOrders: UnmatchedOrder[] = [],
+    businessId?: string
 ): Promise<[string, ProcessedResult | null]> => {
     try {
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return [companyName, null];
 
-        const stats = new StatsManager();
+        const senderName = BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원';
+        const stats = new StatsManager(senderName);
         const summary: AnalysisResult = {};
         const today = new Date();
         const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -249,6 +268,7 @@ const generateWorkbookForCompany = async (
         let headerRow: string[] = [];
         let outputRows: any[][] = [];
         const registeredProductNames: Record<string, string> = {};
+        const orderItems: OrderItem[] = [];
 
         if (json.length > 0) {
             const headers = json[0].map(h => String(h).trim());
@@ -265,6 +285,13 @@ const generateWorkbookForCompany = async (
             if (optionColIdx === -1) {
                 optionColIdx = headers.findIndex(h => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
             }
+            // 등록상품명/등록옵션명 컬럼 탐색 (원본 데이터 검증용)
+            let regProductColIdx = headers.findIndex(h => h === '등록상품명');
+            if (regProductColIdx === -1) regProductColIdx = headers.findIndex(h => h.includes('등록상품'));
+            if (regProductColIdx === -1) regProductColIdx = productColIdx;
+            let regOptionColIdx = headers.findIndex(h => h === '등록옵션명');
+            if (regOptionColIdx === -1) regOptionColIdx = headers.findIndex(h => h.includes('등록옵션'));
+            if (regOptionColIdx === -1) regOptionColIdx = optionColIdx;
             const hasYeolmuProducts = Object.values(companyConfig.products).some(p => p.displayName.startsWith('열무김치'));
 
             for (let i = 1; i < json.length; i++) {
@@ -310,7 +337,13 @@ const generateWorkbookForCompany = async (
                     if (!registeredProductNames[config.displayName]) {
                         registeredProductNames[config.displayName] = String(row[groupColIdx] || '').trim();
                     }
-                    await pushToOutputRows(companyName, outputRows, row, config, qty, pricingConfig);
+                    await pushToOutputRows(companyName, outputRows, row, config, qty, pricingConfig, senderName);
+                    orderItems.push({
+                        registeredProductName: String(row[regProductColIdx] || '').trim(),
+                        registeredOptionName: String(row[regOptionColIdx] || '').trim(),
+                        matchedProductKey: productKey,
+                        qty,
+                    });
                 } else {
                     console.error(`[발주서][${companyName}] ❌ 품목 매칭 실패로 주문 누락! 수취인: ${recipientName}, 상품: ${rawProductName}, 주문번호: ${orderNumber}`);
                     unmatchedOrders.push({ companyName, recipientName, productName: rawProductName, phone, orderNumber });
@@ -326,7 +359,7 @@ const generateWorkbookForCompany = async (
             summary[productKey].count += mo.qty;
             summary[productKey].totalPrice += mo.qty * config.supplyPrice;
             stats.add(config.displayName, mo.qty, config.supplyPrice, todayStr);
-            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig);
+            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName);
         }
 
         headerRow = getHeaderForCompany(companyName, companyConfig);
@@ -343,7 +376,7 @@ const generateWorkbookForCompany = async (
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
 
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];
@@ -360,18 +393,19 @@ export function getHeaderForCompany(companyName: string, config: CompanyConfig):
     return config.orderFormHeaders?.length ? config.orderFormHeaders : ['받는사람', '전화번호', '주소', '품목명', '수량', '배송메세지', '주문번호'];
 }
 
-async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig) {
+async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원') {
+    const orderName = config.orderFormName || config.displayName;
     if (companyName === '팜플로우') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(13).fill('');
             or[0] = String(row[2] || ''); or[1] = String(row[26] || ''); or[2] = String(row[27] || ''); or[3] = String(row[29] || '');
-            or[4] = String(row[30] || ''); or[5] = config.displayName; or[6] = 1; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
+            or[4] = String(row[30] || ''); or[5] = orderName; or[6] = 1; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
             outputRows.push(or);
         }
     } else if (companyName === '웰그린') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(19).fill('');
-            or[1] = String(row[2] || ''); or[2] = '안군농원'; or[3] = String(row[11] || ''); or[4] = config.displayName; or[5] = 1;
+            or[1] = String(row[2] || ''); or[2] = '안군농원'; or[3] = String(row[11] || ''); or[4] = orderName; or[5] = 1;
             or[6] = String(row[30] || ''); or[9] = String(row[26] || ''); or[10] = String(row[26] || ''); or[11] = String(row[27] || '');
             or[12] = String(row[27] || ''); or[14] = String(row[28] || ''); or[15] = String(row[29] || ''); or[17] = '01042626343';
             outputRows.push(or);
@@ -379,7 +413,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
     } else if (companyName === '답도' || companyName === '한라봉_답도') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(11).fill('');
-            or[0] = String(row[2] || ''); or[2] = '안군농원'; or[3] = '01042626343'; or[4] = String(row[26] || ''); or[5] = String(row[27] || ''); or[6] = String(row[29] || ''); or[7] = config.displayName; or[8] = 1; or[9] = String(row[30] || '');
+            or[0] = String(row[2] || ''); or[2] = '안군농원'; or[3] = '01042626343'; or[4] = String(row[26] || ''); or[5] = String(row[27] || ''); or[6] = String(row[29] || ''); or[7] = orderName; or[8] = 1; or[9] = String(row[30] || '');
             outputRows.push(or);
         }
     } else if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) {
@@ -392,8 +426,8 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             or[4] = String(row[29] || ''); // 주소
             or[5] = String(row[27] || ''); // 전화번호
             or[6] = String(row[27] || ''); // 이동통신
-            or[7] = config.displayName; // 상품명
-            or[8] = config.displayName; // 상품모델
+            or[7] = orderName; // 상품명
+            or[8] = orderName; // 상품모델
             or[9] = String(row[30] || ''); // 배송메세지
             or[11] = 1; // 수량
             or[12] = 1; // 신청건수
@@ -413,8 +447,8 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             or[8] = String(row[27] || ''); // 전화번호2
             or[9] = String(row[28] || ''); // 우편번호
             or[10] = String(row[29] || ''); // 주소
-            or[11] = config.displayName; // 상품명1
-            or[12] = config.displayName; // 상품상세1
+            or[11] = orderName; // 상품명1
+            or[12] = orderName; // 상품상세1
 
             // 수량 분류 규칙 (A타입 / B타입)
             const prodName = config.displayName.toLowerCase();
@@ -436,37 +470,38 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
                     if (h.includes('받는분성명') || h.includes('받는사람')) or[idx] = String(row[26] || '');
                     else if (h.includes('받는분연락처') || h.includes('전화번호')) or[idx] = String(row[27] || '');
                     else if (h.includes('받는분주소') || h.includes('주소')) or[idx] = String(row[29] || '');
-                    else if (h.includes('품목') || h.includes('상품명')) or[idx] = config.displayName;
+                    else if (h.includes('품목') || h.includes('상품명')) or[idx] = orderName;
                     else if (h.includes('수량')) or[idx] = 1;
                     else if (h.includes('주문번호')) or[idx] = String(row[2] || '');
                     else if (h.includes('배송메세지')) or[idx] = String(row[30] || '');
-                    else if (h.includes('송하인')) or[idx] = '안군농원';
+                    else if (h.includes('송하인')) or[idx] = senderName;
                 });
                 outputRows.push(or);
             } else {
-                outputRows.push([String(row[26] || ''), String(row[27] || ''), String(row[29] || ''), config.displayName, 1, String(row[30] || ''), String(row[2] || '')]);
+                outputRows.push([String(row[26] || ''), String(row[27] || ''), String(row[29] || ''), orderName, 1, String(row[30] || ''), String(row[2] || '')]);
             }
         }
     }
 }
 
-async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig) {
+async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원') {
+    const orderName = config.orderFormName || config.displayName;
     if (companyName === '팜플로우') {
         for (let j = 0; j < mo.qty; j++) {
             const or = new Array(13).fill('');
-            or[0] = '수동'; or[1] = mo.recipientName; or[2] = mo.phone; or[3] = mo.address; or[5] = config.displayName; or[6] = 1; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
+            or[0] = '수동'; or[1] = mo.recipientName; or[2] = mo.phone; or[3] = mo.address; or[5] = orderName; or[6] = 1; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
             outputRows.push(or);
         }
     } else if (companyName === '웰그린') {
         for (let j = 0; j < mo.qty; j++) {
             const or = new Array(19).fill('');
-            or[1] = '수동'; or[2] = '안군농원'; or[4] = config.displayName; or[5] = 1; or[9] = mo.recipientName; or[10] = mo.recipientName; or[11] = mo.phone; or[12] = mo.phone; or[15] = mo.address; or[17] = '01042626343';
+            or[1] = '수동'; or[2] = '안군농원'; or[4] = orderName; or[5] = 1; or[9] = mo.recipientName; or[10] = mo.recipientName; or[11] = mo.phone; or[12] = mo.phone; or[15] = mo.address; or[17] = '01042626343';
             outputRows.push(or);
         }
     } else if (companyName === '답도' || companyName === '한라봉_답도') {
         for (let j = 0; j < mo.qty; j++) {
             const or = new Array(11).fill('');
-            or[0] = '수동'; or[2] = '안군농원'; or[3] = '01042626343'; or[4] = mo.recipientName; or[5] = mo.phone; or[6] = mo.address; or[7] = config.displayName; or[8] = 1;
+            or[0] = '수동'; or[2] = '안군농원'; or[3] = '01042626343'; or[4] = mo.recipientName; or[5] = mo.phone; or[6] = mo.address; or[7] = orderName; or[8] = 1;
             outputRows.push(or);
         }
     } else if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) {
@@ -478,8 +513,8 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             or[4] = mo.address;
             or[5] = mo.phone;
             or[6] = mo.phone;
-            or[7] = config.displayName;
-            or[8] = config.displayName;
+            or[7] = orderName;
+            or[8] = orderName;
             or[11] = 1;
             or[12] = 1;
             outputRows.push(or);
@@ -497,8 +532,8 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             or[7] = mo.phone;
             or[8] = mo.phone;
             or[10] = mo.address;
-            or[11] = config.displayName;
-            or[12] = config.displayName;
+            or[11] = orderName;
+            or[12] = orderName;
 
             const prodName = config.displayName.toLowerCase();
             if (prodName.includes('7kg') || prodName.includes('10kg')) {
@@ -511,7 +546,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
     } else if (companyName === '제이제이' || companyName === '귤_제이') {
         for (let j = 0; j < mo.qty; j++) {
             const or = new Array(9).fill('');
-            or[0] = '안군농원'; or[3] = config.displayName; or[4] = mo.recipientName; or[5] = mo.address; or[6] = mo.phone; or[8] = '수동';
+            or[0] = '안군농원'; or[3] = orderName; or[4] = mo.recipientName; or[5] = mo.address; or[6] = mo.phone; or[8] = '수동';
             outputRows.push(or);
         }
     } else {
@@ -523,20 +558,20 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
                     if (h.includes('받는분성명') || h.includes('받는사람')) or[idx] = mo.recipientName;
                     else if (h.includes('받는분연락처') || h.includes('전화번호')) or[idx] = mo.phone;
                     else if (h.includes('받는분주소') || h.includes('주소')) or[idx] = mo.address;
-                    else if (h.includes('품목') || h.includes('상품명')) or[idx] = config.displayName;
+                    else if (h.includes('품목') || h.includes('상품명')) or[idx] = orderName;
                     else if (h.includes('수량')) or[idx] = 1;
                     else if (h.includes('주문번호')) or[idx] = '수동';
-                    else if (h.includes('송하인')) or[idx] = '안군농원';
+                    else if (h.includes('송하인')) or[idx] = senderName;
                 });
                 outputRows.push(or);
             } else {
-                outputRows.push([mo.recipientName, mo.phone, mo.address, config.displayName, 1, '', '수동']);
+                outputRows.push([mo.recipientName, mo.phone, mo.address, orderName, 1, '', '수동']);
             }
         }
     }
 }
 
-export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig) => {
+export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, businessId?: string) => {
     const [status, setStatus] = useState<ProcessingStatus>('idle');
     const [error, setError] = useState<string | null>(null);
     const [results, setResults] = useState<Record<string, ProcessedResult> | null>(null);
@@ -590,7 +625,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig) => {
 
             const localExcluded: ExcludedOrder[] = [];
             const localUnmatched: UnmatchedOrder[] = [];
-            const [, result] = await generateWorkbookForCompany(ai, new Map(), pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched);
+            const [, result] = await generateWorkbookForCompany(ai, new Map(), pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId);
 
             return { result, excluded: localExcluded, unmatched: localUnmatched };
         } catch (err) {

@@ -124,6 +124,15 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                 onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, displayName: e.target.value } })}
                             />
                         </div>
+                        <div>
+                            <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">발주서생성용 품목명</label>
+                            <input
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base"
+                                placeholder={dialog.product.displayName || '비워두면 품목 명칭 사용'}
+                                value={dialog.product.orderFormName || ''}
+                                onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, orderFormName: e.target.value || undefined } })}
+                            />
+                        </div>
 
                         <div className="grid grid-cols-3 gap-4">
                             <div>
@@ -195,6 +204,7 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
 interface PricingEditorProps {
     config: PricingConfig;
     onConfigChange: (newConfig: PricingConfig) => void;
+    businessId?: string;
 }
 
 const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange }) => {
@@ -273,6 +283,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
     const handleUpdateAccount = (companyName: string, account: string) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].accountNumber = account;
+        handleUpdate(newConfig);
+    };
+
+    const handleUpdateKeywords = (companyName: string, keywords: string[]) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].keywords = keywords.length > 0 ? keywords : undefined;
         handleUpdate(newConfig);
     };
 
@@ -455,6 +471,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
                             onUpdatePhone={(phone) => handleUpdatePhone(companyName, phone)}
                             onUpdateBank={(bank) => handleUpdateBank(companyName, bank)}
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
+                            onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onAddProduct={() => handleAddProduct(companyName)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
                             onOpenProductEditor={(productKey, product) => setDialog({
@@ -488,6 +505,7 @@ const CompanyCard: React.FC<{
     onUpdatePhone: (phone: string) => void;
     onUpdateBank: (bank: string) => void;
     onUpdateAccount: (account: string) => void;
+    onUpdateKeywords: (keywords: string[]) => void;
     onAddProduct: () => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
@@ -544,6 +562,21 @@ const CompanyCard: React.FC<{
                             />
                         </div>
                     </div>
+                    <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
+                        <div className="flex items-center gap-3 mb-2">
+                            <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">매칭 키워드</span>
+                            <span className="text-[10px] text-zinc-700">(엑셀 그룹컬럼 매칭용, 쉼표로 구분)</span>
+                        </div>
+                        <EditableField
+                            value={(companyConfig.keywords || []).join(', ')}
+                            onSave={(val) => {
+                                const keywords = val.split(',').map(s => s.trim()).filter(Boolean);
+                                props.onUpdateKeywords(keywords);
+                            }}
+                            placeholder="예: 총각김치, 포기김치, 배추김치"
+                            className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
+                        />
+                    </div>
                     <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} />
                 </div>
             )}
@@ -569,12 +602,17 @@ const ProductTable: React.FC<{
                 </tr>
             </thead>
             <tbody className="divide-y divide-zinc-900">
-                {Object.keys(products).map((productKey) => {
+                {Object.keys(products).sort((a, b) => products[a].displayName.localeCompare(products[b].displayName, 'ko')).map((productKey) => {
                     const product = products[productKey];
                     return (
                         <tr key={productKey} className="hover:bg-zinc-900/40 transition-colors">
                             <td className="px-4 py-2">
-                                <div className="font-bold text-zinc-200 text-sm">{product.displayName}</div>
+                                <div className="flex items-center gap-2">
+                                    <span className="font-bold text-zinc-200 text-sm">{product.displayName}</span>
+                                    {product.orderFormName && (
+                                        <span className="text-[10px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
+                                    )}
+                                </div>
                                 {product.aliases && product.aliases.length > 0 && (
                                     <div className="text-[10px] text-zinc-600 truncate max-w-xs">{product.aliases.join(', ')}</div>
                                 )}

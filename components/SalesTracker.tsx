@@ -1,15 +1,17 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
+import { usePricingConfig } from '../hooks/useFirestore';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
-import type { DepositRecord, MarginRecord, ExpenseRecord } from '../types';
+import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig } from '../types';
 
 declare var XLSX: any;
 
-type ViewMode = 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits' | 'margin';
+type ViewMode = 'settlement' | 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits' | 'margin';
 type DateMode = 'month' | 'range';
 
-const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
-  const { salesHistory, refresh, remove } = useSalesTracker();
+const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ isActive, businessId }) => {
+  const { salesHistory, refresh, remove } = useSalesTracker(businessId);
+  const { config: pricingConfig } = usePricingConfig(businessId);
 
   // 탭 활성화 시 데이터 새로고침
   useEffect(() => {
@@ -20,6 +22,10 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 발주/송장 검색
+  const [orderSearch, setOrderSearch] = useState('');
+  const [invoiceSearch, setInvoiceSearch] = useState('');
 
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
@@ -81,6 +87,30 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
     });
     return rows;
   }, [filteredHistory]);
+
+  // 발주 검색 필터링
+  const filteredOrderRows = useMemo(() => {
+    const q = orderSearch.trim().toLowerCase();
+    if (!q) return allOrderRows;
+    return allOrderRows
+      .map(({ date, data }) => ({
+        date,
+        data: data.filter(row => row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q))),
+      }))
+      .filter(({ data }) => data.length > 0);
+  }, [allOrderRows, orderSearch]);
+
+  // 송장 검색 필터링
+  const filteredInvoiceRows = useMemo(() => {
+    const q = invoiceSearch.trim().toLowerCase();
+    if (!q) return allInvoiceRows;
+    return allInvoiceRows
+      .map(({ date, data }) => ({
+        date,
+        data: data.filter(row => row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q))),
+      }))
+      .filter(({ data }) => data.length > 0);
+  }, [allInvoiceRows, invoiceSearch]);
 
   // 입금 데이터 합산
   const allDepositData = useMemo(() => {
@@ -151,6 +181,33 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
   const monthTotalCount = allRecords.reduce((sum, r) => sum + r.count, 0);
   const monthTotalMargin = allRecords.reduce((sum, r) => sum + (r.margin || 0) * r.count, 0);
 
+  // 계좌번호 → 업체명 매핑
+  const accountToCompanyMap = useMemo(() => {
+    const map = new Map<string, string>();
+    if (pricingConfig) {
+      Object.entries(pricingConfig).forEach(([companyName, config]: [string, CompanyConfig]) => {
+        if (config.accountNumber) {
+          map.set(config.accountNumber, companyName);
+        }
+      });
+    }
+    return map;
+  }, [pricingConfig]);
+
+  const groupByCompany = (records: SalesRecord[]) => {
+    const map = new Map<string, SalesRecord[]>();
+    records.forEach(r => {
+      const list = map.get(r.company) || [];
+      list.push(r);
+      map.set(r.company, list);
+    });
+    return Array.from(map.entries()).sort(([, a], [, b]) => {
+      const totalA = a.reduce((s, r) => s + r.totalPrice, 0);
+      const totalB = b.reduce((s, r) => s + r.totalPrice, 0);
+      return totalB - totalA;
+    });
+  };
+
   const toggleDate = (date: string) => {
     setExpandedDates(prev => {
       const next = new Set(prev);
@@ -170,7 +227,7 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
         setIsImporting(false);
         return;
       }
-      const result = await importMultipleWorkLogs(fileArray);
+      const result = await importMultipleWorkLogs(fileArray, businessId);
       if (result.totalImported > 0) {
         setImportStatus(`${result.dates.length}일치 데이터 (${result.totalImported}건) 가져오기 완료!`);
         if (result.dates.length > 0) {
@@ -324,96 +381,156 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
 
   /** 발주내역 렌더링 */
   const renderOrdersView = () => {
-    if (allOrderRows.length === 0) {
-      return (
-        <div className="p-12 text-center">
-          <p className="text-zinc-600 font-bold text-sm">해당 기간의 발주 데이터가 없습니다.</p>
-        </div>
-      );
-    }
+    const isSearching = orderSearch.trim().length > 0;
+    const totalMatchRows = filteredOrderRows.reduce((s, { data }) => s + data.length, 0);
+
     return (
       <div className="divide-y divide-zinc-900">
-        {allOrderRows.map(({ date, data }) => (
-          <div key={`order-${date}`}>
-            <button
-              onClick={() => toggleDate(`order-${date}`)}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
-            >
-              <div className="flex items-center gap-4">
-                <span className="text-white font-black text-sm">{formatDate(date)}</span>
-                <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-full font-black border border-blue-500/20">
-                  {data.length}행
-                </span>
-              </div>
-              {expandedDates.has(`order-${date}`) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
-            </button>
-            {expandedDates.has(`order-${date}`) && (
-              <div className="px-6 pb-4 animate-fade-in overflow-x-auto">
-                <table className="w-full text-left">
-                  <tbody className="divide-y divide-zinc-900/50">
-                    {data.map((row, i) => (
-                      <tr key={i} className="text-xs">
-                        {row.map((cell: any, j: number) => (
-                          <td key={j} className="py-1.5 pr-3 text-zinc-300 font-mono whitespace-nowrap">
-                            {cell != null ? String(cell) : ''}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+        {/* 검색 입력 */}
+        <div className="px-6 py-4">
+          <div className="relative">
+            <input
+              type="text"
+              value={orderSearch}
+              onChange={e => setOrderSearch(e.target.value)}
+              placeholder="이름, 주문번호로 검색..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-white placeholder-zinc-600 focus:ring-1 focus:ring-blue-500/30 focus:border-blue-500/30 outline-none transition-all"
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            {isSearching && (
+              <button onClick={() => setOrderSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
             )}
           </div>
-        ))}
+          {isSearching && (
+            <p className="text-[11px] text-zinc-500 mt-2 font-bold">
+              검색결과: <span className="text-blue-400">{totalMatchRows}건</span> 일치
+            </p>
+          )}
+        </div>
+
+        {allOrderRows.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-zinc-600 font-bold text-sm">해당 기간의 발주 데이터가 없습니다.</p>
+          </div>
+        ) : filteredOrderRows.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-zinc-600 font-bold text-sm">"{orderSearch}" 에 대한 검색결과가 없습니다.</p>
+          </div>
+        ) : (
+          filteredOrderRows.map(({ date, data }) => (
+            <div key={`order-${date}`}>
+              <button
+                onClick={() => toggleDate(`order-${date}`)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-white font-black text-sm">{formatDate(date)}</span>
+                  <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-full font-black border border-blue-500/20">
+                    {data.length}행
+                  </span>
+                </div>
+                {(expandedDates.has(`order-${date}`) || isSearching) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
+              </button>
+              {(expandedDates.has(`order-${date}`) || isSearching) && (
+                <div className="px-6 pb-4 animate-fade-in overflow-x-auto">
+                  <table className="w-full text-left">
+                    <tbody className="divide-y divide-zinc-900/50">
+                      {data.map((row, i) => (
+                        <tr key={i} className="text-xs">
+                          {row.map((cell: any, j: number) => (
+                            <td key={j} className="py-1.5 pr-3 text-zinc-300 font-mono whitespace-nowrap">
+                              {cell != null ? String(cell) : ''}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
     );
   };
 
   /** 송장내역 렌더링 */
   const renderInvoicesView = () => {
-    if (allInvoiceRows.length === 0) {
-      return (
-        <div className="p-12 text-center">
-          <p className="text-zinc-600 font-bold text-sm">해당 기간의 송장 데이터가 없습니다.</p>
-        </div>
-      );
-    }
+    const isSearching = invoiceSearch.trim().length > 0;
+    const totalMatchRows = filteredInvoiceRows.reduce((s, { data }) => s + data.length, 0);
+
     return (
       <div className="divide-y divide-zinc-900">
-        {allInvoiceRows.map(({ date, data }) => (
-          <div key={`inv-${date}`}>
-            <button
-              onClick={() => toggleDate(`inv-${date}`)}
-              className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
-            >
-              <div className="flex items-center gap-4">
-                <span className="text-white font-black text-sm">{formatDate(date)}</span>
-                <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-black border border-amber-500/20">
-                  {data.length}행
-                </span>
-              </div>
-              {expandedDates.has(`inv-${date}`) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
-            </button>
-            {expandedDates.has(`inv-${date}`) && (
-              <div className="px-6 pb-4 animate-fade-in overflow-x-auto">
-                <table className="w-full text-left">
-                  <tbody className="divide-y divide-zinc-900/50">
-                    {data.map((row, i) => (
-                      <tr key={i} className="text-xs">
-                        {row.map((cell: any, j: number) => (
-                          <td key={j} className="py-1.5 pr-3 text-zinc-300 font-mono whitespace-nowrap">
-                            {cell != null ? String(cell) : ''}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+        {/* 검색 입력 */}
+        <div className="px-6 py-4">
+          <div className="relative">
+            <input
+              type="text"
+              value={invoiceSearch}
+              onChange={e => setInvoiceSearch(e.target.value)}
+              placeholder="이름, 주문번호로 검색..."
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pl-10 text-sm text-white placeholder-zinc-600 focus:ring-1 focus:ring-amber-500/30 focus:border-amber-500/30 outline-none transition-all"
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            {isSearching && (
+              <button onClick={() => setInvoiceSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-600 hover:text-zinc-400 transition-colors">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
             )}
           </div>
-        ))}
+          {isSearching && (
+            <p className="text-[11px] text-zinc-500 mt-2 font-bold">
+              검색결과: <span className="text-amber-400">{totalMatchRows}건</span> 일치
+            </p>
+          )}
+        </div>
+
+        {allInvoiceRows.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-zinc-600 font-bold text-sm">해당 기간의 송장 데이터가 없습니다.</p>
+          </div>
+        ) : filteredInvoiceRows.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-zinc-600 font-bold text-sm">"{invoiceSearch}" 에 대한 검색결과가 없습니다.</p>
+          </div>
+        ) : (
+          filteredInvoiceRows.map(({ date, data }) => (
+            <div key={`inv-${date}`}>
+              <button
+                onClick={() => toggleDate(`inv-${date}`)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-white font-black text-sm">{formatDate(date)}</span>
+                  <span className="text-[10px] bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full font-black border border-amber-500/20">
+                    {data.length}행
+                  </span>
+                </div>
+                {(expandedDates.has(`inv-${date}`) || isSearching) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
+              </button>
+              {(expandedDates.has(`inv-${date}`) || isSearching) && (
+                <div className="px-6 pb-4 animate-fade-in overflow-x-auto">
+                  <table className="w-full text-left">
+                    <tbody className="divide-y divide-zinc-900/50">
+                      {data.map((row, i) => (
+                        <tr key={i} className="text-xs">
+                          {row.map((cell: any, j: number) => (
+                            <td key={j} className="py-1.5 pr-3 text-zinc-300 font-mono whitespace-nowrap">
+                              {cell != null ? String(cell) : ''}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
     );
   };
@@ -469,6 +586,7 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
                       <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest">
                         <th className="pb-2 pr-4">은행</th>
                         <th className="pb-2 pr-4">계좌번호</th>
+                        <th className="pb-2 pr-4">업체명</th>
                         <th className="pb-2 pr-4 text-right">금액</th>
                         <th className="pb-2">비고</th>
                       </tr>
@@ -478,6 +596,7 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
                         <tr key={i} className="text-xs">
                           <td className="py-2 pr-4 font-bold text-zinc-300">{r.bankName}</td>
                           <td className="py-2 pr-4 text-zinc-400 font-mono">{r.accountNumber}</td>
+                          <td className="py-2 pr-4 text-rose-400 font-bold">{accountToCompanyMap.get(r.accountNumber) || ''}</td>
                           <td className="py-2 pr-4 text-right text-emerald-400 font-black">{r.amount.toLocaleString()}원</td>
                           <td className="py-2 text-zinc-500">{r.label || ''}</td>
                         </tr>
@@ -638,7 +757,84 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
     );
   };
 
+  /** 업체별정산 렌더링 */
+  const renderSettlementView = () => {
+    if (filteredHistory.length === 0) {
+      return (
+        <div className="p-12 text-center">
+          <p className="text-zinc-600 font-bold text-sm">해당 기간의 정산 데이터가 없습니다.</p>
+        </div>
+      );
+    }
+    return (
+      <div className="divide-y divide-zinc-900">
+        {filteredHistory.map(day => {
+          const companyGroups = groupByCompany(day.records);
+          const isExpanded = expandedDates.has(`stl-${day.date}`);
+          return (
+            <div key={`stl-${day.date}`}>
+              <button
+                onClick={() => toggleDate(`stl-${day.date}`)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-white font-black text-sm">{formatDate(day.date)}</span>
+                  <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2.5 py-1 rounded-full font-black border border-zinc-700">
+                    {companyGroups.length}개 업체
+                  </span>
+                  <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2.5 py-1 rounded-full font-black border border-zinc-700">
+                    {day.records.length}개 품목
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-rose-500 font-black text-sm">{day.totalAmount.toLocaleString()}원</span>
+                  {isExpanded ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
+                </div>
+              </button>
+              {isExpanded && (
+                <div className="px-6 pb-5 animate-fade-in space-y-4">
+                  {companyGroups.map(([company, records]) => {
+                    const companyTotal = records.reduce((s, r) => s + r.totalPrice, 0);
+                    const companyCount = records.reduce((s, r) => s + r.count, 0);
+                    return (
+                      <div key={company} className="bg-zinc-900/60 rounded-2xl border border-zinc-800 overflow-hidden">
+                        <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-800">
+                          <span className="text-rose-400 font-black text-sm">[{company}]</span>
+                          <div className="flex items-center gap-3">
+                            <span className="text-zinc-500 text-[11px] font-bold">{companyCount}개</span>
+                            <span className="text-white font-black text-sm">{companyTotal.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                        <table className="w-full text-left">
+                          <tbody className="divide-y divide-zinc-800/50">
+                            {records.map((r, i) => (
+                              <tr key={i} className="text-xs hover:bg-zinc-800/30 transition-colors">
+                                <td className="py-2.5 pl-4 pr-4 font-bold text-zinc-300">{r.product}</td>
+                                <td className="py-2.5 pr-4 text-right text-zinc-400 font-bold">{r.count}개</td>
+                                <td className="py-2.5 pr-4 text-right text-zinc-500 font-mono">{r.supplyPrice.toLocaleString()}원</td>
+                                <td className="py-2.5 pr-4 text-right text-white font-black">{r.totalPrice.toLocaleString()}원</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
+                  <div className="flex items-center justify-between px-1 pt-1">
+                    <span className="text-zinc-500 font-black text-xs">일일 합계</span>
+                    <span className="text-rose-500 font-black text-base">{day.totalAmount.toLocaleString()}원</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const tabs: [ViewMode, string][] = [
+    ['settlement', '업체별정산'],
     ['byDate', '날짜별'],
     ['byProduct', '품목별'],
     ['byCompany', '업체별'],
@@ -913,6 +1109,7 @@ const SalesTracker: React.FC<{ isActive?: boolean }> = ({ isActive }) => {
             </div>
           )}
 
+          {viewMode === 'settlement' && renderSettlementView()}
           {viewMode === 'byProduct' && renderSummaryTable(productSummary, '품목', false)}
           {viewMode === 'byCompany' && renderSummaryTable(companySummary, '업체', true)}
           {viewMode === 'orders' && renderOrdersView()}

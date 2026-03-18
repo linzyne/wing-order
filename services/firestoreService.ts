@@ -7,12 +7,27 @@ import {
 } from 'firebase/firestore';
 import type { PricingConfig, DailySales } from '../types';
 
+// ===== 사업자별 Firestore 경로 헬퍼 =====
+// 안군농원(또는 미지정)이면 기존 경로 그대로, 그 외 사업자는 접미사 추가
+const getConfigDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'pricingConfig' : `pricingConfig_${businessId}`;
+
+const getSalesCollectionName = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'salesHistory' : `salesHistory_${businessId}`;
+
+const getWorkspaceCollectionName = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'dailyWorkspace' : `dailyWorkspace_${businessId}`;
+
+const getManualOrdersDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'pendingManualOrders' : `pendingManualOrders_${businessId}`;
+
 // ===== Pricing Config =====
 
 export const subscribePricingConfig = (
-  callback: (config: PricingConfig | null, connected: boolean) => void
+  callback: (config: PricingConfig | null, connected: boolean) => void,
+  businessId?: string
 ): Unsubscribe => {
-  const docRef = doc(db, 'config', 'pricingConfig');
+  const docRef = doc(db, 'config', getConfigDocId(businessId));
   return onSnapshot(docRef, (snapshot) => {
     if (snapshot.exists()) {
       callback(snapshot.data().data as PricingConfig, true);
@@ -26,9 +41,10 @@ export const subscribePricingConfig = (
 };
 
 export const savePricingConfigToFirestore = async (
-  config: PricingConfig
+  config: PricingConfig,
+  businessId?: string
 ): Promise<void> => {
-  const docRef = doc(db, 'config', 'pricingConfig');
+  const docRef = doc(db, 'config', getConfigDocId(businessId));
   await setDoc(docRef, {
     data: config,
     updatedAt: Timestamp.now(),
@@ -37,9 +53,9 @@ export const savePricingConfigToFirestore = async (
 
 // ===== Sales History =====
 
-export const loadAllSalesHistory = async (): Promise<DailySales[]> => {
+export const loadAllSalesHistory = async (businessId?: string): Promise<DailySales[]> => {
   const q = query(
-    collection(db, 'salesHistory'),
+    collection(db, getSalesCollectionName(businessId)),
     orderBy('date', 'desc')
   );
   const snapshot = await getDocs(q);
@@ -57,9 +73,10 @@ export const loadAllSalesHistory = async (): Promise<DailySales[]> => {
 };
 
 export const upsertDailySales = async (
-  dailySales: DailySales
+  dailySales: DailySales,
+  businessId?: string
 ): Promise<void> => {
-  const docRef = doc(db, 'salesHistory', dailySales.date);
+  const docRef = doc(db, getSalesCollectionName(businessId), dailySales.date);
   // Firestore는 중첩 배열을 지원하지 않으므로 JSON 문자열로 직렬화
   const serialized: any = { ...dailySales };
   if (serialized.orderRows) serialized.orderRows = JSON.stringify(serialized.orderRows);
@@ -68,9 +85,10 @@ export const upsertDailySales = async (
 };
 
 export const deleteDailySalesFromFirestore = async (
-  date: string
+  date: string,
+  businessId?: string
 ): Promise<void> => {
-  const docRef = doc(db, 'salesHistory', date);
+  const docRef = doc(db, getSalesCollectionName(businessId), date);
   await deleteDoc(docRef);
 };
 
@@ -90,6 +108,7 @@ export interface SessionResultData {
   orderCount: number;
   itemSummary: Record<string, { count: number; totalPrice: number }>;
   registeredProductNames?: Record<string, string>;
+  orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[];
 }
 
 export interface DailyWorkspaceData {
@@ -105,9 +124,10 @@ export interface DailyWorkspaceData {
 const getTodayDocId = () => new Date().toISOString().slice(0, 10);
 
 export const subscribeDailyWorkspace = (
-  callback: (workspace: DailyWorkspaceData | null) => void
+  callback: (workspace: DailyWorkspaceData | null) => void,
+  businessId?: string
 ): Unsubscribe => {
-  const docRef = doc(db, 'dailyWorkspace', getTodayDocId());
+  const docRef = doc(db, getWorkspaceCollectionName(businessId), getTodayDocId());
   return onSnapshot(docRef, (snapshot) => {
     callback(snapshot.exists() ? snapshot.data() as DailyWorkspaceData : null);
   }, (error) => {
@@ -118,17 +138,18 @@ export const subscribeDailyWorkspace = (
 
 export const updateDailyWorkspaceField = async (
   field: string,
-  value: any
+  value: any,
+  businessId?: string
 ): Promise<void> => {
-  const docRef = doc(db, 'dailyWorkspace', getTodayDocId());
+  const docRef = doc(db, getWorkspaceCollectionName(businessId), getTodayDocId());
   await setDoc(docRef, {
     [field]: value,
     updatedAt: Timestamp.now(),
   }, { merge: true });
 };
 
-export const getDailyWorkspace = async (): Promise<DailyWorkspaceData | null> => {
-  const docRef = doc(db, 'dailyWorkspace', getTodayDocId());
+export const getDailyWorkspace = async (businessId?: string): Promise<DailyWorkspaceData | null> => {
+  const docRef = doc(db, getWorkspaceCollectionName(businessId), getTodayDocId());
   const snapshot = await getDoc(docRef);
   return snapshot.exists() ? snapshot.data() as DailyWorkspaceData : null;
 };
@@ -136,9 +157,10 @@ export const getDailyWorkspace = async (): Promise<DailyWorkspaceData | null> =>
 // ===== Pending Manual Orders (날짜 무관, 삭제 전까지 유지) =====
 
 export const subscribeManualOrders = (
-  callback: (orders: any[]) => void
+  callback: (orders: any[]) => void,
+  businessId?: string
 ): Unsubscribe => {
-  const docRef = doc(db, 'config', 'pendingManualOrders');
+  const docRef = doc(db, 'config', getManualOrdersDocId(businessId));
   return onSnapshot(docRef, (snapshot) => {
     callback(snapshot.exists() ? (snapshot.data().orders || []) : []);
   }, (error) => {
@@ -147,7 +169,7 @@ export const subscribeManualOrders = (
   });
 };
 
-export const saveManualOrders = async (orders: any[]): Promise<void> => {
-  const docRef = doc(db, 'config', 'pendingManualOrders');
+export const saveManualOrders = async (orders: any[], businessId?: string): Promise<void> => {
+  const docRef = doc(db, 'config', getManualOrdersDocId(businessId));
   await setDoc(docRef, { orders, updatedAt: Timestamp.now() });
 };

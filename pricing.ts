@@ -8,6 +8,7 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
     phone: '',
     bankName: '우리은행',
     accountNumber: '1005103634084',
+    keywords: ['총각김치', '포기김치', '배추김치'],
     products: {
       '포기김치 3kg': { supplyPrice: 16300, sellingPrice: 21290, margin: 2508, displayName: '포기김치 3kg' },
       '포기김치 5kg': { supplyPrice: 21300, sellingPrice: 28640, margin: 4001, displayName: '포기김치 5kg' },
@@ -22,6 +23,7 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
     phone: '',
     bankName: '농협(웰그린푸드)',
     accountNumber: '3511291313313',
+    keywords: ['구좌 당근', '과일선물세트', '부사 사과', '부사사과'],
     products: {
       '제주 구좌 당근 중 3kg': { supplyPrice: 5400, sellingPrice: 8040, margin: 1703, displayName: '제주 구좌 당근 중 3kg' },
       '제주 구좌 당근 상 3kg': { supplyPrice: 5700, sellingPrice: 8650, margin: 1941, displayName: '제주 구좌 당근 상 3kg' },
@@ -52,6 +54,7 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
     phone: '',
     bankName: '은행명',
     accountNumber: '계좌번호',
+    keywords: ['과일선물세트'],
     products: {
       '프리미엄과일 선물세트 혼합 5호': { supplyPrice: 56500, displayName: '프리미엄과일 선물세트 혼합 5호', margin: 7458 }
     }
@@ -73,6 +76,7 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
     phone: '01042626343',
     bankName: '농협',
     accountNumber: '301-6600-4079-21',
+    keywords: ['한라봉', '답도', '한라봉_답도'],
     products: {
       '한라봉 2,5KG 소과(13-20과 내외) 가정용': { supplyPrice: 18500, displayName: '한라봉 2,5KG 소과(13-20과 내외) 가정용' },
       '한라봉 2.5KG 중과(10-12과 내외) 가정용': { supplyPrice: 20000, displayName: '한라봉 2.5KG 중과(10-12과 내외) 가정용' },
@@ -93,6 +97,7 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
     phone: '',
     bankName: '국민은행',
     accountNumber: '89253700006218',
+    keywords: ['귤_제이', '은갈치', '순살 갈치', '한라봉_J'],
     orderFormHeaders: ['송하인', '송하인주소', '송하인연락처', '품목', '받는분성명', '받는분주소', '받는분연락처', '배송메시지', '주문번호'],
     products: {
       '노지감귤 3kg 로얄과(S/M)': { supplyPrice: 9500, displayName: '노지감귤 3kg 로얄과(S/M)' },
@@ -181,12 +186,23 @@ export const DEFAULT_PRICING_CONFIG: PricingConfig = {
   },
 };
 
+export const DEFAULT_PRICING_CONFIG_조에: PricingConfig = {};
+
 export const getPricingConfig = (): PricingConfig => {
     try {
         const savedConfigStr = localStorage.getItem(PRICING_STORAGE_KEY);
         if (savedConfigStr) {
             const savedConfig = JSON.parse(savedConfigStr);
             if (typeof savedConfig === 'object' && savedConfig !== null) {
+                // keywords 필드 마이그레이션: 기존 저장된 config에 keywords가 없으면 기본값에서 가져옴
+                let migrated = false;
+                for (const companyName of Object.keys(savedConfig)) {
+                    if (!savedConfig[companyName].keywords && DEFAULT_PRICING_CONFIG[companyName]?.keywords) {
+                        savedConfig[companyName].keywords = [...DEFAULT_PRICING_CONFIG[companyName].keywords];
+                        migrated = true;
+                    }
+                }
+                if (migrated) savePricingConfig(savedConfig);
                 return savedConfig;
             }
         }

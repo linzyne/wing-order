@@ -1,9 +1,13 @@
 import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { PricingConfig, DailySales } from '../types';
-import { DEFAULT_PRICING_CONFIG } from '../pricing';
+import { DEFAULT_PRICING_CONFIG, DEFAULT_PRICING_CONFIG_조에 } from '../pricing';
 
 const MIGRATION_FLAG = 'firestore_migration_done';
+
+// 사업자별 Firestore 경로 (firestoreService.ts와 동일 로직)
+const getConfigDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'pricingConfig' : `pricingConfig_${businessId}`;
 
 export const migrateLocalStorageToFirestore = async (): Promise<boolean> => {
   if (localStorage.getItem(MIGRATION_FLAG) === 'true') return false;
@@ -77,16 +81,17 @@ export const migrateLocalStorageToFirestore = async (): Promise<boolean> => {
 };
 
 // 코드의 sellingPrice/margin을 Firestore에 자동 병합
-export const syncPricingFields = async (): Promise<boolean> => {
+export const syncPricingFields = async (businessId?: string): Promise<boolean> => {
+  const defaultConfig = (!businessId || businessId === '안군농원') ? DEFAULT_PRICING_CONFIG : DEFAULT_PRICING_CONFIG_조에;
   try {
-    const docRef = doc(db, 'config', 'pricingConfig');
+    const docRef = doc(db, 'config', getConfigDocId(businessId));
     const snapshot = await getDoc(docRef);
     if (!snapshot.exists()) return false;
 
     const firestoreConfig = snapshot.data().data as PricingConfig;
     let updated = false;
 
-    for (const [companyName, defaultCompany] of Object.entries(DEFAULT_PRICING_CONFIG)) {
+    for (const [companyName, defaultCompany] of Object.entries(defaultConfig)) {
       // 업체가 Firestore에 없으면 건너뜀 (사용자가 삭제했을 수 있음)
       if (!firestoreConfig[companyName]) continue;
 

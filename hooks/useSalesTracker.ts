@@ -8,16 +8,16 @@ import {
 
 declare var XLSX: any;
 
-export const loadSalesHistory = async (): Promise<DailySales[]> => {
+export const loadSalesHistory = async (businessId?: string): Promise<DailySales[]> => {
   try {
-    return await loadAllSalesHistory();
+    return await loadAllSalesHistory(businessId);
   } catch {
     return [];
   }
 };
 
-const upsertHistory = async (dailySales: DailySales) => {
-  await upsertDailySales(dailySales);
+const upsertHistory = async (dailySales: DailySales, businessId?: string) => {
+  await upsertDailySales(dailySales, businessId);
 };
 
 export const saveDailySales = async (
@@ -32,7 +32,8 @@ export const saveDailySales = async (
     depositTotal?: number;
     marginRecords?: MarginRecord[];
     marginTotal?: number;
-  }
+  },
+  businessId?: string
 ): Promise<DailySales> => {
   // 같은 업체+상품은 합산 (1차, 2차 등 여러 세션 데이터를 병합)
   const recordMap = new Map<string, SalesRecord>();
@@ -94,7 +95,7 @@ export const saveDailySales = async (
     marginTotal: extraData?.marginTotal,
   };
 
-  await upsertHistory(dailySales);
+  await upsertHistory(dailySales, businessId);
   return dailySales;
 };
 
@@ -111,7 +112,7 @@ const findSheet = (sheetNames: string[], ...keywords: string[]): string | null =
 };
 
 /** 업무일지 엑셀 파일에서 모든 시트 데이터를 파싱하여 저장 */
-export const importWorkLogExcel = async (file: File): Promise<{ imported: number; dates: string[] }> => {
+export const importWorkLogExcel = async (file: File, businessId?: string): Promise<{ imported: number; dates: string[] }> => {
   const data = await file.arrayBuffer();
   const wb = XLSX.read(data, { type: 'array' });
 
@@ -185,45 +186,45 @@ export const importWorkLogExcel = async (file: File): Promise<{ imported: number
       depositRecords: depositRecords.length > 0 ? depositRecords : undefined,
       depositTotal: depositTotal > 0 ? depositTotal : undefined,
     };
-    await upsertHistory(dailySales);
+    await upsertHistory(dailySales, businessId);
     return { imported: records.length + orderRows.length + invoiceRows.length + depositRecords.length, dates: [date] };
   }
 
   return { imported: 0, dates: [] };
 };
 
-export const importMultipleWorkLogs = async (files: File[]): Promise<{ totalImported: number; dates: string[] }> => {
+export const importMultipleWorkLogs = async (files: File[], businessId?: string): Promise<{ totalImported: number; dates: string[] }> => {
   let totalImported = 0;
   const allDates: string[] = [];
   for (const file of files) {
-    const result = await importWorkLogExcel(file);
+    const result = await importWorkLogExcel(file, businessId);
     totalImported += result.imported;
     allDates.push(...result.dates);
   }
   return { totalImported, dates: [...new Set(allDates)].sort() };
 };
 
-export const deleteDailySales = async (date: string) => {
-  await deleteDailySalesFromFirestore(date);
+export const deleteDailySales = async (date: string, businessId?: string) => {
+  await deleteDailySalesFromFirestore(date, businessId);
 };
 
-export const useSalesTracker = () => {
+export const useSalesTracker = (businessId?: string) => {
   const [salesHistory, setSalesHistory] = useState<DailySales[]>([]);
 
   const refresh = useCallback(async () => {
-    const history = await loadAllSalesHistory();
+    const history = await loadAllSalesHistory(businessId);
     setSalesHistory(history);
-  }, []);
+  }, [businessId]);
 
   const remove = useCallback(async (date: string) => {
-    await deleteDailySalesFromFirestore(date);
-    const history = await loadAllSalesHistory();
+    await deleteDailySalesFromFirestore(date, businessId);
+    const history = await loadAllSalesHistory(businessId);
     setSalesHistory(history);
-  }, []);
+  }, [businessId]);
 
   useEffect(() => {
-    loadAllSalesHistory().then(setSalesHistory);
-  }, []);
+    loadAllSalesHistory(businessId).then(setSalesHistory);
+  }, [businessId]);
 
   return { salesHistory, refresh, remove };
 };

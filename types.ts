@@ -1,7 +1,30 @@
 
+export type BusinessId = '안군농원' | '조에';
+
+export const BUSINESS_INFO: Record<BusinessId, {
+  displayName: string;
+  senderName: string;
+  phone: string;
+  address: string;
+}> = {
+  '안군농원': {
+    displayName: '안군농원',
+    senderName: '안군농원',
+    phone: '01042626343',
+    address: '제주도',
+  },
+  '조에': {
+    displayName: '조에농원',
+    senderName: '조에농원',
+    phone: '010944963434',
+    address: '',
+  },
+};
+
 export interface ProductPricing {
   supplyPrice: number;
-  displayName: string; // 공급사용 (발주서용)
+  displayName: string; // 업체 품목명 (매칭용)
+  orderFormName?: string; // 발주서생성용 품목명 (비어있으면 displayName 사용)
   siteProductName?: string; // 사이트용 (매칭용) - 구 aliases 대체
   sellingPrice?: number; // 판매가
   margin?: number; // 마진
@@ -15,6 +38,7 @@ export interface CompanyConfig {
   orderFormHeaders?: string[];
   orderFormFilename?: string;
   deadline?: string; // 마감 시간 (예: "09:00")
+  keywords?: string[]; // 매칭 키워드 (엑셀 그룹컬럼 매칭용)
   products: {
     [productKey: string]: ProductPricing;
   };

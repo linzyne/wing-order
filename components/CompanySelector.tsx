@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord } from '../types';
+import { BUSINESS_INFO } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace } from '../hooks/useFirestore';
@@ -28,10 +29,10 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; }
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
-    const { workspace, updateField, isReady } = useDailyWorkspace();
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId }) => {
+    const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
         const initial: Record<string, SessionData[]> = {};
@@ -55,6 +56,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [detectedCompanies, setDetectedCompanies] = useState<Set<string>>(new Set());
+    const [batchFiles, setBatchFiles] = useState<Record<string, File>>({});
+    const batchFileInputRef = useRef<HTMLInputElement>(null);
 
     const [isBulkMode, setIsBulkMode] = useState(false);
     const [bulkText, setBulkText] = useState('');
@@ -70,9 +73,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                 setManualOrders(orders as ManualOrder[]);
                 lastWrittenManualOrdersRef.current = str;
             }
-        });
+        }, businessId);
         return unsubscribe;
-    }, []);
+    }, [businessId]);
 
     // 수동발주 변경 → Firestore에 저장
     const isInitialManualOrdersLoad = useRef(true);
@@ -81,7 +84,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         const currentStr = JSON.stringify(manualOrders);
         if (currentStr === lastWrittenManualOrdersRef.current) return;
         lastWrittenManualOrdersRef.current = currentStr;
-        saveManualOrders(manualOrders).catch(e => console.error('[Firestore] 수동발주 저장 실패:', e));
+        saveManualOrders(manualOrders, businessId).catch(e => console.error('[Firestore] 수동발주 저장 실패:', e));
     }, [manualOrders]);
 
     const [manualInput, setManualInput] = useState({
@@ -354,6 +357,49 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
     const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); };
 
+    const handleBatchUpload = async (file: File) => {
+        try {
+            const data = await file.arrayBuffer();
+            const wb = XLSX.read(data, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+            if (!json || json.length < 2) { alert('유효한 주문서가 아닙니다.'); return; }
+            const groupColIdx = 10;
+            const companiesInFile = new Set<string>();
+            const companyKeywordsMap = new Map<string, string[]>();
+            Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+            for (let i = 1; i < json.length; i++) {
+                const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '');
+                if (!groupVal) continue;
+                for (const [name, keywords] of companyKeywordsMap.entries()) {
+                    if (keywords.some(k => groupVal.includes(k.replace(/\s+/g, '')))) { companiesInFile.add(name); break; }
+                }
+            }
+            if (companiesInFile.size === 0) { alert('주문서에서 매칭되는 업체를 찾지 못했습니다.'); return; }
+            let maxRound = 0;
+            (Object.values(companySessions) as SessionData[][]).forEach(sessions => {
+                sessions.forEach(s => { if (s.round > maxRound) maxRound = s.round; });
+            });
+            const nextRound = maxRound + 1;
+            const newBatchFiles: Record<string, File> = {};
+            const newSessions: Record<string, SessionData[]> = { ...companySessions };
+            const newSelectedIds = new Set(selectedSessionIds);
+            for (const companyName of companiesInFile) {
+                const newSessionId = `${companyName}-batch-${nextRound}-${Date.now()}`;
+                const newSession: SessionData = { id: newSessionId, companyName, round: nextRound };
+                newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
+                newSelectedIds.add(newSessionId);
+                newBatchFiles[newSessionId] = file;
+            }
+            setCompanySessions(newSessions);
+            setSelectedSessionIds(newSelectedIds);
+            setBatchFiles(prev => ({ ...prev, ...newBatchFiles }));
+        } catch (error) {
+            console.error("Batch upload failed:", error);
+            alert('파일 처리 중 오류가 발생했습니다.');
+        }
+    };
+
     const handleLotteFileUpload = async (file: File) => {
         if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
         setLotteFile(file);
@@ -607,7 +653,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
                 rows.push([
                     originalOrderNum,               // 주문번호
-                    '안군농원',                       // 보내는사람(지정)
+                    BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원',                       // 보내는사람(지정)
                     '01050447749',                   // 전화번호1(지정)
                     '',                              // 우편번호(지정)
                     '인천시 연수구 송도동 214, D동 2206-1호', // 주소(지정)
@@ -790,6 +836,27 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         XLSX.writeFile(wb, `${dateStr} ${companyName} 합산발주서.xlsx`);
     };
 
+    const handleDownloadMergedInvoice = (companyName: string, type: 'mgmt' | 'upload') => {
+        const sessions = companySessions[companyName] || [];
+        const mergedRows: any[][] = [];
+        let headerRow: any[] = [];
+        sessions.forEach(s => {
+            const rows = type === 'mgmt' ? allInvoiceRows[s.id] : allUploadInvoiceRows[s.id];
+            if (rows && rows.length > 0) {
+                if (headerRow.length === 0 && allHeaders[s.id]) headerRow = allHeaders[s.id];
+                mergedRows.push(...rows);
+            }
+        });
+        if (mergedRows.length === 0) { alert('합산할 송장 데이터가 없습니다.'); return; }
+        const wb = XLSX.utils.book_new();
+        const aoa = headerRow.length > 0 ? [headerRow, ...mergedRows] : mergedRows;
+        const ws = XLSX.utils.aoa_to_sheet(aoa);
+        XLSX.utils.book_append_sheet(wb, ws, type === 'mgmt' ? '기록용' : '업로드용');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const label = type === 'mgmt' ? '기록용' : '업로드용';
+        XLSX.writeFile(wb, `${dateStr} ${companyName} 합산송장_${label}.xlsx`);
+    };
+
     const handleDownloadMergedUploadInvoices = () => {
         if (selectedSessionIds.size === 0) { alert('병합할 업체를 선택해주세요.'); return; }
         const mergedRows: any[][] = [];
@@ -803,6 +870,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                 if (!selectedCompanyNames.includes(s.companyName)) selectedCompanyNames.push(s.companyName);
             }
         });
+        // 가구매 송장(롯데택배/택배대행) 병합
+        if (lotteMatchedRows && lotteMatchedRows.length > 1) {
+            if (headerRow.length === 0) headerRow = lotteMatchedRows[0];
+            mergedRows.push(...lotteMatchedRows.slice(1));
+        }
+        if (agentMatchedRows && agentMatchedRows.length > 1) {
+            if (headerRow.length === 0) headerRow = agentMatchedRows[0];
+            mergedRows.push(...agentMatchedRows.slice(1));
+        }
         if (mergedRows.length === 0) { alert('선택된 업체 중 매칭된 송장 데이터가 없습니다.'); return; }
         const wb = XLSX.utils.book_new();
         const aoa = headerRow.length > 0 ? [headerRow, ...mergedRows] : mergedRows;
@@ -828,11 +904,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             const config = pricingConfig[name];
+            let companyTotal = 0;
             sessions.forEach(s => {
                 if (!selectedSessionIds.has(s.id)) return;
-                const amount = totalsMap[s.id] || 0;
-                if (amount > 0) { depositRows.push([config?.bankName || '은행미지정', config?.accountNumber || '계좌미지정', amount, `${name}(${s.round}차)`]); total += amount; }
+                companyTotal += totalsMap[s.id] || 0;
             });
+            if (companyTotal > 0) { depositRows.push([config?.bankName || '은행미지정', config?.accountNumber || '계좌미지정', companyTotal, name]); total += companyTotal; }
         });
         manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label]); total += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
@@ -1118,7 +1195,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                     let margin = 0;
                     if (companyConfig?.products) {
                         const productEntry = Object.values(companyConfig.products).find((p: any) => p.displayName === productName);
-                        if (productEntry?.margin) margin = (productEntry as any).margin;
+                        if ((productEntry as any)?.margin) margin = (productEntry as any).margin;
                     }
                     const key = `${recordCurrentCompany}::${productName}`;
                     const existing = recordMap.get(key);
@@ -1153,7 +1230,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
 
         setSaveStatus('saving');
         try {
-            await upsertDailySales(dailySales);
+            await upsertDailySales(dailySales, businessId);
             setSaveStatus('success');
             setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (err: any) {
@@ -1260,7 +1337,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                 </div>
                             )}
                         </div>
-                        
+                        {masterOrderFile && (
+                            <div className="bg-zinc-950 p-3 rounded-2xl border border-dashed border-zinc-700 hover:border-rose-500/50 transition-all">
+                                <input ref={batchFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleBatchUpload(f); e.target.value = ''; } }} />
+                                <button onClick={() => batchFileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 py-2 text-[11px] font-black text-zinc-500 hover:text-rose-400 transition-colors">
+                                    <PlusCircleIcon className="w-4 h-4" />
+                                    <span>{(() => { let max = 0; (Object.values(companySessions) as SessionData[][]).forEach(ss => ss.forEach(s => { if (s.round > max) max = s.round; })); return `${max + 1}차 주문서 일괄 업로드`; })()}</span>
+                                </button>
+                            </div>
+                        )}
+
                         <div className="flex-1 bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                                 <div className="flex items-center gap-3">
@@ -1532,7 +1618,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                     })()}
                 </div>
                 {/* 비용(지출내역) 섹션 */}
-                <div className="p-6 border-b border-zinc-900 bg-orange-950/30 border-l-[3px] border-l-orange-500">
+                <div className="m-4 p-6 rounded-2xl border border-zinc-700 bg-zinc-950">
                     <div className="flex items-center gap-3 mb-4">
                         <div className="bg-orange-500/10 p-2 rounded-lg"><ChartBarIcon className="w-4 h-4 text-orange-500" /></div>
                         <h3 className="text-zinc-200 font-black text-xs uppercase tracking-widest flex items-center gap-2">
@@ -1626,7 +1712,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                     )}
                 </div>
 
-                <div className="p-6 border-b border-zinc-900 bg-rose-950/30 border-l-[3px] border-l-rose-500">
+                <div className="m-4 p-6 rounded-2xl border border-zinc-700 bg-zinc-950">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
                             <div className="bg-rose-500/10 p-2 rounded-lg"><BoltIcon className="w-4 h-4 text-rose-500" /></div>
@@ -1856,14 +1942,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig }) => {
                                         return (
                                             <CompanyWorkstationRow
                                                 key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
-                                                vendorFile={vendorFiles[company] || null} masterFile={masterOrderFile} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                vendorFile={vendorFiles[company] || null} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
                                                 manualOrders={sIdx === (companySessions[company] || []).length - 1 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                 onVendorFileChange={(file) => handleVendorFileChange(company, file)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                 onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
                                                 onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
+                                                onDownloadMergedInvoice={(companySessions[company] || []).length > 1 ? (type: 'mgmt' | 'upload') => handleDownloadMergedInvoice(company, type) : undefined}
                                                 previousRoundItems={prevItems}
                                                 manualOrdersRejected={manualOrdersRejectedCompanies.has(company)}
                                                 onManualOrdersApproval={handleManualOrdersApproval}
+                                                businessId={businessId}
+                                                onConfigChange={onConfigChange}
                                             />
                                         );
                                     })}
