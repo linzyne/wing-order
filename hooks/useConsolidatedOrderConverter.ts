@@ -258,7 +258,10 @@ const generateWorkbookForCompany = async (
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return [companyName, null];
 
-        const senderName = BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원';
+        const bizInfo = BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO] || BUSINESS_INFO['안군농원'];
+        const senderName = bizInfo.senderName;
+        const senderPhone = bizInfo.phone;
+        const senderAddress = bizInfo.address;
         const stats = new StatsManager(senderName);
         const summary: AnalysisResult = {};
         const today = new Date();
@@ -340,7 +343,7 @@ const generateWorkbookForCompany = async (
                     if (!registeredProductNames[config.displayName]) {
                         registeredProductNames[config.displayName] = String(row[groupColIdx] || '').trim();
                     }
-                    await pushToOutputRows(companyName, outputRows, row, config, qty, pricingConfig, senderName);
+                    await pushToOutputRows(companyName, outputRows, row, config, qty, pricingConfig, senderName, senderPhone, senderAddress);
                     orderItems.push({
                         registeredProductName: String(row[regProductColIdx] || '').trim(),
                         registeredOptionName: String(row[regOptionColIdx] || '').trim(),
@@ -362,7 +365,7 @@ const generateWorkbookForCompany = async (
             summary[productKey].count += mo.qty;
             summary[productKey].totalPrice += mo.qty * config.supplyPrice;
             stats.add(config.displayName, mo.qty, config.supplyPrice, todayStr);
-            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName);
+            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress);
         }
 
         headerRow = getHeaderForCompany(companyName, companyConfig);
@@ -396,7 +399,7 @@ export function getHeaderForCompany(companyName: string, config: CompanyConfig):
     return config.orderFormHeaders?.length ? config.orderFormHeaders : ['받는사람', '전화번호', '주소', '품목명', '수량', '배송메세지', '주문번호'];
 }
 
-async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원') {
+async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도') {
     const orderName = config.orderFormName || config.displayName;
     if (companyName === '팜플로우') {
         for (let j = 0; j < qty; j++) {
@@ -470,13 +473,18 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             if (customHeaders.length > 0) {
                 const or = new Array(customHeaders.length).fill('');
                 customHeaders.forEach((h, idx) => {
-                    if (h.includes('받는분성명') || h.includes('받는사람')) or[idx] = String(row[26] || '');
+                    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인')) or[idx] = String(row[26] || '');
+                    else if (h.includes('업체전화')) or[idx] = senderPhone;
+                    else if (h.includes('업체주소')) or[idx] = senderAddress;
+                    else if (h.includes('업체명')) or[idx] = senderName;
                     else if (h.includes('받는분연락처') || h.includes('전화번호')) or[idx] = String(row[27] || '');
+                    else if (h.includes('우편번호')) or[idx] = String(row[28] || '');
                     else if (h.includes('받는분주소') || h.includes('주소')) or[idx] = String(row[29] || '');
-                    else if (h.includes('품목') || h.includes('상품명')) or[idx] = orderName;
+                    else if (h.includes('제품명') || h.includes('품목') || h.includes('상품명')) or[idx] = orderName;
+                    else if (h.includes('옵션')) or[idx] = '';
                     else if (h.includes('수량')) or[idx] = 1;
                     else if (h.includes('주문번호')) or[idx] = String(row[2] || '');
-                    else if (h.includes('배송메세지')) or[idx] = String(row[30] || '');
+                    else if (h.includes('배송메') ) or[idx] = String(row[30] || '');
                     else if (h.includes('송하인')) or[idx] = senderName;
                 });
                 outputRows.push(or);
@@ -487,7 +495,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
     }
 }
 
-async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원') {
+async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도') {
     const orderName = config.orderFormName || config.displayName;
     if (companyName === '팜플로우') {
         for (let j = 0; j < mo.qty; j++) {
@@ -558,12 +566,18 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             if (customHeaders.length > 0) {
                 const or = new Array(customHeaders.length).fill('');
                 customHeaders.forEach((h, idx) => {
-                    if (h.includes('받는분성명') || h.includes('받는사람')) or[idx] = mo.recipientName;
+                    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인')) or[idx] = mo.recipientName;
+                    else if (h.includes('업체전화')) or[idx] = senderPhone;
+                    else if (h.includes('업체주소')) or[idx] = senderAddress;
+                    else if (h.includes('업체명')) or[idx] = senderName;
                     else if (h.includes('받는분연락처') || h.includes('전화번호')) or[idx] = mo.phone;
+                    else if (h.includes('우편번호')) or[idx] = '';
                     else if (h.includes('받는분주소') || h.includes('주소')) or[idx] = mo.address;
-                    else if (h.includes('품목') || h.includes('상품명')) or[idx] = orderName;
+                    else if (h.includes('제품명') || h.includes('품목') || h.includes('상품명')) or[idx] = orderName;
+                    else if (h.includes('옵션')) or[idx] = '';
                     else if (h.includes('수량')) or[idx] = 1;
                     else if (h.includes('주문번호')) or[idx] = '수동';
+                    else if (h.includes('배송메')) or[idx] = '';
                     else if (h.includes('송하인')) or[idx] = senderName;
                 });
                 outputRows.push(or);
