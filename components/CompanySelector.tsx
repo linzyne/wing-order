@@ -247,6 +247,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const productToCompany: Record<string, string> = {};
         const realOrders: Record<string, number> = {};
         const fakeOrders: Record<string, number> = {};
+        const unclaimedOrders: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number }[] = [];
         for (let i = 1; i < masterOrderData.length; i++) {
             const row = masterOrderData[i];
             if (!row) continue;
@@ -268,11 +269,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 fakeOrders[groupName] = (fakeOrders[groupName] || 0) + qty;
             } else {
                 realOrders[groupName] = (realOrders[groupName] || 0) + qty;
+                // 어떤 업체에도 매칭되지 않은 주문 수집
+                if (!productToCompany[groupName]) {
+                    unclaimedOrders.push({
+                        recipientName: String(row[26] || '').trim(),
+                        productName: String(row[11] || '').trim(),
+                        groupName,
+                        orderNumber: orderNum,
+                        qty,
+                    });
+                }
             }
         }
         const realTotal = Object.values(realOrders).reduce((a, b) => a + b, 0);
         const fakeTotal = Object.values(fakeOrders).reduce((a, b) => a + b, 0);
-        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany };
+        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders };
     }, [masterOrderData, fakeOrderInput, pricingConfig]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배대행/롯데택배/가구매 기본)
@@ -1249,8 +1260,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     };
 
-    const grandTotal = (Object.values(totalsMap) as number[]).reduce((a: number, b: number) => a + b, 0) + 
+    const grandTotal = (Object.values(totalsMap) as number[]).reduce((a: number, b: number) => a + b, 0) +
                        manualTransfers.reduce((a: number, b: ManualTransfer) => a + b.amount, 0);
+
+    // 전체 워크스테이션 주문수 합산 (원본 주문수와 비교용)
+    // allItemSummaries는 Firestore 동기화 시 누락될 수 있으므로 allOrderRows 기반으로 카운트
+    const totalWorkstationOrderCount = useMemo(() => {
+        return (Object.values(allOrderRows) as any[][][]).reduce((sum: number, rows: any[][]) => sum + rows.length, 0);
+    }, [allOrderRows]);
+
+    const orderCountMismatch = masterProductSummary && totalWorkstationOrderCount > 0
+        ? masterProductSummary.realTotal - totalWorkstationOrderCount
+        : 0;
 
     const isAllSelected = selectedSessionIds.size > 0 && selectedSessionIds.size === (Object.values(companySessions).flat() as SessionData[]).length;
 
@@ -1332,6 +1353,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     </div>
                                                 </div>
                                             )}
+                                        </div>
+                                    )}
+                                    {masterProductSummary?.unclaimedOrders && masterProductSummary.unclaimedOrders.length > 0 && (
+                                        <div className="mt-2 bg-red-500/10 border border-red-500/40 rounded-xl px-3 py-2 animate-fade-in">
+                                            <div className="text-red-400 text-[10px] font-black flex items-center gap-1 mb-1">
+                                                <span>⚠</span> 업체 미매칭 {masterProductSummary.unclaimedOrders.reduce((s, o) => s + o.qty, 0)}건 - 어떤 업체에도 배정되지 않음
+                                            </div>
+                                            <div className="space-y-0.5">
+                                                {masterProductSummary.unclaimedOrders.map((u, idx) => (
+                                                    <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
+                                                        {u.recipientName} - {u.groupName} {u.productName} (x{u.qty})
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="text-[9px] text-red-400/60 mt-1">
+                                                해당 그룹명에 매칭되는 업체 키워드가 없습니다. 품목/업체 설정에서 키워드를 추가해주세요.
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -1485,6 +1523,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </div>
                             </div>
                         </div>
+                        {orderCountMismatch > 0 && (
+                            <div className="bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-2 animate-fade-in">
+                                <div className="text-red-400 text-[11px] font-black flex items-center gap-1">
+                                    <span>⚠</span> 원본 {masterProductSummary!.realTotal}건 중 {orderCountMismatch}건이 발주서에 누락됨
+                                    <span className="text-red-400/60 font-bold ml-1">(워크스테이션 합산: {totalWorkstationOrderCount}건)</span>
+                                </div>
+                            </div>
+                        )}
                         <div className="flex flex-wrap gap-2 mt-1">
                             {Object.keys(pricingConfig).sort((a, b) => {
                                 const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);

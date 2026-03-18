@@ -308,7 +308,10 @@ const generateWorkbookForCompany = async (
                 }
 
                 const qty = parseInt(String(row[quantityColIdx] || row[22]), 10);
-                if (isNaN(qty) || qty < 1) continue;
+                if (isNaN(qty) || qty < 1) {
+                    unmatchedOrders.push({ companyName, recipientName, productName: `${productName} (수량 오류: ${row[quantityColIdx]})`, phone, orderNumber });
+                    continue;
+                }
 
                 let rawProductName = `${row[groupColIdx] || ''} ${row[productColIdx] || ''}`.trim();
                 if (optionColIdx !== -1 && row[optionColIdx]) {
