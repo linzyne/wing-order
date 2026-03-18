@@ -301,9 +301,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const orderTotal = Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
             const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
             const resultData: SessionResultData = {
-                orderRows: localResult.rows || [],
-                invoiceRows: mergeResults?.rows || [],
-                uploadInvoiceRows: mergeResults?.uploadRows || [],
+                orderRows: JSON.stringify(localResult.rows || []) as any,
+                invoiceRows: JSON.stringify(mergeResults?.rows || []) as any,
+                uploadInvoiceRows: JSON.stringify(mergeResults?.uploadRows || []) as any,
                 header: mergeResults?.header || [],
                 summaryExcel: localResult.depositSummaryExcel || '',
                 depositSummary: localResult.depositSummary || '',
@@ -335,7 +335,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (key === lastSyncedCallbackRef.current) return;
         lastSyncedCallbackRef.current = key;
         onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
-        onDataUpdate(sessionId, syncedData.orderRows, syncedData.invoiceRows, syncedData.uploadInvoiceRows, syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary);
+        const parseRows = (v: any) => typeof v === 'string' ? JSON.parse(v) : (v || []);
+        onDataUpdate(sessionId, parseRows(syncedData.orderRows), parseRows(syncedData.invoiceRows), parseRows(syncedData.uploadInvoiceRows), syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary);
         if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 
