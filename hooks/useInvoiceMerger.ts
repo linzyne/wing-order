@@ -104,21 +104,50 @@ export const useInvoiceMerger = () => {
             const orderAoa: any[][] = XLSX.utils.sheet_to_json(orderWb.Sheets[orderWb.SheetNames[0]], { header: 1 });
             let headerIdx = 0;
             for (let i = 0; i < Math.min(orderAoa.length, 30); i++) if ((orderAoa[i] || []).join('').includes('주문번호')) { headerIdx = i; break; }
-            
+
             const invoiceMap = await buildInvoiceMap(await vendorFile.arrayBuffer(), companyName);
+
+            // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
+            const companyConfig = pricingConfig?.[companyName];
+            const useCustomInvoiceHeaders = companyConfig?.invoiceHeaders && companyConfig.invoiceHeaders.length > 0;
             const orderHeader = orderAoa[headerIdx];
+            const invoiceHeader = useCustomInvoiceHeaders ? companyConfig.invoiceHeaders! : orderHeader;
+
             const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
             let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호']);
-            let targetInvIdx = isCustomIdx ? 4 : findColIdx(orderHeader, ['운송장', '송장번호']);
-            let targetCourierIdx = isCustomIdx ? 3 : findColIdx(orderHeader, ['택배사', '배송사']);
+            let targetInvIdx = isCustomIdx ? 4 : findColIdx(invoiceHeader, ['운송장', '송장번호']);
+            let targetCourierIdx = isCustomIdx ? 3 : findColIdx(invoiceHeader, ['택배사', '배송사']);
             let targetQtyIdx = findColIdx(orderHeader, ['수량']);
 
             if (targetOrderIdx === -1) {
                 throw new Error("주문서에서 '주문번호' 열을 찾을 수 없습니다.");
             }
 
-            const mgmtRows: any[][] = [orderHeader];
-            const uploadRows: any[][] = [orderHeader];
+            // 헤더 매핑: 발주서 헤더 → 송장 헤더 인덱스 매핑
+            const headerMapping: Record<number, number> = {};
+            if (useCustomInvoiceHeaders) {
+                for (let i = 0; i < orderHeader.length; i++) {
+                    const orderColName = String(orderHeader[i] || '').toLowerCase().trim();
+                    for (let j = 0; j < invoiceHeader.length; j++) {
+                        const invColName = String(invoiceHeader[j] || '').toLowerCase().trim();
+                        if (orderColName === invColName ||
+                            (orderColName.includes('받는') && invColName.includes('받는')) ||
+                            (orderColName.includes('전화') && invColName.includes('전화')) ||
+                            (orderColName.includes('주소') && invColName.includes('주소')) ||
+                            (orderColName.includes('상품') && invColName.includes('상품')) ||
+                            (orderColName.includes('품목') && invColName.includes('품목')) ||
+                            (orderColName.includes('수량') && invColName.includes('수량')) ||
+                            (orderColName.includes('주문') && invColName.includes('주문')) ||
+                            (orderColName.includes('배송') && invColName.includes('배송'))) {
+                            headerMapping[i] = j;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            const mgmtRows: any[][] = [invoiceHeader];
+            const uploadRows: any[][] = [invoiceHeader];
             let uploadCount = 0, mgmtCount = 0;
             const failures: FailureDetail[] = [];
 
@@ -126,26 +155,54 @@ export const useInvoiceMerger = () => {
 
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
-                
+
                 if (!skipGroupCheck) {
-                    // 공백 제거 비교
                     const rowGroupValue = String(row[GROUP_ID_COL_IDX] || '').replace(/\s+/g, '');
                     const isGroupMatched = targetKeywords.some(k => rowGroupValue.includes(k.replace(/\s+/g, '')));
                     if (!isGroupMatched) continue;
                 }
-                
+
                 const orderNum = normalizeOrderNum(row[targetOrderIdx]);
                 const invoices = invoiceMap.get(orderNum);
                 if (invoices && invoices.length > 0) {
                     uploadCount++;
                     invoices.forEach(inv => {
-                        mgmtCount++; const newRow = [...row]; 
+                        mgmtCount++;
+                        let newRow: any[];
+
+                        // 커스텀 헤더 사용 시 데이터 재배치
+                        if (useCustomInvoiceHeaders) {
+                            newRow = new Array(invoiceHeader.length).fill('');
+                            // 발주서 데이터를 송장 헤더에 매핑
+                            for (let oldIdx = 0; oldIdx < row.length; oldIdx++) {
+                                const newIdx = headerMapping[oldIdx];
+                                if (newIdx !== undefined) {
+                                    newRow[newIdx] = row[oldIdx];
+                                }
+                            }
+                        } else {
+                            newRow = [...row];
+                        }
+
                         if (targetInvIdx !== -1) newRow[targetInvIdx] = inv;
                         if (targetCourierIdx !== -1) newRow[targetCourierIdx] = getCourierName(companyName);
                         if (invoices.length > 1 && targetQtyIdx !== -1) newRow[targetQtyIdx] = 1;
                         mgmtRows.push(newRow);
                     });
-                    const upRow = [...row]; 
+
+                    let upRow: any[];
+                    if (useCustomInvoiceHeaders) {
+                        upRow = new Array(invoiceHeader.length).fill('');
+                        for (let oldIdx = 0; oldIdx < row.length; oldIdx++) {
+                            const newIdx = headerMapping[oldIdx];
+                            if (newIdx !== undefined) {
+                                upRow[newIdx] = row[oldIdx];
+                            }
+                        }
+                    } else {
+                        upRow = [...row];
+                    }
+
                     if (targetInvIdx !== -1) upRow[targetInvIdx] = invoices[0];
                     if (targetCourierIdx !== -1) upRow[targetCourierIdx] = getCourierName(companyName);
                     uploadRows.push(upRow);
@@ -157,13 +214,13 @@ export const useInvoiceMerger = () => {
             const uploadWb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(uploadWb, XLSX.utils.aoa_to_sheet(uploadRows), "업로드용");
             const now = new Date();
             const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            setResults({ 
-                mgmtWorkbook: mgmtWb, 
-                uploadWorkbook: uploadWb, 
-                mgmtFileName: `${dateStr} [${companyName}] 기록용_송장.xlsx`, 
-                uploadFileName: `${dateStr} [${companyName}] 업로드용_송장.xlsx`, 
-                companyStats: { [companyName]: { mgmt: mgmtCount, upload: uploadCount, failures } }, 
-                header: orderHeader,
+            setResults({
+                mgmtWorkbook: mgmtWb,
+                uploadWorkbook: uploadWb,
+                mgmtFileName: `${dateStr} [${companyName}] 기록용_송장.xlsx`,
+                uploadFileName: `${dateStr} [${companyName}] 업로드용_송장.xlsx`,
+                companyStats: { [companyName]: { mgmt: mgmtCount, upload: uploadCount, failures } },
+                header: invoiceHeader,
                 rows: mgmtRows.slice(1),
                 uploadRows: uploadRows.slice(1)
             });

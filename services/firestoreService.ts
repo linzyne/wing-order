@@ -21,6 +21,9 @@ const getWorkspaceCollectionName = (businessId?: string): string =>
 const getManualOrdersDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'pendingManualOrders' : `pendingManualOrders_${businessId}`;
 
+const getCompanyOrderDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'companyOrder' : `companyOrder_${businessId}`;
+
 // ===== Pricing Config =====
 
 export const subscribePricingConfig = (
@@ -173,4 +176,24 @@ export const subscribeManualOrders = (
 export const saveManualOrders = async (orders: any[], businessId?: string): Promise<void> => {
   const docRef = doc(db, 'config', getManualOrdersDocId(businessId));
   await setDoc(docRef, { orders, updatedAt: Timestamp.now() });
+};
+
+// ===== Company Order (업체 순서) =====
+
+export const subscribeCompanyOrder = (
+  callback: (order: string[]) => void,
+  businessId?: string
+): Unsubscribe => {
+  const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().order || []) : []);
+  }, (error) => {
+    console.error('[Firestore] CompanyOrder 구독 오류:', error);
+    callback([]);
+  });
+};
+
+export const saveCompanyOrder = async (order: string[], businessId?: string): Promise<void> => {
+  const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
+  await setDoc(docRef, { order, updatedAt: Timestamp.now() });
 };

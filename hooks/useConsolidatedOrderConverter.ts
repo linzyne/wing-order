@@ -623,9 +623,9 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
                         const row = fullJson[i];
                         if (!row) continue;
                         const rawGroupVal = String(row[groupColIdx] || '');
-                        const groupVal = rawGroupVal.replace(/\s+/g, '');
+                        const groupVal = rawGroupVal.replace(/\s+/g, '').normalize('NFC');
                         uniqueGroupVals.add(rawGroupVal);
-                        const isGroupMatched = targetKeywords.some(k => groupVal.includes(k.replace(/\s+/g, '')));
+                        const isGroupMatched = targetKeywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')));
                         if (isGroupMatched) json.push(row);
                     }
 
@@ -636,7 +636,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
 
             const fakeOrderNumbers = new Set<string>();
             fakeOrderNumbersInput.split('\n').forEach(line => {
-                const matches = line.match(/[A-Z0-9-]{5,}/g);
+                const matches = line.match(/[A-Za-z0-9-]{5,}/g);
                 if (matches) matches.forEach(m => fakeOrderNumbers.add(m.trim()));
             });
 

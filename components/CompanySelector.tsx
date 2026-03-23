@@ -7,12 +7,29 @@ import { BUSINESS_INFO } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace } from '../hooks/useFirestore';
-import { subscribeManualOrders, saveManualOrders, upsertDailySales } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder } from '../services/firestoreService';
 import { useAIManualOrder } from '../hooks/useAIManualOrder';
+import {
+    DndContext,
+    closestCenter,
+    KeyboardSensor,
+    PointerSensor,
+    useSensor,
+    useSensors,
+    DragEndEvent,
+} from '@dnd-kit/core';
+import {
+    arrayMove,
+    SortableContext,
+    sortableKeyboardCoordinates,
+    useSortable,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 declare var XLSX: any;
 
-const PREFERRED_ORDER = ['연두', '웰그린', '고랭지김치', '제이제이', '팜플로우', '꽃게', '신선마켓', '답도', '귤_초록', '홍게', '황금향', '귤', '홍게2'];
+const DEFAULT_PREFERRED_ORDER = ['연두', '웰그린', '고랭지김치', '제이제이', '팜플로우', '꽃게', '신선마켓', '답도', '귤_초록', '홍게', '황금향', '귤', '홍게2'];
 
 const QUICK_RECIPIENTS = [
     { name: '김지아', phone: '01094496343', address: '인천시 연수수 해송로30번길 19, 306-802' },
@@ -31,8 +48,50 @@ interface SessionData {
 
 interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; }
 
+// 드래그 가능한 행 컴포넌트
+import { DragHandleContext } from './DragHandleContext';
+
+const SortableCompanyRow: React.FC<{
+    id: string;
+    children: React.ReactNode;
+}> = ({ id, children }) => {
+    const {
+        attributes,
+        listeners,
+        setNodeRef,
+        transform,
+        transition,
+        isDragging,
+    } = useSortable({ id });
+
+    const style = {
+        transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+        transition,
+        opacity: isDragging ? 0.5 : 1,
+    };
+
+    return (
+        <DragHandleContext.Provider value={{ attributes, listeners }}>
+            <tbody ref={setNodeRef} style={style} className="divide-y divide-zinc-900">
+                {children}
+            </tbody>
+        </DragHandleContext.Provider>
+    );
+};
+
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId }) => {
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
+
+    // 새로고침 시 워크스테이션 데이터 초기화 (처리결과/워크플로/조정내역)
+    const [workstationsReady, setWorkstationsReady] = useState(false);
+    useEffect(() => {
+        if (!isReady || workstationsReady) return;
+        Promise.all([
+            updateField('sessionResults', {}),
+            updateField('sessionWorkflows', {}),
+            updateField('sessionAdjustments', {}),
+        ]).finally(() => setWorkstationsReady(true));
+    }, [isReady]);
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
         const initial: Record<string, SessionData[]> = {};
@@ -64,6 +123,49 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
     const lastWrittenManualOrdersRef = useRef('[]');
+
+    // 업체 순서 관리
+    const [companyOrder, setCompanyOrder] = useState<string[]>([]);
+    const lastWrittenCompanyOrderRef = useRef('[]');
+
+    // 업체 순서 Firestore 구독
+    useEffect(() => {
+        const unsubscribe = subscribeCompanyOrder((order) => {
+            const str = JSON.stringify(order);
+            if (str !== lastWrittenCompanyOrderRef.current) {
+                setCompanyOrder(order);
+                lastWrittenCompanyOrderRef.current = str;
+            }
+        }, businessId);
+        return unsubscribe;
+    }, [businessId]);
+
+    // 업체 순서 변경 → Firestore에 저장
+    const isInitialCompanyOrderLoad = useRef(true);
+    useEffect(() => {
+        if (isInitialCompanyOrderLoad.current) {
+            isInitialCompanyOrderLoad.current = false;
+            // 초기 로드 시 Firestore에 저장된 순서가 없으면 기본 순서 사용
+            if (companyOrder.length === 0) {
+                const companies = Object.keys(pricingConfig);
+                const ordered = companies.sort((a, b) => {
+                    const indexA = DEFAULT_PREFERRED_ORDER.indexOf(a);
+                    const indexB = DEFAULT_PREFERRED_ORDER.indexOf(b);
+                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                    if (indexA !== -1) return -1;
+                    if (indexB !== -1) return 1;
+                    return a.localeCompare(b);
+                });
+                setCompanyOrder(ordered);
+                saveCompanyOrder(ordered, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
+            }
+            return;
+        }
+        const currentStr = JSON.stringify(companyOrder);
+        if (currentStr === lastWrittenCompanyOrderRef.current) return;
+        lastWrittenCompanyOrderRef.current = currentStr;
+        saveCompanyOrder(companyOrder, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
+    }, [companyOrder, pricingConfig, businessId]);
 
     // 수동발주 Firestore 영구 저장 - 구독
     useEffect(() => {
@@ -116,6 +218,41 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [manualTransfers, setManualTransfers] = useState<ManualTransfer[]>([]);
 
     const [newTransfer, setNewTransfer] = useState({ label: '', bankName: '', accountNumber: '', amount: '' });
+
+    // 드래그앤드롭 센서 설정
+    const sensors = useSensors(
+        useSensor(PointerSensor),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    // 업체 순서 정렬 함수
+    const sortCompanies = useCallback((companies: string[]) => {
+        if (companyOrder.length === 0) return companies;
+        return companies.sort((a, b) => {
+            const indexA = companyOrder.indexOf(a);
+            const indexB = companyOrder.indexOf(b);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return a.localeCompare(b);
+        });
+    }, [companyOrder]);
+
+    // 드래그 종료 핸들러
+    const handleDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+
+        if (!over || active.id === over.id) return;
+
+        setCompanyOrder((items) => {
+            const oldIndex = items.indexOf(active.id as string);
+            const newIndex = items.indexOf(over.id as string);
+
+            return arrayMove(items, oldIndex, newIndex);
+        });
+    };
 
     // 비용(지출내역) 관리
     const EXPENSE_CATEGORIES = ['임대료', '통신비', '소모품비', '물류비', '마케팅', '식비', '기타', '이자'];
@@ -208,7 +345,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         fakeOrderInput.split('\n').forEach(line => {
             const trimmed = line.trim();
             if (!trimmed) return;
-            const matches = trimmed.match(/[A-Z0-9-]{5,}/g);
+            const matches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
             if (matches) {
                 // 주문번호가 아닌 부분을 이름으로 추출
                 let namepart = trimmed;
@@ -238,7 +375,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (!masterOrderData || masterOrderData.length < 2) return null;
         const fakeNums = new Set<string>();
         fakeOrderInput.split('\n').forEach(line => {
-            const matches = line.trim().match(/[A-Z0-9-]{5,}/g);
+            const matches = line.trim().match(/[A-Za-z0-9-]{5,}/g);
             if (matches) matches.forEach(m => fakeNums.add(m.trim()));
         });
         // 업체-키워드 맵 생성
@@ -248,6 +385,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const realOrders: Record<string, number> = {};
         const fakeOrders: Record<string, number> = {};
         const unclaimedOrders: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number }[] = [];
+        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean }[] = [];
         for (let i = 1; i < masterOrderData.length; i++) {
             const row = masterOrderData[i];
             if (!row) continue;
@@ -255,35 +393,41 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const groupName = String(row[10] || '').trim();
             const qty = parseInt(String(row[22] || '1'), 10) || 1;
             if (!groupName) continue;
+            const recipientName = String(row[26] || '').trim();
+            const productName = String(row[11] || '').trim();
             // 업체명 매핑
             if (!productToCompany[groupName]) {
-                const groupNorm = groupName.replace(/\s+/g, '');
+                const groupNorm = groupName.replace(/\s+/g, '').normalize('NFC');
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
-                    if (keywords.some(k => groupNorm.includes(k.replace(/\s+/g, '')))) {
+                    if (keywords.some(k => groupNorm.includes(k.replace(/\s+/g, '').normalize('NFC')))) {
                         productToCompany[groupName] = name;
                         break;
                     }
                 }
             }
-            if (fakeNums.has(orderNum)) {
+            const isFake = fakeNums.has(orderNum);
+            const company = productToCompany[groupName] || '';
+            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake });
+            if (isFake) {
                 fakeOrders[groupName] = (fakeOrders[groupName] || 0) + qty;
             } else {
                 realOrders[groupName] = (realOrders[groupName] || 0) + qty;
                 // 어떤 업체에도 매칭되지 않은 주문 수집
-                if (!productToCompany[groupName]) {
-                    unclaimedOrders.push({
-                        recipientName: String(row[26] || '').trim(),
-                        productName: String(row[11] || '').trim(),
-                        groupName,
-                        orderNumber: orderNum,
-                        qty,
-                    });
+                if (!company) {
+                    unclaimedOrders.push({ recipientName, productName, groupName, orderNumber: orderNum, qty });
                 }
             }
         }
         const realTotal = Object.values(realOrders).reduce((a, b) => a + b, 0);
         const fakeTotal = Object.values(fakeOrders).reduce((a, b) => a + b, 0);
-        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders };
+        // 업체별 마스터 주문 건수 (행 기준)
+        const companyOrderCounts: Record<string, number> = {};
+        allOrderDetails.forEach(d => {
+            if (d.company) {
+                companyOrderCounts[d.company] = (companyOrderCounts[d.company] || 0) + 1;
+            }
+        });
+        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts };
     }, [masterOrderData, fakeOrderInput, pricingConfig]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배대행/롯데택배/가구매 기본)
@@ -335,12 +479,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const companiesInFile = new Set<string>();
             const companyKeywordsMap = new Map<string, string[]>();
             Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+            const toCodePoints = (s: string) => [...s].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
             for (let i = 1; i < json.length; i++) {
-                const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '');
+                const rawVal = String(json[i][groupColIdx] || '');
+                const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
                 if (!groupVal) continue;
+                let matched = false;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
-                    const isMatched = keywords.some(k => groupVal.includes(k.replace(/\s+/g, '')));
-                    if (isMatched) { companiesInFile.add(name); break; }
+                    const isMatched = keywords.some(k => {
+                        const normK = k.replace(/\s+/g, '').normalize('NFC');
+                        const result = groupVal.includes(normK);
+                        if (!result && i <= 3) {
+                            console.log(`[DEBUG][감지] 비교 실패: groupVal="${groupVal}" [${toCodePoints(groupVal)}] vs keyword="${normK}" [${toCodePoints(normK)}] (${name})`);
+                        }
+                        return result;
+                    });
+                    if (isMatched) { companiesInFile.add(name); matched = true; break; }
+                }
+                if (!matched && i <= 5) {
+                    console.log(`[DEBUG][감지] 매칭 안됨: row ${i}, rawVal="${rawVal}", groupVal="${groupVal}" [${toCodePoints(groupVal)}]`);
                 }
             }
             // 디버그: Column 10 고유값 수집
@@ -350,7 +507,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (v) uniqueGroupVals.add(v);
             }
             console.log(`[DEBUG][감지] Column 10 고유값: ${JSON.stringify([...uniqueGroupVals])}`);
-            console.log(`[DEBUG][감지] 업체-키워드 맵: ${JSON.stringify([...companyKeywordsMap.entries()])}`);
+            console.log(`[DEBUG][감지] 업체-키워드 맵 (with codepoints):`);
+            for (const [name, keywords] of companyKeywordsMap.entries()) {
+                console.log(`  ${name}: ${keywords.map(k => `"${k}" [${toCodePoints(k)}]`).join(', ')}`);
+            }
             console.log(`[DEBUG][감지] 감지된 업체: ${JSON.stringify([...companiesInFile])}`);
             setDetectedCompanies(companiesInFile);
             setMasterOrderData(json);
@@ -380,10 +540,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const companyKeywordsMap = new Map<string, string[]>();
             Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
             for (let i = 1; i < json.length; i++) {
-                const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '');
+                const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
                 if (!groupVal) continue;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
-                    if (keywords.some(k => groupVal.includes(k.replace(/\s+/g, '')))) { companiesInFile.add(name); break; }
+                    if (keywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')))) { companiesInFile.add(name); break; }
                 }
             }
             if (companiesInFile.size === 0) { alert('주문서에서 매칭되는 업체를 찾지 못했습니다.'); return; }
@@ -420,7 +580,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             // 가구매 명단에서 주문번호 추출
             const fakeOrderNums = new Set<string>();
             fakeOrderInput.split('\n').forEach(line => {
-                const matches = line.match(/[A-Z0-9-]{5,}/g);
+                const matches = line.match(/[A-Za-z0-9-]{5,}/g);
                 if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
             });
             if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
@@ -494,7 +654,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         try {
             const fakeOrderNums = new Set<string>();
             fakeOrderInput.split('\n').forEach(line => {
-                const matches = line.match(/[A-Z0-9-]{5,}/g);
+                const matches = line.match(/[A-Za-z0-9-]{5,}/g);
                 if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
             });
             if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
@@ -563,7 +723,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         // 가구매 명단에서 주문번호 추출
         const fakeOrderNums = new Set<string>();
         fakeOrderInput.split('\n').forEach(line => {
-            const matches = line.match(/[A-Z0-9-]{5,}/g);
+            const matches = line.match(/[A-Za-z0-9-]{5,}/g);
             if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
         });
         if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
@@ -634,7 +794,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
         const fakeOrderNums = new Set<string>();
         fakeOrderInput.split('\n').forEach(line => {
-            const matches = line.match(/[A-Z0-9-]{5,}/g);
+            const matches = line.match(/[A-Za-z0-9-]{5,}/g);
             if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
         });
         if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
@@ -905,13 +1065,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const wb = XLSX.utils.book_new();
         const depositRows: any[][] = [];
         let total = 0;
-        const sortedCompanyNames = Object.keys(pricingConfig).sort((a, b) => {
-            const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
-            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-            if (indexA !== -1) return -1;
-            if (indexB !== -1) return 1;
-            return a.localeCompare(b);
-        });
+        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             const config = pricingConfig[name];
@@ -937,13 +1091,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleDownloadWorkLog = () => {
         const wb = XLSX.utils.book_new();
         const summarySheetData: any[][] = [];
-        const sortedCompanyNames = Object.keys(pricingConfig).sort((a, b) => {
-            const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
-            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-            if (indexA !== -1) return -1;
-            if (indexB !== -1) return 1;
-            return a.localeCompare(b);
-        });
+        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             let hasAddedHeader = false;
@@ -1078,13 +1226,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             }
         }
-        const sortedCompanyNames = Object.keys(pricingConfig).sort((a, b) => {
-            const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
-            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-            if (indexA !== -1) return -1;
-            if (indexB !== -1) return 1;
-            return a.localeCompare(b);
-        });
+        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
 
         // 발주/송장 데이터 수집
         const orderSheetData: any[][] = [];
@@ -1355,6 +1497,49 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             )}
                                         </div>
                                     )}
+                                    {masterProductSummary && masterProductSummary.allOrderDetails.length > 0 && (
+                                        <details className="mt-2">
+                                            <summary className="text-[10px] font-black text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors select-none">
+                                                주문 상세 펼치기 ({masterProductSummary.realTotal + masterProductSummary.fakeTotal}건)
+                                            </summary>
+                                            <div className="mt-1 max-h-[300px] overflow-auto custom-scrollbar space-y-2 bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
+                                                {(() => {
+                                                    const details = masterProductSummary.allOrderDetails;
+                                                    const grouped: Record<string, typeof details> = {};
+                                                    details.forEach(d => {
+                                                        const key = d.company || '미매칭';
+                                                        if (!grouped[key]) grouped[key] = [];
+                                                        grouped[key].push(d);
+                                                    });
+                                                    return Object.entries(grouped)
+                                                        .sort(([a], [b]) => a === '미매칭' ? 1 : b === '미매칭' ? -1 : b.localeCompare(a))
+                                                        .map(([company, orders]) => {
+                                                        const realCount = orders.filter(o => !o.isFake).reduce((s, o) => s + o.qty, 0);
+                                                        const fakeCount = orders.filter(o => o.isFake).reduce((s, o) => s + o.qty, 0);
+                                                        return (
+                                                            <div key={company}>
+                                                                <div className="text-[11px] font-black text-zinc-300 flex items-center gap-2">
+                                                                    <span className={company === '미매칭' ? 'text-red-400' : ''}>{company}</span>
+                                                                    <span className="text-zinc-600">{realCount}건{fakeCount > 0 ? ` + 가구매 ${fakeCount}건` : ''}</span>
+                                                                </div>
+                                                                <div className="space-y-0.5 mt-0.5">
+                                                                    {orders.map((o, idx) => (
+                                                                        <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-amber-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
+                                                                            <span className="min-w-[50px]">{o.recipientName}</span>
+                                                                            <span className="text-zinc-600">{o.groupName}</span>
+                                                                            <span className="truncate">{o.productName}</span>
+                                                                            {o.qty > 1 && <span className="text-white font-bold">x{o.qty}</span>}
+                                                                            {o.isFake && <span className="text-amber-500/50 text-[8px]">가구매</span>}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    });
+                                                })()}
+                                            </div>
+                                        </details>
+                                    )}
                                     {masterProductSummary?.unclaimedOrders && masterProductSummary.unclaimedOrders.length > 0 && (
                                         <div className="mt-2 bg-red-500/10 border border-red-500/40 rounded-xl px-3 py-2 animate-fade-in">
                                             <div className="text-red-400 text-[10px] font-black flex items-center gap-1 mb-1">
@@ -1532,13 +1717,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </div>
                         )}
                         <div className="flex flex-wrap gap-2 mt-1">
-                            {Object.keys(pricingConfig).sort((a, b) => {
-                                const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
-                                if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                                if (indexA !== -1) return -1;
-                                if (indexB !== -1) return 1;
-                                return a.localeCompare(b);
-                            }).map(name => {
+                            {sortCompanies(Object.keys(pricingConfig)).map(name => {
                                 const sessions = companySessions[name] || [];
                                 const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
                                 if (sessionAmounts.length === 0) return null;
@@ -1952,40 +2131,42 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     )}
                 </div>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                        <thead>
-                            <tr className="bg-zinc-950/50 text-zinc-500 text-[10px] font-black uppercase tracking-[0.15em]">
-                                <th className="px-6 py-4 w-[35%] whitespace-nowrap">
-                                    <div className="flex items-center gap-3">
-                                        <button onClick={handleSelectAllSessions} className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${isAllSelected ? 'bg-rose-500 border-rose-400 text-white' : 'bg-zinc-900 border-zinc-700 text-transparent hover:border-rose-500/50'}`} title="전체 선택"><CheckIcon className="w-3 h-3" /></button>
-                                        <span>업체 정보</span>
-                                    </div>
-                                </th>
-                                <th className="px-6 py-4 w-[30%] text-center whitespace-nowrap">
-                                    발주서
-                                    {(() => {
-                                        const total: number = Object.values(allOrderRows).reduce<number>((s, r) => s + (r as any[][]).length, 0);
-                                        return total > 0 ? <span className="ml-2 text-white font-black text-xl normal-case tracking-normal">{total}건</span> : null;
-                                    })()}
-                                </th>
-                                <th className="px-6 py-4 w-[35%] text-center whitespace-nowrap">송장 매칭</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-900">
-                            {Object.keys(pricingConfig).sort((a, b) => {
-                                const indexA = PREFERRED_ORDER.indexOf(a), indexB = PREFERRED_ORDER.indexOf(b);
-                                if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                                if (indexA !== -1) return -1;
-                                if (indexB !== -1) return 1;
-                                return a.localeCompare(b);
-                            }).map(company => (
-                                <React.Fragment key={company}>
-                                    {(companySessions[company] || []).map((session, sIdx) => {
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleDragEnd}
+                    >
+                        <table className="w-full text-left border-collapse">
+                            <thead>
+                                <tr className="bg-zinc-950/50 text-zinc-500 text-[10px] font-black uppercase tracking-[0.15em]">
+                                    <th className="px-6 py-4 w-[35%] whitespace-nowrap">
+                                        <div className="flex items-center gap-3">
+                                            <button onClick={handleSelectAllSessions} className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${isAllSelected ? 'bg-rose-500 border-rose-400 text-white' : 'bg-zinc-900 border-zinc-700 text-transparent hover:border-rose-500/50'}`} title="전체 선택"><CheckIcon className="w-3 h-3" /></button>
+                                            <span>업체 정보</span>
+                                        </div>
+                                    </th>
+                                    <th className="px-6 py-4 w-[30%] text-center whitespace-nowrap">
+                                        발주서
+                                        {(() => {
+                                            const total: number = Object.values(allOrderRows).reduce<number>((s, r) => s + (r as any[][]).length, 0);
+                                            return total > 0 ? <span className="ml-2 text-white font-black text-xl normal-case tracking-normal">{total}건</span> : null;
+                                        })()}
+                                    </th>
+                                    <th className="px-6 py-4 w-[35%] text-center whitespace-nowrap">송장 매칭</th>
+                                </tr>
+                            </thead>
+                            <SortableContext
+                                items={sortCompanies(Object.keys(pricingConfig))}
+                                strategy={verticalListSortingStrategy}
+                            >
+                                {sortCompanies(Object.keys(pricingConfig)).map(company => (
+                                    <SortableCompanyRow key={company} id={company}>
+                                        {(companySessions[company] || []).map((session, sIdx) => {
                                         const prevItems = (companySessions[company] || [])
                                             .slice(0, sIdx)
                                             .map(ps => ({ round: ps.round, summary: allItemSummaries[ps.id] || {} }))
                                             .filter(item => Object.keys(item.summary).length > 0);
-                                        return (
+                                        return workstationsReady ? (
                                             <CompanyWorkstationRow
                                                 key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                 vendorFile={vendorFiles[company] || null} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
@@ -1999,13 +2180,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 onManualOrdersApproval={handleManualOrdersApproval}
                                                 businessId={businessId}
                                                 onConfigChange={onConfigChange}
+                                                masterExpectedCount={masterProductSummary?.companyOrderCounts?.[company] || 0}
                                             />
-                                        );
+                                        ) : null;
                                     })}
-                                </React.Fragment>
+                                </SortableCompanyRow>
                             ))}
-                        </tbody>
-                    </table>
+                            </SortableContext>
+                        </table>
+                    </DndContext>
                 </div>
             </section>
         </div>

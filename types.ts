@@ -35,8 +35,10 @@ export interface CompanyConfig {
   phone?: string;
   bankName?: string;
   accountNumber?: string;
-  orderFormHeaders?: string[];
-  orderFormFilename?: string;
+  orderFormHeaders?: string[]; // 발주서 헤더
+  orderFormFilename?: string; // 발주서 양식 파일명
+  invoiceHeaders?: string[]; // 송장 헤더
+  invoiceFilename?: string; // 송장 양식 파일명
   deadline?: string; // 마감 시간 (예: "09:00")
   keywords?: string[]; // 매칭 키워드 (엑셀 그룹컬럼 매칭용)
   products: {

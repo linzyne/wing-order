@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useContext } from 'react';
 import { useInvoiceMerger } from '../hooks/useInvoiceMerger';
 import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import {
@@ -8,6 +8,7 @@ import {
     PlusCircleIcon, TrashIcon
 } from './icons';
 import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder } from '../types';
+import { DragHandleContext } from './DragHandleContext';
 import { BUSINESS_INFO } from '../types';
 import { useDailyWorkspace } from '../hooks/useFirestore';
 import type { SessionResultData } from '../services/firestoreService';
@@ -54,6 +55,7 @@ interface CompanyWorkstationRowProps {
     onManualOrdersApproval?: (companyName: string, approved: boolean) => void;
     businessId?: string;
     onConfigChange: (newConfig: PricingConfig) => void;
+    masterExpectedCount?: number;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -61,8 +63,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     previousRoundItems = [],
     manualOrdersRejected = false, onManualOrdersApproval,
-    businessId, onConfigChange
+    businessId, onConfigChange, masterExpectedCount = 0
 }) => {
+    const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
     const [showExcluded, setShowExcluded] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -284,7 +287,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     }, [masterFile, batchFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, isLocalProcessing]);
 
     useEffect(() => {
-        if (!localResult) return;
+        if (!localResult) {
+            // 모든 주문이 가구매(제외)인 경우: localResult는 null이지만 excludedList는 있음
+            if (excludedList.length > 0) {
+                onResultUpdate(sessionId, 0, excludedList.length, excludedList);
+            }
+            return;
+        }
         const orderTotal = Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
         onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
@@ -315,7 +324,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 itemSummary: localResult.summary as any,
                 registeredProductNames: localResult.registeredProductNames || {},
                 orderItems: localResult.orderItems || [],
-                unmatchedOrders: unmatchedList.length > 0 ? unmatchedList : undefined,
+                unmatchedOrders: unmatchedList.length > 0 ? unmatchedList : [],
             };
             const resultStr = JSON.stringify(resultData);
             if (resultStr === lastSavedResultRef.current) return;
@@ -473,7 +482,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const handleDeleteKeyword = (kw: string) => {
-        const newConfig = JSON.parse(JSON.stringify(pricingConfig));
+        const cfg = pricingConfigRef.current;
+        if (!cfg[companyName]) return;
+        const newConfig = JSON.parse(JSON.stringify(cfg));
         const current = newConfig[companyName].keywords || [];
         newConfig[companyName].keywords = current.filter((k: string) => k !== kw);
         onConfigChange(newConfig);
@@ -492,7 +503,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         {isFirstSession ? (
                             <>
                                 <div className="flex items-center gap-2 flex-wrap">
-                                    <div className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors ${isAllDone ? 'text-emerald-400' : 'text-white'}`}>
+                                    <div
+                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${isAllDone ? 'text-emerald-400' : 'text-white'}`}
+                                        {...dragHandle.attributes}
+                                        {...dragHandle.listeners}
+                                    >
                                         {companyName}
                                     </div>
                                     
@@ -648,6 +663,24 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     </div>
                                 )}
+                                {(() => {
+                                    const processedCount = Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0) as number;
+                                    const workstationTotal = processedCount + excludedList.length + unmatchedList.length;
+                                    if (masterExpectedCount > 0 && masterExpectedCount > workstationTotal) {
+                                        const diff = masterExpectedCount - workstationTotal;
+                                        return (
+                                            <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                                <div className="text-red-400 text-[10px] font-black flex items-center gap-1">
+                                                    <span>⚠</span> 마스터 {masterExpectedCount}건 중 {diff}건 누락
+                                                </div>
+                                                <div className="text-[9px] text-red-300/70 mt-0.5">
+                                                    키워드 매칭을 확인하세요 (처리: {workstationTotal}건)
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                     {excludedList.length > 0 && (
@@ -661,11 +694,35 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         ) : isLocalProcessing ? (
                             <div className="flex flex-col items-center gap-1 text-indigo-400 font-black animate-pulse"><div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /><span className="text-[9px] uppercase tracking-widest">Analysing...</span></div>
                         ) : (
-                            <label className="flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border border-zinc-800 bg-zinc-900/30 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400 transition-all shadow-inner whitespace-nowrap">
-                                <DocumentArrowUpIcon className="w-4 h-4 text-zinc-700" />
-                                <span>발주서 업로드</span>
-                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleLocalFileChange(e.target.files[0], true)} />
-                            </label>
+                            <div className="flex flex-col items-center gap-2">
+                                {excludedList.length > 0 ? (
+                                    <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
+                                        <div className="text-zinc-500 font-black text-[10px]">모두 가구매 제외 ({excludedList.length}건)</div>
+                                        <div className="flex items-center gap-2">
+                                            <button onClick={() => setShowExcluded(!showExcluded)} className="text-rose-500 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                                제외({excludedList.length})
+                                            </button>
+                                            <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <label className="flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border border-zinc-800 bg-zinc-900/30 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400 transition-all shadow-inner whitespace-nowrap">
+                                        <DocumentArrowUpIcon className="w-4 h-4 text-zinc-700" />
+                                        <span>발주서 업로드</span>
+                                        <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleLocalFileChange(e.target.files[0], true)} />
+                                    </label>
+                                )}
+                                {masterExpectedCount > 0 && masterExpectedCount > excludedList.length + unmatchedList.length && (
+                                    <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-red-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 마스터 {masterExpectedCount}건 중 {masterExpectedCount - excludedList.length - unmatchedList.length}건 누락
+                                        </div>
+                                        <div className="text-[9px] text-red-300/70 mt-0.5">
+                                            키워드 매칭을 확인하세요 (처리: {excludedList.length + unmatchedList.length}건)
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 </td>

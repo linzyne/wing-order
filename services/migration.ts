@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, Timestamp, runTransaction } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { PricingConfig, DailySales } from '../types';
 import { DEFAULT_PRICING_CONFIG, DEFAULT_PRICING_CONFIG_조에 } from '../pricing';
@@ -80,42 +80,42 @@ export const migrateLocalStorageToFirestore = async (): Promise<boolean> => {
   return migrated;
 };
 
-// 코드의 sellingPrice/margin을 Firestore에 자동 병합
+// 코드의 sellingPrice/margin을 Firestore에 자동 병합 (트랜잭션으로 안전하게)
 export const syncPricingFields = async (businessId?: string): Promise<boolean> => {
   const defaultConfig = (!businessId || businessId === '안군농원') ? DEFAULT_PRICING_CONFIG : DEFAULT_PRICING_CONFIG_조에;
   try {
     const docRef = doc(db, 'config', getConfigDocId(businessId));
-    const snapshot = await getDoc(docRef);
-    if (!snapshot.exists()) return false;
+    return await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(docRef);
+      if (!snapshot.exists()) return false;
 
-    const firestoreConfig = snapshot.data().data as PricingConfig;
-    let updated = false;
+      const firestoreConfig = snapshot.data().data as PricingConfig;
+      let updated = false;
 
-    for (const [companyName, defaultCompany] of Object.entries(defaultConfig)) {
-      // 업체가 Firestore에 없으면 건너뜀 (사용자가 삭제했을 수 있음)
-      if (!firestoreConfig[companyName]) continue;
+      for (const [companyName, defaultCompany] of Object.entries(defaultConfig)) {
+        if (!firestoreConfig[companyName]) continue;
 
-      for (const [productKey, defaultProduct] of Object.entries(defaultCompany.products)) {
-        const fsProduct = firestoreConfig[companyName].products[productKey];
-        // 품목이 Firestore에 없으면 건너뜀 (사용자가 삭제했을 수 있음)
-        if (!fsProduct) continue;
+        for (const [productKey, defaultProduct] of Object.entries(defaultCompany.products)) {
+          const fsProduct = firestoreConfig[companyName].products[productKey];
+          if (!fsProduct) continue;
 
-        if (defaultProduct.sellingPrice != null && fsProduct.sellingPrice === undefined) {
-          fsProduct.sellingPrice = defaultProduct.sellingPrice;
-          updated = true;
-        }
-        if (defaultProduct.margin != null && fsProduct.margin === undefined) {
-          fsProduct.margin = defaultProduct.margin;
-          updated = true;
+          if (defaultProduct.sellingPrice != null && fsProduct.sellingPrice === undefined) {
+            fsProduct.sellingPrice = defaultProduct.sellingPrice;
+            updated = true;
+          }
+          if (defaultProduct.margin != null && fsProduct.margin === undefined) {
+            fsProduct.margin = defaultProduct.margin;
+            updated = true;
+          }
         }
       }
-    }
 
-    if (updated) {
-      await setDoc(docRef, { data: firestoreConfig, updatedAt: Timestamp.now() });
-      console.log('[Sync] sellingPrice/margin Firestore 동기화 완료');
-    }
-    return updated;
+      if (updated) {
+        transaction.set(docRef, { data: firestoreConfig, updatedAt: Timestamp.now() });
+        console.log('[Sync] sellingPrice/margin Firestore 동기화 완료');
+      }
+      return updated;
+    });
   } catch (e) {
     console.error('[Sync] sellingPrice/margin 동기화 실패:', e);
     return false;

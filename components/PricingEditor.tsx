@@ -172,7 +172,7 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                 value={(dialog.product.aliases || []).join(', ')}
                                 onChange={(e) => {
                                     const aliases = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                                    setDialog({ ...dialog, product: { ...dialog.product, aliases: aliases.length > 0 ? aliases : undefined } });
+                                    setDialog({ ...dialog, product: { ...dialog.product, aliases: aliases.length > 0 ? aliases : [] } });
                                 }}
                             />
                             <p className="text-[10px] text-zinc-600 mt-1.5">주문서 상품명에 이 키워드가 포함되면 해당 품목으로 자동 매칭됩니다</p>
@@ -444,10 +444,31 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
                 </div>
             </div>
 
-            <div className="flex items-center gap-4 px-2 text-sm font-black text-zinc-500">
-                <span>그룹 <span className="text-rose-500">{Object.keys(config).length}</span>개</span>
-                <span className="text-zinc-800">|</span>
-                <span>품목 <span className="text-rose-500">{Object.values(config).reduce((sum: number, c: CompanyConfig) => sum + Object.keys(c.products).length, 0)}</span>건</span>
+            <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-4 px-2 text-sm font-black text-zinc-500">
+                    <span>그룹 <span className="text-rose-500">{Object.keys(config).length}</span>개</span>
+                    <span className="text-zinc-800">|</span>
+                    <span>품목 <span className="text-rose-500">{Object.values(config).reduce((sum: number, c: CompanyConfig) => sum + Object.keys(c.products).length, 0)}</span>건</span>
+                </div>
+                {Object.keys(config).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 px-2">
+                        {Object.keys(config).map(name => (
+                            <button
+                                key={name}
+                                onClick={() => {
+                                    const el = document.getElementById(`company-card-${name}`);
+                                    if (el) {
+                                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                        if (!expandedCompanies[name]) setExpandedCompanies(prev => ({ ...prev, [name]: true }));
+                                    }
+                                }}
+                                className="px-3 py-1 text-[11px] font-black rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-rose-400 hover:border-rose-500/30 transition-all"
+                            >
+                                {name}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
 
             {Object.keys(config).length === 0 ? (
@@ -511,7 +532,7 @@ const CompanyCard: React.FC<{
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
 }> = React.memo(({ companyName, companyConfig, isExpanded, onToggle, ...props }) => {
     return (
-        <div className="bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-zinc-800 overflow-hidden group">
+        <div id={`company-card-${companyName}`} className="bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-zinc-800 overflow-hidden group scroll-mt-4">
             <div className="flex items-center p-8 cursor-pointer hover:bg-zinc-800/40 transition-all" onClick={onToggle}>
                 <div className="flex-grow flex items-center gap-6">
                     <div className="bg-zinc-950 p-4 rounded-2xl shadow-inner border border-zinc-800 group-hover:scale-110 transition-transform">
