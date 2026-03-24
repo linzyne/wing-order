@@ -116,6 +116,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [detectedCompanies, setDetectedCompanies] = useState<Set<string>>(new Set());
     const [batchFiles, setBatchFiles] = useState<Record<string, File>>({});
+    const [batchExpectedCounts, setBatchExpectedCounts] = useState<Record<string, number>>({});
     const batchFileInputRef = useRef<HTMLInputElement>(null);
 
     const [isBulkMode, setIsBulkMode] = useState(false);
@@ -536,16 +537,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
             if (!json || json.length < 2) { alert('유효한 주문서가 아닙니다.'); return; }
             const groupColIdx = 10;
-            const companiesInFile = new Set<string>();
+            const companyRowCounts: Record<string, number> = {};
             const companyKeywordsMap = new Map<string, string[]>();
             Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
             for (let i = 1; i < json.length; i++) {
                 const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
                 if (!groupVal) continue;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
-                    if (keywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')))) { companiesInFile.add(name); break; }
+                    if (keywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')))) { companyRowCounts[name] = (companyRowCounts[name] || 0) + 1; break; }
                 }
             }
+            const companiesInFile = new Set(Object.keys(companyRowCounts));
             if (companiesInFile.size === 0) { alert('주문서에서 매칭되는 업체를 찾지 못했습니다.'); return; }
             let maxRound = 0;
             (Object.values(companySessions) as SessionData[][]).forEach(sessions => {
@@ -553,6 +555,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             });
             const nextRound = maxRound + 1;
             const newBatchFiles: Record<string, File> = {};
+            const newExpectedCounts: Record<string, number> = {};
             const newSessions: Record<string, SessionData[]> = { ...companySessions };
             const newSelectedIds = new Set(selectedSessionIds);
             for (const companyName of companiesInFile) {
@@ -561,10 +564,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
                 newSelectedIds.add(newSessionId);
                 newBatchFiles[newSessionId] = file;
+                newExpectedCounts[newSessionId] = companyRowCounts[companyName] || 0;
             }
             setCompanySessions(newSessions);
             setSelectedSessionIds(newSelectedIds);
             setBatchFiles(prev => ({ ...prev, ...newBatchFiles }));
+            setBatchExpectedCounts(prev => ({ ...prev, ...newExpectedCounts }));
         } catch (error) {
             console.error("Batch upload failed:", error);
             alert('파일 처리 중 오류가 발생했습니다.');
@@ -2181,7 +2186,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 onManualOrdersApproval={handleManualOrdersApproval}
                                                 businessId={businessId}
                                                 onConfigChange={onConfigChange}
-                                                masterExpectedCount={masterProductSummary?.companyOrderCounts?.[company] || 0}
+                                                masterExpectedCount={sIdx === 0
+                                                    ? (masterProductSummary?.companyOrderCounts?.[company] || 0)
+                                                    : (batchExpectedCounts[session.id] || 0)
+                                                }
                                             />
                                         ) : null;
                                     })}
