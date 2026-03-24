@@ -805,7 +805,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
 
-            const templateHeader = ['주문번호', '보내는사람(지정)', '전화번호1(지정)', '우편번호(지정)', '주소(지정)', '받는사람', '전화번호1', '전화번호2', '우편번호', '주소', '상품명1', '상품상세1', '수량(A타입)', '배송시작시간', '도착구분', '운임', '운송장번호'];
+            const templateHeader = ['주문번호', '보내는사람(지정)', '전화번호1(지정)', '', '우편번호(지정)', '주소(지정)', '받는사람', '전화번호1', '전화번호2', '우편번호', '주소', '상품명1', '상품상세1', '수량(A타입)', '배송시작시간', '도착구분', '운임', '운송장번호'];
             const rows: any[][] = [templateHeader];
             const notFoundOrders: string[] = [];
 
@@ -826,6 +826,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     originalOrderNum,               // 주문번호
                     BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원',                       // 보내는사람(지정)
                     '01050447749',                   // 전화번호1(지정)
+                    '',                              // (빈 열)
                     '',                              // 우편번호(지정)
                     '인천시 연수구 송도동 214, D동 2206-1호', // 주소(지정)
                     recipientName,                   // 받는사람
