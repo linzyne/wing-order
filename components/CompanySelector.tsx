@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
-import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord } from '../types';
+import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig } from '../types';
 import { BUSINESS_INFO } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
@@ -46,7 +46,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -79,7 +79,7 @@ const SortableCompanyRow: React.FC<{
     );
 };
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {} }) => {
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
 
     // 새로고침 시 워크스테이션 데이터 초기화 (처리결과/워크플로/조정내역)
@@ -118,6 +118,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [batchFiles, setBatchFiles] = useState<Record<string, File>>({});
     const [batchExpectedCounts, setBatchExpectedCounts] = useState<Record<string, number>>({});
     const batchFileInputRef = useRef<HTMLInputElement>(null);
+    // 멀티 플랫폼: 업로드된 플랫폼 목록 + 건수
+    const [uploadedPlatforms, setUploadedPlatforms] = useState<{ name: string; count: number }[]>([]);
+    // 행별 출처 플랫폼 (인덱스 = masterOrderData 행 인덱스, 값 = 플랫폼 이름 또는 null=쿠팡)
+    const [rowPlatformSources, setRowPlatformSources] = useState<(string | null)[]>([]);
 
     const [isBulkMode, setIsBulkMode] = useState(false);
     const [bulkText, setBulkText] = useState('');
@@ -359,17 +363,43 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
         });
 
+        // 제외된 주문 정보 수집 (업체별로 제외된 주문들)
         const foundDetails: Record<string, ExcludedOrder> = {};
         (Object.values(allExcludedDetails).flat() as ExcludedOrder[]).forEach(ex => {
             const cleanNum = ex.orderNumber.replace(' (제외)', '').trim();
             foundDetails[cleanNum] = ex;
         });
 
-        const matched = Array.from(inputNumbers).filter(num => !!foundDetails[num]);
-        const missing = Array.from(inputNumbers).filter(num => !foundDetails[num]);
+        // 마스터 주문서에서 모든 주문번호 추출 (타이밍 이슈 방지)
+        const masterOrderNumbers = new Set<string>();
+        if (masterOrderData && masterOrderData.length > 1) {
+            for (let i = 1; i < masterOrderData.length; i++) {
+                const row = masterOrderData[i];
+                if (!row) continue;
+                const orderNum = String(row[2] || '').trim();
+                if (orderNum) masterOrderNumbers.add(orderNum);
+            }
+        }
+
+        // 디버깅 로그
+        console.log('[가구매 디버깅] 입력된 주문번호:', Array.from(inputNumbers));
+        console.log('[가구매 디버깅] 마스터 주문서 총 주문 수:', masterOrderNumbers.size);
+        console.log('[가구매 디버깅] allExcludedDetails 키:', Object.keys(allExcludedDetails));
+        console.log('[가구매 디버깅] foundDetails 주문 수:', Object.keys(foundDetails).length);
+
+        // 매칭: 제외된 주문 OR 마스터 주문서에 있는 주문
+        const matched = Array.from(inputNumbers).filter(num =>
+            foundDetails[num] || masterOrderNumbers.has(num)
+        );
+        const missing = Array.from(inputNumbers).filter(num =>
+            !foundDetails[num] && !masterOrderNumbers.has(num)
+        );
+
+        console.log('[가구매 디버깅] 매칭된 번호:', matched);
+        console.log('[가구매 디버깅] 미발견 번호:', missing);
 
         return { inputNumbers, matched, missing, foundDetails, nameMap };
-    }, [fakeOrderInput, allExcludedDetails]);
+    }, [fakeOrderInput, allExcludedDetails, masterOrderData]);
 
     // 마스터 주문서 품목별 건수 분석 (가구매 제외 / 가구매 분리)
     const masterProductSummary = useMemo(() => {
@@ -468,51 +498,124 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return [...autoExpenses, ...expenses];
     }, [expenses, agentResult, lotteResult, fakeOrderAnalysis.inputNumbers.size]);
 
+    // 플랫폼 자동 감지
+    const detectPlatform = (headerRow: any[]): { platform: PlatformConfig; name: string; score: number } | null => {
+        const normalize = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase().normalize('NFC');
+        const uploadedHeaders = headerRow.map(normalize);
+        let bestMatch: { platform: PlatformConfig; name: string; score: number } | null = null;
+
+        for (const [platformName, pc] of Object.entries(platformConfigs) as [string, PlatformConfig][]) {
+            if (pc.sampleHeaders && pc.sampleHeaders.length > 0) {
+                const sampleNormalized = pc.sampleHeaders.map(normalize);
+                let matchCount = 0;
+                for (let i = 0; i < Math.min(sampleNormalized.length, uploadedHeaders.length); i++) {
+                    if (sampleNormalized[i] === uploadedHeaders[i]) matchCount++;
+                }
+                const score = matchCount / Math.max(sampleNormalized.length, uploadedHeaders.length);
+                if (score >= 0.7 && (!bestMatch || score > bestMatch.score)) {
+                    bestMatch = { platform: pc, name: platformName, score };
+                }
+            }
+        }
+        return bestMatch;
+    };
+
+    // 플랫폼 데이터를 쿠팡 컬럼 위치로 정규화
+    const normalizePlatformRow = (row: any[], mapping: PlatformConfig['orderColumns']): any[] => {
+        const normalized: any[] = new Array(31).fill('');
+        normalized[2] = row[mapping.orderNumber] ?? '';
+        normalized[10] = mapping.groupName != null ? (row[mapping.groupName] ?? '') : '';
+
+        let productName = String(row[mapping.productName] ?? '').trim();
+        if (mapping.optionName != null && row[mapping.optionName]) {
+            const optionName = String(row[mapping.optionName]).trim();
+            if (optionName) productName = productName ? `${productName} ${optionName}` : optionName;
+        }
+        normalized[11] = productName;
+        normalized[22] = row[mapping.quantity] ?? '';
+        normalized[26] = row[mapping.recipientName] ?? '';
+        normalized[27] = row[mapping.recipientPhone] ?? '';
+        normalized[28] = mapping.postalCode != null ? (row[mapping.postalCode] ?? '') : '';
+        normalized[29] = row[mapping.address] ?? '';
+        normalized[30] = mapping.deliveryMessage != null ? (row[mapping.deliveryMessage] ?? '') : '';
+        return normalized;
+    };
+
     const handleMasterUpload = async (file: File) => {
+        console.log('🚀 [파일 업로드] 시작:', file.name);
+        console.log('🚀 [platformConfigs]:', platformConfigs);
         setMasterOrderFile(file);
         try {
             const data = await file.arrayBuffer();
             const wb = XLSX.read(data, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+            let json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
             if (!json || json.length < 2) return;
+
+            // 플랫폼 감지 및 정규화
+            const detectedPlatform = detectPlatform(json[0]);
+            let platformName: string | null = null;
+
+            if (detectedPlatform) {
+                platformName = detectedPlatform.name;
+                const pc = detectedPlatform.platform;
+                const headerRowIdx = pc.headerRowIndex || 0;
+                const dataStart = pc.dataStartRow || headerRowIdx + 1;
+
+                // 쿠팡 형식 헤더 생성
+                const coupangHeader = new Array(31).fill('');
+                coupangHeader[2] = '주문번호';
+                coupangHeader[10] = '그룹명';
+                coupangHeader[11] = '상품명';
+                coupangHeader[22] = '수량';
+                coupangHeader[26] = '받는분';
+                coupangHeader[27] = '전화번호';
+                coupangHeader[28] = '우편번호';
+                coupangHeader[29] = '주소';
+                coupangHeader[30] = '배송메세지';
+
+                const normalized = [coupangHeader];
+                for (let i = dataStart; i < json.length; i++) {
+                    const row = json[i];
+                    if (!row || row.every((c: any) => !c)) continue;
+                    normalized.push(normalizePlatformRow(row, pc.orderColumns));
+                }
+
+                json = normalized;
+                setUploadedPlatforms([{ name: platformName, count: normalized.length - 1 }]);
+                setRowPlatformSources([null, ...Array(normalized.length - 1).fill(platformName)]);
+
+                // 정규화된 데이터를 파일로 저장
+                const normalizedSheet = XLSX.utils.aoa_to_sheet(json);
+                const normalizedWb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(normalizedWb, normalizedSheet, 'Sheet1');
+                const normalizedBuffer = XLSX.write(normalizedWb, { bookType: 'xlsx', type: 'array' });
+                setMasterOrderFile(new File([normalizedBuffer], file.name, {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                }));
+
+                console.log(`✅ [Platform] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치): ${json.length - 1}건 정규화`);
+            } else {
+                setUploadedPlatforms([{ name: '쿠팡', count: json.length - 1 }]);
+                setRowPlatformSources([]);
+            }
+
             const groupColIdx = 10;
             const companiesInFile = new Set<string>();
             const companyKeywordsMap = new Map<string, string[]>();
             Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
-            const toCodePoints = (s: string) => [...s].map(c => 'U+' + c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
             for (let i = 1; i < json.length; i++) {
                 const rawVal = String(json[i][groupColIdx] || '');
                 const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
                 if (!groupVal) continue;
-                let matched = false;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
                     const isMatched = keywords.some(k => {
                         const normK = k.replace(/\s+/g, '').normalize('NFC');
-                        const result = groupVal.includes(normK);
-                        if (!result && i <= 3) {
-                            console.log(`[DEBUG][감지] 비교 실패: groupVal="${groupVal}" [${toCodePoints(groupVal)}] vs keyword="${normK}" [${toCodePoints(normK)}] (${name})`);
-                        }
-                        return result;
+                        return groupVal.includes(normK);
                     });
-                    if (isMatched) { companiesInFile.add(name); matched = true; break; }
-                }
-                if (!matched && i <= 5) {
-                    console.log(`[DEBUG][감지] 매칭 안됨: row ${i}, rawVal="${rawVal}", groupVal="${groupVal}" [${toCodePoints(groupVal)}]`);
+                    if (isMatched) { companiesInFile.add(name); break; }
                 }
             }
-            // 디버그: Column 10 고유값 수집
-            const uniqueGroupVals = new Set<string>();
-            for (let i = 1; i < json.length; i++) {
-                const v = String(json[i][groupColIdx] || '').trim();
-                if (v) uniqueGroupVals.add(v);
-            }
-            console.log(`[DEBUG][감지] Column 10 고유값: ${JSON.stringify([...uniqueGroupVals])}`);
-            console.log(`[DEBUG][감지] 업체-키워드 맵 (with codepoints):`);
-            for (const [name, keywords] of companyKeywordsMap.entries()) {
-                console.log(`  ${name}: ${keywords.map(k => `"${k}" [${toCodePoints(k)}]`).join(', ')}`);
-            }
-            console.log(`[DEBUG][감지] 감지된 업체: ${JSON.stringify([...companiesInFile])}`);
             setDetectedCompanies(companiesInFile);
             setMasterOrderData(json);
 
@@ -527,15 +630,60 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); };
+    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); };
 
     const handleBatchUpload = async (file: File) => {
+        console.log('🚀 [배치 업로드] 시작:', file.name);
         try {
             const data = await file.arrayBuffer();
             const wb = XLSX.read(data, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+            let json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
             if (!json || json.length < 2) { alert('유효한 주문서가 아닙니다.'); return; }
+
+            // 플랫폼 감지 및 정규화 (마스터 업로드와 동일)
+            const detectedPlatform = detectPlatform(json[0]);
+            if (detectedPlatform) {
+                const platformName = detectedPlatform.name;
+                const pc = detectedPlatform.platform;
+                const headerRowIdx = pc.headerRowIndex || 0;
+                const dataStart = pc.dataStartRow || headerRowIdx + 1;
+
+                // 쿠팡 형식 헤더 생성
+                const coupangHeader = new Array(31).fill('');
+                coupangHeader[2] = '주문번호';
+                coupangHeader[10] = '그룹명';
+                coupangHeader[11] = '상품명';
+                coupangHeader[22] = '수량';
+                coupangHeader[26] = '받는분';
+                coupangHeader[27] = '전화번호';
+                coupangHeader[28] = '우편번호';
+                coupangHeader[29] = '주소';
+                coupangHeader[30] = '배송메세지';
+
+                const normalized = [coupangHeader];
+                for (let i = dataStart; i < json.length; i++) {
+                    const row = json[i];
+                    if (!row || row.every((c: any) => !c)) continue;
+                    normalized.push(normalizePlatformRow(row, pc.orderColumns));
+                }
+
+                json = normalized;
+                console.log(`✅ [배치 정규화] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치): ${json.length - 1}건 정규화`);
+            }
+
+            // 정규화된 데이터를 파일로 생성 (플랫폼 파일인 경우)
+            let processedFile = file;
+            if (detectedPlatform) {
+                const normalizedSheet = XLSX.utils.aoa_to_sheet(json);
+                const normalizedWb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(normalizedWb, normalizedSheet, 'Sheet1');
+                const normalizedBuffer = XLSX.write(normalizedWb, { bookType: 'xlsx', type: 'array' });
+                processedFile = new File([normalizedBuffer], file.name, {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
+            }
+
             const groupColIdx = 10;
             const companyRowCounts: Record<string, number> = {};
             const companyKeywordsMap = new Map<string, string[]>();
@@ -563,7 +711,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const newSession: SessionData = { id: newSessionId, companyName, round: nextRound };
                 newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
                 newSelectedIds.add(newSessionId);
-                newBatchFiles[newSessionId] = file;
+                newBatchFiles[newSessionId] = processedFile;
                 newExpectedCounts[newSessionId] = companyRowCounts[companyName] || 0;
             }
             setCompanySessions(newSessions);
@@ -2144,7 +2292,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     >
                         <table className="w-full text-left border-collapse">
                             <thead>
-                                <tr className="bg-zinc-950/50 text-zinc-500 text-[10px] font-black uppercase tracking-[0.15em]">
+                                <tr className="sticky top-0 z-10 bg-zinc-950 text-zinc-500 text-[10px] font-black uppercase tracking-[0.15em]">
                                     <th className="px-6 py-4 w-[35%] whitespace-nowrap">
                                         <div className="flex items-center gap-3">
                                             <button onClick={handleSelectAllSessions} className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${isAllSelected ? 'bg-rose-500 border-rose-400 text-white' : 'bg-zinc-900 border-zinc-700 text-transparent hover:border-rose-500/50'}`} title="전체 선택"><CheckIcon className="w-3 h-3" /></button>

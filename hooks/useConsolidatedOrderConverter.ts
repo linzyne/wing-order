@@ -613,24 +613,14 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
                     const groupColIdx = 10;
                     const targetKeywords = getKeywordsForCompany(targetCompanyName, pricingConfig);
 
-                    console.log(`[DEBUG][${targetCompanyName}] 키워드: ${JSON.stringify(targetKeywords)}, 헤더행: ${headerRowIdx}, 전체행수: ${fullJson.length}`);
-
-                    // 디버그: column 10의 고유값들 수집
-                    const uniqueGroupVals = new Set<string>();
-
                     json.push(headers);
                     for (let i = headerRowIdx + 1; i < fullJson.length; i++) {
                         const row = fullJson[i];
                         if (!row) continue;
-                        const rawGroupVal = String(row[groupColIdx] || '');
-                        const groupVal = rawGroupVal.replace(/\s+/g, '').normalize('NFC');
-                        uniqueGroupVals.add(rawGroupVal);
+                        const groupVal = String(row[groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
                         const isGroupMatched = targetKeywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')));
                         if (isGroupMatched) json.push(row);
                     }
-
-                    console.log(`[DEBUG][${targetCompanyName}] Column 10 고유값들: ${JSON.stringify([...uniqueGroupVals])}`);
-                    console.log(`[DEBUG][${targetCompanyName}] 키워드 매칭된 행 수: ${json.length - 1} (헤더 제외)`);
                 }
             }
 
