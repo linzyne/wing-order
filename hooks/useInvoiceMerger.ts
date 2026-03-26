@@ -1,6 +1,6 @@
 
 import { useState, useCallback } from 'react';
-import type { ProcessingStatus, PricingConfig } from '../types';
+import type { ProcessingStatus, PricingConfig, PlatformConfigs } from '../types';
 import { getKeywordsForCompany } from './useConsolidatedOrderConverter';
 
 declare var XLSX: any;
@@ -23,7 +23,12 @@ const findColIdx = (row: any[], keywords: string[]): number => {
     });
 };
 
-const getCourierName = (companyName: string) => {
+const getCourierName = (companyName: string, pricingConfig?: PricingConfig) => {
+    // 설정에서 택배사명이 지정되어 있으면 사용
+    if (pricingConfig?.[companyName]?.courierName) {
+        return pricingConfig[companyName].courierName;
+    }
+    // 폴백: 기존 하드코딩 로직
     if (companyName === '신선마켓' || companyName === '귤_신선' || companyName === '고랭지김치') return '롯데택배';
     if (['홍게', '홍게2', '귤_초록', '꽃게', '답도', '한라봉_답도'].includes(companyName)) return 'CJ 대한통운';
     if (companyName === '제이제이' || companyName === '귤_제이') return '한진택배';
@@ -43,6 +48,12 @@ export interface CompanyStat {
     failures: FailureDetail[];
 }
 
+export interface PlatformUploadResult {
+    workbook: any;
+    fileName: string;
+    count: number;
+}
+
 export interface ProcessedResult {
     mgmtWorkbook: any;
     uploadWorkbook: any;
@@ -52,6 +63,7 @@ export interface ProcessedResult {
     header: any[]; // 원본 헤더 추가
     rows: any[][]; // 송장 시트 통합을 위한 로우 데이터 (기록용)
     uploadRows: any[][]; // 업로드용 병합을 위한 로우 데이터
+    platformUploadWorkbooks?: Record<string, PlatformUploadResult>; // 플랫폼별 업로드 파일
 }
 
 export const useInvoiceMerger = () => {
@@ -97,7 +109,7 @@ export const useInvoiceMerger = () => {
         return invoiceMap;
     };
 
-    const processFiles = useCallback(async (vendorFile: File, orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig) => {
+    const processFiles = useCallback(async (vendorFile: File, orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig, orderPlatformMap?: Map<string, string>, platformConfigs?: PlatformConfigs) => {
         try {
             setStatus('processing'); setError(null);
             const orderWb = XLSX.read(await orderFile.arrayBuffer(), { type: 'array' });
@@ -150,6 +162,8 @@ export const useInvoiceMerger = () => {
             const uploadRows: any[][] = [invoiceHeader];
             let uploadCount = 0, mgmtCount = 0;
             const failures: FailureDetail[] = [];
+            // 플랫폼별 업로드 데이터 (플랫폼명 → 데이터 행 배열)
+            const platformUploadData: Record<string, any[][]> = {};
 
             const targetKeywords = getKeywordsForCompany(companyName, pricingConfig);
 
@@ -185,35 +199,83 @@ export const useInvoiceMerger = () => {
                         }
 
                         if (targetInvIdx !== -1) newRow[targetInvIdx] = inv;
-                        if (targetCourierIdx !== -1) newRow[targetCourierIdx] = getCourierName(companyName);
+                        if (targetCourierIdx !== -1) newRow[targetCourierIdx] = getCourierName(companyName, pricingConfig);
                         if (invoices.length > 1 && targetQtyIdx !== -1) newRow[targetQtyIdx] = 1;
                         mgmtRows.push(newRow);
                     });
 
-                    let upRow: any[];
-                    if (useCustomInvoiceHeaders) {
-                        upRow = new Array(invoiceHeader.length).fill('');
-                        for (let oldIdx = 0; oldIdx < row.length; oldIdx++) {
-                            const newIdx = headerMapping[oldIdx];
-                            if (newIdx !== undefined) {
-                                upRow[newIdx] = row[oldIdx];
-                            }
-                        }
+                    // 플랫폼별 업로드 행 분기
+                    const rowPlatform = orderPlatformMap?.get(orderNum) || null;
+                    if (rowPlatform && platformConfigs?.[rowPlatform]?.invoiceColumns) {
+                        // 비-쿠팡 플랫폼: 해당 플랫폼 양식으로 업로드 행 생성
+                        const invMapping = platformConfigs[rowPlatform].invoiceColumns!;
+                        const maxCol = Math.max(invMapping.orderNumber, invMapping.trackingNumber, invMapping.courierName ?? 0) + 1;
+                        const pRow = new Array(maxCol).fill('');
+                        pRow[invMapping.orderNumber] = row[targetOrderIdx];
+                        pRow[invMapping.trackingNumber] = invoices[0];
+                        if (invMapping.courierName !== undefined) pRow[invMapping.courierName] = getCourierName(companyName, pricingConfig);
+                        if (!platformUploadData[rowPlatform]) platformUploadData[rowPlatform] = [];
+                        platformUploadData[rowPlatform].push(pRow);
                     } else {
-                        upRow = [...row];
-                    }
+                        // 쿠팡 (기본): 기존 로직 그대로
+                        let upRow: any[];
+                        if (useCustomInvoiceHeaders) {
+                            upRow = new Array(invoiceHeader.length).fill('');
+                            for (let oldIdx = 0; oldIdx < row.length; oldIdx++) {
+                                const newIdx = headerMapping[oldIdx];
+                                if (newIdx !== undefined) {
+                                    upRow[newIdx] = row[oldIdx];
+                                }
+                            }
+                        } else {
+                            upRow = [...row];
+                        }
 
-                    if (targetInvIdx !== -1) upRow[targetInvIdx] = invoices[0];
-                    if (targetCourierIdx !== -1) upRow[targetCourierIdx] = getCourierName(companyName);
-                    uploadRows.push(upRow);
+                        if (targetInvIdx !== -1) upRow[targetInvIdx] = invoices[0];
+                        if (targetCourierIdx !== -1) upRow[targetCourierIdx] = getCourierName(companyName, pricingConfig);
+                        uploadRows.push(upRow);
+                    }
                 } else {
                     failures.push({ orderNum, recipient: String(row[26] || '알수없음'), reason: '송장 미매칭' });
                 }
             }
-            const mgmtWb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(mgmtWb, XLSX.utils.aoa_to_sheet(mgmtRows), "기록용");
-            const uploadWb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(uploadWb, XLSX.utils.aoa_to_sheet(uploadRows), "업로드용");
+
+            // 플랫폼별 업로드 워크북 생성
+            const platformUploadWorkbooks: Record<string, PlatformUploadResult> = {};
             const now = new Date();
             const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            for (const [platform, rows] of Object.entries(platformUploadData)) {
+                const invMapping = platformConfigs![platform].invoiceColumns!;
+                const invSampleHeaders = platformConfigs![platform].sampleHeaders;
+                let pHeader: any[];
+                if (invSampleHeaders && invSampleHeaders.length > 0) {
+                    // 실제 송장 업로드 양식 헤더 사용
+                    pHeader = [...invSampleHeaders];
+                    // 데이터 행도 양식 길이에 맞춤
+                    const fullRows = rows.map(r => {
+                        const full = new Array(pHeader.length).fill('');
+                        for (let c = 0; c < r.length && c < full.length; c++) full[c] = r[c];
+                        return full;
+                    });
+                    rows.splice(0, rows.length, ...fullRows);
+                } else {
+                    const maxCol = Math.max(invMapping.orderNumber, invMapping.trackingNumber, invMapping.courierName ?? 0) + 1;
+                    pHeader = new Array(maxCol).fill('');
+                    pHeader[invMapping.orderNumber] = '주문번호';
+                    pHeader[invMapping.trackingNumber] = '운송장번호';
+                    if (invMapping.courierName !== undefined) pHeader[invMapping.courierName] = '택배사';
+                }
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([pHeader, ...rows]), '업로드용');
+                platformUploadWorkbooks[platform] = {
+                    workbook: wb,
+                    fileName: `${dateStr} [${companyName}] ${platform}_업로드용_송장.xlsx`,
+                    count: rows.length
+                };
+            }
+
+            const mgmtWb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(mgmtWb, XLSX.utils.aoa_to_sheet(mgmtRows), "기록용");
+            const uploadWb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(uploadWb, XLSX.utils.aoa_to_sheet(uploadRows), "업로드용");
             setResults({
                 mgmtWorkbook: mgmtWb,
                 uploadWorkbook: uploadWb,
@@ -222,13 +284,14 @@ export const useInvoiceMerger = () => {
                 companyStats: { [companyName]: { mgmt: mgmtCount, upload: uploadCount, failures } },
                 header: invoiceHeader,
                 rows: mgmtRows.slice(1),
-                uploadRows: uploadRows.slice(1)
+                uploadRows: uploadRows.slice(1),
+                platformUploadWorkbooks: Object.keys(platformUploadWorkbooks).length > 0 ? platformUploadWorkbooks : undefined
             });
             setStatus('success');
-        } catch (err: any) { 
+        } catch (err: any) {
             console.error("Merge Error:", err);
-            setError(err.message); 
-            setStatus('error'); 
+            setError(err.message);
+            setStatus('error');
         }
     }, []);
 

@@ -5,7 +5,7 @@ import {
   onSnapshot, Timestamp,
   type Unsubscribe
 } from 'firebase/firestore';
-import type { PricingConfig, DailySales } from '../types';
+import type { PricingConfig, DailySales, PlatformConfigs } from '../types';
 
 // ===== 사업자별 Firestore 경로 헬퍼 =====
 // 안군농원(또는 미지정)이면 기존 경로 그대로, 그 외 사업자는 접미사 추가
@@ -23,6 +23,9 @@ const getManualOrdersDocId = (businessId?: string): string =>
 
 const getCompanyOrderDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'companyOrder' : `companyOrder_${businessId}`;
+
+const getPlatformConfigsDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'platformConfigs' : `platformConfigs_${businessId}`;
 
 // ===== Pricing Config =====
 
@@ -196,4 +199,30 @@ export const subscribeCompanyOrder = (
 export const saveCompanyOrder = async (order: string[], businessId?: string): Promise<void> => {
   const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
   await setDoc(docRef, { order, updatedAt: Timestamp.now() });
+};
+
+// ===== Platform Configs (멀티 플랫폼 설정) =====
+
+export const subscribePlatformConfigs = (
+  callback: (configs: PlatformConfigs | null) => void,
+  businessId?: string
+): Unsubscribe => {
+  const docRef = doc(db, 'config', getPlatformConfigsDocId(businessId));
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().data as PlatformConfigs) : null);
+  }, (error) => {
+    console.error('[Firestore] PlatformConfigs 구독 오류:', error);
+    callback(null);
+  });
+};
+
+export const savePlatformConfigs = async (
+  configs: PlatformConfigs,
+  businessId?: string
+): Promise<void> => {
+  const docRef = doc(db, 'config', getPlatformConfigsDocId(businessId));
+  await setDoc(docRef, {
+    data: configs,
+    updatedAt: Timestamp.now(),
+  });
 };

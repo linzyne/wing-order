@@ -33,6 +33,7 @@ export interface ProductPricing {
 
 export interface CompanyConfig {
   phone?: string;
+  courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
   bankName?: string;
   accountNumber?: string;
   orderFormHeaders?: string[]; // 발주서 헤더
@@ -117,6 +118,40 @@ export interface ExpenseRecord {
   description: string; // 지출 내역
   isAuto?: boolean;    // 택배대행/롯데택배 자동 생성 여부
 }
+
+// ===== 멀티 플랫폼 설정 =====
+
+export interface PlatformColumnMapping {
+  orderNumber: number;        // 주문번호
+  groupName?: number;         // 그룹명/업체구분 (없을 수 있음)
+  productName: number;        // 상품명
+  optionName?: number;        // 옵션명
+  quantity: number;           // 수량
+  recipientName: number;      // 수취인명
+  recipientPhone: number;     // 수취인 전화번호
+  postalCode?: number;        // 우편번호
+  address: number;            // 수취인 주소
+  deliveryMessage?: number;   // 배송메세지
+  orderDate?: number;         // 주문일시
+}
+
+export interface PlatformInvoiceMapping {
+  orderNumber: number;        // 주문번호 열
+  trackingNumber: number;     // 운송장번호 열
+  courierName?: number;       // 택배사 열
+}
+
+export interface PlatformConfig {
+  name: string;                          // 플랫폼 이름
+  orderColumns: PlatformColumnMapping;   // 주문 파일 입력 매핑
+  invoiceColumns?: PlatformInvoiceMapping; // 송장 업로드 출력 매핑
+  detectHeaders: string[];               // 자동 감지용 고유 헤더 키워드
+  sampleHeaders?: string[];              // 샘플 파일에서 추출한 헤더 (참고용)
+  headerRowIndex: number;                // 헤더 행 번호 (기본 0)
+  dataStartRow: number;                  // 데이터 시작 행 (기본 1)
+}
+
+export type PlatformConfigs = Record<string, PlatformConfig>;
 
 export interface DailySales {
   date: string;

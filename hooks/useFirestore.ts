@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { PricingConfig } from '../types';
+import type { PricingConfig, PlatformConfigs } from '../types';
 import {
   subscribePricingConfig,
   savePricingConfigToFirestore,
   subscribeDailyWorkspace,
   updateDailyWorkspaceField,
+  subscribePlatformConfigs,
+  savePlatformConfigs,
   type DailyWorkspaceData,
 } from '../services/firestoreService';
 import { DEFAULT_PRICING_CONFIG, DEFAULT_PRICING_CONFIG_조에 } from '../pricing';
@@ -67,6 +69,36 @@ export const usePricingConfig = (businessId?: string) => {
   }, [businessId]);
 
   return { config, saveConfig, isLoading, configSource };
+};
+
+// ===== Platform Configs Hook =====
+export const usePlatformConfigs = (businessId?: string) => {
+  const [platformConfigs, setPlatformConfigs] = useState<PlatformConfigs>({});
+  const pendingSaves = useRef(0);
+  const saveGraceUntil = useRef(0);
+
+  useEffect(() => {
+    const unsubscribe = subscribePlatformConfigs((configs) => {
+      if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) return;
+      setPlatformConfigs(configs || {});
+    }, businessId);
+    return unsubscribe;
+  }, [businessId]);
+
+  const savePlatformConfig = useCallback(async (newConfigs: PlatformConfigs) => {
+    pendingSaves.current++;
+    setPlatformConfigs(newConfigs);
+    try {
+      await savePlatformConfigs(newConfigs, businessId);
+      saveGraceUntil.current = Date.now() + 1000;
+    } catch (e) {
+      console.error('[Config] PlatformConfigs 저장 실패:', e);
+    } finally {
+      pendingSaves.current--;
+    }
+  }, [businessId]);
+
+  return { platformConfigs, savePlatformConfig };
 };
 
 // ===== Daily Workspace Hook =====

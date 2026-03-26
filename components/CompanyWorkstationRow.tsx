@@ -1,13 +1,13 @@
 
-import React, { useState, useEffect, useRef, useMemo, useContext } from 'react';
-import { useInvoiceMerger } from '../hooks/useInvoiceMerger';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
 import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
     PlusCircleIcon, TrashIcon
 } from './icons';
-import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder } from '../types';
+import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder, PlatformConfigs } from '../types';
 import { DragHandleContext } from './DragHandleContext';
 import { BUSINESS_INFO } from '../types';
 import { useDailyWorkspace } from '../hooks/useFirestore';
@@ -56,6 +56,8 @@ interface CompanyWorkstationRowProps {
     businessId?: string;
     onConfigChange: (newConfig: PricingConfig) => void;
     masterExpectedCount?: number;
+    orderPlatformMap?: Map<string, string>;
+    platformConfigs?: PlatformConfigs;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -63,7 +65,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     previousRoundItems = [],
     manualOrdersRejected = false, onManualOrdersApproval,
-    businessId, onConfigChange, masterExpectedCount = 0
+    businessId, onConfigChange, masterExpectedCount = 0,
+    orderPlatformMap, platformConfigs
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -91,12 +94,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [workflow, setWorkflow] = useState<WorkflowStatus>({ order: false, deposit: false, invoice: false });
     const [showPrevRoundItems, setShowPrevRoundItems] = useState(false);
 
-    // 현재 세션의 summary (로컬 처리 우선, Firestore 동기화 폴백)
-    const syncedItemSummary = (!localResult && !isLocalProcessing) ? workspace?.sessionResults?.[sessionId]?.itemSummary : undefined;
-    const currentSessionSummary = localResult?.summary || syncedItemSummary || null;
-
-    // 전체 차수 합산 정산
-    const combinedSummary = useMemo(() => {
+    // 합산 헬퍼: previousRoundItems + 현재 세션 summary를 합산
+    const _mergeSummaries = () => {
         const merged: Record<string, { count: number; totalPrice: number }> = {};
         for (const item of previousRoundItems) {
             for (const [key, stat] of Object.entries(item.summary) as [string, { count: number; totalPrice: number }][]) {
@@ -105,18 +104,24 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 merged[key].totalPrice += stat.totalPrice;
             }
         }
-        if (currentSessionSummary) {
-            for (const [key, stat] of Object.entries(currentSessionSummary) as [string, { count: number; totalPrice: number }][]) {
+        const sessionSummary = localResult?.summary
+            || ((!localResult && !isLocalProcessing) ? workspace?.sessionResults?.[sessionId]?.itemSummary : undefined)
+            || null;
+        if (sessionSummary) {
+            for (const [key, stat] of Object.entries(sessionSummary) as [string, { count: number; totalPrice: number }][]) {
                 if (!merged[key]) merged[key] = { count: 0, totalPrice: 0 };
                 merged[key].count += stat.count;
                 merged[key].totalPrice += stat.totalPrice;
             }
         }
-        return merged;
-    }, [previousRoundItems, currentSessionSummary]);
+        return { merged, sessionSummary };
+    };
 
-    // 합산 정산 텍스트 (정산요약과 동일한 양식)
-    const combinedDepositText = useMemo(() => {
+    // 전체 차수 합산 (useMemo 제거 - 캐싱 문제 원천 차단)
+    const { merged: combinedSummary, sessionSummary: currentSessionSummary } = _mergeSummaries();
+
+    // 합산 정산 텍스트
+    const combinedDepositText = (() => {
         if (Object.keys(combinedSummary).length === 0) return '';
         const today = new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
@@ -148,11 +153,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
         lines.push(`(입금자 ${BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원'})`);
         return lines.join('\n');
-    }, [combinedSummary, currentSessionSummary, companyName, roundNumber]);
+    })();
 
-    // 최종 차수 정산 요약용 누적 텍스트 (기존 정산요약과 동일 양식, 합산 데이터)
-    const cumulativeDepositText = useMemo(() => {
-        if (!isLastSession || previousRoundItems.length === 0 || (!localResult && !currentSessionSummary) || Object.keys(combinedSummary).length === 0) return null;
+    // 최종 차수 정산 요약용 누적 텍스트
+    const cumulativeDepositText = (() => {
+        if (!isLastSession || previousRoundItems.length === 0 || Object.keys(combinedSummary).length === 0) return null;
         const today = new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
@@ -172,10 +177,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
         lines.push(`(입금자 ${BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원'})`);
         return lines.join('\n');
-    }, [isLastSession, previousRoundItems, currentSessionSummary, combinedSummary, companyName]);
+    })();
 
-    const cumulativeDepositExcelText = useMemo(() => {
-        if (!isLastSession || previousRoundItems.length === 0 || (!localResult && !currentSessionSummary) || Object.keys(combinedSummary).length === 0) return null;
+    const cumulativeDepositExcelText = (() => {
+        if (!isLastSession || previousRoundItems.length === 0 || Object.keys(combinedSummary).length === 0) return null;
         const today = new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
@@ -190,7 +195,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             lines.push(line);
         });
         return lines.join('\n');
-    }, [isLastSession, previousRoundItems, currentSessionSummary, combinedSummary]);
+    })();
 
     const [copiedCombinedId, setCopiedCombinedId] = useState<string | null>(null);
     const handleCopyCombined = () => {
@@ -428,7 +433,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const handleRunMerge = () => {
         const activeFile = localFile || (isFirstSession ? masterFile : null);
         if (activeFile && vendorFile) {
-            processFiles(vendorFile, activeFile, companyName, false, pricingConfig);
+            processFiles(vendorFile, activeFile, companyName, false, pricingConfig, orderPlatformMap, platformConfigs);
         }
     };
 
@@ -446,6 +451,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (!mergeResults) return;
         if (type === 'mgmt') XLSX.writeFile(mergeResults.mgmtWorkbook, mergeResults.mgmtFileName);
         else XLSX.writeFile(mergeResults.uploadWorkbook, mergeResults.uploadFileName);
+    };
+    const handleDownloadPlatformInvoice = (platformName: string) => {
+        const pResult = mergeResults?.platformUploadWorkbooks?.[platformName];
+        if (pResult) XLSX.writeFile(pResult.workbook, pResult.fileName);
     };
 
     const handleAddAdj = () => {
@@ -764,6 +773,16 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <button onClick={() => { onVendorFileChange(null); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
                                     </div>
                                 </div>
+                                {mergeResults?.platformUploadWorkbooks && (
+                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                        {(Object.entries(mergeResults.platformUploadWorkbooks) as [string, PlatformUploadResult][]).map(([pName, pResult]) => (
+                                            <button key={pName} onClick={() => handleDownloadPlatformInvoice(pName)}
+                                                className="bg-violet-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-violet-600 shadow-md flex items-center gap-1">
+                                                <ArrowDownTrayIcon className="w-3 h-3" /><span>{pName} {pResult.count}건</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                                 {onDownloadMergedInvoice && isFirstSession && (
                                     <div className="flex items-center gap-2 mt-1">
                                         <button onClick={() => onDownloadMergedInvoice('mgmt')} className="bg-indigo-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-indigo-600 shadow-md flex items-center gap-1"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산 기록용</span></button>

@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { PricingConfig, CompanyConfig, ProductPricing } from '../types';
+import type { PricingConfig, CompanyConfig, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
 import {
     TrashIcon, PlusCircleIcon, DocumentArrowUpIcon, BuildingStorefrontIcon,
-    PhoneIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, ArrowDownTrayIcon, ArrowUpTrayIcon,
+    PhoneIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon,
     ChevronDownIcon, ChevronUpIcon
 } from './icons';
 
@@ -201,18 +201,281 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
     );
 };
 
+// ===== 플랫폼 매핑 필드 정의 =====
+const REQUIRED_MAPPING_FIELDS: { key: keyof PlatformColumnMapping; label: string }[] = [
+    { key: 'orderNumber', label: '주문번호' },
+    { key: 'productName', label: '상품명' },
+    { key: 'quantity', label: '수량' },
+    { key: 'recipientName', label: '수취인명' },
+    { key: 'recipientPhone', label: '수취인 전화번호' },
+    { key: 'address', label: '수취인 주소' },
+];
+const OPTIONAL_MAPPING_FIELDS: { key: keyof PlatformColumnMapping; label: string }[] = [
+    { key: 'groupName', label: '업체구분 (그룹명)' },
+    { key: 'optionName', label: '옵션명' },
+    { key: 'postalCode', label: '우편번호' },
+    { key: 'deliveryMessage', label: '배송메세지' },
+    { key: 'orderDate', label: '주문일시' },
+];
+const INVOICE_MAPPING_FIELDS: { key: keyof PlatformInvoiceMapping; label: string; required: boolean }[] = [
+    { key: 'orderNumber', label: '주문번호 열', required: true },
+    { key: 'trackingNumber', label: '운송장번호 열', required: true },
+    { key: 'courierName', label: '택배사 열', required: false },
+];
+
+const colIndexToLabel = (idx: number): string => {
+    let label = '';
+    let n = idx;
+    while (n >= 0) {
+        label = String.fromCharCode(65 + (n % 26)) + label;
+        n = Math.floor(n / 26) - 1;
+    }
+    return label;
+};
+
+// ===== 플랫폼 설정 다이얼로그 =====
+const PlatformConfigDialog: React.FC<{
+    initial: PlatformConfig | null;
+    onSave: (config: PlatformConfig) => void;
+    onCancel: () => void;
+}> = ({ initial, onSave, onCancel }) => {
+    const [name, setName] = useState(initial?.name || '');
+    const [sampleHeaders, setSampleHeaders] = useState<string[]>(initial?.sampleHeaders || []);
+    const [headerRowIndex, setHeaderRowIndex] = useState(initial?.headerRowIndex ?? 0);
+    const [dataStartRow, setDataStartRow] = useState(initial?.dataStartRow ?? 1);
+    const [orderColumns, setOrderColumns] = useState<Partial<PlatformColumnMapping>>(initial?.orderColumns || {});
+    const [invoiceColumns, setInvoiceColumns] = useState<Partial<PlatformInvoiceMapping>>(initial?.invoiceColumns || {});
+    const [detectHeaders, setDetectHeaders] = useState<string>(initial?.detectHeaders?.join(', ') || '');
+    const [showInvoice, setShowInvoice] = useState(!!initial?.invoiceColumns);
+
+    const handleSampleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            try {
+                const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+                if (json.length > headerRowIndex) {
+                    const headers = json[headerRowIndex].map((h: any) => String(h || ''));
+                    setSampleHeaders(headers);
+                    // 자동감지 헤더: 첫 3개 비어있지 않은 헤더
+                    if (!detectHeaders) {
+                        const autoDetect = headers.filter(Boolean).slice(0, 3).join(', ');
+                        setDetectHeaders(autoDetect);
+                    }
+                }
+            } catch (err) {
+                console.error('샘플 파일 파싱 실패:', err);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = '';
+    };
+
+    const handleSave = () => {
+        if (!name.trim()) return;
+        const requiredKeys: (keyof PlatformColumnMapping)[] = ['orderNumber', 'productName', 'quantity', 'recipientName', 'recipientPhone', 'address'];
+        const missing = requiredKeys.filter(k => orderColumns[k] === undefined);
+        if (missing.length > 0) return;
+
+        const config: PlatformConfig = {
+            name: name.trim(),
+            orderColumns: orderColumns as PlatformColumnMapping,
+            invoiceColumns: showInvoice && invoiceColumns.orderNumber !== undefined && invoiceColumns.trackingNumber !== undefined
+                ? invoiceColumns as PlatformInvoiceMapping
+                : undefined,
+            detectHeaders: detectHeaders.split(',').map(s => s.trim()).filter(Boolean),
+            sampleHeaders,
+            headerRowIndex,
+            dataStartRow,
+        };
+        onSave(config);
+    };
+
+    const headerOptions = sampleHeaders.map((h, i) => ({ index: i, label: `${colIndexToLabel(i)}열: ${h}` }));
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+                <p className="text-xl font-black text-white mb-6 text-center">
+                    {initial ? '플랫폼 설정 편집' : '새 플랫폼 추가'}
+                </p>
+
+                {/* 플랫폼 이름 */}
+                <div className="mb-5">
+                    <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">플랫폼 이름</label>
+                    <input
+                        autoFocus
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none"
+                        placeholder="예: 지마켓"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                    />
+                </div>
+
+                {/* 샘플 파일 업로드 */}
+                <div className="mb-5">
+                    <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">샘플 파일 업로드</label>
+                    <label className="flex items-center gap-3 bg-zinc-950 border border-dashed border-zinc-700 rounded-xl px-5 py-4 cursor-pointer hover:border-rose-500/50 transition-all">
+                        <DocumentArrowUpIcon className="w-5 h-5 text-zinc-600" />
+                        <span className="text-sm text-zinc-500">
+                            {sampleHeaders.length > 0 ? `헤더 ${sampleHeaders.length}개 감지됨` : '엑셀 파일을 선택하세요'}
+                        </span>
+                        <input type="file" className="hidden" accept=".xlsx,.xls" onChange={handleSampleUpload} />
+                    </label>
+                </div>
+
+                {/* 헤더 행 설정 */}
+                <div className="grid grid-cols-2 gap-4 mb-5">
+                    <div>
+                        <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">헤더 행 번호 (0부터)</label>
+                        <input type="number" min={0} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none text-sm"
+                            value={headerRowIndex}
+                            onChange={(e) => setHeaderRowIndex(Number(e.target.value))}
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">데이터 시작 행</label>
+                        <input type="number" min={0} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white outline-none text-sm"
+                            value={dataStartRow}
+                            onChange={(e) => setDataStartRow(Number(e.target.value))}
+                        />
+                    </div>
+                </div>
+
+                {/* 컬럼 매핑 - 필수 */}
+                {sampleHeaders.length > 0 && (
+                    <>
+                        <div className="mb-5">
+                            <label className="text-[12px] font-black text-rose-500 uppercase mb-3 block">필수 컬럼 매핑</label>
+                            <div className="space-y-2">
+                                {REQUIRED_MAPPING_FIELDS.map(field => (
+                                    <div key={field.key} className="flex items-center gap-3">
+                                        <span className="text-sm font-bold text-zinc-400 w-36 shrink-0">{field.label}</span>
+                                        <select
+                                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                                            value={orderColumns[field.key] ?? ''}
+                                            onChange={(e) => setOrderColumns(prev => ({
+                                                ...prev,
+                                                [field.key]: e.target.value === '' ? undefined : Number(e.target.value)
+                                            }))}
+                                        >
+                                            <option value="">-- 선택 --</option>
+                                            {headerOptions.map(opt => (
+                                                <option key={opt.index} value={opt.index}>{opt.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 컬럼 매핑 - 선택 */}
+                        <div className="mb-5">
+                            <label className="text-[12px] font-black text-zinc-500 uppercase mb-3 block">선택 컬럼 매핑</label>
+                            <div className="space-y-2">
+                                {OPTIONAL_MAPPING_FIELDS.map(field => (
+                                    <div key={field.key} className="flex items-center gap-3">
+                                        <span className="text-sm font-bold text-zinc-500 w-36 shrink-0">{field.label}</span>
+                                        <select
+                                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                                            value={orderColumns[field.key] ?? ''}
+                                            onChange={(e) => setOrderColumns(prev => ({
+                                                ...prev,
+                                                [field.key]: e.target.value === '' ? undefined : Number(e.target.value)
+                                            }))}
+                                        >
+                                            <option value="">-- 없음 --</option>
+                                            {headerOptions.map(opt => (
+                                                <option key={opt.index} value={opt.index}>{opt.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* 송장 업로드 매핑 */}
+                        <div className="mb-5">
+                            <label className="flex items-center gap-3 cursor-pointer mb-3">
+                                <input type="checkbox" checked={showInvoice} onChange={(e) => setShowInvoice(e.target.checked)}
+                                    className="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-rose-500 focus:ring-rose-500/20" />
+                                <span className="text-[12px] font-black text-zinc-500 uppercase">송장 업로드 양식 설정</span>
+                            </label>
+                            {showInvoice && (
+                                <div className="space-y-2 pl-7">
+                                    <p className="text-[11px] text-zinc-600">주문서와 동일한 양식에서 송장 관련 열을 선택하세요</p>
+                                    {INVOICE_MAPPING_FIELDS.map(field => (
+                                        <div key={field.key} className="flex items-center gap-3">
+                                            <span className={`text-sm font-bold w-36 shrink-0 ${field.required ? 'text-zinc-400' : 'text-zinc-500'}`}>{field.label}</span>
+                                            <select
+                                                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-sm text-white outline-none"
+                                                value={invoiceColumns[field.key] ?? ''}
+                                                onChange={(e) => setInvoiceColumns(prev => ({
+                                                    ...prev,
+                                                    [field.key]: e.target.value === '' ? undefined : Number(e.target.value)
+                                                }))}
+                                            >
+                                                <option value="">{field.required ? '-- 선택 --' : '-- 없음 --'}</option>
+                                                {headerOptions.map(opt => (
+                                                    <option key={opt.index} value={opt.index}>{opt.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* 자동감지 헤더 */}
+                        <div className="mb-6">
+                            <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">자동감지 헤더 키워드</label>
+                            <input
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-3 text-white outline-none text-sm"
+                                placeholder="쉼표로 구분 (예: 발주번호, 지마켓주문번호)"
+                                value={detectHeaders}
+                                onChange={(e) => setDetectHeaders(e.target.value)}
+                            />
+                            <p className="text-[10px] text-zinc-600 mt-1">파일 업로드 시 이 키워드가 헤더에 있으면 자동으로 이 플랫폼으로 감지됩니다</p>
+                        </div>
+                    </>
+                )}
+
+                {/* 버튼 */}
+                <div className="flex gap-4">
+                    <button onClick={onCancel}
+                        className="flex-1 px-6 py-4 bg-zinc-800 text-zinc-400 font-black rounded-xl hover:bg-zinc-700 transition-all">
+                        취소
+                    </button>
+                    <button onClick={handleSave}
+                        disabled={!name.trim() || sampleHeaders.length === 0}
+                        className="flex-1 px-6 py-4 bg-rose-500 text-white font-black rounded-xl hover:bg-rose-600 shadow-lg shadow-rose-900/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed">
+                        저장
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 interface PricingEditorProps {
     config: PricingConfig;
     onConfigChange: (newConfig: PricingConfig) => void;
     businessId?: string;
+    platformConfigs?: PlatformConfigs;
+    onPlatformConfigsChange?: (configs: PlatformConfigs) => void;
 }
 
-const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange }) => {
+const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, platformConfigs = {}, onPlatformConfigsChange }) => {
     const [dialog, setDialog] = useState<DialogType>(null);
     const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>(() => {
         return Object.keys(config).reduce((acc, key) => ({ ...acc, [key]: true }), {});
     });
-    const [isInfoExpanded, setIsInfoExpanded] = useState(false);
+    const [platformDialog, setPlatformDialog] = useState<{ editing: string | null } | null>(null);
+    const [isPlatformExpanded, setIsPlatformExpanded] = useState(true);
 
     // 항상 최신 config를 참조하기 위한 ref (렌더 시점에 동기적으로 갱신)
     const configRef = useRef(config);
@@ -286,6 +549,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
         handleUpdate(newConfig);
     };
 
+    const handleUpdateCourier = (companyName: string, courier: string) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].courierName = courier;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateKeywords = (companyName: string, keywords: string[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].keywords = keywords.length > 0 ? keywords : undefined;
@@ -349,76 +618,90 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
     const expandAll = () => setExpandedCompanies(Object.keys(config).reduce((acc, key) => ({ ...acc, [key]: true }), {}));
     const collapseAll = () => setExpandedCompanies(Object.keys(config).reduce((acc, key) => ({ ...acc, [key]: false }), {}));
 
-    const handleExport = () => {
-        const dataStr = JSON.stringify(config, null, 2);
-        const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-        const d = new Date();
-        const exportFileDefaultName = `윙발주_백업_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.json`;
-        const linkElement = document.createElement('a');
-        linkElement.setAttribute('href', dataUri);
-        linkElement.setAttribute('download', exportFileDefaultName);
-        linkElement.click();
+    const handleSavePlatform = (platformConfig: PlatformConfig) => {
+        const newConfigs = { ...platformConfigs, [platformConfig.name]: platformConfig };
+        // 편집 시 이름이 바뀌었으면 이전 키 삭제
+        if (platformDialog?.editing && platformDialog.editing !== platformConfig.name) {
+            delete newConfigs[platformDialog.editing];
+        }
+        onPlatformConfigsChange?.(newConfigs);
+        setPlatformDialog(null);
     };
 
-    const handleImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const text = e.target?.result;
-                if (typeof text === 'string') {
-                    const importedConfig = JSON.parse(text);
-                    if (typeof importedConfig === 'object' && importedConfig !== null) handleUpdate(importedConfig);
-                    else throw new Error("파일 형식이 이상해요! 🥺");
-                }
-            } catch (err) {
-                setDialog({ type: 'alert', message: `불러오기 실패: ${err instanceof Error ? err.message : '알 수 없는 오류'}`, onConfirm: () => setDialog(null) });
-            }
-        };
-        reader.readAsText(file);
-        event.target.value = '';
+    const handleDeletePlatform = (platformName: string) => {
+        setDialog({
+            type: 'confirm',
+            message: `'${platformName}' 플랫폼 설정을 삭제할까요?`,
+            onConfirm: () => {
+                const newConfigs = { ...platformConfigs };
+                delete newConfigs[platformName];
+                onPlatformConfigsChange?.(newConfigs);
+                setDialog(null);
+            },
+            onCancel: () => setDialog(null),
+        });
     };
 
     return (
         <div className="space-y-8 pb-16">
+            {/* ===== 플랫폼 관리 섹션 ===== */}
             <div className="bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-zinc-800 overflow-hidden">
                 <div
-                    className="flex justify-between items-center p-6 cursor-pointer bg-zinc-800/30"
-                    onClick={() => setIsInfoExpanded(!isInfoExpanded)}
+                    className="flex justify-between items-center p-6 cursor-pointer hover:bg-zinc-800/40 transition-all"
+                    onClick={() => setIsPlatformExpanded(!isPlatformExpanded)}
                 >
-                    <h3 className="font-black text-xl text-rose-500 flex items-center gap-4">
-                        <span className="bg-zinc-950 p-3 rounded-full shadow-inner border border-zinc-800 text-base">💡</span>
-                        업체 추가 안내
+                    <h3 className="font-black text-xl text-indigo-400 flex items-center gap-4">
+                        <span className="bg-zinc-950 p-3 rounded-full shadow-inner border border-zinc-800 text-base">🌐</span>
+                        플랫폼 관리
+                        <span className="text-sm text-zinc-600 font-bold">{Object.keys(platformConfigs).length}개</span>
                     </h3>
-                    {isInfoExpanded ? <ChevronUpIcon className="w-6 h-6 text-zinc-600" /> : <ChevronDownIcon className="w-6 h-6 text-zinc-600" />}
+                    <div className="flex items-center gap-3">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setPlatformDialog({ editing: null }); }}
+                            className="flex items-center gap-2 bg-indigo-500 text-white font-black py-2 px-5 rounded-xl hover:bg-indigo-600 transition-all shadow-lg text-sm"
+                        >
+                            <PlusCircleIcon className="w-4 h-4" />
+                            <span>플랫폼 추가</span>
+                        </button>
+                        {isPlatformExpanded ? <ChevronUpIcon className="w-6 h-6 text-zinc-600" /> : <ChevronDownIcon className="w-6 h-6 text-zinc-600" />}
+                    </div>
                 </div>
-                {isInfoExpanded && (
-                    <div className="p-8 text-base font-medium space-y-8 animate-fade-in text-zinc-400 bg-zinc-950">
-                        <div className="grid md:grid-cols-2 gap-8">
-                            <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-inner">
-                                <h4 className="font-black text-rose-400 mb-6 flex items-center gap-3 text-base">🌸 매핑 정보</h4>
-                                <ul className="space-y-4 text-sm">
-                                    <li className="flex justify-between border-b border-zinc-800 pb-2"><span>받는분</span> <span className="font-black text-rose-500">B열</span></li>
-                                    <li className="flex justify-between border-b border-zinc-800 pb-2"><span>연락처</span> <span className="font-black text-rose-500">D열</span></li>
-                                    <li className="flex justify-between border-b border-zinc-800 pb-2"><span>주소</span> <span className="font-black text-rose-500">C열</span></li>
-                                    <li className="flex justify-between border-b border-zinc-800 pb-2"><span>품목</span> <span className="font-black text-rose-500">J열</span></li>
-                                    <li className="flex justify-between border-b border-zinc-800 pb-2"><span>수량</span> <span className="font-black text-rose-500">K열</span></li>
-                                </ul>
+                {isPlatformExpanded && Object.keys(platformConfigs).length > 0 && (
+                    <div className="px-8 pb-8 space-y-3 animate-fade-in">
+                        {(Object.entries(platformConfigs) as [string, PlatformConfig][]).map(([key, pc]) => (
+                            <div key={key} className="flex items-center justify-between bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800">
+                                <div className="flex items-center gap-4">
+                                    <span className="text-base font-black text-white">{pc.name}</span>
+                                    <span className="text-[10px] text-zinc-600 font-bold">
+                                        헤더: {pc.sampleHeaders?.slice(0, 4).join(', ')}{(pc.sampleHeaders?.length || 0) > 4 ? '...' : ''}
+                                    </span>
+                                    {pc.invoiceColumns && (
+                                        <span className="text-[10px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">송장 설정됨</span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <button
+                                        onClick={() => setPlatformDialog({ editing: key })}
+                                        className="text-indigo-400 hover:text-indigo-300 font-black text-[11px] underline underline-offset-2"
+                                    >
+                                        편집
+                                    </button>
+                                    <button
+                                        onClick={() => handleDeletePlatform(key)}
+                                        className="text-zinc-700 hover:text-red-500 transition-colors"
+                                    >
+                                        <TrashIcon className="w-4 h-4" />
+                                    </button>
+                                </div>
                             </div>
-                            <div className="bg-zinc-900 p-8 rounded-[2rem] border border-zinc-800 shadow-inner">
-                                <h4 className="font-black text-indigo-400 mb-6 flex items-center gap-3 text-base">🎀 고정 발송 정보</h4>
-                                <ul className="space-y-5 text-sm">
-                                    <li className="flex flex-col border-b border-zinc-800 pb-2">
-                                        <span className="text-[12px] text-indigo-500 font-bold mb-1">연락처 (C열)</span>
-                                        <span className="font-black text-zinc-100 text-base">070-5222-6543</span>
-                                    </li>
-                                    <li className="flex flex-col border-b border-zinc-800 pb-2">
-                                        <span className="text-[12px] text-indigo-500 font-bold mb-1">주소 (F열)</span>
-                                        <span className="font-black text-zinc-100 text-sm">강원 평창군 방림면 평창대로84-15</span>
-                                    </li>
-                                </ul>
-                            </div>
+                        ))}
+                    </div>
+                )}
+                {isPlatformExpanded && Object.keys(platformConfigs).length === 0 && (
+                    <div className="px-8 pb-8 animate-fade-in">
+                        <div className="text-center py-8 bg-zinc-950 border border-dashed border-zinc-800 rounded-2xl">
+                            <p className="text-sm font-bold text-zinc-600">등록된 플랫폼이 없습니다</p>
+                            <p className="text-[11px] text-zinc-700 mt-1">쿠팡 외 플랫폼(지마켓, 스마트스토어, 톡딜 등)을 추가해보세요</p>
                         </div>
                     </div>
                 )}
@@ -429,19 +712,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
                     <button onClick={expandAll} className="p-4 bg-zinc-800 hover:bg-zinc-700 rounded-full text-rose-400 transition-all shadow-lg border border-zinc-700"><ArrowsPointingOutIcon className="w-5 h-5" /></button>
                     <button onClick={collapseAll} className="p-4 bg-zinc-800 hover:bg-zinc-700 rounded-full text-rose-400 transition-all shadow-lg border border-zinc-700"><ArrowsPointingInIcon className="w-5 h-5" /></button>
                 </div>
-                <div className="flex gap-4">
-                    <button onClick={handleExport} className="flex items-center gap-3 bg-zinc-800 text-zinc-300 font-black py-3.5 px-8 rounded-xl hover:bg-zinc-700 transition-all border border-zinc-700 shadow-lg text-sm">
-                        <ArrowDownTrayIcon className="w-5 h-5" /><span>백업</span>
-                    </button>
-                    <label className="flex items-center gap-3 bg-zinc-800 text-indigo-400 font-black py-3.5 px-8 rounded-xl hover:bg-zinc-700 transition-all border border-zinc-700 shadow-lg text-sm cursor-pointer">
-                        <ArrowUpTrayIcon className="w-5 h-5" />
-                        <span>복원</span>
-                        <input type="file" className="hidden" accept=".json" onChange={handleImport} />
-                    </label>
-                    <button onClick={handleAddCompany} className="flex items-center gap-3 bg-rose-500 text-white font-black py-3.5 px-10 rounded-xl hover:bg-rose-600 transition-all shadow-xl shadow-rose-900/30 text-sm">
-                        <PlusCircleIcon className="w-6 h-6" /><span>새 그룹</span>
-                    </button>
-                </div>
+                <button onClick={handleAddCompany} className="flex items-center gap-3 bg-rose-500 text-white font-black py-3.5 px-10 rounded-xl hover:bg-rose-600 transition-all shadow-xl shadow-rose-900/30 text-sm">
+                    <PlusCircleIcon className="w-6 h-6" /><span>새 그룹</span>
+                </button>
             </div>
 
             <div className="flex flex-col gap-3">
@@ -492,6 +765,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
                             onUpdatePhone={(phone) => handleUpdatePhone(companyName, phone)}
                             onUpdateBank={(bank) => handleUpdateBank(companyName, bank)}
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
+                            onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onAddProduct={() => handleAddProduct(companyName)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
@@ -512,6 +786,22 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
             )}
 
             {dialog && <Dialog dialog={dialog} setDialog={setDialog} />}
+            {platformDialog && (
+                <PlatformConfigDialog
+                    initial={platformDialog.editing ? platformConfigs[platformDialog.editing] : null}
+                    onSave={handleSavePlatform}
+                    onCancel={() => setPlatformDialog(null)}
+                />
+            )}
+
+            {/* 맨 위로 가기 버튼 */}
+            <button
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                className="fixed bottom-8 right-8 p-4 bg-rose-500 hover:bg-rose-600 text-white rounded-full shadow-2xl transition-all hover:scale-110 z-50 border-2 border-rose-400/30"
+                aria-label="맨 위로"
+            >
+                <ChevronUpIcon className="w-6 h-6" />
+            </button>
         </div>
     );
 };
@@ -526,6 +816,7 @@ const CompanyCard: React.FC<{
     onUpdatePhone: (phone: string) => void;
     onUpdateBank: (bank: string) => void;
     onUpdateAccount: (account: string) => void;
+    onUpdateCourier: (courier: string) => void;
     onUpdateKeywords: (keywords: string[]) => void;
     onAddProduct: () => void;
     onDeleteProduct: (productKey: string) => void;
@@ -582,6 +873,15 @@ const CompanyCard: React.FC<{
                                 className="text-sm font-bold text-zinc-400 focus:outline-none"
                             />
                         </div>
+                    </div>
+                    <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
+                        <span className="text-lg">📦</span>
+                        <EditableField
+                            value={companyConfig.courierName || ''}
+                            onSave={props.onUpdateCourier}
+                            placeholder="택배사명 (예: 롯데택배, CJ대한통운, 우체국)"
+                            className="text-sm font-bold text-zinc-400 focus:outline-none"
+                        />
                     </div>
                     <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
                         <div className="flex items-center gap-3 mb-2">
