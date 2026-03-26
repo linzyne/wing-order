@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Build files
+.next/
+
+# Test files
+*.xlsx
+export_code.js
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
