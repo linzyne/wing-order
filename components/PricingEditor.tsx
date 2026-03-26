@@ -214,9 +214,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange })
     });
     const [isInfoExpanded, setIsInfoExpanded] = useState(false);
 
-    // 항상 최신 config를 참조하기 위한 ref (stale closure 방지)
+    // 항상 최신 config를 참조하기 위한 ref (렌더 시점에 동기적으로 갱신)
     const configRef = useRef(config);
-    useEffect(() => { configRef.current = config; }, [config]);
+    configRef.current = config;
 
     const handleUpdate = useCallback((newConfig: PricingConfig) => onConfigChange(newConfig), [onConfigChange]);
 

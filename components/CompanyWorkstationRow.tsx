@@ -91,6 +91,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [workflow, setWorkflow] = useState<WorkflowStatus>({ order: false, deposit: false, invoice: false });
     const [showPrevRoundItems, setShowPrevRoundItems] = useState(false);
 
+    // 현재 세션의 summary (로컬 처리 우선, Firestore 동기화 폴백)
+    const syncedItemSummary = (!localResult && !isLocalProcessing) ? workspace?.sessionResults?.[sessionId]?.itemSummary : undefined;
+    const currentSessionSummary = localResult?.summary || syncedItemSummary || null;
+
     // 전체 차수 합산 정산
     const combinedSummary = useMemo(() => {
         const merged: Record<string, { count: number; totalPrice: number }> = {};
@@ -101,15 +105,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 merged[key].totalPrice += stat.totalPrice;
             }
         }
-        if (localResult?.summary) {
-            for (const [key, stat] of Object.entries(localResult.summary) as [string, { count: number; totalPrice: number }][]) {
+        if (currentSessionSummary) {
+            for (const [key, stat] of Object.entries(currentSessionSummary) as [string, { count: number; totalPrice: number }][]) {
                 if (!merged[key]) merged[key] = { count: 0, totalPrice: 0 };
                 merged[key].count += stat.count;
                 merged[key].totalPrice += stat.totalPrice;
             }
         }
         return merged;
-    }, [previousRoundItems, localResult?.summary]);
+    }, [previousRoundItems, currentSessionSummary]);
 
     // 합산 정산 텍스트 (정산요약과 동일한 양식)
     const combinedDepositText = useMemo(() => {
@@ -132,8 +136,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             });
 
         // 현재 차수 추가분 표시
-        if (localResult?.summary && Object.keys(localResult.summary).length > 0) {
-            const addedItems = Object.entries(localResult.summary)
+        if (currentSessionSummary && Object.keys(currentSessionSummary).length > 0) {
+            const addedItems = Object.entries(currentSessionSummary)
                 .map(([key, stat]: [string, any]) => `${key} ${stat.count}개 ${stat.totalPrice.toLocaleString()}원`)
                 .join(', ');
             lines.push('');
@@ -144,11 +148,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
         lines.push(`(입금자 ${BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원'})`);
         return lines.join('\n');
-    }, [combinedSummary, localResult?.summary, companyName, roundNumber]);
+    }, [combinedSummary, currentSessionSummary, companyName, roundNumber]);
 
     // 최종 차수 정산 요약용 누적 텍스트 (기존 정산요약과 동일 양식, 합산 데이터)
     const cumulativeDepositText = useMemo(() => {
-        if (!isLastSession || previousRoundItems.length === 0 || !localResult || Object.keys(combinedSummary).length === 0) return null;
+        if (!isLastSession || previousRoundItems.length === 0 || (!localResult && !currentSessionSummary) || Object.keys(combinedSummary).length === 0) return null;
         const today = new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
@@ -168,10 +172,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
         lines.push(`(입금자 ${BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원'})`);
         return lines.join('\n');
-    }, [isLastSession, previousRoundItems, localResult, combinedSummary, companyName]);
+    }, [isLastSession, previousRoundItems, currentSessionSummary, combinedSummary, companyName]);
 
     const cumulativeDepositExcelText = useMemo(() => {
-        if (!isLastSession || previousRoundItems.length === 0 || !localResult || Object.keys(combinedSummary).length === 0) return null;
+        if (!isLastSession || previousRoundItems.length === 0 || (!localResult && !currentSessionSummary) || Object.keys(combinedSummary).length === 0) return null;
         const today = new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
@@ -186,7 +190,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             lines.push(line);
         });
         return lines.join('\n');
-    }, [isLastSession, previousRoundItems, localResult, combinedSummary]);
+    }, [isLastSession, previousRoundItems, currentSessionSummary, combinedSummary]);
 
     const [copiedCombinedId, setCopiedCombinedId] = useState<string | null>(null);
     const handleCopyCombined = () => {
