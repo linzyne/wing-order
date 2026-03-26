@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 import CompanySelector from './components/CompanySelector';
 import PricingEditor from './components/PricingEditor';
 import SalesTracker from './components/SalesTracker';
+import TodoList from './components/TodoList';
 import { ChartBarIcon, WrenchScrewdriverIcon, Cog6ToothIcon } from './components/icons';
-import { usePricingConfig } from './hooks/useFirestore';
+import { usePricingConfig, usePlatformConfigs } from './hooks/useFirestore';
 import { migrateLocalStorageToFirestore, syncPricingFields } from './services/migration';
 import type { BusinessId } from './types';
 
@@ -28,6 +29,7 @@ const App: React.FC = () => {
   };
 
   const { config: pricingConfig, saveConfig, isLoading, configSource } = usePricingConfig(currentBusiness);
+  const { platformConfigs, savePlatformConfig } = usePlatformConfigs(currentBusiness);
 
   const handleConfigChange = (newConfig: typeof pricingConfig) => {
     saveConfig(newConfig);
@@ -53,8 +55,9 @@ const App: React.FC = () => {
 
   return (
     <div className="bg-zinc-950 min-h-screen p-2 font-sans text-zinc-100">
-      <div className="w-full max-w-5xl py-4 animate-fade-in">
-        <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-2 gap-4">
+      <div className="flex gap-4 py-4 animate-fade-in">
+        <div className="w-full max-w-5xl">
+          <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-2 gap-4">
           <div className="flex items-center gap-5">
             <div className="bg-zinc-900 p-3 rounded-[1.2rem] shadow-2xl border border-zinc-800">
               <ChartBarIcon className="w-8 h-8 text-rose-500" />
@@ -127,21 +130,28 @@ const App: React.FC = () => {
 
         <main className="w-full" key={currentBusiness}>
           <div style={{ display: activeTab === 'converter' ? undefined : 'none' }}>
-            <CompanySelector pricingConfig={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} />
+            <CompanySelector pricingConfig={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} platformConfigs={platformConfigs} />
           </div>
           <div style={{ display: activeTab === 'pricing' ? undefined : 'none' }}>
-            <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} />
+            <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} platformConfigs={platformConfigs} onPlatformConfigsChange={savePlatformConfig} />
           </div>
           <div style={{ display: activeTab === 'sales' ? undefined : 'none' }}>
             <SalesTracker isActive={activeTab === 'sales'} businessId={currentBusiness} />
           </div>
         </main>
         
-        <footer className="text-center mt-12 text-zinc-600 font-bold text-xs pb-8">
-          <p className="flex items-center justify-center gap-1">
-            Made with <span className="text-rose-500">❤️</span> for Wing Business &copy; {new Date().getFullYear()}
-          </p>
-        </footer>
+          <footer className="text-center mt-12 text-zinc-600 font-bold text-xs pb-8">
+            <p className="flex items-center justify-center gap-1">
+              Made with <span className="text-rose-500">❤️</span> for Wing Business &copy; {new Date().getFullYear()}
+            </p>
+          </footer>
+        </div>
+
+        {currentBusiness === '안군농원' && (
+          <div className="w-80 flex-shrink-0">
+            <TodoList />
+          </div>
+        )}
       </div>
     </div>
   );
