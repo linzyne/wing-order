@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { PricingConfig, PlatformConfigs } from '../types';
+import type { PricingConfig, PlatformConfigs, TodoItem } from '../types';
 import {
   subscribePricingConfig,
   savePricingConfigToFirestore,
@@ -7,6 +7,8 @@ import {
   updateDailyWorkspaceField,
   subscribePlatformConfigs,
   savePlatformConfigs,
+  subscribeTodos,
+  saveTodos as saveTodosToFirestore,
   type DailyWorkspaceData,
 } from '../services/firestoreService';
 import { DEFAULT_PRICING_CONFIG, DEFAULT_PRICING_CONFIG_조에 } from '../pricing';
@@ -119,4 +121,63 @@ export const useDailyWorkspace = (businessId?: string) => {
   }, [businessId]);
 
   return { workspace, updateField, isReady };
+};
+
+// ===== Todos Hook =====
+export const useTodos = (businessId?: string) => {
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const pendingSaves = useRef(0);
+  const saveGraceUntil = useRef(0);
+
+  // localStorage에서 기존 데이터 마이그레이션 (한 번만)
+  useEffect(() => {
+    const migrateFromLocalStorage = async () => {
+      const saved = localStorage.getItem('todos');
+      if (saved) {
+        try {
+          const localTodos = JSON.parse(saved);
+          if (Array.isArray(localTodos) && localTodos.length > 0) {
+            console.log('[Todos] localStorage → Firestore 마이그레이션:', localTodos.length, '개');
+            await saveTodosToFirestore(localTodos, businessId);
+            localStorage.removeItem('todos'); // 마이그레이션 후 삭제
+          }
+        } catch (error) {
+          console.error('[Todos] 마이그레이션 실패:', error);
+        }
+      }
+    };
+    migrateFromLocalStorage();
+  }, [businessId]);
+
+  useEffect(() => {
+    const unsubscribe = subscribeTodos((firestoreTodos) => {
+      if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) return;
+
+      if (firestoreTodos) {
+        setTodos(firestoreTodos);
+      } else {
+        // 문서가 없으면 빈 배열로 초기화
+        setTodos([]);
+      }
+      setIsLoading(false);
+    }, businessId);
+
+    return unsubscribe;
+  }, [businessId]);
+
+  const saveTodos = useCallback(async (newTodos: TodoItem[]) => {
+    pendingSaves.current++;
+    setTodos(newTodos);
+    try {
+      await saveTodosToFirestore(newTodos, businessId);
+      saveGraceUntil.current = Date.now() + 1000;
+    } catch (error) {
+      console.error('[Todos] Firestore 저장 실패:', error);
+    } finally {
+      pendingSaves.current--;
+    }
+  }, [businessId]);
+
+  return { todos, saveTodos, isLoading };
 };

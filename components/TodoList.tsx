@@ -1,36 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { PlusIcon, TrashIcon } from './icons';
+import { useTodos } from '../hooks/useFirestore';
+import type { TodoItem, BusinessId } from '../types';
 
-interface TodoItem {
-  id: string;
-  text: string;
-  completed: boolean;
+interface TodoListProps {
+  businessId: BusinessId;
 }
 
-const TodoList: React.FC = () => {
-  const [todos, setTodos] = useState<TodoItem[]>([]);
+const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
+  const { todos, saveTodos, isLoading } = useTodos(businessId);
   const [newTodoText, setNewTodoText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
   const [draggedId, setDraggedId] = useState<string | null>(null);
-
-  // localStorage에서 투두 로드
-  useEffect(() => {
-    const saved = localStorage.getItem('todos');
-    if (saved) {
-      try {
-        setTodos(JSON.parse(saved));
-      } catch (error) {
-        console.error('[TodoList] 로드 실패:', error);
-      }
-    }
-  }, []);
-
-  // localStorage에 투두 저장
-  const saveTodos = (updatedTodos: TodoItem[]) => {
-    setTodos(updatedTodos);
-    localStorage.setItem('todos', JSON.stringify(updatedTodos));
-  };
 
   const addTodo = () => {
     if (!newTodoText.trim()) return;
@@ -39,6 +21,7 @@ const TodoList: React.FC = () => {
       id: Date.now().toString(),
       text: newTodoText.trim(),
       completed: false,
+      createdAt: Date.now(),
     };
 
     saveTodos([...todos, newTodo]);

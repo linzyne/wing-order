@@ -5,7 +5,7 @@ import {
   onSnapshot, Timestamp,
   type Unsubscribe
 } from 'firebase/firestore';
-import type { PricingConfig, DailySales, PlatformConfigs } from '../types';
+import type { PricingConfig, DailySales, PlatformConfigs, TodoItem } from '../types';
 
 // ===== 사업자별 Firestore 경로 헬퍼 =====
 // 안군농원(또는 미지정)이면 기존 경로 그대로, 그 외 사업자는 접미사 추가
@@ -26,6 +26,9 @@ const getCompanyOrderDocId = (businessId?: string): string =>
 
 const getPlatformConfigsDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'platformConfigs' : `platformConfigs_${businessId}`;
+
+const getTodosDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'todos' : `todos_${businessId}`;
 
 // ===== Pricing Config =====
 
@@ -223,6 +226,32 @@ export const savePlatformConfigs = async (
   const docRef = doc(db, 'config', getPlatformConfigsDocId(businessId));
   await setDoc(docRef, {
     data: configs,
+    updatedAt: Timestamp.now(),
+  });
+};
+
+// ===== Todos =====
+
+export const subscribeTodos = (
+  callback: (todos: TodoItem[] | null) => void,
+  businessId?: string
+): Unsubscribe => {
+  const docRef = doc(db, 'config', getTodosDocId(businessId));
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().todos as TodoItem[]) : null);
+  }, (error) => {
+    console.error('[Firestore] Todos 구독 오류:', error);
+    callback(null);
+  });
+};
+
+export const saveTodos = async (
+  todos: TodoItem[],
+  businessId?: string
+): Promise<void> => {
+  const docRef = doc(db, 'config', getTodosDocId(businessId));
+  await setDoc(docRef, {
+    todos,
     updatedAt: Timestamp.now(),
   });
 };

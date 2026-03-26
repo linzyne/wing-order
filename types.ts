@@ -168,3 +168,11 @@ export interface DailySales {
   marginTotal?: number;
   expenseRecords?: ExpenseRecord[];
 }
+
+// ===== Todo List =====
+export interface TodoItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  createdAt: number;
+}

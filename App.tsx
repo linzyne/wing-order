@@ -149,7 +149,7 @@ const App: React.FC = () => {
 
         {currentBusiness === '안군농원' && (
           <div className="w-80 flex-shrink-0">
-            <TodoList />
+            <TodoList businessId={currentBusiness} />
           </div>
         )}
       </div>
