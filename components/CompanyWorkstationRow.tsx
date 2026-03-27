@@ -209,8 +209,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const lastFakeOrdersRef = useRef<string>('');
     const lastManualOrdersRef = useRef<string>('');
 
+    // 리셋 직후 Firestore 구독 업데이트 전까지 syncedData 억제
+    const suppressSyncRef = useRef(false);
+    if (suppressSyncRef.current && !workspace?.sessionResults?.[sessionId]) {
+        suppressSyncRef.current = false;
+    }
+
     // Synced data (디바이스 2 - 로컬 처리 없을 때만)
-    const syncedData = (!localResult && !isLocalProcessing) ? workspace?.sessionResults?.[sessionId] : undefined;
+    const syncedData = (!localResult && !isLocalProcessing && !suppressSyncRef.current) ? workspace?.sessionResults?.[sessionId] : undefined;
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig, businessId);
@@ -443,11 +449,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         setExcludedList([]);
         setUnmatchedList([]);
         resetMerge();
-        lastProcessedMasterRef.current = null;
-        lastProcessedBatchRef.current = null;
         onResultUpdate(sessionId, 0, 0, []);
         onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);
-        // Firestore 세션 결과도 함께 제거 (복원됨 상태 방지)
+        // Firestore 구독 업데이트 전까지 syncedData 억제
+        suppressSyncRef.current = true;
+        // Firestore 세션 결과도 함께 제거
         const currentResults = { ...(workspace?.sessionResults || {}) };
         if (currentResults[sessionId]) {
             delete currentResults[sessionId];
