@@ -16,22 +16,22 @@ function getBusinessStatus(workspace: DailyWorkspaceData | null) {
 
   const results = workspace.sessionResults || {};
   const workflows = workspace.sessionWorkflows || {};
-  // 워크플로우 기준으로만 세션 카운트 (실제 화면에 보이는 업체만)
-  const workflowIds = Object.keys(workflows);
+  // sessionResults에서 실제 주문이 있는 세션만 카운트 (orderCount > 0)
+  const activeSessionIds = Object.keys(results).filter(sid => results[sid]?.orderCount > 0);
 
   let orderCount = 0;
   let completedOrders = 0;
 
-  for (const sid of workflowIds) {
-    if (results[sid]?.orderCount) orderCount += results[sid].orderCount;
+  for (const sid of activeSessionIds) {
+    orderCount += results[sid].orderCount;
     if (workflows[sid]?.order) completedOrders++;
   }
 
   return {
     orderCount,
-    totalSessions: workflowIds.length,
+    totalSessions: activeSessionIds.length,
     completedOrders,
-    hasActivity: workflowIds.length > 0,
+    hasActivity: activeSessionIds.length > 0,
   };
 }
 
