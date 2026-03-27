@@ -268,7 +268,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
         const hasBatchFileChanged = batchFile && batchFile !== lastProcessedBatchRef.current;
         const hasFakeOrdersChanged = isFirstSession && fakeOrderNumbers !== lastFakeOrdersRef.current;
-        const hasManualOrdersChanged = isLastSession && manualOrdersStr !== lastManualOrdersRef.current;
+        const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
 
         if (hasBatchFileChanged && batchFile) {
             // N차 일괄 업로드: 가구매 제외 없이 처리
