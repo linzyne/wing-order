@@ -56,7 +56,7 @@ const OrderStatusBanner: React.FC<OrderStatusBannerProps> = ({ workspaces, isRea
   };
 
   return (
-    <div className="mb-4 flex items-center gap-2 px-2">
+    <div className="mb-4 flex items-center gap-2 px-2 sticky top-0 z-50 py-2 bg-zinc-950/90 backdrop-blur-sm -mx-2 rounded-xl">
       {(['안군농원', '조에'] as const).map((bid) => {
         const s = statuses[bid];
         const level = getLevel(bid);
@@ -68,18 +68,10 @@ const OrderStatusBanner: React.FC<OrderStatusBannerProps> = ({ workspaces, isRea
         const colorClass = noActivity
           ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 animate-pulse'
           : level === 'incomplete'
-            ? 'bg-red-500/10 border-red-500/40 text-red-400'
+            ? 'bg-red-500/20 border-red-500/50 text-red-400'
             : level === 'complete'
               ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
               : 'bg-zinc-900 border-zinc-800 text-zinc-500';
-
-        const dotColor = noActivity
-          ? 'bg-amber-500'
-          : level === 'incomplete'
-            ? 'bg-red-500'
-            : level === 'complete'
-              ? 'bg-emerald-500'
-              : 'bg-zinc-600';
 
         return (
           <button
@@ -87,7 +79,22 @@ const OrderStatusBanner: React.FC<OrderStatusBannerProps> = ({ workspaces, isRea
             onClick={() => !isCurrent && onSwitchBusiness(bid)}
             className={`flex-1 flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all border ${colorClass} ${!isCurrent ? 'cursor-pointer hover:brightness-125' : 'cursor-default'}`}
           >
-            <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+            {/* 상태 아이콘 */}
+            {noActivity ? (
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+            ) : level === 'incomplete' ? (
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+              </svg>
+            ) : level === 'complete' ? (
+              <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <span className="w-2 h-2 rounded-full shrink-0 bg-zinc-600" />
+            )}
             <span>{displayName}</span>
             <span className="text-[10px] font-bold opacity-70">
               {noActivity
