@@ -1,4 +1,21 @@
 import React, { useState } from 'react';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { PlusIcon, TrashIcon } from './icons';
 import { useTodos } from '../hooks/useFirestore';
 import type { TodoItem, BusinessId } from '../types';
@@ -7,12 +24,119 @@ interface TodoListProps {
   businessId: BusinessId;
 }
 
+// 드래그 가능한 개별 투두 아이템 컴포넌트
+const SortableTodoItem: React.FC<{
+  todo: TodoItem;
+  editingId: string | null;
+  editingText: string;
+  setEditingText: (text: string) => void;
+  onToggle: (id: string) => void;
+  onDelete: (id: string) => void;
+  onStartEdit: (id: string, text: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+}> = ({ todo, editingId, editingText, setEditingText, onToggle, onDelete, onStartEdit, onSaveEdit, onCancelEdit }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: todo.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const handleEditKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      onSaveEdit();
+    } else if (e.key === 'Escape') {
+      onCancelEdit();
+    }
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="flex items-start gap-2 p-2 bg-zinc-800 rounded-lg hover:bg-zinc-750 transition-colors group"
+    >
+      {/* 드래그 핸들 */}
+      <button
+        {...attributes}
+        {...listeners}
+        className="mt-0.5 cursor-grab active:cursor-grabbing text-zinc-600 hover:text-zinc-400 touch-none"
+        tabIndex={-1}
+      >
+        <svg className="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+          <circle cx="5" cy="3" r="1.5" />
+          <circle cx="11" cy="3" r="1.5" />
+          <circle cx="5" cy="8" r="1.5" />
+          <circle cx="11" cy="8" r="1.5" />
+          <circle cx="5" cy="13" r="1.5" />
+          <circle cx="11" cy="13" r="1.5" />
+        </svg>
+      </button>
+
+      <input
+        type="checkbox"
+        checked={todo.completed}
+        onChange={() => onToggle(todo.id)}
+        className="mt-0.5 w-4 h-4 rounded border-zinc-600 text-rose-500 focus:ring-rose-500 focus:ring-offset-0 cursor-pointer"
+      />
+
+      {editingId === todo.id ? (
+        <input
+          type="text"
+          value={editingText}
+          onChange={(e) => setEditingText(e.target.value)}
+          onKeyDown={handleEditKeyPress}
+          onBlur={onSaveEdit}
+          autoFocus
+          className="flex-1 px-2 py-1 bg-zinc-700 border border-rose-500 rounded text-white text-sm focus:outline-none"
+        />
+      ) : (
+        <span
+          onDoubleClick={() => onStartEdit(todo.id, todo.text)}
+          className={`flex-1 text-sm break-words cursor-text ${
+            todo.completed
+              ? 'line-through text-zinc-500'
+              : 'text-zinc-200'
+          }`}
+          title="더블클릭하여 수정"
+        >
+          {todo.text}
+        </span>
+      )}
+
+      <button
+        onClick={() => onDelete(todo.id)}
+        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-zinc-700 rounded transition-all"
+      >
+        <TrashIcon className="w-4 h-4 text-zinc-400 hover:text-rose-500" />
+      </button>
+    </div>
+  );
+};
+
 const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
   const { todos, saveTodos, isLoading } = useTodos(businessId);
   const [newTodoText, setNewTodoText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
-  const [draggedId, setDraggedId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 5 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const addTodo = () => {
     if (!newTodoText.trim()) return;
@@ -69,51 +193,15 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
     }
   };
 
-  const handleEditKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      saveEdit();
-    } else if (e.key === 'Escape') {
-      cancelEdit();
-    }
-  };
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
-  // 드래그 앤 드롭 핸들러
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>, id: string) => {
-    setDraggedId(id);
-    e.dataTransfer.effectAllowed = 'move';
-  };
+    const oldIndex = todos.findIndex(t => t.id === active.id);
+    const newIndex = todos.findIndex(t => t.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
 
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>, targetId: string) => {
-    e.preventDefault();
-
-    if (!draggedId || draggedId === targetId) {
-      setDraggedId(null);
-      return;
-    }
-
-    const draggedIndex = todos.findIndex(todo => todo.id === draggedId);
-    const targetIndex = todos.findIndex(todo => todo.id === targetId);
-
-    if (draggedIndex === -1 || targetIndex === -1) {
-      setDraggedId(null);
-      return;
-    }
-
-    const newTodos = [...todos];
-    const [draggedItem] = newTodos.splice(draggedIndex, 1);
-    newTodos.splice(targetIndex, 0, draggedItem);
-
-    saveTodos(newTodos);
-    setDraggedId(null);
-  };
-
-  const handleDragEnd = () => {
-    setDraggedId(null);
+    saveTodos(arrayMove(todos, oldIndex, newIndex));
   };
 
   return (
@@ -147,57 +235,31 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
           {todos.length === 0 ? (
             <p className="text-zinc-500 text-sm text-center py-8">할일이 없습니다</p>
           ) : (
-            todos.map((todo) => (
-              <div
-                key={todo.id}
-                draggable
-                onDragStart={(e) => handleDragStart(e, todo.id)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, todo.id)}
-                onDragEnd={handleDragEnd}
-                className={`flex items-start gap-2 p-2 bg-zinc-800 rounded-lg hover:bg-zinc-750 transition-colors group cursor-move ${
-                  draggedId === todo.id ? 'opacity-50' : ''
-                }`}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={todos.map(t => t.id)}
+                strategy={verticalListSortingStrategy}
               >
-                <input
-                  type="checkbox"
-                  checked={todo.completed}
-                  onChange={() => toggleTodo(todo.id)}
-                  className="mt-0.5 w-4 h-4 rounded border-zinc-600 text-rose-500 focus:ring-rose-500 focus:ring-offset-0 cursor-pointer"
-                />
-
-                {editingId === todo.id ? (
-                  <input
-                    type="text"
-                    value={editingText}
-                    onChange={(e) => setEditingText(e.target.value)}
-                    onKeyDown={handleEditKeyPress}
-                    onBlur={saveEdit}
-                    autoFocus
-                    className="flex-1 px-2 py-1 bg-zinc-700 border border-rose-500 rounded text-white text-sm focus:outline-none"
+                {todos.map((todo) => (
+                  <SortableTodoItem
+                    key={todo.id}
+                    todo={todo}
+                    editingId={editingId}
+                    editingText={editingText}
+                    setEditingText={setEditingText}
+                    onToggle={toggleTodo}
+                    onDelete={deleteTodo}
+                    onStartEdit={startEdit}
+                    onSaveEdit={saveEdit}
+                    onCancelEdit={cancelEdit}
                   />
-                ) : (
-                  <span
-                    onDoubleClick={() => startEdit(todo.id, todo.text)}
-                    className={`flex-1 text-sm break-words cursor-text ${
-                      todo.completed
-                        ? 'line-through text-zinc-500'
-                        : 'text-zinc-200'
-                    }`}
-                    title="더블클릭하여 수정"
-                  >
-                    {todo.text}
-                  </span>
-                )}
-
-                <button
-                  onClick={() => deleteTodo(todo.id)}
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-zinc-700 rounded transition-all"
-                >
-                  <TrashIcon className="w-4 h-4 text-zinc-400 hover:text-rose-500" />
-                </button>
-              </div>
-            ))
+                ))}
+              </SortableContext>
+            </DndContext>
           )}
         </div>
 
