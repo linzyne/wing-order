@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { PricingConfig, PlatformConfigs, TodoItem } from '../types';
+import type { PricingConfig, PlatformConfigs, TodoItem, BusinessId } from '../types';
 import {
   subscribePricingConfig,
   savePricingConfigToFirestore,
@@ -188,4 +188,33 @@ export const useTodos = (businessId?: string) => {
   }, [businessId]);
 
   return { todos, saveTodos, isLoading };
+};
+
+// ===== All Business Workspaces Hook (양쪽 사업자 동시 구독) =====
+const ALL_BUSINESS_IDS: BusinessId[] = ['안군농원', '조에'];
+
+export const useAllBusinessWorkspaces = () => {
+  const [workspaces, setWorkspaces] = useState<Record<BusinessId, DailyWorkspaceData | null>>({
+    '안군농원': null,
+    '조에': null,
+  });
+  const [isReady, setIsReady] = useState(false);
+  const readyCount = useRef(0);
+
+  useEffect(() => {
+    readyCount.current = 0;
+    setIsReady(false);
+
+    const unsubscribes = ALL_BUSINESS_IDS.map((bid) =>
+      subscribeDailyWorkspace((data) => {
+        setWorkspaces((prev) => ({ ...prev, [bid]: data }));
+        readyCount.current++;
+        if (readyCount.current >= ALL_BUSINESS_IDS.length) setIsReady(true);
+      }, bid)
+    );
+
+    return () => unsubscribes.forEach((unsub) => unsub());
+  }, []);
+
+  return { workspaces, isReady };
 };
