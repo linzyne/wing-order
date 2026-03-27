@@ -82,16 +82,15 @@ const SortableCompanyRow: React.FC<{
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {} }) => {
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
 
-    // 새로고침 시 워크스테이션 데이터 초기화 (처리결과/워크플로/조정내역)
-    const [workstationsReady, setWorkstationsReady] = useState(false);
-    useEffect(() => {
-        if (!isReady || workstationsReady) return;
+    // 워크스테이션 수동 초기화 함수
+    const handleResetWorkstations = useCallback(() => {
+        if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
         Promise.all([
             updateField('sessionResults', {}),
             updateField('sessionWorkflows', {}),
             updateField('sessionAdjustments', {}),
-        ]).finally(() => setWorkstationsReady(true));
-    }, [isReady, updateField]);
+        ]);
+    }, [updateField]);
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
         const initial: Record<string, SessionData[]> = {};
@@ -2284,6 +2283,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         </div>
                     )}
                 </div>
+                <div className="flex justify-end mb-2">
+                    <button onClick={handleResetWorkstations} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-zinc-500 hover:text-rose-400 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-rose-500/30 rounded-lg transition-all" title="워크스테이션 초기화">
+                        <ArrowPathIcon className="w-3.5 h-3.5" />
+                        <span>워크스테이션 초기화</span>
+                    </button>
+                </div>
                 <div className="overflow-x-auto">
                     <DndContext
                         sensors={sensors}
@@ -2320,7 +2325,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             .slice(0, sIdx)
                                             .map(ps => ({ round: ps.round, summary: allItemSummaries[ps.id] || {} }))
                                             .filter(item => Object.keys(item.summary).length > 0);
-                                        return workstationsReady ? (
+                                        return isReady ? (
                                             <CompanyWorkstationRow
                                                 key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                 vendorFile={vendorFiles[company] || null} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
