@@ -111,6 +111,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allSummaries, setAllSummaries] = useState<Record<string, string>>({});
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
 
+    // 워크스테이션 수동 초기화 함수
+    const handleResetWorkstations = useCallback(() => {
+        if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
+        Promise.all([
+            updateField('sessionResults', {}),
+            updateField('sessionWorkflows', {}),
+            updateField('sessionAdjustments', {}),
+        ]);
+        setTotalsMap({});
+        setExcludedCountsMap({});
+        setAllExcludedDetails({});
+        setAllOrderRows({});
+        setAllInvoiceRows({});
+        setAllUploadInvoiceRows({});
+        setAllHeaders({});
+        setAllSummaries({});
+        setAllItemSummaries({});
+    }, [updateField]);
+
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [detectedCompanies, setDetectedCompanies] = useState<Set<string>>(new Set());
