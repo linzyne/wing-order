@@ -446,6 +446,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         onResultUpdate(sessionId, 0, 0, []);
     };
 
+    const resetSyncedData = () => {
+        const currentResults = { ...(workspace?.sessionResults || {}) };
+        delete currentResults[sessionId];
+        updateField('sessionResults', currentResults);
+        setUnmatchedList([]);
+        onResultUpdate(sessionId, 0, 0, []);
+        onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);
+    };
+
     const handleDownloadOrder = () => localResult && XLSX.writeFile(localResult.workbook, localResult.fileName);
     const handleDownloadInvoice = (type: 'mgmt' | 'upload') => {
         if (!mergeResults) return;
@@ -706,6 +715,33 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             </div>
                         ) : isLocalProcessing ? (
                             <div className="flex flex-col items-center gap-1 text-indigo-400 font-black animate-pulse"><div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /><span className="text-[9px] uppercase tracking-widest">Analysing...</span></div>
+                        ) : syncedData ? (
+                            <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
+                                <div className="flex items-center justify-center gap-4">
+                                    <div className="text-center">
+                                        <div className="text-rose-500 font-black text-xl">{syncedData.orderCount}</div>
+                                        <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                    </div>
+                                    <div className="h-6 w-px bg-zinc-800" />
+                                    <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
+                                </div>
+                                {unmatchedList.length > 0 && (
+                                    <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-amber-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 매칭 실패 {unmatchedList.length}건 누락
+                                        </div>
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
+                                    {(syncedData.excludedDetails?.length || 0) > 0 && (
+                                        <button onClick={() => setShowExcluded(!showExcluded)} className="text-rose-500 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                            제외({syncedData.excludedDetails.length})
+                                        </button>
+                                    )}
+                                    <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                </div>
+                            </div>
                         ) : (
                             <div className="flex flex-col items-center gap-2">
                                 {excludedList.length > 0 ? (
@@ -795,13 +831,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 </td>
             </tr>
 
-            {showExcluded && excludedList.length > 0 && (
+            {showExcluded && (excludedList.length > 0 || (syncedData?.excludedDetails?.length || 0) > 0) && (
                 <tr className="bg-rose-950/10 border-none animate-fade-in">
                     <td colSpan={3} className="px-6 py-4">
                         <div className="bg-zinc-900/80 p-4 rounded-xl border border-rose-900/30 shadow-xl">
                             <h5 className="text-rose-500 font-black text-[10px] uppercase tracking-widest mb-3">제외된 주문</h5>
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                {excludedList.map((f, idx) => (
+                                {(excludedList.length > 0 ? excludedList : syncedData?.excludedDetails || []).map((f: any, idx: number) => (
                                     <div key={idx} className="bg-zinc-950/80 p-2.5 rounded-lg border border-rose-900/20 flex flex-col gap-1">
                                         <div className="flex justify-between items-center">
                                             <span className="text-zinc-200 font-bold text-[12px]">{f.recipientName}</span>
@@ -816,7 +852,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 </tr>
             )}
 
-            {showSummary && localResult && (
+            {showSummary && (localResult || syncedData) && (
                 <tr className="bg-zinc-950/40 border-none animate-fade-in">
                     <td colSpan={3} className="px-6 py-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -824,8 +860,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 <div className="flex justify-between items-center mb-3">
                                     <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest">정산 요약</h5>
                                     <div className="flex gap-1.5">
-                                        <button onClick={() => handleCopy(sessionId, cumulativeDepositText || localResult.depositSummary, 'kakao')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-rose-400 border-zinc-700 hover:text-white'}`}>{copiedId === sessionId ? '복사됨!' : '카톡용'}</button>
-                                        <button onClick={() => handleCopy(sessionId, cumulativeDepositExcelText || localResult.depositSummaryExcel, 'excel')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedExcelId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-indigo-400 border-zinc-700 hover:text-white'}`}>{copiedExcelId === sessionId ? '복사됨!' : '엑셀용'}</button>
+                                        <button onClick={() => handleCopy(sessionId, cumulativeDepositText || localResult?.depositSummary || syncedData?.depositSummary || '', 'kakao')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-rose-400 border-zinc-700 hover:text-white'}`}>{copiedId === sessionId ? '복사됨!' : '카톡용'}</button>
+                                        <button onClick={() => handleCopy(sessionId, cumulativeDepositExcelText || localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel || '', 'excel')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedExcelId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-indigo-400 border-zinc-700 hover:text-white'}`}>{copiedExcelId === sessionId ? '복사됨!' : '엑셀용'}</button>
                                     </div>
                                 </div>
                                 <pre className="text-[12px] font-mono text-zinc-200 whitespace-pre-wrap leading-tight bg-zinc-950/50 p-4 rounded-lg border border-zinc-800/50 max-h-[300px] overflow-auto custom-scrollbar">
@@ -833,9 +869,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         const isCumulative = cumulativeDepositText !== null;
                                         const baseTotal = isCumulative
                                             ? (Object.values(combinedSummary) as { count: number; totalPrice: number }[]).reduce((a, b) => a + b.totalPrice, 0)
-                                            : (localResult ? Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0) : 0);
+                                            : (localResult ? Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0)
+                                               : (syncedData ? Object.values(syncedData.itemSummary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0) : 0));
                                         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
-                                        let text = isCumulative ? cumulativeDepositText : localResult.depositSummary;
+                                        let text = isCumulative ? cumulativeDepositText : (localResult?.depositSummary || syncedData?.depositSummary || '');
                                         if (sessionAdjustments.length > 0) {
                                             const adjRows = sessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
                                             text = text.replace('총 합계', `[추가/차감 내역]\n${adjRows}\n\n총 합계`)
@@ -848,11 +885,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </pre>
                             </div>
                             <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 shadow-xl">
-                                <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">원본 품목 검증 <span className="text-zinc-600">({(localResult.orderItems || []).length}건)</span></h5>
+                                <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">원본 품목 검증 <span className="text-zinc-600">({(localResult?.orderItems || syncedData?.orderItems || []).length}건)</span></h5>
                                 <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800/50 max-h-[300px] overflow-auto custom-scrollbar">
                                     {(() => {
-                                        const items = localResult.orderItems || [];
-                                        const summary = localResult.summary || {};
+                                        const items = localResult?.orderItems || syncedData?.orderItems || [];
+                                        const summary = localResult?.summary || syncedData?.itemSummary || {};
                                         const extractSizes = (s: string) => {
                                             const matches = s.match(/(\d+(?:\.\d+)?)\s*kg/gi) || [];
                                             return matches.map(m => m.replace(/\s/g, '').toLowerCase());
