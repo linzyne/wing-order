@@ -443,7 +443,16 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         setExcludedList([]);
         setUnmatchedList([]);
         resetMerge();
+        lastProcessedMasterRef.current = null;
+        lastProcessedBatchRef.current = null;
         onResultUpdate(sessionId, 0, 0, []);
+        onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);
+        // Firestore 세션 결과도 함께 제거 (복원됨 상태 방지)
+        const currentResults = { ...(workspace?.sessionResults || {}) };
+        if (currentResults[sessionId]) {
+            delete currentResults[sessionId];
+            updateField('sessionResults', currentResults);
+        }
     };
 
     const resetSyncedData = () => {
