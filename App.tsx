@@ -63,7 +63,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen p-2 font-sans text-zinc-100 transition-colors duration-300" style={{ backgroundColor: currentBusiness === '조에' ? '#4a0d2b' : '#09090b' }}>
+    <div className="min-h-screen p-2 font-sans text-zinc-100 transition-colors duration-300" style={{ backgroundColor: currentBusiness === '조에' ? '#140a10' : '#09090b' }}>
       <div className="flex gap-4 py-4 animate-fade-in">
         <div className="w-full max-w-5xl">
           <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-2 gap-4">
