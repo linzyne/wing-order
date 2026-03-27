@@ -107,9 +107,17 @@ export const usePlatformConfigs = (businessId?: string) => {
 export const useDailyWorkspace = (businessId?: string) => {
   const [workspace, setWorkspace] = useState<DailyWorkspaceData | null>(null);
   const [isReady, setIsReady] = useState(false);
+  // businessId를 ref로 추적하여 stale subscription 콜백 방지
+  const currentBusinessIdRef = useRef(businessId);
 
   useEffect(() => {
+    // businessId 변경 시 이전 데이터 즉시 클리어 (교차 오염 방지)
+    currentBusinessIdRef.current = businessId;
+    setWorkspace(null);
+    setIsReady(false);
     const unsubscribe = subscribeDailyWorkspace((data) => {
+      // businessId가 변경된 후 도착한 stale snapshot 무시
+      if (currentBusinessIdRef.current !== businessId) return;
       setWorkspace(data);
       setIsReady(true);
     }, businessId);

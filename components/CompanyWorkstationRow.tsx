@@ -245,7 +245,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (currentStr === lastFirestoreWorkflowRef.current) return;
         const currentWorkflows = workspace?.sessionWorkflows || {};
         updateField('sessionWorkflows', { ...currentWorkflows, [sessionId]: workflow });
-    }, [workflow, sessionId]);
+    }, [workflow, sessionId, updateField]);
 
     // sessionAdjustments 변경 → Firestore에 저장
     const isInitialAdjLoad = useRef(true);
@@ -255,7 +255,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (currentStr === lastFirestoreAdjRef.current) return;
         const currentAdjs = workspace?.sessionAdjustments || {};
         updateField('sessionAdjustments', { ...currentAdjs, [sessionId]: sessionAdjustments });
-    }, [sessionAdjustments, sessionId]);
+    }, [sessionAdjustments, sessionId, updateField]);
 
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);

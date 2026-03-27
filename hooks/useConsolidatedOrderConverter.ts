@@ -639,7 +639,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
             console.error(err);
             return null;
         }
-    }, [pricingConfig]);
+    }, [pricingConfig, businessId]);
 
     const reset = () => { setStatus('idle'); setError(null); setResults(null); setExcludedOrders([]); setFileName(''); };
     return { status, error, results, excludedOrders, processSingleCompanyFile, reset, fileName };

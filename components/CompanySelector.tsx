@@ -91,7 +91,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             updateField('sessionWorkflows', {}),
             updateField('sessionAdjustments', {}),
         ]).finally(() => setWorkstationsReady(true));
-    }, [isReady]);
+    }, [isReady, updateField]);
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
         const initial: Record<string, SessionData[]> = {};
@@ -317,7 +317,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 .catch(e => { savingFieldsUntil.current['fakeOrderInput'] = 0; console.error('[Firestore] fakeOrderInput 저장 실패:', e); });
         }, 300);
         return () => { if (fakeOrderDebounceRef.current) clearTimeout(fakeOrderDebounceRef.current); };
-    }, [fakeOrderInput]);
+    }, [fakeOrderInput, updateField]);
 
     // manualTransfers 변경 → Firestore에 저장
     useEffect(() => {
@@ -329,7 +329,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         updateField('manualTransfers', manualTransfers)
             .then(() => { setTimeout(() => { savingFieldsUntil.current['manualTransfers'] = 0; }, 1500); })
             .catch(e => { savingFieldsUntil.current['manualTransfers'] = 0; console.error('[Firestore] manualTransfers 저장 실패:', e); });
-    }, [manualTransfers]);
+    }, [manualTransfers, updateField]);
 
     // expenses 변경 → Firestore에 저장
     useEffect(() => {
@@ -341,7 +341,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         updateField('expenses', expenses)
             .then(() => { setTimeout(() => { savingFieldsUntil.current['expenses'] = 0; }, 1500); })
             .catch(e => { savingFieldsUntil.current['expenses'] = 0; console.error('[Firestore] expenses 저장 실패:', e); });
-    }, [expenses]);
+    }, [expenses, updateField]);
 
     // 가구매 명단 분석 (입력된 번호 vs 실제 발견된 번호)
     const fakeOrderAnalysis = useMemo(() => {
