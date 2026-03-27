@@ -63,7 +63,7 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className={`${currentBusiness === '조에' ? 'bg-pink-950' : 'bg-zinc-950'} min-h-screen p-2 font-sans text-zinc-100 transition-colors duration-300`}>
+    <div className="min-h-screen p-2 font-sans text-zinc-100 transition-colors duration-300" style={{ backgroundColor: currentBusiness === '조에' ? '#4a0d2b' : '#09090b' }}>
       <div className="flex gap-4 py-4 animate-fade-in">
         <div className="w-full max-w-5xl">
           <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-2 gap-4">
@@ -84,11 +84,10 @@ const App: React.FC = () => {
                   onClick={() => handleBusinessChange(b.id)}
                   className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
                     currentBusiness === b.id
-                      ? b.id === '조에'
-                        ? 'bg-pink-400 text-white shadow-lg'
-                        : 'bg-rose-500 text-white shadow-lg'
+                      ? 'text-white shadow-lg'
                       : 'text-zinc-500 hover:text-white'
                   }`}
+                  style={currentBusiness === b.id ? { backgroundColor: b.id === '조에' ? '#f472b6' : '#f43f5e' } : {}}
                 >
                   {b.label}
                 </button>

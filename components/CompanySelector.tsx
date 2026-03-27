@@ -82,16 +82,6 @@ const SortableCompanyRow: React.FC<{
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {} }) => {
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
 
-    // 워크스테이션 수동 초기화 함수
-    const handleResetWorkstations = useCallback(() => {
-        if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
-        Promise.all([
-            updateField('sessionResults', {}),
-            updateField('sessionWorkflows', {}),
-            updateField('sessionAdjustments', {}),
-        ]);
-    }, [updateField]);
-
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
         const initial: Record<string, SessionData[]> = {};
         Object.keys(pricingConfig).forEach(name => {
