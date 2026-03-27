@@ -63,7 +63,11 @@ const SortableTodoItem: React.FC<{
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-start gap-2 p-2 bg-zinc-800 rounded-lg hover:bg-zinc-750 transition-colors group"
+      className={`flex items-start gap-2 p-2 rounded-lg transition-all duration-300 group ${
+        todo.completed
+          ? 'bg-emerald-900/20 border border-emerald-800/30'
+          : 'bg-zinc-800 hover:bg-zinc-750'
+      }`}
     >
       {/* 드래그 핸들 */}
       <button
@@ -86,7 +90,11 @@ const SortableTodoItem: React.FC<{
         type="checkbox"
         checked={todo.completed}
         onChange={() => onToggle(todo.id)}
-        className="mt-0.5 w-4 h-4 rounded border-zinc-600 text-rose-500 focus:ring-rose-500 focus:ring-offset-0 cursor-pointer"
+        className={`mt-0.5 w-4 h-4 rounded border-zinc-600 focus:ring-offset-0 cursor-pointer ${
+          todo.completed
+            ? 'text-emerald-500 focus:ring-emerald-500'
+            : 'text-rose-500 focus:ring-rose-500'
+        }`}
       />
 
       {editingId === todo.id ? (
@@ -102,14 +110,14 @@ const SortableTodoItem: React.FC<{
       ) : (
         <span
           onDoubleClick={() => onStartEdit(todo.id, todo.text)}
-          className={`flex-1 text-sm break-words cursor-text ${
+          className={`flex-1 text-sm break-words cursor-text transition-colors duration-300 ${
             todo.completed
-              ? 'line-through text-zinc-500'
+              ? 'text-emerald-400 font-semibold'
               : 'text-zinc-200'
           }`}
           title="더블클릭하여 수정"
         >
-          {todo.text}
+          {todo.completed && '✓ '}{todo.text}
         </span>
       )}
 
@@ -156,7 +164,10 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
     const updatedTodos = todos.map(todo =>
       todo.id === id ? { ...todo, completed: !todo.completed } : todo
     );
-    saveTodos(updatedTodos);
+    // 완료된 항목은 아래로, 미완료 항목은 위로 (각 그룹 내 순서는 유지)
+    const incomplete = updatedTodos.filter(t => !t.completed);
+    const completed = updatedTodos.filter(t => t.completed);
+    saveTodos([...incomplete, ...completed]);
   };
 
   const deleteTodo = (id: string) => {
@@ -265,8 +276,10 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
 
         {/* 통계 */}
         {todos.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-zinc-800 text-xs text-zinc-500 font-bold">
-            완료: {todos.filter(t => t.completed).length} / 전체: {todos.length}
+          <div className="mt-4 pt-4 border-t border-zinc-800 text-xs font-bold flex items-center gap-1">
+            <span className="text-emerald-400">✓ {todos.filter(t => t.completed).length}</span>
+            <span className="text-zinc-600">/</span>
+            <span className="text-zinc-500">{todos.length}</span>
           </div>
         )}
       </div>

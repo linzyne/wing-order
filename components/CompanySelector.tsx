@@ -85,11 +85,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 워크스테이션 수동 초기화 함수
     const handleResetWorkstations = useCallback(() => {
         if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
+        // Firestore 초기화
         Promise.all([
             updateField('sessionResults', {}),
             updateField('sessionWorkflows', {}),
             updateField('sessionAdjustments', {}),
         ]);
+        // 로컬 상태 초기화
+        setTotalsMap({});
+        setExcludedCountsMap({});
+        setAllExcludedDetails({});
+        setAllOrderRows({});
+        setAllInvoiceRows({});
+        setAllUploadInvoiceRows({});
+        setAllHeaders({});
+        setAllSummaries({});
+        setAllItemSummaries({});
     }, [updateField]);
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
