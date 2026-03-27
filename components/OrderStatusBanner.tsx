@@ -16,21 +16,22 @@ function getBusinessStatus(workspace: DailyWorkspaceData | null) {
 
   const results = workspace.sessionResults || {};
   const workflows = workspace.sessionWorkflows || {};
-  const sessionIds = new Set([...Object.keys(results), ...Object.keys(workflows)]);
+  // 워크플로우 기준으로만 세션 카운트 (실제 화면에 보이는 업체만)
+  const workflowIds = Object.keys(workflows);
 
   let orderCount = 0;
   let completedOrders = 0;
 
-  for (const sid of sessionIds) {
+  for (const sid of workflowIds) {
     if (results[sid]?.orderCount) orderCount += results[sid].orderCount;
     if (workflows[sid]?.order) completedOrders++;
   }
 
   return {
     orderCount,
-    totalSessions: sessionIds.size,
+    totalSessions: workflowIds.length,
     completedOrders,
-    hasActivity: sessionIds.size > 0,
+    hasActivity: workflowIds.length > 0,
   };
 }
 
@@ -42,15 +43,12 @@ const OrderStatusBanner: React.FC<OrderStatusBannerProps> = ({ workspaces, isRea
     '조에': getBusinessStatus(workspaces['조에']),
   };
 
-  // 아무 사업자도 활동이 없으면 배너 숨김
   const anyActivity = statuses['안군농원'].hasActivity || statuses['조에'].hasActivity;
   if (!anyActivity) return null;
 
-  // 상태 판단: 미처리(활동없음) / 발주미완료(빨간) / 발주완료(초록)
   const getLevel = (bid: BusinessId): 'none' | 'incomplete' | 'complete' => {
     const s = statuses[bid];
     if (!s.hasActivity) return 'none';
-    // 모든 세션의 발주 체크가 완료되었는지
     if (s.completedOrders >= s.totalSessions) return 'complete';
     return 'incomplete';
   };
@@ -62,30 +60,28 @@ const OrderStatusBanner: React.FC<OrderStatusBannerProps> = ({ workspaces, isRea
         const level = getLevel(bid);
         const isCurrent = currentBusiness === bid;
         const displayName = BUSINESS_INFO[bid].displayName;
-        // 한쪽만 활동 없을 때 경고
         const noActivity = level === 'none' && anyActivity;
 
         const colorClass = noActivity
-          ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 animate-pulse'
+          ? 'bg-amber-500/15 border-2 border-amber-500/60 text-amber-400 animate-pulse'
           : level === 'incomplete'
-            ? 'bg-red-500/20 border-red-500/50 text-red-400'
+            ? 'bg-red-500/25 border-2 border-red-500 text-red-300 animate-pulse shadow-lg shadow-red-500/20'
             : level === 'complete'
-              ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-              : 'bg-zinc-900 border-zinc-800 text-zinc-500';
+              ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+              : 'bg-zinc-900 border border-zinc-800 text-zinc-500';
 
         return (
           <button
             key={bid}
             onClick={() => !isCurrent && onSwitchBusiness(bid)}
-            className={`flex-1 flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all border ${colorClass} ${!isCurrent ? 'cursor-pointer hover:brightness-125' : 'cursor-default'}`}
+            className={`flex-1 flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-black transition-all ${colorClass} ${!isCurrent ? 'cursor-pointer hover:brightness-125' : 'cursor-default'}`}
           >
-            {/* 상태 아이콘 */}
             {noActivity ? (
               <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
               </svg>
             ) : level === 'incomplete' ? (
-              <svg className="w-4 h-4 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+              <svg className="w-5 h-5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
               </svg>
             ) : level === 'complete' ? (
@@ -96,7 +92,7 @@ const OrderStatusBanner: React.FC<OrderStatusBannerProps> = ({ workspaces, isRea
               <span className="w-2 h-2 rounded-full shrink-0 bg-zinc-600" />
             )}
             <span>{displayName}</span>
-            <span className="text-[10px] font-bold opacity-70">
+            <span className="text-[10px] font-bold opacity-80">
               {noActivity
                 ? '미처리'
                 : s.hasActivity
