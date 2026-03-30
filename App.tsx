@@ -36,9 +36,21 @@ const App: React.FC = () => {
     setCurrentBusiness(newBusiness);
   };
 
-  const { config: pricingConfig, saveConfig, isLoading, configSource } = usePricingConfig(currentBusiness);
-  const { platformConfigs, savePlatformConfig } = usePlatformConfigs(currentBusiness);
+  // 양쪽 사업자 설정을 동시에 로드 (사업자 전환 시 컴포넌트 파괴 방지)
+  const pricing안군 = usePricingConfig('안군농원');
+  const pricing조에 = usePricingConfig('조에');
+  const platform안군 = usePlatformConfigs('안군농원');
+  const platform조에 = usePlatformConfigs('조에');
   const { workspaces, isReady: workspacesReady } = useAllBusinessWorkspaces();
+
+  const configMap: Record<BusinessId, { pricing: typeof pricing안군; platform: typeof platform안군 }> = {
+    '안군농원': { pricing: pricing안군, platform: platform안군 },
+    '조에': { pricing: pricing조에, platform: platform조에 },
+  };
+  const activePricing = configMap[currentBusiness].pricing;
+  const activePlatform = configMap[currentBusiness].platform;
+  const { config: pricingConfig, saveConfig, isLoading, configSource } = activePricing;
+  const { platformConfigs, savePlatformConfig } = activePlatform;
 
   const handleConfigChange = (newConfig: typeof pricingConfig) => {
     saveConfig(newConfig);
@@ -146,10 +158,18 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <main className="w-full" key={currentBusiness}>
-          <div style={{ display: activeTab === 'converter' ? undefined : 'none' }}>
-            <CompanySelector pricingConfig={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} platformConfigs={platformConfigs} />
-          </div>
+        <main className="w-full">
+          {/* CompanySelector: 사업자별 인스턴스 유지 (전환 시 파괴되지 않음) */}
+          {BUSINESS_OPTIONS.map(b => (
+            <div key={b.id} style={{ display: (activeTab === 'converter' && currentBusiness === b.id) ? undefined : 'none' }}>
+              <CompanySelector
+                pricingConfig={configMap[b.id].pricing.config}
+                onConfigChange={(newConfig) => configMap[b.id].pricing.saveConfig(newConfig)}
+                businessId={b.id}
+                platformConfigs={configMap[b.id].platform.platformConfigs}
+              />
+            </div>
+          ))}
           <div style={{ display: activeTab === 'pricing' ? undefined : 'none' }}>
             <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} platformConfigs={platformConfigs} onPlatformConfigsChange={savePlatformConfig} />
           </div>
