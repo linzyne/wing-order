@@ -83,6 +83,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const businessPrefix = businessId ? (BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || businessId) : '';
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
 
+    // 새로고침 시 워크스테이션 데이터 초기화 (마운트 = 새로고침에서만 발생, 사업자 전환 시에는 display:none으로 유지)
+    const [workstationsReady, setWorkstationsReady] = useState(false);
+    useEffect(() => {
+        if (!isReady || workstationsReady) return;
+        Promise.all([
+            updateField('sessionResults', {}),
+            updateField('sessionWorkflows', {}),
+            updateField('sessionAdjustments', {}),
+        ]).finally(() => setWorkstationsReady(true));
+    }, [isReady, updateField]);
+
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
         const initial: Record<string, SessionData[]> = {};
         Object.keys(pricingConfig).forEach(name => {
@@ -2335,7 +2346,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             .slice(0, sIdx)
                                             .map(ps => ({ round: ps.round, summary: allItemSummaries[ps.id] || {} }))
                                             .filter(item => Object.keys(item.summary).length > 0);
-                                        return isReady ? (
+                                        return workstationsReady ? (
                                             <CompanyWorkstationRow
                                                 key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                 vendorFile={vendorFiles[company] || null} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
