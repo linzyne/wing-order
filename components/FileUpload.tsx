@@ -3,11 +3,12 @@ import React from 'react';
 import { UploadIcon } from './icons';
 
 interface FileUploadProps {
+  id?: string;
   onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onDrop: (event: React.DragEvent<HTMLLabelElement>) => void;
 }
 
-const FileUpload: React.FC<FileUploadProps> = ({ onChange, onDrop }) => {
+const FileUpload: React.FC<FileUploadProps> = ({ id = 'file-upload', onChange, onDrop }) => {
   const handleDragOver = (event: React.DragEvent<HTMLLabelElement>) => {
     event.preventDefault();
     event.stopPropagation();
@@ -16,7 +17,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onChange, onDrop }) => {
   return (
     <div className="w-full">
       <label
-        htmlFor="file-upload"
+        htmlFor={id}
         className="relative block w-full rounded-[1.5rem] border-2 border-dashed border-zinc-800 p-4 text-center hover:border-rose-500/50 hover:bg-rose-950/10 transition-all duration-300 cursor-pointer bg-zinc-900/40 shadow-lg backdrop-blur-sm"
         onDrop={onDrop}
         onDragOver={handleDragOver}
@@ -35,8 +36,8 @@ const FileUpload: React.FC<FileUploadProps> = ({ onChange, onDrop }) => {
           </div>
         </div>
         <input
-          id="file-upload"
-          name="file-upload"
+          id={id}
+          name={id}
           type="file"
           className="sr-only"
           accept=".xlsx, .xls, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"

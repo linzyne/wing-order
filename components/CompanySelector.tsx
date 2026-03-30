@@ -1598,6 +1598,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     <div className="flex flex-col lg:flex-row gap-6">
                         <div className="lg:w-[320px] shrink-0 flex flex-col gap-4">
                                 <FileUpload
+                                    id={`file-upload-${businessId}`}
                                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }}
                                     onDrop={(e) => { const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
                                 />
