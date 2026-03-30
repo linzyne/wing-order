@@ -80,6 +80,7 @@ const SortableCompanyRow: React.FC<{
 };
 
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {} }) => {
+    const businessPrefix = businessId ? (BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || businessId) : '';
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
@@ -804,7 +805,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const ws = XLSX.utils.aoa_to_sheet(lotteMatchedRows);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '주문서');
-        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_가구매_운송장입력완료.xlsx`);
+        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_운송장입력완료.xlsx`);
     };
 
     const handleAgentFileUpload = async (file: File) => {
@@ -876,7 +877,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const ws = XLSX.utils.aoa_to_sheet(agentMatchedRows);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '주문서');
-        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_가구매_택배대행_운송장완료.xlsx`);
+        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_택배대행_운송장완료.xlsx`);
     };
 
     const handleDeliveryAgentDownload = async () => {
@@ -940,7 +941,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const ws = XLSX.utils.aoa_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_택배대행.xlsx`);
+            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_택배대행.xlsx`);
 
             if (notFoundOrders.length > 0) {
                 alert(`택배대행 ${matchedCount}건 다운로드 완료!\n\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
@@ -1011,7 +1012,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const ws = XLSX.utils.aoa_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_롯데택배.xlsx`);
+            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_롯데택배.xlsx`);
 
             if (notFoundOrders.length > 0) {
                 alert(`롯데택배 ${matchedCount}건 다운로드 완료!\n\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
@@ -1166,7 +1167,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toISOString().slice(0, 10);
-        XLSX.writeFile(wb, `${dateStr} ${companyName} 합산발주서.xlsx`);
+        XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산발주서.xlsx`);
     };
 
     const handleDownloadMergedInvoice = (companyName: string, type: 'mgmt' | 'upload') => {
@@ -1187,7 +1188,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, type === 'mgmt' ? '기록용' : '업로드용');
         const dateStr = new Date().toISOString().slice(0, 10);
         const label = type === 'mgmt' ? '기록용' : '업로드용';
-        XLSX.writeFile(wb, `${dateStr} ${companyName} 합산송장_${label}.xlsx`);
+        XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산송장_${label}.xlsx`);
     };
 
     const handleDownloadMergedUploadInvoices = () => {
@@ -1219,7 +1220,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, "병합송장");
         const dateStr = new Date().toISOString().slice(0, 10);
         const companiesStr = selectedCompanyNames.length > 3 ? `${selectedCompanyNames.slice(0, 3).join(', ')} 외 ${selectedCompanyNames.length - 3}곳` : selectedCompanyNames.join(', ');
-        XLSX.writeFile(wb, `${dateStr} [${companiesStr}] 업로드용_송장_병합.xlsx`);
+        XLSX.writeFile(wb, `${dateStr} [${businessPrefix ? businessPrefix + ' ' : ''}${companiesStr}] 업로드용_송장_병합.xlsx`);
     };
 
     const handleDownloadDepositList = () => {
@@ -1247,7 +1248,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (depositRows.length === 0) { alert('선택된 업체 중 입금할 내역이 없습니다.'); return; }
         depositRows.push([], ['', '합계', total]);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(depositRows), "입금내역");
-        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_입금목록.xlsx`);
+        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_입금목록.xlsx`);
     };
 
     const handleDownloadWorkLog = () => {
@@ -1365,7 +1366,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
 
         const todayDate = new Date().toISOString().slice(0, 10);
-        XLSX.writeFile(wb, `${todayDate}_업무일지.xlsx`);
+        XLSX.writeFile(wb, `${todayDate}_${businessPrefix}_업무일지.xlsx`);
     };
 
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');

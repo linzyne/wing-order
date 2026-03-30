@@ -439,7 +439,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const handleRunMerge = () => {
         const activeFile = localFile || (isFirstSession ? masterFile : null);
         if (activeFile && vendorFile) {
-            processFiles(vendorFile, activeFile, companyName, false, pricingConfig, orderPlatformMap, platformConfigs);
+            processFiles(vendorFile, activeFile, companyName, false, pricingConfig, orderPlatformMap, platformConfigs, businessId);
         }
     };
 

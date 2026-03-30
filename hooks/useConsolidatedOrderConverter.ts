@@ -382,7 +382,8 @@ const generateWorkbookForCompany = async (
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
 
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems }];
+        const bizShort = BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || '';
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

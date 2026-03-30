@@ -3,6 +3,7 @@ import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracke
 import { usePricingConfig } from '../hooks/useFirestore';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
 import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig } from '../types';
+import { BUSINESS_INFO } from '../types';
 
 declare var XLSX: any;
 
@@ -10,6 +11,7 @@ type ViewMode = 'settlement' | 'byDate' | 'byProduct' | 'byCompany' | 'orders' |
 type DateMode = 'month' | 'range';
 
 const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ isActive, businessId }) => {
+  const businessPrefix = businessId ? (BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || businessId) : '';
   const { salesHistory, refresh, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
 
@@ -313,7 +315,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(marginRows), '마진');
 
     const label = dateMode === 'range' ? `${rangeStart}~${rangeEnd}` : selectedYearMonth;
-    XLSX.writeFile(wb, `${label}_매출현황.xlsx`);
+    XLSX.writeFile(wb, `${label}_${businessPrefix}_매출현황.xlsx`);
   };
 
   const formatDate = (dateStr: string) => {

@@ -1,6 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import type { ProcessingStatus, PricingConfig, PlatformConfigs } from '../types';
+import { BUSINESS_INFO } from '../types';
 import { getKeywordsForCompany } from './useConsolidatedOrderConverter';
 
 declare var XLSX: any;
@@ -109,9 +110,10 @@ export const useInvoiceMerger = () => {
         return invoiceMap;
     };
 
-    const processFiles = useCallback(async (vendorFile: File, orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig, orderPlatformMap?: Map<string, string>, platformConfigs?: PlatformConfigs) => {
+    const processFiles = useCallback(async (vendorFile: File, orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig, orderPlatformMap?: Map<string, string>, platformConfigs?: PlatformConfigs, businessId?: string) => {
         try {
             setStatus('processing'); setError(null);
+            const bizShort = BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || '';
             const orderWb = XLSX.read(await orderFile.arrayBuffer(), { type: 'array' });
             const orderAoa: any[][] = XLSX.utils.sheet_to_json(orderWb.Sheets[orderWb.SheetNames[0]], { header: 1 });
             let headerIdx = 0;
@@ -269,7 +271,7 @@ export const useInvoiceMerger = () => {
                 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([pHeader, ...rows]), '업로드용');
                 platformUploadWorkbooks[platform] = {
                     workbook: wb,
-                    fileName: `${dateStr} [${companyName}] ${platform}_업로드용_송장.xlsx`,
+                    fileName: `${dateStr} [${bizShort ? bizShort + ' ' : ''}${companyName}] ${platform}_업로드용_송장.xlsx`,
                     count: rows.length
                 };
             }
@@ -279,8 +281,8 @@ export const useInvoiceMerger = () => {
             setResults({
                 mgmtWorkbook: mgmtWb,
                 uploadWorkbook: uploadWb,
-                mgmtFileName: `${dateStr} [${companyName}] 기록용_송장.xlsx`,
-                uploadFileName: `${dateStr} [${companyName}] 업로드용_송장.xlsx`,
+                mgmtFileName: `${dateStr} [${bizShort ? bizShort + ' ' : ''}${companyName}] 기록용_송장.xlsx`,
+                uploadFileName: `${dateStr} [${bizShort ? bizShort + ' ' : ''}${companyName}] 업로드용_송장.xlsx`,
                 companyStats: { [companyName]: { mgmt: mgmtCount, upload: uploadCount, failures } },
                 header: invoiceHeader,
                 rows: mgmtRows.slice(1),

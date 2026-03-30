@@ -3,18 +3,21 @@ export type BusinessId = '안군농원' | '조에';
 
 export const BUSINESS_INFO: Record<BusinessId, {
   displayName: string;
+  shortName: string;
   senderName: string;
   phone: string;
   address: string;
 }> = {
   '안군농원': {
     displayName: '안군농원',
+    shortName: '안군',
     senderName: '안군농원',
     phone: '01042626343',
     address: '제주도',
   },
   '조에': {
     displayName: '조에농원',
+    shortName: '조에',
     senderName: '조에농원',
     phone: '010944963434',
     address: '',
