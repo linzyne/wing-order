@@ -24,8 +24,8 @@ const getManualOrdersDocId = (businessId?: string): string =>
 const getCompanyOrderDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'companyOrder' : `companyOrder_${businessId}`;
 
-const getPlatformConfigsDocId = (businessId?: string): string =>
-  (!businessId || businessId === '안군농원') ? 'platformConfigs' : `platformConfigs_${businessId}`;
+// 플랫폼 감지 설정(헤더 매칭 등)은 사업자 공통이므로 항상 같은 문서 사용
+const getPlatformConfigsDocId = (_businessId?: string): string => 'platformConfigs';
 
 const getTodosDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'todos' : `todos_${businessId}`;
