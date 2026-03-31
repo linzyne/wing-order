@@ -195,9 +195,13 @@ export interface DailySales {
 }
 
 // ===== Todo List =====
+export const DAYS_OF_WEEK = ['월', '화', '수', '목', '금', '토', '일'] as const;
+export type DayOfWeek = typeof DAYS_OF_WEEK[number];
+
 export interface TodoItem {
   id: string;
   text: string;
   completed: boolean;
   createdAt: number;
+  day?: DayOfWeek;
 }

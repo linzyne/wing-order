@@ -18,7 +18,8 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { PlusIcon, TrashIcon } from './icons';
 import { useTodos } from '../hooks/useFirestore';
-import type { TodoItem, BusinessId } from '../types';
+import type { TodoItem, BusinessId, DayOfWeek } from '../types';
+import { DAYS_OF_WEEK } from '../types';
 
 interface TodoListProps {
   businessId: BusinessId;
@@ -35,7 +36,8 @@ const SortableTodoItem: React.FC<{
   onStartEdit: (id: string, text: string) => void;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
-}> = ({ todo, editingId, editingText, setEditingText, onToggle, onDelete, onStartEdit, onSaveEdit, onCancelEdit }) => {
+  onDayChange: (id: string, day: DayOfWeek | undefined) => void;
+}> = ({ todo, editingId, editingText, setEditingText, onToggle, onDelete, onStartEdit, onSaveEdit, onCancelEdit, onDayChange }) => {
   const {
     attributes,
     listeners,
@@ -121,6 +123,21 @@ const SortableTodoItem: React.FC<{
         </span>
       )}
 
+      <select
+        value={todo.day || ''}
+        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onDayChange(todo.id, (e.target.value || undefined) as DayOfWeek | undefined)}
+        className={`w-10 px-0 py-0.5 text-center text-xs rounded border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none ${
+          todo.day
+            ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+            : 'bg-zinc-800 border-zinc-700 text-zinc-500'
+        }`}
+      >
+        <option value="">-</option>
+        {DAYS_OF_WEEK.map(day => (
+          <option key={day} value={day}>{day}</option>
+        ))}
+      </select>
+
       <button
         onClick={() => onDelete(todo.id)}
         className="opacity-0 group-hover:opacity-100 p-1 hover:bg-zinc-700 rounded transition-all"
@@ -136,6 +153,7 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
   const [newTodoText, setNewTodoText] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
+  const [newTodoDay, setNewTodoDay] = useState<DayOfWeek | undefined>(undefined);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -154,10 +172,12 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
       text: newTodoText.trim(),
       completed: false,
       createdAt: Date.now(),
+      day: newTodoDay,
     };
 
     saveTodos([...todos, newTodo]);
     setNewTodoText('');
+    setNewTodoDay(undefined);
   };
 
   const toggleTodo = (id: string) => {
@@ -198,6 +218,13 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
     setEditingText('');
   };
 
+  const changeTodoDay = (id: string, day: DayOfWeek | undefined) => {
+    const updatedTodos = todos.map(todo =>
+      todo.id === id ? { ...todo, day } : todo
+    );
+    saveTodos(updatedTodos);
+  };
+
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       addTodo();
@@ -232,6 +259,20 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
             placeholder="할일 추가..."
             className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm placeholder-zinc-500 focus:outline-none focus:border-rose-500 transition-colors"
           />
+          <select
+            value={newTodoDay || ''}
+            onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewTodoDay((e.target.value || undefined) as DayOfWeek | undefined)}
+            className={`w-14 px-1 py-2 text-center text-sm rounded-lg border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none ${
+              newTodoDay
+                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                : 'bg-zinc-800 border-zinc-700 text-zinc-500'
+            }`}
+          >
+            <option value="">요일</option>
+            {DAYS_OF_WEEK.map(day => (
+              <option key={day} value={day}>{day}</option>
+            ))}
+          </select>
           <button
             onClick={addTodo}
             disabled={!newTodoText.trim()}
@@ -267,6 +308,7 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
                     onStartEdit={startEdit}
                     onSaveEdit={saveEdit}
                     onCancelEdit={cancelEdit}
+                    onDayChange={changeTodoDay}
                   />
                 ))}
               </SortableContext>
