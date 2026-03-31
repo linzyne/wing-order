@@ -5,7 +5,7 @@ import {
   onSnapshot, Timestamp,
   type Unsubscribe
 } from 'firebase/firestore';
-import type { PricingConfig, DailySales, PlatformConfigs, TodoItem } from '../types';
+import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo } from '../types';
 
 // ===== 사업자별 Firestore 경로 헬퍼 =====
 // 안군농원(또는 미지정)이면 기존 경로 그대로, 그 외 사업자는 접미사 추가
@@ -252,6 +252,39 @@ export const saveTodos = async (
   const docRef = doc(db, 'config', getTodosDocId(businessId));
   await setDoc(docRef, {
     todos,
+    updatedAt: Timestamp.now(),
+  });
+};
+
+// ===== Dynamic Businesses (동적 사업자 관리) =====
+
+export interface DynamicBusinessEntry extends BusinessInfo {
+  id: string;
+  createdAt: any; // Timestamp
+}
+
+export const subscribeDynamicBusinesses = (
+  callback: (businesses: DynamicBusinessEntry[]) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', 'dynamicBusinesses');
+  return onSnapshot(docRef, (snapshot) => {
+    if (snapshot.exists()) {
+      callback((snapshot.data().businesses || []) as DynamicBusinessEntry[]);
+    } else {
+      callback([]);
+    }
+  }, (error) => {
+    console.error('[Firestore] DynamicBusinesses 구독 오류:', error);
+    callback([]);
+  });
+};
+
+export const saveDynamicBusinesses = async (
+  businesses: DynamicBusinessEntry[]
+): Promise<void> => {
+  const docRef = doc(db, 'config', 'dynamicBusinesses');
+  await setDoc(docRef, {
+    businesses,
     updatedAt: Timestamp.now(),
   });
 };

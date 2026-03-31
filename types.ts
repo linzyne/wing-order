@@ -1,13 +1,18 @@
 
-export type BusinessId = '안군농원' | '조에';
+export type HardcodedBusinessId = '안군농원' | '조에';
+export type BusinessId = HardcodedBusinessId | (string & {});
 
-export const BUSINESS_INFO: Record<BusinessId, {
+export interface BusinessInfo {
   displayName: string;
   shortName: string;
   senderName: string;
   phone: string;
   address: string;
-}> = {
+  themeColor?: string;
+  buttonColor?: string;
+}
+
+export const BUSINESS_INFO: Record<HardcodedBusinessId, BusinessInfo> = {
   '안군농원': {
     displayName: '안군농원',
     shortName: '안군',
@@ -23,6 +28,23 @@ export const BUSINESS_INFO: Record<BusinessId, {
     address: '',
   },
 };
+
+// ===== 동적 사업자 런타임 레지스트리 =====
+// useBusinessList hook이 Firestore에서 로드한 동적 사업자를 여기에 등록
+const _dynamicBusinessRegistry: Record<string, BusinessInfo> = {};
+
+export function registerDynamicBusiness(id: string, info: BusinessInfo): void {
+  _dynamicBusinessRegistry[id] = info;
+}
+
+export function unregisterDynamicBusiness(id: string): void {
+  delete _dynamicBusinessRegistry[id];
+}
+
+/** 하드코딩 + 동적 사업자 통합 조회. 못 찾으면 undefined */
+export function getBusinessInfo(id: string): BusinessInfo | undefined {
+  return (BUSINESS_INFO as Record<string, BusinessInfo>)[id] || _dynamicBusinessRegistry[id];
+}
 
 export interface ProductPricing {
   supplyPrice: number;

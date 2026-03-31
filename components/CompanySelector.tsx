@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig } from '../types';
-import { BUSINESS_INFO } from '../types';
+import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace } from '../hooks/useFirestore';
@@ -80,7 +80,7 @@ const SortableCompanyRow: React.FC<{
 };
 
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {} }) => {
-    const businessPrefix = businessId ? (BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || businessId) : '';
+    const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
 
     // 새로고침 시 워크스테이션 데이터 초기화 (마운트 = 새로고침에서만 발생, 사업자 전환 시에는 display:none으로 유지)
@@ -1068,7 +1068,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
                 rows.push([
                     originalOrderNum,               // 주문번호
-                    BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원',                       // 보내는사람(지정)
+                    getBusinessInfo(businessId ?? '')?.senderName || '안군농원',                       // 보내는사람(지정)
                     '01050447749',                   // 전화번호1(지정)
                     '',                              // (빈 열)
                     '',                              // 우편번호(지정)

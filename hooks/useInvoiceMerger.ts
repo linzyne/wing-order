@@ -1,7 +1,7 @@
 
 import { useState, useCallback } from 'react';
 import type { ProcessingStatus, PricingConfig, PlatformConfigs } from '../types';
-import { BUSINESS_INFO } from '../types';
+import { getBusinessInfo } from '../types';
 import { getKeywordsForCompany } from './useConsolidatedOrderConverter';
 
 declare var XLSX: any;
@@ -95,9 +95,27 @@ export const useInvoiceMerger = () => {
             vOrderIdx = findColIdx(vHeaders, ['주문번호', '관리번호', 'ID']);
             vInvIdx = findColIdx(vHeaders, ['송장', '운송장', '등기']);
             if (vOrderIdx === -1) vOrderIdx = 0;
+
+            // 헤더에서 송장번호 컬럼을 못 찾으면 데이터에서 자동 감지 (10자리 이상 숫자)
+            if (vInvIdx === -1) {
+                for (let ri = vHeaderIdx + 1; ri < Math.min(vendorAoa.length, vHeaderIdx + 5); ri++) {
+                    const dataRow = vendorAoa[ri];
+                    if (!dataRow) continue;
+                    for (let ci = 0; ci < dataRow.length; ci++) {
+                        if (ci === vOrderIdx) continue;
+                        const cellVal = String(dataRow[ci] || '').replace(/\s/g, '');
+                        if (/^\d{10,}$/.test(cellVal)) { vInvIdx = ci; break; }
+                    }
+                    if (vInvIdx !== -1) break;
+                }
+            }
         }
 
         const invoiceMap = new Map<string, string[]>();
+        console.log(`[송장디버그] 업체: ${companyName}, vOrderIdx: ${vOrderIdx}, vInvIdx: ${vInvIdx}`);
+        console.log(`[송장디버그] 송장파일 헤더(첫 행):`, vendorAoa[0]);
+        console.log(`[송장디버그] 송장파일 총 행수: ${vendorAoa.length}`);
+        if (vendorAoa.length > 1) console.log(`[송장디버그] 송장파일 데이터 샘플(2행):`, vendorAoa[1]);
         for (const row of vendorAoa) {
             if (!row || row.length <= Math.max(vOrderIdx, vInvIdx)) continue;
             const key = normalizeOrderNum(row[vOrderIdx]);
@@ -107,19 +125,27 @@ export const useInvoiceMerger = () => {
                 if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
             }
         }
+        console.log(`[송장디버그] invoiceMap 크기: ${invoiceMap.size}`);
+        if (invoiceMap.size > 0) {
+            const sample = Array.from(invoiceMap.entries()).slice(0, 3);
+            console.log(`[송장디버그] invoiceMap 샘플:`, sample);
+        }
         return invoiceMap;
     };
 
     const processFiles = useCallback(async (vendorFile: File, orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig, orderPlatformMap?: Map<string, string>, platformConfigs?: PlatformConfigs, businessId?: string) => {
         try {
             setStatus('processing'); setError(null);
-            const bizShort = BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || '';
+            const bizShort = getBusinessInfo(businessId ?? '')?.shortName || '';
             const orderWb = XLSX.read(await orderFile.arrayBuffer(), { type: 'array' });
             const orderAoa: any[][] = XLSX.utils.sheet_to_json(orderWb.Sheets[orderWb.SheetNames[0]], { header: 1 });
             let headerIdx = 0;
             for (let i = 0; i < Math.min(orderAoa.length, 30); i++) if ((orderAoa[i] || []).join('').includes('주문번호')) { headerIdx = i; break; }
 
             const invoiceMap = await buildInvoiceMap(await vendorFile.arrayBuffer(), companyName);
+            console.log(`[송장디버그] processFiles - 업체: ${companyName}, businessId: ${businessId}`);
+            console.log(`[송장디버그] 주문서 총 행수: ${orderAoa.length}, headerIdx: ${headerIdx}`);
+            console.log(`[송장디버그] 주문서 헤더:`, orderAoa[headerIdx]);
 
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
             const companyConfig = pricingConfig?.[companyName];
@@ -168,6 +194,12 @@ export const useInvoiceMerger = () => {
             const platformUploadData: Record<string, any[][]> = {};
 
             const targetKeywords = getKeywordsForCompany(companyName, pricingConfig);
+            console.log(`[송장디버그] targetOrderIdx: ${targetOrderIdx}, targetInvIdx: ${targetInvIdx}, isCustomIdx: ${isCustomIdx}`);
+            console.log(`[송장디버그] skipGroupCheck: ${skipGroupCheck}, targetKeywords:`, targetKeywords);
+
+            let debugSkippedByGroup = 0;
+            let debugSkippedNoInvoice = 0;
+            let debugMatched = 0;
 
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
@@ -175,12 +207,13 @@ export const useInvoiceMerger = () => {
                 if (!skipGroupCheck) {
                     const rowGroupValue = String(row[GROUP_ID_COL_IDX] || '').replace(/\s+/g, '');
                     const isGroupMatched = targetKeywords.some(k => rowGroupValue.includes(k.replace(/\s+/g, '')));
-                    if (!isGroupMatched) continue;
+                    if (!isGroupMatched) { debugSkippedByGroup++; continue; }
                 }
 
                 const orderNum = normalizeOrderNum(row[targetOrderIdx]);
                 const invoices = invoiceMap.get(orderNum);
                 if (invoices && invoices.length > 0) {
+                    debugMatched++;
                     uploadCount++;
                     invoices.forEach(inv => {
                         mgmtCount++;

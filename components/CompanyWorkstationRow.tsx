@@ -9,7 +9,7 @@ import {
 } from './icons';
 import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder, PlatformConfigs } from '../types';
 import { DragHandleContext } from './DragHandleContext';
-import { BUSINESS_INFO } from '../types';
+import { getBusinessInfo } from '../types';
 import { useDailyWorkspace } from '../hooks/useFirestore';
 import type { SessionResultData } from '../services/firestoreService';
 
@@ -151,7 +151,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
         lines.push('');
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
-        lines.push(`(입금자 ${BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원'})`);
+        lines.push(`(입금자 ${getBusinessInfo(businessId ?? '')?.senderName || '안군농원'})`);
         return lines.join('\n');
     })();
 
@@ -175,7 +175,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             });
         lines.push('');
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
-        lines.push(`(입금자 ${BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.senderName || '안군농원'})`);
+        lines.push(`(입금자 ${getBusinessInfo(businessId ?? '')?.senderName || '안군농원'})`);
         return lines.join('\n');
     })();
 

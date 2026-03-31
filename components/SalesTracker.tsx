@@ -3,7 +3,7 @@ import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracke
 import { usePricingConfig } from '../hooks/useFirestore';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
 import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig } from '../types';
-import { BUSINESS_INFO } from '../types';
+import { getBusinessInfo } from '../types';
 
 declare var XLSX: any;
 
@@ -11,7 +11,7 @@ type ViewMode = 'settlement' | 'byDate' | 'byProduct' | 'byCompany' | 'orders' |
 type DateMode = 'month' | 'range';
 
 const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ isActive, businessId }) => {
-  const businessPrefix = businessId ? (BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || businessId) : '';
+  const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
   const { salesHistory, refresh, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
 

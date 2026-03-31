@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { PricingConfig, PlatformConfigs, TodoItem, BusinessId } from '../types';
+import type { PricingConfig, PlatformConfigs, TodoItem } from '../types';
 import {
   subscribePricingConfig,
   savePricingConfigToFirestore,
@@ -15,7 +15,11 @@ import { DEFAULT_PRICING_CONFIG, DEFAULT_PRICING_CONFIG_조에 } from '../pricin
 
 // ===== Pricing Config Hook =====
 export const usePricingConfig = (businessId?: string) => {
-  const defaultConfig = (!businessId || businessId === '안군농원') ? DEFAULT_PRICING_CONFIG : DEFAULT_PRICING_CONFIG_조에;
+  const defaultConfig = (!businessId || businessId === '안군농원')
+    ? DEFAULT_PRICING_CONFIG
+    : businessId === '조에'
+      ? DEFAULT_PRICING_CONFIG_조에
+      : {}; // 동적 사업자는 빈 config로 시작
   const [config, setConfig] = useState<PricingConfig>(defaultConfig);
   const [isLoading, setIsLoading] = useState(true);
   const [configSource, setConfigSource] = useState<'loading' | 'firestore' | 'default'>('loading');
@@ -190,31 +194,41 @@ export const useTodos = (businessId?: string) => {
   return { todos, saveTodos, isLoading };
 };
 
-// ===== All Business Workspaces Hook (양쪽 사업자 동시 구독) =====
-const ALL_BUSINESS_IDS: BusinessId[] = ['안군농원', '조에'];
+// ===== All Business Workspaces Hook (하드코딩 + 동적 사업자 동시 구독) =====
+const HARDCODED_BUSINESS_IDS: string[] = ['안군농원', '조에'];
 
-export const useAllBusinessWorkspaces = () => {
-  const [workspaces, setWorkspaces] = useState<Record<BusinessId, DailyWorkspaceData | null>>({
+export const useAllBusinessWorkspaces = (dynamicBusinessIds: string[] = []) => {
+  const [workspaces, setWorkspaces] = useState<Record<string, DailyWorkspaceData | null>>({
     '안군농원': null,
     '조에': null,
   });
   const [isReady, setIsReady] = useState(false);
-  const readyCount = useRef(0);
+
+  // 동적 ID를 JSON으로 직렬화하여 의존성 안정화
+  const dynamicIdsKey = JSON.stringify(dynamicBusinessIds);
 
   useEffect(() => {
-    readyCount.current = 0;
+    const allIds = [...HARDCODED_BUSINESS_IDS, ...dynamicBusinessIds];
     setIsReady(false);
 
-    const unsubscribes = ALL_BUSINESS_IDS.map((bid) =>
+    // 삭제된 사업자의 stale 키 정리: 현재 구독 대상에 없는 키 제거
+    setWorkspaces((prev) => {
+      const cleaned: Record<string, DailyWorkspaceData | null> = {};
+      for (const id of allIds) cleaned[id] = prev[id] ?? null;
+      return cleaned;
+    });
+
+    const receivedCount = new Set<string>();
+    const unsubscribes = allIds.map((bid) =>
       subscribeDailyWorkspace((data) => {
         setWorkspaces((prev) => ({ ...prev, [bid]: data }));
-        readyCount.current++;
-        if (readyCount.current >= ALL_BUSINESS_IDS.length) setIsReady(true);
+        receivedCount.add(bid);
+        if (receivedCount.size >= allIds.length) setIsReady(true);
       }, bid)
     );
 
     return () => unsubscribes.forEach((unsub) => unsub());
-  }, []);
+  }, [dynamicIdsKey]);
 
   return { workspaces, isReady };
 };

@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder, UnmatchedOrder } from '../types';
-import { BUSINESS_INFO } from '../types';
+import { BUSINESS_INFO, getBusinessInfo } from '../types';
 import { findProductConfig } from '../pricing';
 
 declare var XLSX: any;
@@ -258,7 +258,7 @@ const generateWorkbookForCompany = async (
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return [companyName, null];
 
-        const bizInfo = BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO] || BUSINESS_INFO['안군농원'];
+        const bizInfo = getBusinessInfo(businessId || '') || BUSINESS_INFO['안군농원'];
         const senderName = bizInfo.senderName;
         const senderPhone = bizInfo.phone;
         const senderAddress = bizInfo.address;
@@ -382,7 +382,7 @@ const generateWorkbookForCompany = async (
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
 
-        const bizShort = BUSINESS_INFO[businessId as keyof typeof BUSINESS_INFO]?.shortName || '';
+        const bizShort = getBusinessInfo(businessId || '')?.shortName || '';
         return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems }];
     } catch (error) {
         console.error("Error generating workbook:", error);

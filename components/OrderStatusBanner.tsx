@@ -1,14 +1,16 @@
 
 import React from 'react';
-import type { BusinessId } from '../types';
+import type { BusinessId, HardcodedBusinessId } from '../types';
 import { BUSINESS_INFO } from '../types';
 import type { DailyWorkspaceData } from '../services/firestoreService';
+import type { BusinessEntry } from '../hooks/useBusinessList';
 
 interface OrderStatusBannerProps {
-  workspaces: Record<BusinessId, DailyWorkspaceData | null>;
+  workspaces: Record<string, DailyWorkspaceData | null>;
   isReady: boolean;
   currentBusiness: BusinessId;
   onSwitchBusiness: (bid: BusinessId) => void;
+  allBusinesses?: BusinessEntry[];
 }
 
 function getBusinessStatus(workspace: DailyWorkspaceData | null) {
@@ -35,31 +37,46 @@ function getBusinessStatus(workspace: DailyWorkspaceData | null) {
   };
 }
 
-const OrderStatusBanner: React.FC<OrderStatusBannerProps> = ({ workspaces, isReady, currentBusiness, onSwitchBusiness }) => {
+const HARDCODED_IDS: HardcodedBusinessId[] = ['안군농원', '조에'];
+
+const OrderStatusBanner: React.FC<OrderStatusBannerProps> = ({ workspaces, isReady, currentBusiness, onSwitchBusiness, allBusinesses }) => {
   if (!isReady) return null;
 
-  const statuses = {
-    '안군농원': getBusinessStatus(workspaces['안군농원']),
-    '조에': getBusinessStatus(workspaces['조에']),
-  };
+  // 배너에 표시할 사업자 목록: 하드코딩 + workspace가 있는 동적 사업자
+  const bannerIds: string[] = [
+    ...HARDCODED_IDS,
+    ...Object.keys(workspaces).filter(id => !HARDCODED_IDS.includes(id as HardcodedBusinessId)),
+  ];
 
-  const anyActivity = statuses['안군농원'].hasActivity || statuses['조에'].hasActivity;
+  const statuses: Record<string, ReturnType<typeof getBusinessStatus>> = {};
+  for (const bid of bannerIds) {
+    statuses[bid] = getBusinessStatus(workspaces[bid] || null);
+  }
+
+  const anyActivity = Object.values(statuses).some(s => s.hasActivity);
   if (!anyActivity) return null;
 
-  const getLevel = (bid: BusinessId): 'none' | 'incomplete' | 'complete' => {
+  const getLevel = (bid: string): 'none' | 'incomplete' | 'complete' => {
     const s = statuses[bid];
-    if (!s.hasActivity) return 'none';
+    if (!s || !s.hasActivity) return 'none';
     if (s.completedOrders >= s.totalSessions) return 'complete';
     return 'incomplete';
   };
 
+  const getDisplayName = (bid: string): string => {
+    if (HARDCODED_IDS.includes(bid as HardcodedBusinessId)) {
+      return BUSINESS_INFO[bid as HardcodedBusinessId].displayName;
+    }
+    return allBusinesses?.find((b: BusinessEntry) => b.id === bid)?.displayName || bid;
+  };
+
   return (
     <div className="mb-4 flex items-center gap-2 px-2 sticky top-0 z-50 py-2 bg-zinc-950/90 backdrop-blur-sm -mx-2 rounded-xl">
-      {(['안군농원', '조에'] as const).map((bid) => {
+      {bannerIds.map((bid) => {
         const s = statuses[bid];
         const level = getLevel(bid);
         const isCurrent = currentBusiness === bid;
-        const displayName = BUSINESS_INFO[bid].displayName;
+        const displayName = getDisplayName(bid);
         const noActivity = level === 'none' && anyActivity;
 
         const colorClass = noActivity
