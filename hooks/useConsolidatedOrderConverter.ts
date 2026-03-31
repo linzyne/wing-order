@@ -394,6 +394,7 @@ export function getHeaderForCompany(companyName: string, config: CompanyConfig):
     if (companyName === '팜플로우') return ['출고번호', '받으시는 분 이름', '받으시는 분 전화', '받는분 주소', '배송메세지', '품목명', '수량', '보내시는 분', '보내시는 분 전화', '보내시는분 주소', '메모1', '택배사', '송장번호'];
     if (companyName === '웰그린') return ['', '쇼핑몰주문번호', '쇼핑몰', '상품명', '옵션(품목명)', '수량', '배송메세지', '', '', '받는분성명', '주문자', '받는분연락처', '주문자연락처', '', '우편번호', '받는분주소(전체, 분할)', '', '판매처연락처', '판매처주소'];
     if (companyName === '답도' || companyName === '한라봉_답도') return ['주문번호', '기재안해도됨', '송하인', '송하인 연락처', '수취인', '수취인 연락처', '주소', '상품명', '수량', '배송 메세지', '송장번호'];
+    if (companyName === '제이제이' || companyName === '귤_제이') return ['송하인', '송하인주소', '송하인연락처', '품목', '받는분성명', '받는분주소', '받는분연락처', '배송메시지', '주문번호'];
     if (companyName === '신선마켓' || companyName === '귤_신선') return ['주문번호', '품목명', '수량', '받는사람', '전화번호', '', '', '우편번호', '주소', '배송메세지'];
     if (companyName === '고랭지김치') return ['주문번호', '보내는사람', '전화번호1', '전화번호2', '우편번호', '주소', '받는사람', '전화번호1', '전화번호2', '우편번호', '주소', '상품명1', '상품상세1', '수량(A타입)', '수량(B타입)', '배송메시지', '운임구분', '운임'];
     if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) return ['주문번호', '고객주문처명', '수취인명', '수취인 우편번호', '수취인 주소', '수취인 전화번호', '수취인 이동통신', '상품명', '상품모델', '배송메세지', '비고', '수량', '신청건수', '포장재', '부피단위'];
@@ -406,7 +407,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
         for (let j = 0; j < qty; j++) {
             const or = new Array(13).fill('');
             or[0] = String(row[2] || ''); or[1] = String(row[26] || ''); or[2] = String(row[27] || ''); or[3] = String(row[29] || '');
-            or[4] = String(row[30] || ''); or[5] = orderName; or[6] = 1; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
+            or[4] = String(row[30] || ''); or[5] = orderName; or[6] = 1; or[7] = senderName; or[8] = senderPhone; or[9] = senderAddress;
             outputRows.push(or);
         }
     } else if (companyName === '웰그린') {
@@ -438,6 +439,20 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             or[9] = String(row[30] || ''); // 배송메세지
             or[11] = 1; // 수량
             or[12] = 1; // 신청건수
+            outputRows.push(or);
+        }
+    } else if (companyName === '제이제이' || companyName === '귤_제이') {
+        for (let j = 0; j < qty; j++) {
+            const or = new Array(9).fill('');
+            or[0] = senderName;                // 송하인
+            or[1] = senderAddress;             // 송하인주소
+            or[2] = senderPhone;               // 송하인연락처
+            or[3] = orderName;                 // 품목
+            or[4] = String(row[26] || '');      // 받는분성명
+            or[5] = String(row[29] || '');      // 받는분주소
+            or[6] = String(row[27] || '');      // 받는분연락처
+            or[7] = String(row[30] || '');      // 배송메시지
+            or[8] = String(row[2] || '');       // 주문번호
             outputRows.push(or);
         }
     } else if (companyName === '고랭지김치') {
@@ -558,7 +573,14 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
     } else if (companyName === '제이제이' || companyName === '귤_제이') {
         for (let j = 0; j < mo.qty; j++) {
             const or = new Array(9).fill('');
-            or[0] = '안군농원'; or[3] = orderName; or[4] = mo.recipientName; or[5] = mo.address; or[6] = mo.phone; or[8] = '수동';
+            or[0] = senderName;          // 송하인
+            or[1] = senderAddress;       // 송하인주소
+            or[2] = senderPhone;         // 송하인연락처
+            or[3] = orderName;           // 품목
+            or[4] = mo.recipientName;    // 받는분성명
+            or[5] = mo.address;          // 받는분주소
+            or[6] = mo.phone;            // 받는분연락처
+            or[8] = '수동';              // 주문번호
             outputRows.push(or);
         }
     } else {
