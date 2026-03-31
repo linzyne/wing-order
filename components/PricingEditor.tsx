@@ -561,6 +561,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    const handleUpdateOrderFormHeaders = (companyName: string, headers: string[]) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].orderFormHeaders = headers.length > 0 ? headers : undefined;
+        handleUpdate(newConfig);
+    };
+
     const handleAddProduct = (companyName: string) => {
         setDialog({
             type: 'prompt',
@@ -767,6 +773,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
+                            onUpdateOrderFormHeaders={(headers) => handleUpdateOrderFormHeaders(companyName, headers)}
                             onAddProduct={() => handleAddProduct(companyName)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
                             onOpenProductEditor={(productKey, product) => setDialog({
@@ -818,6 +825,7 @@ const CompanyCard: React.FC<{
     onUpdateAccount: (account: string) => void;
     onUpdateCourier: (courier: string) => void;
     onUpdateKeywords: (keywords: string[]) => void;
+    onUpdateOrderFormHeaders: (headers: string[]) => void;
     onAddProduct: () => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
@@ -897,6 +905,23 @@ const CompanyCard: React.FC<{
                             placeholder="예: 총각김치, 포기김치, 배추김치"
                             className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                         />
+                    </div>
+                    <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
+                        <div className="flex items-center gap-3 mb-2">
+                            <span className="text-lg">📋</span>
+                            <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">발주서 양식 헤더</span>
+                            <span className="text-[10px] text-zinc-700">(쉼표로 구분)</span>
+                        </div>
+                        <EditableField
+                            value={(companyConfig.orderFormHeaders || []).join(', ')}
+                            onSave={(val) => {
+                                const headers = val.split(',').map(s => s.trim()).filter(Boolean);
+                                props.onUpdateOrderFormHeaders(headers);
+                            }}
+                            placeholder="예: 받는사람, 전화번호, 주소, 품목명, 수량, 배송메세지, 주문번호"
+                            className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
+                        />
+                        <p className="text-[10px] text-zinc-600 mt-1">비워두면 기본 양식 사용. 헤더명에 따라 자동으로 데이터가 매핑됩니다</p>
                     </div>
                     <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} />
                 </div>

@@ -218,9 +218,12 @@ export const useAllBusinessWorkspaces = (dynamicBusinessIds: string[] = []) => {
       return cleaned;
     });
 
+    const allIdsSet = new Set(allIds);
     const receivedCount = new Set<string>();
     const unsubscribes = allIds.map((bid) =>
       subscribeDailyWorkspace((data) => {
+        // 이미 구독 해제된(삭제된) 사업자의 stale 콜백 무시
+        if (!allIdsSet.has(bid)) return;
         setWorkspaces((prev) => ({ ...prev, [bid]: data }));
         receivedCount.add(bid);
         if (receivedCount.size >= allIds.length) setIsReady(true);

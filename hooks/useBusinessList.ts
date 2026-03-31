@@ -58,6 +58,7 @@ export const useBusinessList = () => {
         buttonColor: b.buttonColor,
       }));
       registeredIdsRef.current = businesses.map(b => b.id);
+      dynamicBusinessesRef.current = businesses;
       setDynamicBusinesses(businesses);
       setIsLoading(false);
     });
@@ -92,19 +93,21 @@ export const useBusinessList = () => {
       ...entry,
       createdAt: Timestamp.now(),
     };
-    const updated = [...dynamicBusinesses, newEntry];
+    // ref를 통해 최신 목록 사용 (경쟁 조건 방지)
+    const updated = [...dynamicBusinessesRef.current, newEntry];
     await saveDynamicBusinesses(updated);
 
     // 초기 PricingConfig가 있으면 Firestore에 저장
     if (initialConfig && Object.keys(initialConfig).length > 0) {
       await savePricingConfigToFirestore(initialConfig, entry.id);
     }
-  }, [dynamicBusinesses]);
+  }, []);
 
   const removeBusiness = useCallback(async (businessId: string) => {
-    const updated = dynamicBusinesses.filter(b => b.id !== businessId);
+    // ref를 통해 최신 목록 사용 (경쟁 조건 방지)
+    const updated = dynamicBusinessesRef.current.filter(b => b.id !== businessId);
     await saveDynamicBusinesses(updated);
-  }, [dynamicBusinesses]);
+  }, []);
 
   return {
     businesses: allBusinesses,

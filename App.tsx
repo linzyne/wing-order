@@ -111,7 +111,8 @@ const App: React.FC = () => {
   const currentBusinessEntry = allBusinesses.find((b: { id: string }) => b.id === currentBusiness);
   const bgColor = currentBusinessEntry?.themeColor || '#09090b';
 
-  if (isLoading && !isDynamicBusiness) {
+  // 하드코딩 사업자 로딩 중이거나, 동적 사업자 목록이 아직 로드되지 않은 상태에서 동적 사업자가 선택된 경우
+  if ((isLoading && !isDynamicBusiness) || (isDynamicBusiness && businessListLoading)) {
     return (
       <div className="bg-zinc-950 min-h-screen flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">
