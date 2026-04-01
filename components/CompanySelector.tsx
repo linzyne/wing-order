@@ -508,7 +508,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             autoExpenses.push({
                 id: 'auto-agent',
                 category: '물류비',
-                amount: agentResult.matched * 2200,
+                amount: agentResult.matched * 2270,
                 description: `택배대행 ${agentResult.matched}건`,
                 isAuto: true,
             });
@@ -527,7 +527,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             autoExpenses.push({
                 id: 'auto-fake-default',
                 category: '물류비',
-                amount: fakeOrderAnalysis.inputNumbers.size * 2200,
+                amount: fakeOrderAnalysis.inputNumbers.size * 2270,
                 description: `가구매 택배 ${fakeOrderAnalysis.inputNumbers.size}건`,
                 isAuto: true,
             });
@@ -1323,7 +1323,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label]); total += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2200;
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2270;
             depositRows.push(['카카오뱅크', '3333-18-8744855', deliveryFee, `택배대행(${fakeOrderAnalysis.inputNumbers.size}건)`]);
             total += deliveryFee;
         }
@@ -1362,7 +1362,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount]); depTotal += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2200;
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2270;
             depositRows.push(['카카오뱅크', '3333-18-8744855', deliveryFee]);
             depTotal += deliveryFee;
         }
@@ -1502,7 +1502,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             depTotal += t.amount;
         });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2200;
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2270;
             depositRows.push({ bankName: '카카오뱅크', accountNumber: '3333-18-8744855', amount: deliveryFee });
             depTotal += deliveryFee;
         }
