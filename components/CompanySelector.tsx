@@ -142,8 +142,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [uploadedPlatforms, setUploadedPlatforms] = useState<{ name: string; count: number }[]>([]);
     // 행별 출처 플랫폼 (인덱스 = masterOrderData 행 인덱스, 값 = 플랫폼 이름 또는 null=쿠팡)
     const [rowPlatformSources, setRowPlatformSources] = useState<(string | null)[]>([]);
-    // 행별 차수 (인덱스 = masterOrderData 행 인덱스, 값 = 1차, 2차 등)
-    const [masterRowRounds, setMasterRowRounds] = useState<number[]>([]);
 
     const [isBulkMode, setIsBulkMode] = useState(false);
     const [bulkText, setBulkText] = useState('');
@@ -438,12 +436,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const realOrders: Record<string, number> = {};
         const fakeOrders: Record<string, number> = {};
         const unclaimedOrders: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number }[] = [];
-        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean; round: number }[] = [];
-        // 차수별 집계
-        const roundTotals: Record<number, { real: number; fake: number }> = {};
-        // 차수별 + 그룹별 집계
-        const roundRealOrders: Record<number, Record<string, number>> = {};
-        const roundFakeOrders: Record<number, Record<string, number>> = {};
+        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean }[] = [];
         for (let i = 1; i < masterOrderData.length; i++) {
             const row = masterOrderData[i];
             if (!row) continue;
@@ -453,7 +446,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (!groupName) continue;
             const recipientName = String(row[26] || '').trim();
             const productName = String(row[11] || '').trim();
-            const round = masterRowRounds[i] || 1;
             // 업체명 매핑
             if (!productToCompany[groupName]) {
                 const groupNorm = groupName.replace(/\s+/g, '').normalize('NFC');
@@ -466,18 +458,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             const isFake = fakeNums.has(orderNum);
             const company = productToCompany[groupName] || '';
-            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake, round });
-            if (!roundTotals[round]) roundTotals[round] = { real: 0, fake: 0 };
-            if (!roundRealOrders[round]) roundRealOrders[round] = {};
-            if (!roundFakeOrders[round]) roundFakeOrders[round] = {};
+            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake });
             if (isFake) {
                 fakeOrders[groupName] = (fakeOrders[groupName] || 0) + qty;
-                roundTotals[round].fake += qty;
-                roundFakeOrders[round][groupName] = (roundFakeOrders[round][groupName] || 0) + qty;
             } else {
                 realOrders[groupName] = (realOrders[groupName] || 0) + qty;
-                roundTotals[round].real += qty;
-                roundRealOrders[round][groupName] = (roundRealOrders[round][groupName] || 0) + qty;
                 // 어떤 업체에도 매칭되지 않은 주문 수집
                 if (!company) {
                     unclaimedOrders.push({ recipientName, productName, groupName, orderNumber: orderNum, qty });
@@ -486,8 +471,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         const realTotal = Object.values(realOrders).reduce((a, b) => a + b, 0);
         const fakeTotal = Object.values(fakeOrders).reduce((a, b) => a + b, 0);
-        const rounds = Object.keys(roundTotals).map(Number).sort((a, b) => a - b);
-        const hasMultipleRounds = rounds.length > 1;
         // 업체별 마스터 주문 건수 (행 기준)
         const companyOrderCounts: Record<string, number> = {};
         allOrderDetails.forEach(d => {
@@ -495,8 +478,54 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 companyOrderCounts[d.company] = (companyOrderCounts[d.company] || 0) + 1;
             }
         });
-        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, roundTotals, rounds, hasMultipleRounds, roundRealOrders, roundFakeOrders };
-    }, [masterOrderData, fakeOrderInput, pricingConfig, masterRowRounds]);
+        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts };
+    }, [masterOrderData, fakeOrderInput, pricingConfig]);
+
+    // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
+    const additionalRoundsSummary = useMemo(() => {
+        const realByCompany: Record<string, number> = {};
+        const fakeByCompany: Record<string, number> = {};
+        const realByGroup: Record<string, number> = {};
+        const fakeByGroup: Record<string, number> = {};
+        const groupToCompany: Record<string, string> = {};
+        let realTotal = 0;
+        let fakeTotal = 0;
+        let hasData = false;
+
+        const fakeNums = new Set<string>();
+        fakeOrderInput.split('\n').forEach(line => {
+            const matches = line.trim().match(/[A-Za-z0-9-]{5,}/g);
+            if (matches) matches.forEach(m => fakeNums.add(m.trim()));
+        });
+
+        (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([company, sessions]) => {
+            sessions.forEach((session: SessionData) => {
+                if (session.round <= 1) return;
+                const rows = allOrderRows[session.id];
+                if (!rows || rows.length === 0) return;
+                hasData = true;
+                rows.forEach(row => {
+                    const orderNum = String(row[2] || '').trim();
+                    const groupName = String(row[10] || '').trim();
+                    const qty = parseInt(String(row[22] || '1'), 10) || 1;
+                    const isFake = fakeNums.has(orderNum);
+                    if (groupName) groupToCompany[groupName] = company;
+                    if (isFake) {
+                        fakeTotal += qty;
+                        fakeByCompany[company] = (fakeByCompany[company] || 0) + qty;
+                        if (groupName) fakeByGroup[groupName] = (fakeByGroup[groupName] || 0) + qty;
+                    } else {
+                        realTotal += qty;
+                        realByCompany[company] = (realByCompany[company] || 0) + qty;
+                        if (groupName) realByGroup[groupName] = (realByGroup[groupName] || 0) + qty;
+                    }
+                });
+            });
+        });
+
+        if (!hasData) return null;
+        return { realByCompany, fakeByCompany, realByGroup, fakeByGroup, groupToCompany, realTotal, fakeTotal };
+    }, [companySessions, allOrderRows, fakeOrderInput]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배대행/롯데택배/가구매 기본)
     const allExpenses = useMemo(() => {
@@ -581,16 +610,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleMasterUpload = async (file: File) => {
         console.log('🚀 [파일 업로드] 시작:', file.name);
         console.log('🚀 [platformConfigs]:', platformConfigs);
-
-        // 파일명에서 차수 감지 (예: "0330 2차===.xlsx" → 2)
-        const roundMatch = file.name.match(/(\d+)\s*차/);
-        const fileRound = roundMatch ? parseInt(roundMatch[1]) : 1;
-        const isAppend = fileRound >= 2 && masterOrderData && masterOrderData.length > 1;
-
-        if (!isAppend) {
-            setMasterOrderFile(file);
-        }
-
+        setMasterOrderFile(file);
         try {
             const data = await file.arrayBuffer();
             const wb = XLSX.read(data, { type: 'array' });
@@ -628,90 +648,45 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
 
                 json = normalized;
-                console.log(`✅ [Platform] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치): ${json.length - 1}건 정규화`);
-            }
+                setUploadedPlatforms([{ name: platformName, count: normalized.length - 1 }]);
+                setRowPlatformSources([null, ...Array(normalized.length - 1).fill(platformName)]);
 
-            if (isAppend) {
-                // 2차+ 데이터를 기존 데이터에 추가
-                const newDataRows = json.slice(1); // 헤더 제외
-                const mergedData = [...masterOrderData!, ...newDataRows];
-                const newRounds = [...masterRowRounds, ...Array(newDataRows.length).fill(fileRound)];
-
-                // 플랫폼 소스도 병합
-                const newPlatformSources = [...rowPlatformSources, ...Array(newDataRows.length).fill(platformName)];
-                setRowPlatformSources(newPlatformSources);
-
-                // 업로드 플랫폼 목록 업데이트
-                setUploadedPlatforms(prev => [...prev, { name: platformName || '쿠팡', count: newDataRows.length }]);
-
-                // 병합된 데이터를 파일로 저장
-                const mergedSheet = XLSX.utils.aoa_to_sheet(mergedData);
-                const mergedWb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(mergedWb, mergedSheet, 'Sheet1');
-                const mergedBuffer = XLSX.write(mergedWb, { bookType: 'xlsx', type: 'array' });
-                setMasterOrderFile(new File([mergedBuffer], masterOrderFile!.name, {
+                // 정규화된 데이터를 파일로 저장
+                const normalizedSheet = XLSX.utils.aoa_to_sheet(json);
+                const normalizedWb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(normalizedWb, normalizedSheet, 'Sheet1');
+                const normalizedBuffer = XLSX.write(normalizedWb, { bookType: 'xlsx', type: 'array' });
+                setMasterOrderFile(new File([normalizedBuffer], file.name, {
                     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 }));
 
-                setMasterOrderData(mergedData);
-                setMasterRowRounds(newRounds);
-
-                // 업체 감지도 새 데이터 포함
-                const groupColIdx = 10;
-                const companiesInFile = new Set(detectedCompanies);
-                const companyKeywordsMap = new Map<string, string[]>();
-                Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
-                for (let i = 0; i < newDataRows.length; i++) {
-                    const rawVal = String(newDataRows[i][groupColIdx] || '');
-                    const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
-                    if (!groupVal) continue;
-                    for (const [name, keywords] of companyKeywordsMap.entries()) {
-                        const isMatched = keywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')));
-                        if (isMatched) { companiesInFile.add(name); break; }
-                    }
-                }
-                setDetectedCompanies(companiesInFile);
-
-                console.log(`✅ [${fileRound}차 추가] ${newDataRows.length}건 추가됨 (총 ${mergedData.length - 1}건)`);
+                console.log(`✅ [Platform] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치): ${json.length - 1}건 정규화`);
             } else {
-                // 1차 또는 새 업로드: 기존 로직
-                if (detectedPlatform) {
-                    setUploadedPlatforms([{ name: platformName!, count: json.length - 1 }]);
-                    setRowPlatformSources([null, ...Array(json.length - 1).fill(platformName)]);
-
-                    const normalizedSheet = XLSX.utils.aoa_to_sheet(json);
-                    const normalizedWb = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(normalizedWb, normalizedSheet, 'Sheet1');
-                    const normalizedBuffer = XLSX.write(normalizedWb, { bookType: 'xlsx', type: 'array' });
-                    setMasterOrderFile(new File([normalizedBuffer], file.name, {
-                        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                    }));
-                } else {
-                    setUploadedPlatforms([{ name: '쿠팡', count: json.length - 1 }]);
-                    setRowPlatformSources([]);
-                }
-
-                const groupColIdx = 10;
-                const companiesInFile = new Set<string>();
-                const companyKeywordsMap = new Map<string, string[]>();
-                Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
-                for (let i = 1; i < json.length; i++) {
-                    const rawVal = String(json[i][groupColIdx] || '');
-                    const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
-                    if (!groupVal) continue;
-                    for (const [name, keywords] of companyKeywordsMap.entries()) {
-                        const isMatched = keywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')));
-                        if (isMatched) { companiesInFile.add(name); break; }
-                    }
-                }
-                setDetectedCompanies(companiesInFile);
-                setMasterOrderData(json);
-                // 1차 데이터의 행별 차수 설정 (헤더 포함)
-                setMasterRowRounds([0, ...Array(json.length - 1).fill(fileRound)]);
+                setUploadedPlatforms([{ name: '쿠팡', count: json.length - 1 }]);
+                setRowPlatformSources([]);
             }
 
+            const groupColIdx = 10;
+            const companiesInFile = new Set<string>();
+            const companyKeywordsMap = new Map<string, string[]>();
+            Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+            for (let i = 1; i < json.length; i++) {
+                const rawVal = String(json[i][groupColIdx] || '');
+                const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
+                if (!groupVal) continue;
+                for (const [name, keywords] of companyKeywordsMap.entries()) {
+                    const isMatched = keywords.some(k => {
+                        const normK = k.replace(/\s+/g, '').normalize('NFC');
+                        return groupVal.includes(normK);
+                    });
+                    if (isMatched) { companiesInFile.add(name); break; }
+                }
+            }
+            setDetectedCompanies(companiesInFile);
+            setMasterOrderData(json);
+
             // 기존 수동 입금내역이 있으면 포함 여부 확인
-            if (!isAppend && manualTransfers.length > 0) {
+            if (manualTransfers.length > 0) {
                 const transferList = manualTransfers.map(t => `  • ${t.label || '수동 입금'} - ${t.amount.toLocaleString()}원`).join('\n');
                 const totalAmount = manualTransfers.reduce((sum, t) => sum + t.amount, 0);
                 if (!confirm(`기존 수동 입금내역 ${manualTransfers.length}건 (총 ${totalAmount.toLocaleString()}원)이 있습니다.\n포함하시겠습니까?\n\n${transferList}\n\n[확인] 유지  |  [취소] 삭제`)) {
@@ -721,7 +696,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setMasterRowRounds([]); };
+    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); };
 
     const handleBatchUpload = async (file: File) => {
         console.log('🚀 [배치 업로드] 시작:', file.name);
@@ -1684,24 +1659,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black">{detectedCompanies.size}개 업체 탐지</span>
                                     </div>
                                     {masterProductSummary && (() => {
-                                        const { hasMultipleRounds, rounds, roundTotals, roundRealOrders, roundFakeOrders } = masterProductSummary;
-                                        const formatRoundTotal = (type: 'real' | 'fake') => {
-                                            if (!hasMultipleRounds) return `${type === 'real' ? masterProductSummary.realTotal : masterProductSummary.fakeTotal}건`;
-                                            return rounds.map(r => `${roundTotals[r]?.[type] || 0}건`).join('+');
+                                        const add = additionalRoundsSummary;
+                                        const has2 = !!add;
+                                        const fmtTotal = (base: number, extra: number) => has2 ? `${base}건+${extra}건` : `${base}건`;
+                                        const fmtCount = (base: number, groupName: string, extraMap: Record<string, number> | undefined) => {
+                                            if (!has2) return <span className="font-black ml-1">{base}건</span>;
+                                            const extra = extraMap?.[groupName] || 0;
+                                            return <span className="font-black ml-1">{base}건{extra > 0 ? <span className="text-cyan-400">+{extra}건</span> : ''}</span>;
                                         };
-                                        const formatRoundCompanyTotal = (items: [string, number][], roundDataMap: Record<number, Record<string, number>>) => {
-                                            if (!hasMultipleRounds) return `${items.reduce((s, x) => s + x[1], 0)}건`;
-                                            return rounds.map(r => `${items.reduce((s, [name]) => s + (roundDataMap[r]?.[name] || 0), 0)}건`).join('+');
-                                        };
-                                        const formatRoundItemCount = (name: string, total: number, roundDataMap: Record<number, Record<string, number>>) => {
-                                            if (!hasMultipleRounds) return <span className="font-black ml-1">{total}건</span>;
-                                            const parts = rounds.map(r => roundDataMap[r]?.[name] || 0);
-                                            return <span className="font-black ml-1">{parts.join('건+') + '건'}</span>;
+                                        const fmtCompany = (company: string, items: [string, number][], extraByCompany: Record<string, number> | undefined) => {
+                                            const base = items.reduce((s, x) => s + x[1], 0);
+                                            if (!has2) return `${base}건`;
+                                            const extra = extraByCompany?.[company] || 0;
+                                            return extra > 0 ? <>{base}건<span className="text-cyan-400">+{extra}건</span></> : `${base}건`;
                                         };
                                         return (
                                         <div className="mt-1 flex gap-6 items-start">
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({formatRoundTotal('real')})</div>
+                                                <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, add?.realTotal || 0)})</div>
                                                 <div>
                                                     {(() => {
                                                         const grouped: Record<string, [string, number][]> = {};
@@ -1713,11 +1688,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                         Object.values(grouped).forEach(items => items.sort((a, b) => b[1] - a[1]));
                                                         return Object.entries(grouped).sort(([,a],[,b]) => b.reduce((s,x)=>s+x[1],0) - a.reduce((s,x)=>s+x[1],0)).map(([company, items]) => (
                                                             <div key={company}>
-                                                                <div className="text-sm text-zinc-300 font-black">{company} {formatRoundCompanyTotal(items, roundRealOrders)}</div>
+                                                                <div className="text-sm text-zinc-300 font-black">{company} {fmtCompany(company, items, add?.realByCompany)}</div>
                                                                 {items.map(([name, count]) => (
                                                                     <div key={name} className="flex text-sm pl-3">
                                                                         <span className="text-zinc-400">{name}</span>
-                                                                        <span className="text-white">{formatRoundItemCount(name, count, roundRealOrders)}</span>
+                                                                        <span className="text-white">{fmtCount(count, name, add?.realByGroup)}</span>
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -1725,9 +1700,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     })()}
                                                 </div>
                                             </div>
-                                            {masterProductSummary.fakeTotal > 0 && (
+                                            {(masterProductSummary.fakeTotal > 0 || (add?.fakeTotal || 0) > 0) && (
                                                 <div className="flex-1 min-w-0">
-                                                    <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({formatRoundTotal('fake')})</div>
+                                                    <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, add?.fakeTotal || 0)})</div>
                                                     <div>
                                                         {(() => {
                                                             const grouped: Record<string, [string, number][]> = {};
@@ -1739,11 +1714,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             Object.values(grouped).forEach(items => items.sort((a, b) => b[1] - a[1]));
                                                             return Object.entries(grouped).sort(([,a],[,b]) => b.reduce((s,x)=>s+x[1],0) - a.reduce((s,x)=>s+x[1],0)).map(([company, items]) => (
                                                                 <div key={company}>
-                                                                    <div className="text-sm text-zinc-400 font-black">{company} {formatRoundCompanyTotal(items, roundFakeOrders)}</div>
+                                                                    <div className="text-sm text-zinc-400 font-black">{company} {fmtCompany(company, items, add?.fakeByCompany)}</div>
                                                                     {items.map(([name, count]) => (
                                                                         <div key={name} className="flex text-sm pl-3">
                                                                             <span className="text-zinc-500">{name}</span>
-                                                                            <span className="text-amber-400">{formatRoundItemCount(name, count, roundFakeOrders)}</span>
+                                                                            <span className="text-amber-400">{fmtCount(count, name, add?.fakeByGroup)}</span>
                                                                         </div>
                                                                     ))}
                                                                 </div>
