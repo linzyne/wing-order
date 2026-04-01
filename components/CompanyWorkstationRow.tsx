@@ -931,7 +931,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     return (
                                                         <div key={idx}>
                                                             <div className="flex justify-between text-[12px] font-mono text-zinc-200 font-bold">
-                                                                <span>{key}</span>
+                                                                <span>{key}{summary[key]?.totalPrice ? ` (${Math.round(summary[key].totalPrice / summary[key].count).toLocaleString()})` : ''}</span>
                                                                 <span>{expectedCount}개</span>
                                                             </div>
                                                             {entryList.map(([rawName, cnt], j) => {
