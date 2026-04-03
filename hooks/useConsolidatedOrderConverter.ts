@@ -378,11 +378,11 @@ const generateWorkbookForCompany = async (
         const newWb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(newWb, ws, `발주서`);
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
-        const depositSummary = stats.generateText(stats.total, `${dateTitle} (${companyName})`);
+        const bizShort = getBusinessInfo(businessId || '')?.shortName || '';
+        const summaryTitle = bizShort ? `${dateTitle} (${companyName}) ${bizShort}` : `${dateTitle} (${companyName})`;
+        const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
-
-        const bizShort = getBusinessInfo(businessId || '')?.shortName || '';
         return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems }];
     } catch (error) {
         console.error("Error generating workbook:", error);

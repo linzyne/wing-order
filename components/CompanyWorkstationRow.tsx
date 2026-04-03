@@ -131,7 +131,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         let grandTotal = entries.reduce((a, [, b]) => a + b.totalPrice, 0);
 
         const lines: string[] = [];
-        lines.push(`${dateTitle} (${companyName}) - 1~${roundNumber}차 합산`);
+        const bizShort = getBusinessInfo(businessId ?? '')?.shortName || '';
+        lines.push(`${dateTitle} (${companyName})${bizShort ? ' ' + bizShort : ''} - 1~${roundNumber}차 합산`);
         lines.push(`총주문수\t${totalCount}개`);
         lines.push('');
         entries
@@ -165,7 +166,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const totalCount = entries.reduce((a, [, b]) => a + b.count, 0);
         const grandTotal = entries.reduce((a, [, b]) => a + b.totalPrice, 0);
         const lines: string[] = [];
-        lines.push(`${dateTitle} (${companyName})`);
+        const bizShort2 = getBusinessInfo(businessId ?? '')?.shortName || '';
+        lines.push(`${dateTitle} (${companyName})${bizShort2 ? ' ' + bizShort2 : ''}`);
         lines.push(`총주문수\t${totalCount}개`);
         lines.push('');
         entries

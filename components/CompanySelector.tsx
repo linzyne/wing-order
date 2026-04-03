@@ -152,10 +152,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 업체 순서 관리
     const [companyOrder, setCompanyOrder] = useState<string[]>([]);
     const lastWrittenCompanyOrderRef = useRef('[]');
+    const [firestoreOrderLoaded, setFirestoreOrderLoaded] = useState(false);
 
     // 업체 순서 Firestore 구독
     useEffect(() => {
+        setFirestoreOrderLoaded(false);
         const unsubscribe = subscribeCompanyOrder((order) => {
+            setFirestoreOrderLoaded(true);
             const str = JSON.stringify(order);
             if (str !== lastWrittenCompanyOrderRef.current) {
                 setCompanyOrder(order);
@@ -165,32 +168,31 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return unsubscribe;
     }, [businessId]);
 
-    // 업체 순서 변경 → Firestore에 저장
-    const isInitialCompanyOrderLoad = useRef(true);
+    // 업체 순서 변경 → Firestore에 저장 (Firestore 로드 완료 후에만)
     useEffect(() => {
-        if (isInitialCompanyOrderLoad.current) {
-            isInitialCompanyOrderLoad.current = false;
-            // 초기 로드 시 Firestore에 저장된 순서가 없으면 기본 순서 사용
-            if (companyOrder.length === 0) {
-                const companies = Object.keys(pricingConfig);
-                const ordered = companies.sort((a, b) => {
-                    const indexA = DEFAULT_PREFERRED_ORDER.indexOf(a);
-                    const indexB = DEFAULT_PREFERRED_ORDER.indexOf(b);
-                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-                    if (indexA !== -1) return -1;
-                    if (indexB !== -1) return 1;
-                    return a.localeCompare(b);
-                });
-                setCompanyOrder(ordered);
-                saveCompanyOrder(ordered, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
-            }
+        if (!firestoreOrderLoaded) return;
+        if (companyOrder.length === 0) {
+            // Firestore에 저장된 순서가 없으면 기본 순서 생성
+            const companies = Object.keys(pricingConfig);
+            if (companies.length === 0) return;
+            const ordered = [...companies].sort((a, b) => {
+                const indexA = DEFAULT_PREFERRED_ORDER.indexOf(a);
+                const indexB = DEFAULT_PREFERRED_ORDER.indexOf(b);
+                if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+                if (indexA !== -1) return -1;
+                if (indexB !== -1) return 1;
+                return a.localeCompare(b);
+            });
+            setCompanyOrder(ordered);
+            lastWrittenCompanyOrderRef.current = JSON.stringify(ordered);
+            saveCompanyOrder(ordered, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
             return;
         }
         const currentStr = JSON.stringify(companyOrder);
         if (currentStr === lastWrittenCompanyOrderRef.current) return;
         lastWrittenCompanyOrderRef.current = currentStr;
         saveCompanyOrder(companyOrder, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
-    }, [companyOrder, pricingConfig, businessId]);
+    }, [companyOrder, pricingConfig, businessId, firestoreOrderLoaded]);
 
     // 수동발주 Firestore 영구 저장 - 구독
     useEffect(() => {
@@ -278,6 +280,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             return arrayMove(items, oldIndex, newIndex);
         });
     };
+
+    // 원본 주문서 업로드 시 감지된 업체를 상단으로 자동 정렬
+    useEffect(() => {
+        if (companyOrder.length === 0 || detectedCompanies.size === 0) return;
+        const detected = companyOrder.filter(c => detectedCompanies.has(c));
+        const undetected = companyOrder.filter(c => !detectedCompanies.has(c));
+        const newOrder = [...detected, ...undetected];
+        if (JSON.stringify(newOrder) !== JSON.stringify(companyOrder)) {
+            setCompanyOrder(newOrder);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [detectedCompanies]);
 
     // 비용(지출내역) 관리
     const EXPENSE_CATEGORIES = ['임대료', '통신비', '소모품비', '물류비', '마케팅', '식비', '기타', '이자'];
