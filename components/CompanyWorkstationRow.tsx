@@ -921,6 +921,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         });
                                         const summaryKeys = Object.keys(summary);
                                         let totalItems = 0;
+                                        let grandTotalMargin = 0;
                                         return (
                                             <div className="space-y-2">
                                                 {summaryKeys.map((key, idx) => {
@@ -930,11 +931,25 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     const entryList = Object.entries(rawEntries);
                                                     const actualTotal = entryList.reduce((a, [, c]) => a + c, 0);
                                                     totalItems += actualTotal;
+                                                    const productConfig = pricingConfig[companyName]?.products?.[key];
+                                                    const unitSupply = summary[key]?.totalPrice ? Math.round(summary[key].totalPrice / summary[key].count) : 0;
+                                                    const unitSelling = productConfig?.sellingPrice || 0;
+                                                    const unitMargin = unitSelling > 0 ? unitSelling - unitSupply : 0;
+                                                    const totalMargin = unitMargin * expectedCount;
+                                                    grandTotalMargin += totalMargin;
                                                     return (
                                                         <div key={idx}>
-                                                            <div className="flex justify-between text-[12px] font-mono text-zinc-200 font-bold">
-                                                                <span>{key}{summary[key]?.totalPrice ? ` (${Math.round(summary[key].totalPrice / summary[key].count).toLocaleString()})` : ''}</span>
-                                                                <span>{expectedCount}개</span>
+                                                            <div className="flex justify-between text-[12px] font-mono text-zinc-200 font-bold gap-2">
+                                                                <span className="shrink-0">{key}{unitSupply ? ` (${unitSupply.toLocaleString()})` : ''}</span>
+                                                                <div className="flex items-center gap-2 shrink-0">
+                                                                    {unitMargin > 0 && (
+                                                                        <span className="text-emerald-400 text-[10px] font-black">+{unitMargin.toLocaleString()} × {expectedCount} = {totalMargin.toLocaleString()}</span>
+                                                                    )}
+                                                                    {unitSelling > 0 && unitMargin <= 0 && (
+                                                                        <span className="text-red-400 text-[10px] font-black">{unitMargin.toLocaleString()} × {expectedCount}</span>
+                                                                    )}
+                                                                    <span>{expectedCount}개</span>
+                                                                </div>
                                                             </div>
                                                             {entryList.map(([rawName, cnt], j) => {
                                                                 const rawSizes = extractSizes(rawName);
@@ -949,9 +964,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                         </div>
                                                     );
                                                 })}
-                                                <div className="border-t border-zinc-800 pt-2 mt-2 flex justify-between text-[12px] font-mono text-zinc-200 font-bold">
-                                                    <span>총 주문수</span>
-                                                    <span>{totalItems}개</span>
+                                                <div className="border-t border-zinc-800 pt-2 mt-2 space-y-1">
+                                                    <div className="flex justify-between text-[12px] font-mono text-zinc-200 font-bold">
+                                                        <span>총 주문수</span>
+                                                        <span>{totalItems}개</span>
+                                                    </div>
+                                                    {grandTotalMargin !== 0 && (
+                                                        <div className="flex justify-between text-[12px] font-mono font-bold">
+                                                            <span className="text-emerald-400">총 마진</span>
+                                                            <span className={grandTotalMargin > 0 ? 'text-emerald-400' : 'text-red-400'}>{grandTotalMargin > 0 ? '+' : ''}{grandTotalMargin.toLocaleString()}원</span>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         );
