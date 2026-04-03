@@ -141,7 +141,22 @@ export interface ExpenseRecord {
   category: string;    // 임대료, 통신비, 소모품비, 물류비, 마케팅, 식비, 기타, 이자
   amount: number;      // 지출 금액
   description: string; // 지출 내역
-  isAuto?: boolean;    // 택배대행/롯데택배 자동 생성 여부
+  isAuto?: boolean;    // 자동 생성 여부
+}
+
+export interface CourierTemplate {
+  id: string;
+  name: string;           // 택배사 이름 (e.g. '롯데택배', 'CJ대한통운')
+  headers: string[];      // 업로드된 양식의 헤더 row
+  mapping: {
+    orderNumber: number;      // 주문번호 열 index
+    recipientName: number;    // 받는사람 열 index
+    recipientPhone: number;   // 전화번호 열 index
+    recipientAddress: number; // 주소 열 index
+    trackingNumber: number;   // 운송장번호 열 index
+  };
+  fixedValues: Record<number, string>; // 열 index → 고정값 (보내는사람, 상품명 등)
+  unitPrice: number;      // 건당 단가 (물류비 계산용)
 }
 
 // ===== 멀티 플랫폼 설정 =====

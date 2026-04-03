@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { PricingConfig, PlatformConfigs, TodoItem } from '../types';
+import type { PricingConfig, PlatformConfigs, TodoItem, CourierTemplate } from '../types';
 import {
   subscribePricingConfig,
   savePricingConfigToFirestore,
@@ -9,6 +9,8 @@ import {
   savePlatformConfigs,
   subscribeTodos,
   saveTodos as saveTodosToFirestore,
+  subscribeCourierTemplates,
+  saveCourierTemplates as saveCourierTemplatesToFirestore,
   type DailyWorkspaceData,
 } from '../services/firestoreService';
 import { DEFAULT_PRICING_CONFIG, DEFAULT_PRICING_CONFIG_조에 } from '../pricing';
@@ -105,6 +107,36 @@ export const usePlatformConfigs = (businessId?: string) => {
   }, [businessId]);
 
   return { platformConfigs, savePlatformConfig };
+};
+
+// ===== Courier Templates Hook =====
+export const useCourierTemplates = (businessId?: string) => {
+  const [courierTemplates, setCourierTemplates] = useState<CourierTemplate[]>([]);
+  const pendingSaves = useRef(0);
+  const saveGraceUntil = useRef(0);
+
+  useEffect(() => {
+    const unsubscribe = subscribeCourierTemplates((templates) => {
+      if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) return;
+      setCourierTemplates(templates);
+    }, businessId);
+    return unsubscribe;
+  }, [businessId]);
+
+  const saveTemplates = useCallback(async (newTemplates: CourierTemplate[]) => {
+    pendingSaves.current++;
+    setCourierTemplates(newTemplates);
+    try {
+      await saveCourierTemplatesToFirestore(newTemplates, businessId);
+      saveGraceUntil.current = Date.now() + 1000;
+    } catch (e) {
+      console.error('[Config] CourierTemplates 저장 실패:', e);
+    } finally {
+      pendingSaves.current--;
+    }
+  }, [businessId]);
+
+  return { courierTemplates, saveTemplates };
 };
 
 // ===== Daily Workspace Hook =====

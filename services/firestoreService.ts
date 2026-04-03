@@ -5,7 +5,7 @@ import {
   onSnapshot, Timestamp,
   type Unsubscribe
 } from 'firebase/firestore';
-import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo } from '../types';
+import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate } from '../types';
 
 // ===== 사업자별 Firestore 경로 헬퍼 =====
 // 안군농원(또는 미지정)이면 기존 경로 그대로, 그 외 사업자는 접미사 추가
@@ -26,6 +26,9 @@ const getCompanyOrderDocId = (businessId?: string): string =>
 
 // 플랫폼 감지 설정(헤더 매칭 등)은 사업자 공통이므로 항상 같은 문서 사용
 const getPlatformConfigsDocId = (_businessId?: string): string => 'platformConfigs';
+
+const getCourierTemplatesDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'courierTemplates' : `courierTemplates_${businessId}`;
 
 const getTodosDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'todos' : `todos_${businessId}`;
@@ -90,6 +93,10 @@ export const upsertDailySales = async (
   const serialized: any = { ...dailySales };
   if (serialized.orderRows) serialized.orderRows = JSON.stringify(serialized.orderRows);
   if (serialized.invoiceRows) serialized.invoiceRows = JSON.stringify(serialized.invoiceRows);
+  // Firestore는 undefined 값을 허용하지 않으므로 제거
+  Object.keys(serialized).forEach(key => {
+    if (serialized[key] === undefined) delete serialized[key];
+  });
   await setDoc(docRef, serialized);
 };
 
@@ -202,6 +209,26 @@ export const subscribeCompanyOrder = (
 export const saveCompanyOrder = async (order: string[], businessId?: string): Promise<void> => {
   const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
   await setDoc(docRef, { order, updatedAt: Timestamp.now() });
+};
+
+// ===== Courier Templates (택배 양식 관리) =====
+
+export const subscribeCourierTemplates = (
+  callback: (templates: CourierTemplate[]) => void,
+  businessId?: string
+): Unsubscribe => {
+  const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().templates || []) : []);
+  }, (error) => {
+    console.error('[Firestore] CourierTemplates 구독 오류:', error);
+    callback([]);
+  });
+};
+
+export const saveCourierTemplates = async (templates: CourierTemplate[], businessId?: string): Promise<void> => {
+  const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
+  await setDoc(docRef, { templates, updatedAt: Timestamp.now() });
 };
 
 // ===== Platform Configs (멀티 플랫폼 설정) =====
