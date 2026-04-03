@@ -1339,23 +1339,27 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             });
         });
         if (summarySheetData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summarySheetData), "요약시트");
-        const depositRows: any[][] = [];
+        const depositRows: any[][] = [['업체명', '은행', '계좌번호', '금액', '비고']];
         let depTotal = 0;
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             const config = pricingConfig[name];
-            sessions.forEach(s => {
-                const amount = totalsMap[s.id] || 0;
-                if (amount > 0) { depositRows.push([config?.bankName || '', config?.accountNumber || '', amount]); depTotal += amount; }
-            });
+            const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
+            if (sessionAmounts.length === 0) return;
+            const companyTotal = sessionAmounts.reduce((sum, s) => sum + s.amount, 0);
+            const roundDetail = sessionAmounts.length > 1
+                ? sessionAmounts.map(s => `${s.round}차 ${s.amount.toLocaleString()}`).join(' / ')
+                : '';
+            depositRows.push([name, config?.bankName || '', config?.accountNumber || '', companyTotal, roundDetail]);
+            depTotal += companyTotal;
         });
-        manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount]); depTotal += t.amount; });
+        manualTransfers.forEach(t => { depositRows.push([t.label || '', t.bankName, t.accountNumber, t.amount, '']); depTotal += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
             const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2270;
-            depositRows.push(['카카오뱅크', '3333-18-8744855', deliveryFee]);
+            depositRows.push([`택배대행(${fakeOrderAnalysis.inputNumbers.size}건)`, '카카오뱅크', '3333-18-8744855', deliveryFee, '']);
             depTotal += deliveryFee;
         }
-        if (depositRows.length > 0) depositRows.push([], ['', '합계', depTotal]);
+        if (depositRows.length > 1) depositRows.push([], ['', '', '합계', depTotal, '']);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(depositRows), "입금내역");
         const orderSheetData: any[][] = [];
         const invoiceSheetData: any[][] = [];
