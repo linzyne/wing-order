@@ -138,16 +138,17 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                             <div>
                                 <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">공급가</label>
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
                                     value={dialog.product.supplyPrice}
-                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: Number(e.target.value) } })}
-                                    onPaste={(e) => {
-                                        const text = e.clipboardData.getData('text');
-                                        const nums = text.trim().split(/[\s\t,]+/).map(Number).filter(n => !isNaN(n));
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        const nums = val.trim().split(/[\s\t,]+/).map(Number).filter(n => !isNaN(n));
                                         if (nums.length >= 3) {
-                                            e.preventDefault();
                                             setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: nums[0], sellingPrice: nums[1], margin: nums[2] } });
+                                        } else {
+                                            setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: Number(val) || 0 } });
                                         }
                                     }}
                                 />
@@ -155,19 +156,21 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                             <div>
                                 <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">판매가</label>
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
                                     value={dialog.product.sellingPrice || 0}
-                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, sellingPrice: Number(e.target.value) } })}
+                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, sellingPrice: Number(e.target.value) || 0 } })}
                                 />
                             </div>
                             <div>
                                 <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">마진</label>
                                 <input
-                                    type="number"
+                                    type="text"
+                                    inputMode="numeric"
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
                                     value={dialog.product.margin || 0}
-                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, margin: Number(e.target.value) } })}
+                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, margin: Number(e.target.value) || 0 } })}
                                 />
                             </div>
                         </div>
