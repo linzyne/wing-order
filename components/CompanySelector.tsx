@@ -7,7 +7,7 @@ import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
-import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder, subscribeQuickRecipients, saveQuickRecipients, type QuickRecipientData } from '../services/firestoreService';
 import { useAIManualOrder } from '../hooks/useAIManualOrder';
 import {
     DndContext,
@@ -31,10 +31,6 @@ declare var XLSX: any;
 
 const DEFAULT_PREFERRED_ORDER = ['연두', '웰그린', '고랭지김치', '제이제이', '팜플로우', '꽃게', '신선마켓', '답도', '귤_초록', '홍게', '황금향', '귤', '홍게2'];
 
-const QUICK_RECIPIENTS = [
-    { name: '김지아', phone: '01094496343', address: '인천시 연수수 해송로30번길 19, 306-802' },
-    { name: '김성아', phone: '01050447749', address: '인천시 연수구 송도국제대로261, 214-4105' }
-];
 
 interface ManualTransfer {
     id: string; label: string; bankName: string; accountNumber: string; amount: number; isAdjustment?: boolean; companyName?: string;
@@ -362,6 +358,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
     const lastWrittenManualOrdersRef = useRef('[]');
 
+    // 빠른 수령자 Firestore 관리
+    const [quickRecipients, setQuickRecipients] = useState<QuickRecipientData[]>([]);
+    const [showAddRecipient, setShowAddRecipient] = useState(false);
+    const [newRecipient, setNewRecipient] = useState({ name: '', phone: '', address: '' });
+    useEffect(() => {
+        const unsubscribe = subscribeQuickRecipients((recipients) => {
+            setQuickRecipients(recipients);
+        }, businessId);
+        return unsubscribe;
+    }, [businessId]);
+
     // 업체 순서 관리
     const [companyOrder, setCompanyOrder] = useState<string[]>([]);
     const lastWrittenCompanyOrderRef = useRef('[]');
@@ -435,7 +442,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const [isAIMode, setIsAIMode] = useState(false);
     const [aiInput, setAiInput] = useState('');
-    const { parsedOrders, isLoading: aiLoading, error: aiError, parseNaturalLanguage, clearParsedOrders, updateParsedOrder, removeParsedOrder } = useAIManualOrder(pricingConfig, QUICK_RECIPIENTS);
+    const { parsedOrders, isLoading: aiLoading, error: aiError, parseNaturalLanguage, clearParsedOrders, updateParsedOrder, removeParsedOrder } = useAIManualOrder(pricingConfig, quickRecipients);
 
     const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(() => {
         const initialIds = new Set<string>();
@@ -1888,11 +1895,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     </div>
                                 </div>
                                 {!isAIMode && (
-                                    <div className="flex flex-wrap gap-2">
+                                    <div className="flex flex-wrap gap-2 items-center">
                                         <span className="text-zinc-600 text-[9px] font-black uppercase self-center mr-1">빠른 선택 :</span>
-                                        {QUICK_RECIPIENTS.map(p => (
-                                            <button key={p.name} type="button" onClick={() => handleQuickSelect(p)} className="px-3 py-1 bg-zinc-800 hover:bg-rose-500 hover:text-white border border-zinc-700 rounded-full text-[10px] font-black text-zinc-400 transition-all shadow-sm">{p.name}</button>
+                                        {quickRecipients.map(p => (
+                                            <div key={p.name} className="group relative flex items-center">
+                                                <button type="button" onClick={() => handleQuickSelect(p)} className="px-3 py-1 bg-zinc-800 hover:bg-rose-500 hover:text-white border border-zinc-700 rounded-full text-[10px] font-black text-zinc-400 transition-all shadow-sm">{p.name}</button>
+                                                <button type="button" onClick={() => { if (confirm(`'${p.name}' 수령자를 삭제할까요?`)) { const updated = quickRecipients.filter(r => r.name !== p.name); setQuickRecipients(updated); saveQuickRecipients(updated, businessId); } }} className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-zinc-700 hover:bg-red-500 text-zinc-400 hover:text-white rounded-full text-[8px] font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">×</button>
+                                            </div>
                                         ))}
+                                        {!showAddRecipient ? (
+                                            <button type="button" onClick={() => setShowAddRecipient(true)} className="px-2 py-1 border border-dashed border-zinc-700 hover:border-rose-500 rounded-full text-[10px] font-black text-zinc-600 hover:text-rose-400 transition-all">+ 추가</button>
+                                        ) : (
+                                            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-xl px-2 py-1">
+                                                <input placeholder="이름" value={newRecipient.name} onChange={e => setNewRecipient(prev => ({...prev, name: e.target.value}))} className="w-14 bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
+                                                <input placeholder="전화번호" value={newRecipient.phone} onChange={e => setNewRecipient(prev => ({...prev, phone: e.target.value}))} className="w-24 bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
+                                                <input placeholder="주소" value={newRecipient.address} onChange={e => setNewRecipient(prev => ({...prev, address: e.target.value}))} className="w-40 bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
+                                                <button type="button" onClick={() => { if (!newRecipient.name.trim()) return; const updated = [...quickRecipients, { name: newRecipient.name.trim(), phone: newRecipient.phone.trim(), address: newRecipient.address.trim() }]; setQuickRecipients(updated); saveQuickRecipients(updated, businessId); setNewRecipient({ name: '', phone: '', address: '' }); setShowAddRecipient(false); }} className="px-2 py-0.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[9px] font-black transition-all">등록</button>
+                                                <button type="button" onClick={() => { setShowAddRecipient(false); setNewRecipient({ name: '', phone: '', address: '' }); }} className="px-1.5 py-0.5 text-zinc-500 hover:text-zinc-300 text-[9px] font-black transition-all">취소</button>
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1925,7 +1946,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <textarea
                                             value={aiInput}
                                             onChange={e => setAiInput(e.target.value)}
-                                            placeholder="예: 연두 포기김치 3kg를 김지아 집으로 보내줘&#10;예: 김성아한테 웰그린 당근 3kg 2개, 연두 총각김치 5kg 1개"
+                                            placeholder={quickRecipients.length > 0 ? `예: 연두 포기김치 3kg를 ${quickRecipients[0].name} 집으로 보내줘\n예: ${quickRecipients.length > 1 ? quickRecipients[1].name : quickRecipients[0].name}한테 웰그린 당근 3kg 2개` : '예: 연두 포기김치 3kg를 홍길동 집으로 보내줘\n수령자를 먼저 빠른 선택에 등록하면 편리합니다'}
                                             className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-xs font-bold text-white focus:ring-1 focus:ring-violet-500/30 outline-none resize-none min-h-[80px] placeholder:text-zinc-700"
                                             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && aiInput.trim()) { e.preventDefault(); parseNaturalLanguage(aiInput.trim()); } }}
                                         />

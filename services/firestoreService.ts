@@ -21,6 +21,9 @@ const getWorkspaceCollectionName = (businessId?: string): string =>
 const getManualOrdersDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'pendingManualOrders' : `pendingManualOrders_${businessId}`;
 
+const getQuickRecipientsDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'quickRecipients' : `quickRecipients_${businessId}`;
+
 const getCompanyOrderDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'companyOrder' : `companyOrder_${businessId}`;
 
@@ -169,6 +172,32 @@ export const getDailyWorkspace = async (businessId?: string): Promise<DailyWorks
   const docRef = doc(db, getWorkspaceCollectionName(businessId), getTodayDocId());
   const snapshot = await getDoc(docRef);
   return snapshot.exists() ? snapshot.data() as DailyWorkspaceData : null;
+};
+
+// ===== Quick Recipients (빠른 수령자 관리) =====
+
+export interface QuickRecipientData {
+  name: string;
+  phone: string;
+  address: string;
+}
+
+export const subscribeQuickRecipients = (
+  callback: (recipients: QuickRecipientData[]) => void,
+  businessId?: string
+): Unsubscribe => {
+  const docRef = doc(db, 'config', getQuickRecipientsDocId(businessId));
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().recipients || []) : []);
+  }, (error) => {
+    console.error('[Firestore] QuickRecipients 구독 오류:', error);
+    callback([]);
+  });
+};
+
+export const saveQuickRecipients = async (recipients: QuickRecipientData[], businessId?: string): Promise<void> => {
+  const docRef = doc(db, 'config', getQuickRecipientsDocId(businessId));
+  await setDoc(docRef, { recipients, updatedAt: Timestamp.now() });
 };
 
 // ===== Pending Manual Orders (날짜 무관, 삭제 전까지 유지) =====
