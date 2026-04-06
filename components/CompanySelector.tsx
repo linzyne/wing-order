@@ -96,6 +96,7 @@ const CourierTemplateManager: React.FC<{
     onSave: (templates: CourierTemplate[]) => void;
 }> = ({ templates, onSave }) => {
     const [newName, setNewName] = useState('');
+    const [newLabel, setNewLabel] = useState('');
     const [newUnitPrice, setNewUnitPrice] = useState('2270');
     const [newHeaders, setNewHeaders] = useState<string[]>([]);
     const [newMapping, setNewMapping] = useState<Record<string, number>>({});
@@ -134,6 +135,7 @@ const CourierTemplateManager: React.FC<{
         const template: CourierTemplate = {
             id: `tmpl_${Date.now()}`,
             name: newName.trim(),
+            label: newLabel.trim() || undefined,
             headers: newHeaders,
             mapping: {
                 orderNumber: newMapping.orderNumber,
@@ -148,6 +150,7 @@ const CourierTemplateManager: React.FC<{
 
         onSave([...templates, template]);
         setNewName('');
+        setNewLabel('');
         setNewUnitPrice('2270');
         setNewHeaders([]);
         setNewMapping({});
@@ -172,6 +175,7 @@ const CourierTemplateManager: React.FC<{
                 <div key={tmpl.id} className="flex items-center justify-between bg-zinc-950/80 px-4 py-3 rounded-xl border border-zinc-800">
                     <div className="flex items-center gap-3">
                         <span className="text-sm font-black text-white">{tmpl.name}</span>
+                        {tmpl.label && <span className="bg-amber-500/10 text-amber-400 text-[9px] px-2 py-0.5 rounded-full font-bold border border-amber-500/20">{tmpl.label}</span>}
                         <span className="text-[9px] text-zinc-500 font-mono">
                             {COURIER_DATA_FIELDS.map(f => `${f.label}:${colIndexToLetter(tmpl.mapping[f.key])}`).join('  ')}
                         </span>
@@ -195,6 +199,10 @@ const CourierTemplateManager: React.FC<{
                         <div className="flex-1">
                             <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배사 이름</label>
                             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: CJ대한통운" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500/50" />
+                        </div>
+                        <div className="flex-1">
+                            <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">명칭 (구분용)</label>
+                            <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 과일용, 3kg박스" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500/50" />
                         </div>
                         <div className="w-28">
                             <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">건당 단가</label>
@@ -1052,7 +1060,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const ws = XLSX.utils.aoa_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_${template.name}.xlsx`);
+            const tmplDisplayName = template.label ? `${template.name}_${template.label}` : template.name;
+            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_${tmplDisplayName}.xlsx`);
 
             if (notFoundOrders.length > 0) {
                 alert(`${template.name} ${matchedCount}건 다운로드 완료!\n\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
@@ -1137,7 +1146,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const ws = XLSX.utils.aoa_to_sheet(rows);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '주문서');
-        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${tmpl?.name || '택배'}_운송장완료.xlsx`);
+        const tmplDisplayName = tmpl ? (tmpl.label ? `${tmpl.name}_${tmpl.label}` : tmpl.name) : '택배';
+        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
     };
 
     const handleAddManualOrder = (e: React.FormEvent) => {
@@ -1748,7 +1758,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             grouped[company].push([name, count as number]);
                                                         });
                                                         Object.values(grouped).forEach(items => items.sort((a, b) => b[1] - a[1]));
-                                                        return Object.entries(grouped).sort(([,a],[,b]) => b.reduce((s,x)=>s+x[1],0) - a.reduce((s,x)=>s+x[1],0)).map(([company, items]) => (
+                                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
                                                             <div key={company}>
                                                                 <div className="text-sm text-zinc-300 font-black">{company} {fmtCompany(company, items, add?.realByCompany)}</div>
                                                                 {items.map(([name, count]) => (
@@ -1774,7 +1784,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                                 grouped[company].push([name, count as number]);
                                                             });
                                                             Object.values(grouped).forEach(items => items.sort((a, b) => b[1] - a[1]));
-                                                            return Object.entries(grouped).sort(([,a],[,b]) => b.reduce((s,x)=>s+x[1],0) - a.reduce((s,x)=>s+x[1],0)).map(([company, items]) => (
+                                                            return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
                                                                 <div key={company}>
                                                                     <div className="text-sm text-zinc-400 font-black">{company} {fmtCompany(company, items, add?.fakeByCompany)}</div>
                                                                     {items.map(([name, count]) => (
@@ -2349,7 +2359,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             className="flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed bg-indigo-950/30 border-indigo-500/30 text-indigo-400 hover:bg-indigo-900/40 hover:border-indigo-500/50"
                                         >
                                             <ArrowDownTrayIcon className="w-4 h-4" />
-                                            <span>{tmpl.name} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
+                                            <span>{tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
                                         </button>
                                     ))}
                                 </div>
@@ -2369,7 +2379,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <div className="flex items-center gap-2">
                                             <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${file ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
                                                 <ArrowDownTrayIcon className="w-4 h-4" />
-                                                <span>{file ? file.name : `${tmpl.name} 운송장 업로드`}</span>
+                                                <span>{file ? file.name : `${tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} 운송장 업로드`}</span>
                                                 <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); }} />
                                             </label>
                                             {file && (
@@ -2401,7 +2411,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 {matched && (
                                                     <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black transition-colors shadow-lg">
                                                         <ArrowDownTrayIcon className="w-4 h-4" />
-                                                        {tmpl.name} 운송장완료 다운로드 ({result.matched}건)
+                                                        {tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} 운송장완료 다운로드 ({result.matched}건)
                                                     </button>
                                                 )}
                                             </div>

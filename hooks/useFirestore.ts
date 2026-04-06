@@ -28,8 +28,11 @@ export const usePricingConfig = (businessId?: string) => {
   // 저장 진행 중 카운터 + 저장 완료 후 유예 타이머 (구독 덮어쓰기 방지)
   const pendingSaves = useRef(0);
   const saveGraceUntil = useRef(0);
+  // Firestore에서 한 번이라도 데이터를 로드했는지 추적 → 이후 절대 기본값으로 되돌리지 않음
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
+    hasLoadedRef.current = false;
     setIsLoading(true);
     const unsubscribe = subscribePricingConfig((firestoreConfig, connected) => {
       if (firestoreConfig) {
@@ -37,23 +40,36 @@ export const usePricingConfig = (businessId?: string) => {
         if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) {
           return;
         }
+        hasLoadedRef.current = true;
         console.log('[Config] Firestore에서 로드 완료, 업체 수:', Object.keys(firestoreConfig).length);
         setConfig(firestoreConfig);
         setConfigSource('firestore');
       } else if (connected) {
         // 저장 중이면 기본값 초기화도 차단 (저장 직후 snapshot 지연 시 안전)
         if (pendingSaves.current > 0) return;
-        // 문서가 존재하지 않음 → 기본값으로 초기화 (안전)
-        console.warn('[Config] Firestore 문서 없음 → 기본값으로 초기화');
+        // 이미 데이터를 로드한 적 있으면 절대 기본값으로 되돌리지 않음
+        if (hasLoadedRef.current) {
+          console.warn('[Config] Firestore 문서 일시 소실 → 현재 상태 유지 (기본값 덮어쓰기 차단)');
+          setIsLoading(false);
+          return;
+        }
+        // 최초 로드 시에만 기본값으로 초기화
+        console.warn('[Config] Firestore 문서 없음 → 기본값으로 최초 초기화');
+        hasLoadedRef.current = true;
         savePricingConfigToFirestore(defaultConfig, businessId).catch(e =>
           console.error('[Config] 기본값 저장 실패:', e)
         );
         setConfig(defaultConfig);
         setConfigSource('default');
       } else {
-        // 연결 오류 → 저장 중이면 로컬 상태 유지, 아니면 기본값 표시
+        // 연결 오류 → 절대 기본값으로 되돌리지 않고 현재 상태 유지
         if (pendingSaves.current > 0) return;
-        console.error('[Config] Firestore 연결 오류 → 기본값 표시 (덮어쓰기 안함)');
+        if (hasLoadedRef.current) {
+          console.error('[Config] Firestore 연결 오류 → 현재 상태 유지 (기본값 덮어쓰기 차단)');
+          setIsLoading(false);
+          return;
+        }
+        console.error('[Config] Firestore 최초 연결 실패 → 기본값 표시 (Firestore에는 저장 안함)');
         setConfig(defaultConfig);
         setConfigSource('default');
       }
@@ -67,10 +83,13 @@ export const usePricingConfig = (businessId?: string) => {
     setConfig(newConfig);
     try {
       await savePricingConfigToFirestore(newConfig, businessId);
-      // 저장 완료 후 1초간 유예 (서버 확인 snapshot이 도착할 때까지)
-      saveGraceUntil.current = Date.now() + 1000;
+      hasLoadedRef.current = true;
+      // 저장 완료 후 3초간 유예 (서버 확인 snapshot이 도착할 때까지)
+      saveGraceUntil.current = Date.now() + 3000;
     } catch (e) {
       console.error('[Config] Firestore 저장 실패:', e);
+      // 저장 실패 시에도 10초간 유예하여 이전 데이터로 되돌아가는 것을 방지
+      saveGraceUntil.current = Date.now() + 10000;
     } finally {
       pendingSaves.current--;
     }

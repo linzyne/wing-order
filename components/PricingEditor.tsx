@@ -142,6 +142,14 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
                                     value={dialog.product.supplyPrice}
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: Number(e.target.value) } })}
+                                    onPaste={(e) => {
+                                        const text = e.clipboardData.getData('text');
+                                        const nums = text.trim().split(/[\s\t,]+/).map(Number).filter(n => !isNaN(n));
+                                        if (nums.length >= 3) {
+                                            e.preventDefault();
+                                            setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: nums[0], sellingPrice: nums[1], margin: nums[2] } });
+                                        }
+                                    }}
                                 />
                             </div>
                             <div>
@@ -731,7 +739,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                 </div>
                 {Object.keys(config).length > 0 && (
                     <div className="flex flex-wrap gap-1.5 px-2">
-                        {Object.keys(config).map(name => (
+                        {Object.keys(config).sort((a, b) => a.localeCompare(b, 'ko')).map(name => (
                             <button
                                 key={name}
                                 onClick={() => {
@@ -759,7 +767,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                 </div>
             ) : (
                 <div className="grid grid-cols-1 gap-8">
-                    {Object.entries(config).map(([companyName, companyConfig]) => (
+                    {Object.entries(config).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([companyName, companyConfig]) => (
                         <CompanyCard
                             key={companyName}
                             companyName={companyName}

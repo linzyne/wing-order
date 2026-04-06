@@ -147,6 +147,7 @@ export interface ExpenseRecord {
 export interface CourierTemplate {
   id: string;
   name: string;           // 택배사 이름 (e.g. '롯데택배', 'CJ대한통운')
+  label?: string;         // 사용자 지정 명칭 (e.g. '과일용', '채소용') — 택배 양식 구분용
   headers: string[];      // 업로드된 양식의 헤더 row
   mapping: {
     orderNumber: number;      // 주문번호 열 index
