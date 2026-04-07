@@ -670,9 +670,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean }[] = [];
         const skippedOrders: { recipientName: string; productName: string; orderNumber: string; qty: number; reason: string }[] = [];
         let masterRawTotalQty = 0;
+        let masterFileRowCount = 0; // 파일 내 비어있지 않은 데이터 행 수
+        let nullRowCount = 0; // null/undefined 행 수
         for (let i = 1; i < masterOrderData.length; i++) {
             const row = masterOrderData[i];
-            if (!row) continue;
+            if (!row) { nullRowCount++; continue; }
+            // 완전히 빈 행 건너뛰기 (데이터 행으로 카운트하지 않음)
+            const hasAnyData = row.some((cell: any) => cell !== undefined && cell !== null && String(cell).trim() !== '');
+            if (!hasAnyData) continue;
+            masterFileRowCount++;
             const orderNum = String(row[2] || '').trim();
             const groupName = String(row[10] || '').trim();
             const qty = parseInt(String(row[22] || '1'), 10) || 1;
@@ -708,14 +714,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         const realTotal = Object.values(realOrders).reduce((a, b) => a + b, 0);
         const fakeTotal = Object.values(fakeOrders).reduce((a, b) => a + b, 0);
-        // 업체별 마스터 주문 건수 (행 기준)
+        // 업체별 마스터 주문 건수 (수량 기준)
         const companyOrderCounts: Record<string, number> = {};
         allOrderDetails.forEach(d => {
             if (d.company) {
                 companyOrderCounts[d.company] = (companyOrderCounts[d.company] || 0) + d.qty;
             }
         });
-        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty };
+        console.log(`[마스터검증] XLSX행수: ${masterOrderData.length - 1}, 데이터행: ${masterFileRowCount}, null행: ${nullRowCount}, masterRawTotalQty: ${masterRawTotalQty}, realTotal: ${realTotal}, fakeTotal: ${fakeTotal}, 합계: ${realTotal + fakeTotal}, skipped: ${skippedOrders.length}, unclaimed: ${unclaimedOrders.length}`);
+        console.log(`[마스터검증] companyOrderCounts:`, companyOrderCounts);
+        if (unclaimedOrders.length > 0) console.log(`[마스터검증] unclaimedOrders:`, unclaimedOrders);
+        if (skippedOrders.length > 0) console.log(`[마스터검증] skippedOrders:`, skippedOrders);
+        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount };
     }, [masterOrderData, fakeOrderInput, pricingConfig]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
@@ -1743,6 +1753,46 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <div className="flex items-center gap-2">
                                         <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black">{detectedCompanies.size}개 업체 탐지</span>
                                     </div>
+                                    {masterProductSummary && (
+                                        <div className={`rounded-lg px-2.5 py-1.5 text-[10px] font-black ${
+                                            masterProductSummary.masterFileRowCount !== masterProductSummary.realTotal + masterProductSummary.fakeTotal
+                                                ? 'bg-red-600/20 border-2 border-red-500/60 text-red-400'
+                                                : masterProductSummary.unclaimedOrders.length > 0
+                                                    ? 'bg-amber-500/15 border border-amber-500/40 text-amber-400'
+                                                    : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                                        }`}>
+                                            <div className="flex items-center gap-1.5">
+                                                <span>{masterProductSummary.masterFileRowCount !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? '⚠' : masterProductSummary.unclaimedOrders.length > 0 ? '⚠' : '✓'}</span>
+                                                <span>파일 {masterProductSummary.masterFileRowCount}행</span>
+                                                <span className="text-zinc-600">→</span>
+                                                <span>실제 {masterProductSummary.realTotal} + 가구매 {masterProductSummary.fakeTotal} = {masterProductSummary.realTotal + masterProductSummary.fakeTotal}건</span>
+                                            </div>
+                                            {masterProductSummary.masterFileRowCount > masterProductSummary.realTotal + masterProductSummary.fakeTotal && (
+                                                <div className="text-red-300 mt-0.5">
+                                                    {masterProductSummary.masterFileRowCount - masterProductSummary.realTotal - masterProductSummary.fakeTotal}건 누락! (등록상품명 누락: {masterProductSummary.skippedOrders.length}건)
+                                                    {masterProductSummary.skippedOrders.length > 0 && (
+                                                        <div className="mt-0.5 pl-2 space-y-0.5">
+                                                            {masterProductSummary.skippedOrders.map((s, idx) => (
+                                                                <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
+                                                                    {s.recipientName} - {s.productName || '(상품명없음)'} x{s.qty} [{s.orderNumber}]
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                            {masterProductSummary.unclaimedOrders.length > 0 && (
+                                                <div className="text-amber-300 mt-0.5">
+                                                    업체 미매칭 {masterProductSummary.unclaimedOrders.reduce((s, o) => s + o.qty, 0)}건: {masterProductSummary.unclaimedOrders.map(u => u.groupName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
+                                                </div>
+                                            )}
+                                            {masterProductSummary.masterRawTotalQty !== masterProductSummary.masterFileRowCount && (
+                                                <div className="text-zinc-500 mt-0.5">
+                                                    수량합계: {masterProductSummary.masterRawTotalQty}건 (일부 수량 {'>'} 1)
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                     {masterProductSummary && (() => {
                                         const add = additionalRoundsSummary;
                                         const has2 = !!add;
@@ -1857,43 +1907,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 })()}
                                             </div>
                                         </details>
-                                    )}
-                                    {masterProductSummary && masterProductSummary.masterRawTotalQty > masterProductSummary.realTotal + masterProductSummary.fakeTotal && (
-                                        <div className="mt-2 bg-red-600/20 border-2 border-red-500/60 rounded-xl px-3 py-2 animate-fade-in">
-                                            <div className="text-red-400 text-[11px] font-black flex items-center gap-1 mb-1">
-                                                <span>⚠</span> 마스터 파일 {masterProductSummary.masterRawTotalQty}건 중 {masterProductSummary.masterRawTotalQty - masterProductSummary.realTotal - masterProductSummary.fakeTotal}건 누락!
-                                            </div>
-                                            <div className="text-[9px] text-red-300/80 mt-0.5">
-                                                인식된 수량: {masterProductSummary.realTotal + masterProductSummary.fakeTotal}건 (실제 {masterProductSummary.realTotal} + 가구매 {masterProductSummary.fakeTotal})
-                                            </div>
-                                            {masterProductSummary.skippedOrders.length > 0 && (
-                                                <div className="mt-1 space-y-0.5">
-                                                    <div className="text-[9px] text-red-400/70 font-black">등록상품명 누락 주문:</div>
-                                                    {masterProductSummary.skippedOrders.map((s, idx) => (
-                                                        <div key={idx} className="text-[9px] text-red-300/70 font-mono truncate pl-2">
-                                                            {s.recipientName} - {s.productName || '(상품명 없음)'} x{s.qty} [{s.orderNumber}]
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                    {masterProductSummary?.unclaimedOrders && masterProductSummary.unclaimedOrders.length > 0 && (
-                                        <div className="mt-2 bg-red-500/10 border border-red-500/40 rounded-xl px-3 py-2 animate-fade-in">
-                                            <div className="text-red-400 text-[10px] font-black flex items-center gap-1 mb-1">
-                                                <span>⚠</span> 업체 미매칭 {masterProductSummary.unclaimedOrders.reduce((s, o) => s + o.qty, 0)}건 - 어떤 업체에도 배정되지 않음
-                                            </div>
-                                            <div className="space-y-0.5">
-                                                {masterProductSummary.unclaimedOrders.map((u, idx) => (
-                                                    <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
-                                                        {u.recipientName} - {u.groupName} {u.productName} (x{u.qty})
-                                                    </div>
-                                                ))}
-                                            </div>
-                                            <div className="text-[9px] text-red-400/60 mt-1">
-                                                해당 그룹명에 매칭되는 업체 키워드가 없습니다. 품목/업체 설정에서 키워드를 추가해주세요.
-                                            </div>
-                                        </div>
                                     )}
                                 </div>
                             )}
