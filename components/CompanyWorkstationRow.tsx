@@ -56,6 +56,7 @@ interface CompanyWorkstationRowProps {
     businessId?: string;
     onConfigChange: (newConfig: PricingConfig) => void;
     masterExpectedCount?: number;
+    missingItems?: { groupName: string; diffQty: number }[];
     orderPlatformMap?: Map<string, string>;
     platformConfigs?: PlatformConfigs;
 }
@@ -66,6 +67,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     previousRoundItems = [],
     manualOrdersRejected = false, onManualOrdersApproval,
     businessId, onConfigChange, masterExpectedCount = 0,
+    missingItems = [],
     orderPlatformMap, platformConfigs
 }) => {
     const dragHandle = useContext(DragHandleContext);
@@ -725,6 +727,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     }
                                     return null;
                                 })()}
+                                {missingItems.length > 0 && (
+                                    <div className="bg-orange-500/10 border border-orange-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-orange-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 누락 항목 {missingItems.reduce((s, m) => s + m.diffQty, 0)}건
+                                        </div>
+                                        <div className="mt-1 space-y-0.5">
+                                            {missingItems.map((m, idx) => (
+                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono truncate">
+                                                    {m.groupName}: {m.diffQty}건 부족
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                     {excludedList.length > 0 && (
@@ -776,6 +792,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     }
                                     return null;
                                 })()}
+                                {missingItems.length > 0 && (
+                                    <div className="bg-orange-500/10 border border-orange-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-orange-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 누락 항목 {missingItems.reduce((s, m) => s + m.diffQty, 0)}건
+                                        </div>
+                                        <div className="mt-1 space-y-0.5">
+                                            {missingItems.map((m, idx) => (
+                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono truncate">
+                                                    {m.groupName}: {m.diffQty}건 부족
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                     {(syncedData.excludedDetails?.length || 0) > 0 && (
@@ -823,6 +853,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     }
                                     return null;
                                 })()}
+                                {missingItems.length > 0 && (
+                                    <div className="bg-orange-500/10 border border-orange-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-orange-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 누락 항목 {missingItems.reduce((s, m) => s + m.diffQty, 0)}건
+                                        </div>
+                                        <div className="mt-1 space-y-0.5">
+                                            {missingItems.map((m, idx) => (
+                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono truncate">
+                                                    {m.groupName}: {m.diffQty}건 부족
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

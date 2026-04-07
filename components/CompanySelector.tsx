@@ -1720,58 +1720,86 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const grandTotal = (Object.values(totalsMap) as number[]).reduce((a: number, b: number) => a + b, 0) +
                        manualTransfers.reduce((a: number, b: ManualTransfer) => a + b.amount, 0);
 
-    // 마스터 파일 vs 발주서 비교: 누락 주문 분석
+    // 마스터 파일 vs 발주서 비교: 등록상품명별 수량 기준 누락 분석
     const missingOrderAnalysis = useMemo(() => {
         if (!masterProductSummary) return null;
-        // 처리 완료된 업체 목록
+
+        // 1. 처리 완료된 업체 + 세션ID 매핑
         const processedCompanies = new Set<string>();
+        const companySessionIds: Record<string, string[]> = {};
         (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([company, sessions]) => {
+            companySessionIds[company] = [];
             sessions.forEach((s: SessionData) => {
-                if (s.round > 1) return; // 1차만 비교
+                if (s.round > 1) return;
                 if (allOrderRows[s.id]?.length > 0 || allItemSummaries[s.id]) {
                     processedCompanies.add(company);
+                    companySessionIds[company].push(s.id);
                 }
             });
         });
-        if (processedCompanies.size === 0) return null; // 아직 아무 업체도 처리 안됨
+        if (processedCompanies.size === 0) return null;
 
-        // 발주서에 포함된 등록상품명 (groupName) 수집
-        const processedGroupNames = new Set<string>();
-        Object.values(allRegisteredNames).forEach((regNames: Record<string, string>) => {
-            Object.values(regNames).forEach((gn: string) => processedGroupNames.add(gn));
+        // 2. 마스터 기준: 등록상품명(K열)별 실제 구매 수량(W열) 합산 (가구매 제외)
+        //    realOrders는 이미 { groupName: qty } 형태로 가구매 제외된 수량
+        const masterByGroup: Record<string, { qty: number; company: string }> = {};
+        Object.entries(masterProductSummary.realOrders).forEach(([groupName, qty]) => {
+            const company = masterProductSummary.productToCompany[groupName] || '';
+            masterByGroup[groupName] = { qty: qty as number, company };
         });
 
-        // 제외된 주문(가구매)의 등록상품명 수집
-        const excludedOrderNums = new Set<string>();
-        (Object.values(allExcludedDetails).flat() as ExcludedOrder[]).forEach(ex => {
-            excludedOrderNums.add(ex.orderNumber.replace(' (제외)', ''));
+        // 3. 발주서에서 처리된 등록상품명별 수량 합산
+        //    allRegisteredNames[sessionId] = { displayName: groupName }
+        //    allItemSummaries[sessionId] = { displayName: { count, totalPrice } }
+        const processedByGroup: Record<string, number> = {};
+        Object.entries(allRegisteredNames).forEach(([sessionId, regNames]: [string, Record<string, string>]) => {
+            const itemSummary = allItemSummaries[sessionId];
+            if (!itemSummary) return;
+            Object.entries(regNames).forEach(([displayName, groupName]: [string, string]) => {
+                const count = itemSummary[displayName]?.count || 0;
+                processedByGroup[groupName] = (processedByGroup[groupName] || 0) + count;
+            });
         });
 
-        // 마스터 파일 실제 구매 주문 중 발주서에 없는 것 찾기
-        const missing: { recipientName: string; groupName: string; productName: string; orderNumber: string; qty: number; company: string; reason: string }[] = [];
+        // 4. 비교: 마스터 기준 - 발주서 처리 = 누락
+        const missingGroups: { groupName: string; company: string; masterQty: number; processedQty: number; diffQty: number; reason: string }[] = [];
 
-        masterProductSummary.allOrderDetails.forEach(order => {
-            if (order.isFake) return; // 가구매는 건너뜀
-            if (!order.company) {
+        Object.entries(masterByGroup).forEach(([groupName, { qty: masterQty, company }]) => {
+            if (!company) {
                 // 업체 미매칭
-                missing.push({ ...order, reason: '업체 미매칭 (키워드 없음)' });
-            } else if (!processedCompanies.has(order.company)) {
-                // 업체가 아직 처리 안됨 - 대기
+                missingGroups.push({ groupName, company: '', masterQty, processedQty: 0, diffQty: masterQty, reason: '업체 미매칭 (키워드 없음)' });
+            } else if (!processedCompanies.has(company)) {
+                // 업체가 아직 미처리 → 건너뜀
                 return;
-            } else if (!processedGroupNames.has(order.groupName)) {
-                // 업체는 처리됐는데 이 등록상품명이 발주서에 없음
-                missing.push({ ...order, reason: `${order.company} 발주서에 미포함` });
+            } else {
+                const processedQty = processedByGroup[groupName] || 0;
+                if (processedQty < masterQty) {
+                    const diffQty = masterQty - processedQty;
+                    missingGroups.push({
+                        groupName, company, masterQty, processedQty, diffQty,
+                        reason: processedQty === 0 ? `${company} 발주서에 없음` : `${company} 발주서 ${processedQty}건만 처리 (${diffQty}건 부족)`,
+                    });
+                }
             }
         });
 
-        // 등록상품명 없는 주문 (skipped)
-        masterProductSummary.skippedOrders.forEach(s => {
-            missing.push({ recipientName: s.recipientName, groupName: '', productName: s.productName, orderNumber: s.orderNumber, qty: s.qty, company: '', reason: '등록상품명(K열) 없음' });
+        // 등록상품명 없는 주문 (K열 비어있음)
+        if (masterProductSummary.skippedOrders.length > 0) {
+            const skippedQty = masterProductSummary.skippedOrders.reduce((s, o) => s + o.qty, 0);
+            missingGroups.push({ groupName: '(등록상품명 없음)', company: '', masterQty: skippedQty, processedQty: 0, diffQty: skippedQty, reason: 'K열 비어있음' });
+        }
+
+        // 업체별 누락 집계
+        const missingByCompany: Record<string, { groupName: string; diffQty: number }[]> = {};
+        missingGroups.forEach(m => {
+            if (m.company) {
+                if (!missingByCompany[m.company]) missingByCompany[m.company] = [];
+                missingByCompany[m.company].push({ groupName: m.groupName, diffQty: m.diffQty });
+            }
         });
 
-        const missingQty = missing.reduce((sum, m) => sum + m.qty, 0);
-        return { missing, missingQty, processedCompanies };
-    }, [masterProductSummary, companySessions, allOrderRows, allItemSummaries, allRegisteredNames, allExcludedDetails]);
+        const totalMissingQty = missingGroups.reduce((sum, m) => sum + m.diffQty, 0);
+        return { missingGroups, totalMissingQty, processedCompanies, missingByCompany };
+    }, [masterProductSummary, companySessions, allOrderRows, allItemSummaries, allRegisteredNames]);
 
     const isAllSelected = selectedSessionIds.size > 0 && selectedSessionIds.size === (Object.values(companySessions).flat() as SessionData[]).length;
 
@@ -2116,25 +2144,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </div>
                             </div>
                         </div>
-                        {missingOrderAnalysis && missingOrderAnalysis.missing.length > 0 && (
+                        {missingOrderAnalysis && missingOrderAnalysis.missingGroups.length > 0 && (
                             <div className="bg-red-500/10 border-2 border-red-500/50 rounded-xl px-4 py-3 animate-fade-in">
                                 <div className="text-red-400 text-[12px] font-black flex items-center gap-1 mb-2">
-                                    <span>⚠</span> 발주서 누락 {missingOrderAnalysis.missingQty}건 발견!
-                                    <span className="text-red-400/60 font-bold ml-1">(마스터 파일 기준)</span>
+                                    <span>⚠</span> 발주서 누락 {missingOrderAnalysis.totalMissingQty}건 (마스터 기준)
                                 </div>
-                                <div className="space-y-1 max-h-[200px] overflow-auto custom-scrollbar">
-                                    {missingOrderAnalysis.missing.map((m, idx) => (
+                                <div className="space-y-1 max-h-[250px] overflow-auto custom-scrollbar">
+                                    {missingOrderAnalysis.missingGroups.map((m, idx) => (
                                         <div key={idx} className="flex items-center gap-2 text-[10px] font-mono bg-red-500/5 rounded px-2 py-1">
-                                            <span className="text-red-400 font-black shrink-0">{m.groupName || '(K열 비어있음)'}</span>
-                                            <span className="text-zinc-500 truncate">{m.productName}</span>
-                                            <span className="text-zinc-400 shrink-0">{m.recipientName}</span>
-                                            {m.qty > 1 && <span className="text-white font-bold shrink-0">x{m.qty}</span>}
-                                            <span className="text-red-300/60 text-[9px] shrink-0 ml-auto">{m.reason}</span>
+                                            <span className="text-red-400 font-black shrink-0 min-w-[80px]">{m.groupName}</span>
+                                            <span className="text-white font-black shrink-0">마스터 {m.masterQty}건</span>
+                                            <span className="text-zinc-600 shrink-0">→</span>
+                                            <span className="text-zinc-400 shrink-0">발주서 {m.processedQty}건</span>
+                                            <span className="text-red-400 font-black shrink-0">= {m.diffQty}건 누락</span>
+                                            {m.company && <span className="text-zinc-500 text-[9px] shrink-0 ml-auto">[{m.company}]</span>}
+                                            {!m.company && <span className="text-red-300/60 text-[9px] shrink-0 ml-auto">{m.reason}</span>}
                                         </div>
                                     ))}
-                                </div>
-                                <div className="text-[9px] text-red-400/50 mt-2">
-                                    처리된 업체: {Array.from(missingOrderAnalysis.processedCompanies).join(', ')}
                                 </div>
                             </div>
                         )}
@@ -2604,6 +2630,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     ? (masterProductSummary?.companyOrderCounts?.[company] || 0)
                                                     : (batchExpectedCounts[session.id] || 0)
                                                 }
+                                                missingItems={sIdx === 0 ? (missingOrderAnalysis?.missingByCompany?.[company] || []) : []}
                                             />
                                         ) : null;
                                     })}
