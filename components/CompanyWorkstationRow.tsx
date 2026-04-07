@@ -289,10 +289,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             lastManualOrdersRef.current = manualOrdersStr;
             handleLocalFileChange(lastProcessedMasterRef.current, false);
         } else if (hasManualOrdersChanged) {
-            // 수동주문 변경: 원본주문서가 처리된 이후에만 재처리 (팝업 확인 후 포함 여부 결정됨)
+            // 수동주문 변경: 파일 유무와 관계없이 처리
             lastFakeOrdersRef.current = fakeOrderNumbers;
             if (lastProcessedMasterRef.current) {
                 handleLocalFileChange(lastProcessedMasterRef.current, false);
+            } else if (manualOrders.length > 0) {
+                // 마스터 파일 없이 수동발주만 있는 경우 - 팝업 표시 후 발주서 생성
+                handleLocalFileChange(null, true);
             } else {
                 lastManualOrdersRef.current = manualOrdersStr;
             }
