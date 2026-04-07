@@ -876,11 +876,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     <div className="flex flex-col items-center gap-2">
                         {!mergeResults ? (
                             <div className="flex flex-col items-center gap-2">
-                                <label className={`flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all shadow-md whitespace-nowrap ${vendorFile ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
+                                <label className={`flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all shadow-md whitespace-nowrap ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFile ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
                                     <UploadIcon className="w-4 h-4" />
-                                    <span>{mergeStatus === 'processing' ? '매칭 중...' : vendorFile ? '송장 업로드됨' : '송장 선택'}</span>
+                                    <span>{mergeStatus === 'processing' ? '매칭 중...' : mergeStatus === 'error' ? '송장 오류' : vendorFile ? '송장 업로드됨' : '송장 선택'}</span>
                                     <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const file = e.target.files?.[0]; if (file) { resetMerge(); onVendorFileChange(file); } }} />
                                 </label>
+                                {mergeStatus === 'error' && mergeError && (
+                                    <div className="text-rose-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">{mergeError}</div>
+                                )}
+                                {vendorFile && mergeStatus === 'idle' && !(localFile || (isFirstSession ? masterFile : null)) && (
+                                    <div className="text-amber-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">발주서를 먼저 업로드해주세요</div>
+                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">

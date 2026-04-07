@@ -4,7 +4,7 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
-import { BuildingStorefrontIcon, ArrowDownTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
+import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder, subscribeQuickRecipients, saveQuickRecipients, type QuickRecipientData } from '../services/firestoreService';
@@ -2529,7 +2529,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <div key={tmpl.id} className="space-y-2">
                                         <div className="flex items-center gap-2">
                                             <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${file ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
-                                                <ArrowDownTrayIcon className="w-4 h-4" />
+                                                <ArrowUpTrayIcon className="w-4 h-4" />
                                                 <span>{file ? file.name : `${tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} 운송장 업로드`}</span>
                                                 <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); }} />
                                             </label>

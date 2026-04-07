@@ -89,11 +89,11 @@ export const useInvoiceMerger = () => {
             let vHeaderIdx = 0;
             for (let i = 0; i < Math.min(vendorAoa.length, 20); i++) {
                 const rowStr = (vendorAoa[i] || []).join('');
-                if (rowStr.includes('번호') || rowStr.includes('송장')) { vHeaderIdx = i; break; }
+                if (rowStr.includes('번호') || rowStr.includes('송장') || rowStr.includes('운송장') || rowStr.includes('접수')) { vHeaderIdx = i; break; }
             }
             const vHeaders = vendorAoa[vHeaderIdx] || [];
-            vOrderIdx = findColIdx(vHeaders, ['주문번호', '관리번호', 'ID']);
-            vInvIdx = findColIdx(vHeaders, ['송장', '운송장', '등기']);
+            vOrderIdx = findColIdx(vHeaders, ['주문번호', '관리번호', 'ID', '오더번호', '오더넘버', '접수번호', '고객주문번호']);
+            vInvIdx = findColIdx(vHeaders, ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice']);
             if (vOrderIdx === -1) vOrderIdx = 0;
 
             // 헤더에서 송장번호 컬럼을 못 찾으면 데이터에서 자동 감지 (10자리 이상 숫자)
