@@ -1890,6 +1890,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         return (
                                         <div className="mt-1 flex gap-6 items-start">
                                             <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({masterProductSummary.masterRawTotalQty}건)</div>
+                                                <div>
+                                                    {(() => {
+                                                        // allOrderDetails에서 등록상품명별 W열 수량 합산 (실제+가구매 모두 포함)
+                                                        const qtyByProduct: Record<string, number> = {};
+                                                        masterProductSummary.allOrderDetails.forEach((d: any) => {
+                                                            if (d.groupName) qtyByProduct[d.groupName] = (qtyByProduct[d.groupName] || 0) + d.qty;
+                                                        });
+                                                        return Object.entries(qtyByProduct).sort(([, a], [, b]) => (b as number) - (a as number)).map(([name, qty]) => (
+                                                            <div key={name} className="flex text-sm gap-1">
+                                                                <span className="text-zinc-400">{name}</span>
+                                                                <span className="text-sky-300 font-black">{qty as number}건</span>
+                                                            </div>
+                                                        ));
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 min-w-0">
                                                 <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, add?.realTotal || 0)})</div>
                                                 <div>
                                                     {(() => {
