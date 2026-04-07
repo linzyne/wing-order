@@ -305,14 +305,16 @@ const generateWorkbookForCompany = async (
                 const productName = String(row[productColIdx] || '').trim();
                 const phone = String(row[recipientPhoneCol] || '').trim();
 
+                const qty = parseInt(String(row[quantityColIdx] || row[22]), 10);
+                const validQty = (isNaN(qty) || qty < 1) ? 1 : qty;
+
                 if (fakeOrderNumbers.has(orderNumber)) {
-                    excludedOrders.push({ companyName, recipientName, productName, phone, orderNumber: `${orderNumber} (제외)` });
+                    excludedOrders.push({ companyName, recipientName, productName, phone, orderNumber: `${orderNumber} (제외)`, qty: validQty });
                     continue;
                 }
 
-                const qty = parseInt(String(row[quantityColIdx] || row[22]), 10);
                 if (isNaN(qty) || qty < 1) {
-                    unmatchedOrders.push({ companyName, recipientName, productName: `${productName} (수량 오류: ${row[quantityColIdx]})`, phone, orderNumber });
+                    unmatchedOrders.push({ companyName, recipientName, productName: `${productName} (수량 오류: ${row[quantityColIdx]})`, phone, orderNumber, qty: 1 });
                     continue;
                 }
 
@@ -352,7 +354,7 @@ const generateWorkbookForCompany = async (
                     });
                 } else {
                     console.error(`[발주서][${companyName}] ❌ 품목 매칭 실패로 주문 누락! 수취인: ${recipientName}, 상품: ${rawProductName}, 주문번호: ${orderNumber}`);
-                    unmatchedOrders.push({ companyName, recipientName, productName: rawProductName, phone, orderNumber });
+                    unmatchedOrders.push({ companyName, recipientName, productName: rawProductName, phone, orderNumber, qty });
                 }
             }
         }

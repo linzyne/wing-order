@@ -87,6 +87,7 @@ export interface ExcludedOrder {
   productName: string;
   phone: string;
   orderNumber: string;
+  qty?: number;
 }
 
 export interface UnmatchedOrder {
@@ -95,6 +96,7 @@ export interface UnmatchedOrder {
   productName: string;
   phone: string;
   orderNumber: string;
+  qty?: number;
 }
 
 export interface ManualOrder {

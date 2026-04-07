@@ -704,7 +704,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                                 {(() => {
                                     const processedCount = Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0) as number;
-                                    const workstationTotal = processedCount + excludedList.length + unmatchedList.length;
+                                    const excludedQtyTotal = excludedList.reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
+                                    const unmatchedQtyTotal = unmatchedList.reduce((sum: number, u: any) => sum + (u.qty || 1), 0);
+                                    const workstationTotal = processedCount + excludedQtyTotal + unmatchedQtyTotal;
                                     if (masterExpectedCount > 0 && masterExpectedCount > workstationTotal) {
                                         const diff = masterExpectedCount - workstationTotal;
                                         return (
@@ -749,6 +751,28 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     </div>
                                 )}
+                                {(() => {
+                                    const syncedProcessed = syncedData.itemSummary
+                                        ? Object.values(syncedData.itemSummary).reduce((a: number, b: any) => a + (b.count || 0), 0)
+                                        : syncedData.orderCount || 0;
+                                    const excludedQtyTotal = (syncedData.excludedDetails || excludedList).reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
+                                    const unmatchedQtyTotal = unmatchedList.reduce((sum: number, u: any) => sum + (u.qty || 1), 0);
+                                    const workstationTotal = syncedProcessed + excludedQtyTotal + unmatchedQtyTotal;
+                                    if (masterExpectedCount > 0 && masterExpectedCount > workstationTotal) {
+                                        const diff = masterExpectedCount - workstationTotal;
+                                        return (
+                                            <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                                <div className="text-red-400 text-[10px] font-black flex items-center gap-1">
+                                                    <span>⚠</span> 마스터 {masterExpectedCount}건 중 {diff}건 누락
+                                                </div>
+                                                <div className="text-[9px] text-red-300/70 mt-0.5">
+                                                    키워드 매칭을 확인하세요 (처리: {workstationTotal}건)
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                                 <div className="flex items-center gap-2">
                                     <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-rose-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                     {(syncedData.excludedDetails?.length || 0) > 0 && (
@@ -778,16 +802,24 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleLocalFileChange(e.target.files[0], true)} />
                                     </label>
                                 )}
-                                {masterExpectedCount > 0 && masterExpectedCount > excludedList.length + unmatchedList.length && (
-                                    <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
-                                        <div className="text-red-400 text-[10px] font-black flex items-center gap-1">
-                                            <span>⚠</span> 마스터 {masterExpectedCount}건 중 {masterExpectedCount - excludedList.length - unmatchedList.length}건 누락
-                                        </div>
-                                        <div className="text-[9px] text-red-300/70 mt-0.5">
-                                            키워드 매칭을 확인하세요 (처리: {excludedList.length + unmatchedList.length}건)
-                                        </div>
-                                    </div>
-                                )}
+                                {(() => {
+                                    const exQty = excludedList.reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
+                                    const unQty = unmatchedList.reduce((sum: number, u: any) => sum + (u.qty || 1), 0);
+                                    const totalProcessed = exQty + unQty;
+                                    if (masterExpectedCount > 0 && masterExpectedCount > totalProcessed) {
+                                        return (
+                                            <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                                <div className="text-red-400 text-[10px] font-black flex items-center gap-1">
+                                                    <span>⚠</span> 마스터 {masterExpectedCount}건 중 {masterExpectedCount - totalProcessed}건 누락
+                                                </div>
+                                                <div className="text-[9px] text-red-300/70 mt-0.5">
+                                                    키워드 매칭을 확인하세요 (처리: {totalProcessed}건)
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                             </div>
                         )}
                     </div>

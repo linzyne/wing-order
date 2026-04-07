@@ -668,15 +668,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const fakeOrders: Record<string, number> = {};
         const unclaimedOrders: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number }[] = [];
         const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean }[] = [];
+        const skippedOrders: { recipientName: string; productName: string; orderNumber: string; qty: number; reason: string }[] = [];
+        let masterRawTotalQty = 0;
         for (let i = 1; i < masterOrderData.length; i++) {
             const row = masterOrderData[i];
             if (!row) continue;
             const orderNum = String(row[2] || '').trim();
             const groupName = String(row[10] || '').trim();
             const qty = parseInt(String(row[22] || '1'), 10) || 1;
-            if (!groupName) continue;
             const recipientName = String(row[26] || '').trim();
             const productName = String(row[11] || '').trim();
+            masterRawTotalQty += qty;
+            if (!groupName) {
+                skippedOrders.push({ recipientName, productName, orderNumber: orderNum, qty, reason: '등록상품명 없음' });
+                continue;
+            }
             // 업체명 매핑
             if (!productToCompany[groupName]) {
                 const groupNorm = groupName.replace(/\s+/g, '').normalize('NFC');
@@ -706,10 +712,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const companyOrderCounts: Record<string, number> = {};
         allOrderDetails.forEach(d => {
             if (d.company) {
-                companyOrderCounts[d.company] = (companyOrderCounts[d.company] || 0) + 1;
+                companyOrderCounts[d.company] = (companyOrderCounts[d.company] || 0) + d.qty;
             }
         });
-        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts };
+        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty };
     }, [masterOrderData, fakeOrderInput, pricingConfig]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
@@ -1812,7 +1818,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     {masterProductSummary && masterProductSummary.allOrderDetails.length > 0 && (
                                         <details className="mt-2">
                                             <summary className="text-[10px] font-black text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors select-none">
-                                                주문 상세 펼치기 ({masterProductSummary.realTotal + masterProductSummary.fakeTotal}건)
+                                                ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal}건` : ''})
                                             </summary>
                                             <div className="mt-1 max-h-[300px] overflow-auto custom-scrollbar space-y-2 bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
                                                 {(() => {
@@ -1851,6 +1857,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 })()}
                                             </div>
                                         </details>
+                                    )}
+                                    {masterProductSummary && masterProductSummary.masterRawTotalQty > masterProductSummary.realTotal + masterProductSummary.fakeTotal && (
+                                        <div className="mt-2 bg-red-600/20 border-2 border-red-500/60 rounded-xl px-3 py-2 animate-fade-in">
+                                            <div className="text-red-400 text-[11px] font-black flex items-center gap-1 mb-1">
+                                                <span>⚠</span> 마스터 파일 {masterProductSummary.masterRawTotalQty}건 중 {masterProductSummary.masterRawTotalQty - masterProductSummary.realTotal - masterProductSummary.fakeTotal}건 누락!
+                                            </div>
+                                            <div className="text-[9px] text-red-300/80 mt-0.5">
+                                                인식된 수량: {masterProductSummary.realTotal + masterProductSummary.fakeTotal}건 (실제 {masterProductSummary.realTotal} + 가구매 {masterProductSummary.fakeTotal})
+                                            </div>
+                                            {masterProductSummary.skippedOrders.length > 0 && (
+                                                <div className="mt-1 space-y-0.5">
+                                                    <div className="text-[9px] text-red-400/70 font-black">등록상품명 누락 주문:</div>
+                                                    {masterProductSummary.skippedOrders.map((s, idx) => (
+                                                        <div key={idx} className="text-[9px] text-red-300/70 font-mono truncate pl-2">
+                                                            {s.recipientName} - {s.productName || '(상품명 없음)'} x{s.qty} [{s.orderNumber}]
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                     {masterProductSummary?.unclaimedOrders && masterProductSummary.unclaimedOrders.length > 0 && (
                                         <div className="mt-2 bg-red-500/10 border border-red-500/40 rounded-xl px-3 py-2 animate-fade-in">
