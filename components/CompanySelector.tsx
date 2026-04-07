@@ -660,6 +660,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const matches = line.trim().match(/[A-Za-z0-9-]{5,}/g);
             if (matches) matches.forEach(m => fakeNums.add(m.trim()));
         });
+        // 헤더에서 수량 열 동적 탐색 (W열 = index 22가 아닐 수 있음)
+        const headers = masterOrderData[0] || [];
+        let qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('수량'));
+        if (qtyColIdx === -1) qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('구매수'));
+        if (qtyColIdx === -1) qtyColIdx = 22; // 기본값: W열
         // 업체-키워드 맵 생성
         const companyKeywordsMap = new Map<string, string[]>();
         Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
@@ -672,6 +677,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         let masterRawTotalQty = 0;
         let masterFileRowCount = 0; // 파일 내 비어있지 않은 데이터 행 수
         let nullRowCount = 0; // null/undefined 행 수
+        console.log(`[마스터검증] 수량 열 인덱스: ${qtyColIdx} (헤더: "${headers[qtyColIdx]}")`);
         for (let i = 1; i < masterOrderData.length; i++) {
             const row = masterOrderData[i];
             if (!row) { nullRowCount++; continue; }
@@ -681,7 +687,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             masterFileRowCount++;
             const orderNum = String(row[2] || '').trim();
             const groupName = String(row[10] || '').trim();
-            const qty = parseInt(String(row[22] || '1'), 10) || 1;
+            const rawQtyVal = row[qtyColIdx];
+            const qty = parseInt(String(rawQtyVal != null ? rawQtyVal : '1'), 10) || 1;
+            if (i <= 3) console.log(`[마스터검증] 행${i}: row길이=${row.length}, qtyCol[${qtyColIdx}]=${JSON.stringify(rawQtyVal)}, qty=${qty}, groupName="${groupName}"`);
             const recipientName = String(row[26] || '').trim();
             const productName = String(row[11] || '').trim();
             masterRawTotalQty += qty;
@@ -856,7 +864,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const data = await file.arrayBuffer();
             const wb = XLSX.read(data, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
-            let json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+            let json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }) as any[][];
             if (!json || json.length < 2) return;
 
             // 플랫폼 감지 및 정규화
