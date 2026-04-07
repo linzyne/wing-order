@@ -921,18 +921,42 @@ const CompanyCard: React.FC<{
                         <div className="flex items-center gap-3 mb-2">
                             <span className="text-lg">📋</span>
                             <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">발주서 양식 헤더</span>
-                            <span className="text-[10px] text-zinc-700">(쉼표로 구분)</span>
+                            <label className="ml-auto flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-lg text-[10px] font-black border border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all">
+                                <DocumentArrowUpIcon className="w-3.5 h-3.5" />
+                                <span>양식 파일에서 읽기</span>
+                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const reader = new FileReader();
+                                    reader.onload = (ev) => {
+                                        try {
+                                            const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+                                            const wb = XLSX.read(data, { type: 'array' });
+                                            const ws = wb.Sheets[wb.SheetNames[0]];
+                                            const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                                            if (aoa.length > 0) {
+                                                const headers = aoa[0].map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                if (headers.length > 0) {
+                                                    props.onUpdateOrderFormHeaders(headers);
+                                                }
+                                            }
+                                        } catch { /* ignore */ }
+                                    };
+                                    reader.readAsArrayBuffer(file);
+                                    e.target.value = '';
+                                }} />
+                            </label>
                         </div>
                         <EditableField
                             value={(companyConfig.orderFormHeaders || []).join(', ')}
                             onSave={(val) => {
-                                const headers = val.split(',').map(s => s.trim()).filter(Boolean);
+                                const headers = val.split(/[,\t]+/).map(s => s.trim()).filter(Boolean);
                                 props.onUpdateOrderFormHeaders(headers);
                             }}
                             placeholder="예: 받는사람, 전화번호, 주소, 품목명, 수량, 배송메세지, 주문번호"
                             className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                         />
-                        <p className="text-[10px] text-zinc-600 mt-1">비워두면 기본 양식 사용. 헤더명에 따라 자동으로 데이터가 매핑됩니다</p>
+                        <p className="text-[10px] text-zinc-600 mt-1">비워두면 기본 양식 사용. 양식 파일 업로드 또는 쉼표로 구분하여 입력</p>
                     </div>
                     <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} />
                 </div>

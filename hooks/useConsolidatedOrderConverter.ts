@@ -491,19 +491,19 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             if (customHeaders.length > 0) {
                 const or = new Array(customHeaders.length).fill('');
                 customHeaders.forEach((h, idx) => {
-                    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인')) or[idx] = String(row[26] || '');
-                    else if (h.includes('업체전화')) or[idx] = senderPhone;
-                    else if (h.includes('업체주소')) or[idx] = senderAddress;
-                    else if (h.includes('업체명')) or[idx] = senderName;
-                    else if (h.includes('받는분연락처') || h.includes('전화번호')) or[idx] = String(row[27] || '');
+                    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인') || h.includes('수령인')) or[idx] = String(row[26] || '');
+                    else if (h.includes('발송인전') || h.includes('발송인연락') || h.includes('업체전화')) or[idx] = senderPhone;
+                    else if (h.includes('발송인주소') || h.includes('업체주소')) or[idx] = senderAddress;
+                    else if (h.includes('발송인') || h.includes('송하인') || h.includes('업체명')) or[idx] = senderName;
+                    else if (h.includes('받는분연락처') || h.includes('전화번호') || h.includes('핸드폰') || h.includes('휴대폰') || h.includes('연락처')) or[idx] = String(row[27] || '');
                     else if (h.includes('우편번호')) or[idx] = String(row[28] || '');
                     else if (h.includes('받는분주소') || h.includes('주소')) or[idx] = String(row[29] || '');
-                    else if (h.includes('제품명') || h.includes('품목') || h.includes('상품명')) or[idx] = orderName;
+                    else if (h.includes('제품명') || h.includes('품목') || h.includes('상품명') || h.includes('품번')) or[idx] = orderName;
                     else if (h.includes('옵션')) or[idx] = '';
                     else if (h.includes('수량')) or[idx] = 1;
                     else if (h.includes('주문번호')) or[idx] = String(row[2] || '');
-                    else if (h.includes('배송메') ) or[idx] = String(row[30] || '');
-                    else if (h.includes('송하인')) or[idx] = senderName;
+                    else if (h.includes('배송메') || h.includes('배송시사항') || h.includes('배송요청') || h.includes('배송사항')) or[idx] = String(row[30] || '');
+                    else if (h.includes('일자')) or[idx] = '';
                 });
                 outputRows.push(or);
             } else {
@@ -591,19 +591,19 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             if (customHeaders.length > 0) {
                 const or = new Array(customHeaders.length).fill('');
                 customHeaders.forEach((h, idx) => {
-                    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인')) or[idx] = mo.recipientName;
-                    else if (h.includes('업체전화')) or[idx] = senderPhone;
-                    else if (h.includes('업체주소')) or[idx] = senderAddress;
-                    else if (h.includes('업체명')) or[idx] = senderName;
-                    else if (h.includes('받는분연락처') || h.includes('전화번호')) or[idx] = mo.phone;
+                    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인') || h.includes('수령인')) or[idx] = mo.recipientName;
+                    else if (h.includes('발송인전') || h.includes('발송인연락') || h.includes('업체전화')) or[idx] = senderPhone;
+                    else if (h.includes('발송인주소') || h.includes('업체주소')) or[idx] = senderAddress;
+                    else if (h.includes('발송인') || h.includes('송하인') || h.includes('업체명')) or[idx] = senderName;
+                    else if (h.includes('받는분연락처') || h.includes('전화번호') || h.includes('핸드폰') || h.includes('휴대폰') || h.includes('연락처')) or[idx] = mo.phone;
                     else if (h.includes('우편번호')) or[idx] = '';
                     else if (h.includes('받는분주소') || h.includes('주소')) or[idx] = mo.address;
-                    else if (h.includes('제품명') || h.includes('품목') || h.includes('상품명')) or[idx] = orderName;
+                    else if (h.includes('제품명') || h.includes('품목') || h.includes('상품명') || h.includes('품번')) or[idx] = orderName;
                     else if (h.includes('옵션')) or[idx] = '';
                     else if (h.includes('수량')) or[idx] = 1;
                     else if (h.includes('주문번호')) or[idx] = '수동';
-                    else if (h.includes('배송메')) or[idx] = '';
-                    else if (h.includes('송하인')) or[idx] = senderName;
+                    else if (h.includes('배송메') || h.includes('배송시사항') || h.includes('배송요청') || h.includes('배송사항')) or[idx] = '';
+                    else if (h.includes('일자')) or[idx] = '';
                 });
                 outputRows.push(or);
             } else {
