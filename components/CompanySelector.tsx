@@ -1832,46 +1832,40 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <div className="flex items-center gap-2">
                                         <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black">{detectedCompanies.size}개 업체 탐지</span>
                                     </div>
-                                    {masterProductSummary && (
+                                    {masterProductSummary && (() => {
+                                        // 마스터 구매수량에서 품목별 누락 체크
+                                        const totalMaster = masterProductSummary.masterRawTotalQty;
+                                        const totalRecognized = masterProductSummary.realTotal + masterProductSummary.fakeTotal;
+                                        const diff = totalMaster - totalRecognized;
+                                        const hasUnclaimed = masterProductSummary.unclaimedOrders.length > 0;
+                                        const isOk = diff === 0 && !hasUnclaimed;
+                                        return (
                                         <div className={`rounded-lg px-2.5 py-1.5 text-[10px] font-black ${
-                                            masterProductSummary.masterFileRowCount !== masterProductSummary.realTotal + masterProductSummary.fakeTotal
-                                                ? 'bg-red-600/20 border-2 border-red-500/60 text-red-400'
-                                                : masterProductSummary.unclaimedOrders.length > 0
-                                                    ? 'bg-amber-500/15 border border-amber-500/40 text-amber-400'
-                                                    : 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                                            isOk ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                                                : 'bg-red-600/20 border-2 border-red-500/60 text-red-400'
                                         }`}>
-                                            <div className="flex items-center gap-1.5">
-                                                <span>{masterProductSummary.masterFileRowCount !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? '⚠' : masterProductSummary.unclaimedOrders.length > 0 ? '⚠' : '✓'}</span>
-                                                <span>파일 {masterProductSummary.masterFileRowCount}행</span>
-                                                <span className="text-zinc-600">→</span>
-                                                <span>실제 {masterProductSummary.realTotal} + 가구매 {masterProductSummary.fakeTotal} = {masterProductSummary.realTotal + masterProductSummary.fakeTotal}건</span>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span>{isOk ? '✓' : '⚠'}</span>
+                                                <span className="text-sky-400">마스터 {totalMaster}건</span>
+                                                <span className="text-zinc-600">=</span>
+                                                <span className="text-emerald-400">실제 {masterProductSummary.realTotal}</span>
+                                                <span className="text-zinc-600">+</span>
+                                                <span className="text-amber-400">가구매 {masterProductSummary.fakeTotal}</span>
+                                                {diff > 0 && <span className="text-red-400 ml-1">({diff}건 누락)</span>}
                                             </div>
-                                            {masterProductSummary.masterFileRowCount > masterProductSummary.realTotal + masterProductSummary.fakeTotal && (
-                                                <div className="text-red-300 mt-0.5">
-                                                    {masterProductSummary.masterFileRowCount - masterProductSummary.realTotal - masterProductSummary.fakeTotal}건 누락! (등록상품명 누락: {masterProductSummary.skippedOrders.length}건)
-                                                    {masterProductSummary.skippedOrders.length > 0 && (
-                                                        <div className="mt-0.5 pl-2 space-y-0.5">
-                                                            {masterProductSummary.skippedOrders.map((s, idx) => (
-                                                                <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
-                                                                    {s.recipientName} - {s.productName || '(상품명없음)'} x{s.qty} [{s.orderNumber}]
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
+                                            {diff > 0 && masterProductSummary.skippedOrders.length > 0 && (
+                                                <div className="text-red-300 mt-0.5 pl-3">
+                                                    등록상품명 없음 {masterProductSummary.skippedOrders.length}건
                                                 </div>
                                             )}
-                                            {masterProductSummary.unclaimedOrders.length > 0 && (
-                                                <div className="text-amber-300 mt-0.5">
-                                                    업체 미매칭 {masterProductSummary.unclaimedOrders.reduce((s, o) => s + o.qty, 0)}건: {masterProductSummary.unclaimedOrders.map(u => u.groupName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
-                                                </div>
-                                            )}
-                                            {masterProductSummary.masterRawTotalQty !== masterProductSummary.masterFileRowCount && (
-                                                <div className="text-zinc-500 mt-0.5">
-                                                    수량합계: {masterProductSummary.masterRawTotalQty}건 (일부 수량 {'>'} 1)
+                                            {hasUnclaimed && (
+                                                <div className="text-amber-300 mt-0.5 pl-3">
+                                                    업체 미매칭: {masterProductSummary.unclaimedOrders.map(u => u.groupName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
                                                 </div>
                                             )}
                                         </div>
-                                    )}
+                                        );
+                                    })()}
                                     {masterProductSummary && (() => {
                                         const add = additionalRoundsSummary;
                                         const has2 = !!add;
