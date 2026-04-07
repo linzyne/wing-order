@@ -1720,15 +1720,58 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const grandTotal = (Object.values(totalsMap) as number[]).reduce((a: number, b: number) => a + b, 0) +
                        manualTransfers.reduce((a: number, b: ManualTransfer) => a + b.amount, 0);
 
-    // 전체 워크스테이션 주문수 합산 (원본 주문수와 비교용)
-    // allItemSummaries는 Firestore 동기화 시 누락될 수 있으므로 allOrderRows 기반으로 카운트
-    const totalWorkstationOrderCount = useMemo(() => {
-        return (Object.values(allOrderRows) as any[][][]).reduce((sum: number, rows: any[][]) => sum + rows.length, 0);
-    }, [allOrderRows]);
+    // 마스터 파일 vs 발주서 비교: 누락 주문 분석
+    const missingOrderAnalysis = useMemo(() => {
+        if (!masterProductSummary) return null;
+        // 처리 완료된 업체 목록
+        const processedCompanies = new Set<string>();
+        (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([company, sessions]) => {
+            sessions.forEach((s: SessionData) => {
+                if (s.round > 1) return; // 1차만 비교
+                if (allOrderRows[s.id]?.length > 0 || allItemSummaries[s.id]) {
+                    processedCompanies.add(company);
+                }
+            });
+        });
+        if (processedCompanies.size === 0) return null; // 아직 아무 업체도 처리 안됨
 
-    const orderCountMismatch = masterProductSummary && totalWorkstationOrderCount > 0
-        ? masterProductSummary.realTotal - totalWorkstationOrderCount
-        : 0;
+        // 발주서에 포함된 등록상품명 (groupName) 수집
+        const processedGroupNames = new Set<string>();
+        Object.values(allRegisteredNames).forEach((regNames: Record<string, string>) => {
+            Object.values(regNames).forEach((gn: string) => processedGroupNames.add(gn));
+        });
+
+        // 제외된 주문(가구매)의 등록상품명 수집
+        const excludedOrderNums = new Set<string>();
+        (Object.values(allExcludedDetails).flat() as ExcludedOrder[]).forEach(ex => {
+            excludedOrderNums.add(ex.orderNumber.replace(' (제외)', ''));
+        });
+
+        // 마스터 파일 실제 구매 주문 중 발주서에 없는 것 찾기
+        const missing: { recipientName: string; groupName: string; productName: string; orderNumber: string; qty: number; company: string; reason: string }[] = [];
+
+        masterProductSummary.allOrderDetails.forEach(order => {
+            if (order.isFake) return; // 가구매는 건너뜀
+            if (!order.company) {
+                // 업체 미매칭
+                missing.push({ ...order, reason: '업체 미매칭 (키워드 없음)' });
+            } else if (!processedCompanies.has(order.company)) {
+                // 업체가 아직 처리 안됨 - 대기
+                return;
+            } else if (!processedGroupNames.has(order.groupName)) {
+                // 업체는 처리됐는데 이 등록상품명이 발주서에 없음
+                missing.push({ ...order, reason: `${order.company} 발주서에 미포함` });
+            }
+        });
+
+        // 등록상품명 없는 주문 (skipped)
+        masterProductSummary.skippedOrders.forEach(s => {
+            missing.push({ recipientName: s.recipientName, groupName: '', productName: s.productName, orderNumber: s.orderNumber, qty: s.qty, company: '', reason: '등록상품명(K열) 없음' });
+        });
+
+        const missingQty = missing.reduce((sum, m) => sum + m.qty, 0);
+        return { missing, missingQty, processedCompanies };
+    }, [masterProductSummary, companySessions, allOrderRows, allItemSummaries, allRegisteredNames, allExcludedDetails]);
 
     const isAllSelected = selectedSessionIds.size > 0 && selectedSessionIds.size === (Object.values(companySessions).flat() as SessionData[]).length;
 
@@ -2073,11 +2116,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </div>
                             </div>
                         </div>
-                        {orderCountMismatch > 0 && (
-                            <div className="bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-2 animate-fade-in">
-                                <div className="text-red-400 text-[11px] font-black flex items-center gap-1">
-                                    <span>⚠</span> 원본 {masterProductSummary!.realTotal}건 중 {orderCountMismatch}건이 발주서에 누락됨
-                                    <span className="text-red-400/60 font-bold ml-1">(워크스테이션 합산: {totalWorkstationOrderCount}건)</span>
+                        {missingOrderAnalysis && missingOrderAnalysis.missing.length > 0 && (
+                            <div className="bg-red-500/10 border-2 border-red-500/50 rounded-xl px-4 py-3 animate-fade-in">
+                                <div className="text-red-400 text-[12px] font-black flex items-center gap-1 mb-2">
+                                    <span>⚠</span> 발주서 누락 {missingOrderAnalysis.missingQty}건 발견!
+                                    <span className="text-red-400/60 font-bold ml-1">(마스터 파일 기준)</span>
+                                </div>
+                                <div className="space-y-1 max-h-[200px] overflow-auto custom-scrollbar">
+                                    {missingOrderAnalysis.missing.map((m, idx) => (
+                                        <div key={idx} className="flex items-center gap-2 text-[10px] font-mono bg-red-500/5 rounded px-2 py-1">
+                                            <span className="text-red-400 font-black shrink-0">{m.groupName || '(K열 비어있음)'}</span>
+                                            <span className="text-zinc-500 truncate">{m.productName}</span>
+                                            <span className="text-zinc-400 shrink-0">{m.recipientName}</span>
+                                            {m.qty > 1 && <span className="text-white font-bold shrink-0">x{m.qty}</span>}
+                                            <span className="text-red-300/60 text-[9px] shrink-0 ml-auto">{m.reason}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="text-[9px] text-red-400/50 mt-2">
+                                    처리된 업체: {Array.from(missingOrderAnalysis.processedCompanies).join(', ')}
                                 </div>
                             </div>
                         )}
