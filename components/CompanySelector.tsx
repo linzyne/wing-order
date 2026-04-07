@@ -1815,8 +1815,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         <div className="space-y-6 animate-fade-in">
             <div>
                 <section className="bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
-                    <div className="flex flex-col lg:flex-row gap-6">
-                        <div className="lg:w-[320px] shrink-0 flex flex-col gap-4">
+                    <div className="flex flex-col gap-6">
+                        <div className="order-2 flex flex-col gap-4">
                                 <FileUpload
                                     id={`file-upload-${businessId}`}
                                     onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }}
@@ -2007,7 +2007,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     )}
                                 </div>
                             )}
-                        </div>
                         {masterOrderFile && (
                             <div className="bg-zinc-950 p-3 rounded-2xl border border-dashed border-zinc-700 hover:border-rose-500/50 transition-all">
                                 <input ref={batchFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleBatchUpload(f); e.target.value = ''; } }} />
@@ -2017,8 +2016,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </button>
                             </div>
                         )}
+                        </div>
 
-                        <div className="flex-1 bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
+                        <div className="order-1 bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                                 <div className="flex items-center gap-3">
                                     <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
