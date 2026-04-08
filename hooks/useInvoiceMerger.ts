@@ -72,14 +72,19 @@ export const useInvoiceMerger = () => {
     const [error, setError] = useState<string | null>(null);
     const [results, setResults] = useState<ProcessedResult | null>(null);
 
-    const buildInvoiceMap = async (vendorData: ArrayBuffer, companyName: string) => {
+    const buildInvoiceMap = async (vendorData: ArrayBuffer, companyName: string, pricingConfig?: PricingConfig) => {
         const vendorWorkbook = XLSX.read(vendorData, { type: 'array' });
         const vendorSheet = vendorWorkbook.Sheets[vendorWorkbook.SheetNames[0]];
         const vendorAoa: any[][] = XLSX.utils.sheet_to_json(vendorSheet, { header: 1 });
         if (!vendorAoa || vendorAoa.length === 0) return new Map<string, string[]>();
 
         let vOrderIdx = -1, vInvIdx = -1;
-        if (companyName === '고랭지김치') { vOrderIdx = 9; vInvIdx = 6; }
+        const vendorConfig = pricingConfig?.[companyName];
+        if (vendorConfig?.vendorInvoiceFieldMap && vendorConfig.vendorInvoiceFieldMap.length > 0) {
+            vOrderIdx = vendorConfig.vendorInvoiceFieldMap.indexOf('orderNumber');
+            vInvIdx = vendorConfig.vendorInvoiceFieldMap.indexOf('trackingNumber');
+            if (vOrderIdx === -1) vOrderIdx = 0;
+        } else if (companyName === '고랭지김치') { vOrderIdx = 9; vInvIdx = 6; }
         else if (['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치'].includes(companyName)) { vOrderIdx = 9; vInvIdx = 4; }
         else if (companyName === '제이제이' || companyName === '귤_제이') { vOrderIdx = 8; vInvIdx = 10; }
         else if (companyName === '신선마켓' || companyName === '귤_신선') { vOrderIdx = 3; vInvIdx = 17; }
@@ -142,7 +147,7 @@ export const useInvoiceMerger = () => {
             let headerIdx = 0;
             for (let i = 0; i < Math.min(orderAoa.length, 30); i++) if ((orderAoa[i] || []).join('').includes('주문번호')) { headerIdx = i; break; }
 
-            const invoiceMap = await buildInvoiceMap(await vendorFile.arrayBuffer(), companyName);
+            const invoiceMap = await buildInvoiceMap(await vendorFile.arrayBuffer(), companyName, pricingConfig);
             console.log(`[송장디버그] processFiles - 업체: ${companyName}, businessId: ${businessId}`);
             console.log(`[송장디버그] 주문서 총 행수: ${orderAoa.length}, headerIdx: ${headerIdx}`);
             console.log(`[송장디버그] 주문서 헤더:`, orderAoa[headerIdx]);

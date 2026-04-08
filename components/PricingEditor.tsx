@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PricingConfig, CompanyConfig, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
-import { ORDER_FORM_FIELD_TYPES } from '../types';
-import { inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
+import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES } from '../types';
+import { inferFieldFromHeader, inferVendorInvoiceField } from '../hooks/useConsolidatedOrderConverter';
 import {
     TrashIcon, PlusCircleIcon, DocumentArrowUpIcon, BuildingStorefrontIcon,
     PhoneIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon,
@@ -587,6 +587,19 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    const handleUpdateVendorInvoiceHeaders = (companyName: string, headers: string[]) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].vendorInvoiceHeaders = headers.length > 0 ? headers : undefined;
+        if (headers.length === 0) newConfig[companyName].vendorInvoiceFieldMap = undefined;
+        handleUpdate(newConfig);
+    };
+
+    const handleUpdateVendorInvoiceFieldMap = (companyName: string, fieldMap: string[]) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].vendorInvoiceFieldMap = fieldMap.length > 0 ? fieldMap : undefined;
+        handleUpdate(newConfig);
+    };
+
     const handleAddProduct = (companyName: string) => {
         setDialog({
             type: 'prompt',
@@ -795,6 +808,8 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onUpdateOrderFormHeaders={(headers) => handleUpdateOrderFormHeaders(companyName, headers)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
+                            onUpdateVendorInvoiceHeaders={(headers) => handleUpdateVendorInvoiceHeaders(companyName, headers)}
+                            onUpdateVendorInvoiceFieldMap={(fieldMap) => handleUpdateVendorInvoiceFieldMap(companyName, fieldMap)}
                             onAddProduct={() => handleAddProduct(companyName)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
                             onOpenProductEditor={(productKey, product) => setDialog({
@@ -848,6 +863,8 @@ const CompanyCard: React.FC<{
     onUpdateKeywords: (keywords: string[]) => void;
     onUpdateOrderFormHeaders: (headers: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
+    onUpdateVendorInvoiceHeaders: (headers: string[]) => void;
+    onUpdateVendorInvoiceFieldMap: (fieldMap: string[]) => void;
     onAddProduct: () => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
@@ -996,6 +1013,83 @@ const CompanyCard: React.FC<{
                                                 }}
                                             >
                                                 {ORDER_FORM_FIELD_TYPES.map(ft => (
+                                                    <option key={ft.key} value={ft.key}>{ft.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                    <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
+                        <div className="flex items-center gap-3 mb-2">
+                            <span className="text-lg">📄</span>
+                            <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">송장파일 양식</span>
+                            <label className="ml-auto flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-lg text-[10px] font-black border border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all">
+                                <DocumentArrowUpIcon className="w-3.5 h-3.5" />
+                                <span>양식 파일에서 읽기</span>
+                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const reader = new FileReader();
+                                    reader.onload = (ev) => {
+                                        try {
+                                            const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+                                            const wb = XLSX.read(data, { type: 'array' });
+                                            const ws = wb.Sheets[wb.SheetNames[0]];
+                                            const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                                            if (aoa.length > 0) {
+                                                const headers = aoa[0].map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                if (headers.length > 0) {
+                                                    props.onUpdateVendorInvoiceHeaders(headers);
+                                                    props.onUpdateVendorInvoiceFieldMap(headers.map((h: string) => inferVendorInvoiceField(h)));
+                                                }
+                                            }
+                                        } catch { /* ignore */ }
+                                    };
+                                    reader.readAsArrayBuffer(file);
+                                    e.target.value = '';
+                                }} />
+                            </label>
+                        </div>
+                        <EditableField
+                            value={(companyConfig.vendorInvoiceHeaders || []).join(', ')}
+                            onSave={(val) => {
+                                const headers = val.split(/[,\t]+/).map(s => s.trim()).filter(Boolean);
+                                props.onUpdateVendorInvoiceHeaders(headers);
+                                if (headers.length > 0) {
+                                    const existingMap = companyConfig.vendorInvoiceFieldMap || [];
+                                    props.onUpdateVendorInvoiceFieldMap(headers.map((h, i) => existingMap[i] || inferVendorInvoiceField(h)));
+                                } else {
+                                    props.onUpdateVendorInvoiceFieldMap([]);
+                                }
+                            }}
+                            placeholder="업체에서 보내주는 송장파일의 헤더 (비워두면 자동 감지)"
+                            className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
+                        />
+                        <p className="text-[10px] text-zinc-600 mt-1">업체 송장파일의 컬럼 양식. 비워두면 자동 감지. 양식 파일 업로드 또는 쉼표로 구분하여 입력</p>
+                        {companyConfig.vendorInvoiceHeaders && companyConfig.vendorInvoiceHeaders.length > 0 && (
+                            <div className="mt-3 space-y-1">
+                                <span className="text-[11px] font-black text-amber-500/80 uppercase">필드 매핑</span>
+                                {companyConfig.vendorInvoiceHeaders.map((header, idx) => {
+                                    const currentField = companyConfig.vendorInvoiceFieldMap?.[idx] || inferVendorInvoiceField(header);
+                                    return (
+                                        <div key={idx} className="flex items-center gap-2">
+                                            <span className="text-[11px] font-bold text-zinc-500 w-36 truncate shrink-0" title={header}>
+                                                {header}
+                                            </span>
+                                            <span className="text-zinc-600 text-[10px]">&rarr;</span>
+                                            <select
+                                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500/40 transition-colors"
+                                                value={currentField}
+                                                onChange={(e) => {
+                                                    const newMap = [...(companyConfig.vendorInvoiceFieldMap || companyConfig.vendorInvoiceHeaders!.map(h => inferVendorInvoiceField(h)))];
+                                                    newMap[idx] = e.target.value;
+                                                    props.onUpdateVendorInvoiceFieldMap(newMap);
+                                                }}
+                                            >
+                                                {VENDOR_INVOICE_FIELD_TYPES.map(ft => (
                                                     <option key={ft.key} value={ft.key}>{ft.label}</option>
                                                 ))}
                                             </select>

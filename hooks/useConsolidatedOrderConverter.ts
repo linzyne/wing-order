@@ -1,7 +1,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder, UnmatchedOrder, OrderFormFieldKey } from '../types';
+import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder, UnmatchedOrder, OrderFormFieldKey, VendorInvoiceFieldKey } from '../types';
 import { BUSINESS_INFO, getBusinessInfo } from '../types';
 import { findProductConfig } from '../pricing';
 
@@ -404,6 +404,13 @@ export function getHeaderForCompany(companyName: string, config: CompanyConfig):
 }
 
 /** 헤더명에서 필드 타입을 자동 추정 (전화번호/주소를 이름보다 먼저 체크) */
+export function inferVendorInvoiceField(h: string): VendorInvoiceFieldKey {
+    const lower = h.toLowerCase().replace(/\s+/g, '');
+    if (lower.includes('주문번호') || lower.includes('관리번호') || lower.includes('오더번호') || lower.includes('오더넘버') || lower.includes('접수번호') || lower.includes('고객주문번호') || lower === 'id') return 'orderNumber';
+    if (lower.includes('송장') || lower.includes('운송장') || lower.includes('등기') || lower.includes('배송번호') || lower.includes('화물추적') || lower.includes('트래킹') || lower.includes('tracking') || lower.includes('invoice')) return 'trackingNumber';
+    return 'empty';
+}
+
 export function inferFieldFromHeader(h: string): OrderFormFieldKey {
     if (h.includes('받는분연락처') || h.includes('전화번호') || h.includes('핸드폰') || h.includes('휴대폰') || (h.includes('연락처') && !h.includes('발송인') && !h.includes('업체'))) return 'recipientPhone';
     if (h.includes('우편번호')) return 'recipientZipcode';

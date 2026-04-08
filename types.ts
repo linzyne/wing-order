@@ -73,6 +73,14 @@ export const ORDER_FORM_FIELD_TYPES = [
 
 export type OrderFormFieldKey = typeof ORDER_FORM_FIELD_TYPES[number]['key'];
 
+export const VENDOR_INVOICE_FIELD_TYPES = [
+  { key: 'orderNumber',    label: '주문번호' },
+  { key: 'trackingNumber', label: '송장번호' },
+  { key: 'empty',          label: '비워둠' },
+] as const;
+
+export type VendorInvoiceFieldKey = typeof VENDOR_INVOICE_FIELD_TYPES[number]['key'];
+
 export interface CompanyConfig {
   phone?: string;
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
@@ -83,6 +91,8 @@ export interface CompanyConfig {
   orderFormFilename?: string; // 발주서 양식 파일명
   invoiceHeaders?: string[]; // 송장 헤더
   invoiceFilename?: string; // 송장 양식 파일명
+  vendorInvoiceHeaders?: string[]; // 업체 송장파일 헤더 (입력 양식)
+  vendorInvoiceFieldMap?: string[]; // 업체 송장파일 필드 매핑 (주문번호/송장번호 위치)
   deadline?: string; // 마감 시간 (예: "09:00")
   keywords?: string[]; // 매칭 키워드 (엑셀 그룹컬럼 매칭용)
   products: {
