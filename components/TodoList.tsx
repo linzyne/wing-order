@@ -21,15 +21,15 @@ import { useTodos } from '../hooks/useFirestore';
 import type { TodoItem, BusinessId, DayOfWeek } from '../types';
 import { DAYS_OF_WEEK } from '../types';
 
-// 요일별 색상 매핑
-const DAY_COLORS: Record<string, { text: string; bg: string; border: string }> = {
-  '월': { text: 'text-rose-400',    bg: 'bg-rose-500/20',    border: 'border-rose-500/40' },
-  '화': { text: 'text-orange-400',  bg: 'bg-orange-500/20',  border: 'border-orange-500/40' },
-  '수': { text: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/40' },
-  '목': { text: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40' },
-  '금': { text: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/40' },
-  '토': { text: 'text-violet-400',  bg: 'bg-violet-500/20',  border: 'border-violet-500/40' },
-  '일': { text: 'text-red-400',     bg: 'bg-red-500/20',     border: 'border-red-500/40' },
+// 요일별 색상 매핑 (인라인 스타일 - Tailwind purge 무관)
+const DAY_COLORS: Record<string, { color: string; bg: string; border: string }> = {
+  '월': { color: '#fb7185', bg: 'rgba(244,63,94,0.2)',  border: 'rgba(244,63,94,0.4)' },   // 로즈
+  '화': { color: '#fb923c', bg: 'rgba(249,115,22,0.2)', border: 'rgba(249,115,22,0.4)' },  // 오렌지
+  '수': { color: '#fbbf24', bg: 'rgba(245,158,11,0.2)', border: 'rgba(245,158,11,0.4)' },  // 앰버(노랑)
+  '목': { color: '#34d399', bg: 'rgba(16,185,129,0.2)', border: 'rgba(16,185,129,0.4)' },  // 에메랄드
+  '금': { color: '#60a5fa', bg: 'rgba(59,130,246,0.2)', border: 'rgba(59,130,246,0.4)' },  // 블루
+  '토': { color: '#a78bfa', bg: 'rgba(139,92,246,0.2)', border: 'rgba(139,92,246,0.4)' },  // 바이올렛
+  '일': { color: '#f87171', bg: 'rgba(239,68,68,0.2)',  border: 'rgba(239,68,68,0.4)' },   // 레드
 };
 
 // 요일 그룹별 정렬: 요일없음 → 월→일 → 완료
@@ -44,10 +44,10 @@ const sortByDayGroup = (todoList: TodoItem[]): TodoItem[] => {
   return [...noDay, ...DAYS_OF_WEEK.flatMap(day => byDay[day]), ...completed];
 };
 
-const getDayStyle = (day?: string) => {
-  if (!day || !DAY_COLORS[day]) return 'bg-zinc-800 border-zinc-700 text-zinc-500';
+const getDayInlineStyle = (day?: string): React.CSSProperties => {
+  if (!day || !DAY_COLORS[day]) return {};
   const c = DAY_COLORS[day];
-  return `${c.bg} ${c.border} ${c.text}`;
+  return { color: c.color, backgroundColor: c.bg, borderColor: c.border };
 };
 
 interface TodoListProps {
@@ -155,9 +155,8 @@ const SortableTodoItem: React.FC<{
       <select
         value={todo.day || ''}
         onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onDayChange(todo.id, (e.target.value || undefined) as DayOfWeek | undefined)}
-        className={`w-10 px-0 py-0.5 text-center text-xs rounded border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none font-bold ${
-          getDayStyle(todo.day)
-        }`}
+        className="w-10 px-0 py-0.5 text-center text-xs rounded border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none font-bold bg-zinc-800 border-zinc-700 text-zinc-500"
+        style={getDayInlineStyle(todo.day)}
       >
         <option value="">-</option>
         {DAYS_OF_WEEK.map(day => (
@@ -289,9 +288,8 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
           <select
             value={newTodoDay || ''}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewTodoDay((e.target.value || undefined) as DayOfWeek | undefined)}
-            className={`w-14 px-1 py-2 text-center text-sm rounded-lg border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none font-bold ${
-              getDayStyle(newTodoDay)
-            }`}
+            className="w-14 px-1 py-2 text-center text-sm rounded-lg border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none font-bold bg-zinc-800 border-zinc-700 text-zinc-500"
+            style={getDayInlineStyle(newTodoDay)}
           >
             <option value="">요일</option>
             {DAYS_OF_WEEK.map(day => (
