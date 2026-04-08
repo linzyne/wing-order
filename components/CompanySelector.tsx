@@ -700,12 +700,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             // 업체명 매핑
             if (!productToCompany[groupName]) {
                 const groupNorm = groupName.replace(/\s+/g, '').normalize('NFC');
+                let bestCompany = '';
+                let bestPos = Infinity;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
-                    if (keywords.some(k => groupNorm.includes(k.replace(/\s+/g, '').normalize('NFC')))) {
-                        productToCompany[groupName] = name;
-                        break;
+                    for (const k of keywords) {
+                        const kNorm = k.replace(/\s+/g, '').normalize('NFC');
+                        const pos = groupNorm.indexOf(kNorm);
+                        if (pos !== -1 && pos < bestPos) {
+                            bestPos = pos;
+                            bestCompany = name;
+                        }
                     }
                 }
+                if (bestCompany) productToCompany[groupName] = bestCompany;
             }
             const isFake = fakeNums.has(orderNum);
             const company = productToCompany[groupName] || '';
@@ -923,13 +930,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const rawVal = String(json[i][groupColIdx] || '');
                 const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
                 if (!groupVal) continue;
+                let bestCompany = '';
+                let bestPos = Infinity;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
-                    const isMatched = keywords.some(k => {
-                        const normK = k.replace(/\s+/g, '').normalize('NFC');
-                        return groupVal.includes(normK);
-                    });
-                    if (isMatched) { companiesInFile.add(name); break; }
+                    for (const k of keywords) {
+                        const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
+                        if (pos !== -1 && pos < bestPos) {
+                            bestPos = pos;
+                            bestCompany = name;
+                        }
+                    }
                 }
+                if (bestCompany) companiesInFile.add(bestCompany);
             }
             setDetectedCompanies(companiesInFile);
             setMasterOrderData(json);
@@ -1006,9 +1018,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             for (let i = 1; i < json.length; i++) {
                 const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
                 if (!groupVal) continue;
+                let bestCompany = '';
+                let bestPos = Infinity;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
-                    if (keywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')))) { companyRowCounts[name] = (companyRowCounts[name] || 0) + 1; break; }
+                    for (const k of keywords) {
+                        const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
+                        if (pos !== -1 && pos < bestPos) {
+                            bestPos = pos;
+                            bestCompany = name;
+                        }
+                    }
                 }
+                if (bestCompany) companyRowCounts[bestCompany] = (companyRowCounts[bestCompany] || 0) + 1;
             }
             const companiesInFile = new Set(Object.keys(companyRowCounts));
             if (companiesInFile.size === 0) { alert('주문서에서 매칭되는 업체를 찾지 못했습니다.'); return; }
