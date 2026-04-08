@@ -1875,12 +1875,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             const extra = extraMap?.[groupName] || 0;
                                             return <span className="font-black ml-1">{base}건{extra > 0 ? <span className="text-cyan-400">+{extra}건</span> : ''}</span>;
                                         };
-                                        const fmtCompany = (company: string, items: [string, number][], extraByCompany: Record<string, number> | undefined) => {
-                                            const base = items.reduce((s, x) => s + x[1], 0);
-                                            if (!has2) return `${base}건`;
-                                            const extra = extraByCompany?.[company] || 0;
-                                            return extra > 0 ? <>{base}건<span className="text-cyan-400">+{extra}건</span></> : `${base}건`;
-                                        };
                                         return (
                                         <div className="mt-1 flex gap-6 items-start">
                                             <div className="flex-1 min-w-0">
@@ -1892,7 +1886,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                         masterProductSummary.allOrderDetails.forEach((d: any) => {
                                                             if (d.groupName) qtyByProduct[d.groupName] = (qtyByProduct[d.groupName] || 0) + d.qty;
                                                         });
-                                                        return Object.entries(qtyByProduct).sort(([, a], [, b]) => (b as number) - (a as number)).map(([name, qty]) => (
+                                                        return Object.entries(qtyByProduct).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, qty]) => (
                                                             <div key={name} className="flex text-sm gap-1">
                                                                 <span className="text-zinc-400">{name}</span>
                                                                 <span className="text-sky-300 font-black">{qty as number}건</span>
@@ -1904,52 +1898,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <div className="flex-1 min-w-0">
                                                 <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, add?.realTotal || 0)})</div>
                                                 <div>
-                                                    {(() => {
-                                                        const grouped: Record<string, [string, number][]> = {};
-                                                        Object.entries(masterProductSummary.realOrders).forEach(([name, count]) => {
-                                                            const company = masterProductSummary.productToCompany[name] || '기타';
-                                                            if (!grouped[company]) grouped[company] = [];
-                                                            grouped[company].push([name, count as number]);
-                                                        });
-                                                        Object.values(grouped).forEach(items => items.sort((a, b) => b[1] - a[1]));
-                                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
-                                                            <div key={company}>
-                                                                <div className="text-sm text-zinc-300 font-black">{company} {fmtCompany(company, items, add?.realByCompany)}</div>
-                                                                {items.map(([name, count]) => (
-                                                                    <div key={name} className="flex text-sm pl-3">
-                                                                        <span className="text-zinc-400">{name}</span>
-                                                                        <span className="text-white">{fmtCount(count, name, add?.realByGroup)}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ));
-                                                    })()}
+                                                    {Object.entries(masterProductSummary.realOrders).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
+                                                        <div key={name} className="flex text-sm gap-1">
+                                                            <span className="text-zinc-400">{name}</span>
+                                                            <span className="text-white font-black">{fmtCount(count as number, name, add?.realByGroup)}</span>
+                                                        </div>
+                                                    ))}
                                                 </div>
                                             </div>
                                             {(masterProductSummary.fakeTotal > 0 || (add?.fakeTotal || 0) > 0) && (
                                                 <div className="flex-1 min-w-0">
                                                     <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, add?.fakeTotal || 0)})</div>
                                                     <div>
-                                                        {(() => {
-                                                            const grouped: Record<string, [string, number][]> = {};
-                                                            Object.entries(masterProductSummary.fakeOrders).forEach(([name, count]) => {
-                                                                const company = masterProductSummary.productToCompany[name] || '기타';
-                                                                if (!grouped[company]) grouped[company] = [];
-                                                                grouped[company].push([name, count as number]);
-                                                            });
-                                                            Object.values(grouped).forEach(items => items.sort((a, b) => b[1] - a[1]));
-                                                            return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
-                                                                <div key={company}>
-                                                                    <div className="text-sm text-zinc-400 font-black">{company} {fmtCompany(company, items, add?.fakeByCompany)}</div>
-                                                                    {items.map(([name, count]) => (
-                                                                        <div key={name} className="flex text-sm pl-3">
-                                                                            <span className="text-zinc-500">{name}</span>
-                                                                            <span className="text-amber-400">{fmtCount(count, name, add?.fakeByGroup)}</span>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            ));
-                                                        })()}
+                                                        {Object.entries(masterProductSummary.fakeOrders).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
+                                                            <div key={name} className="flex text-sm gap-1">
+                                                                <span className="text-zinc-400">{name}</span>
+                                                                <span className="text-amber-400 font-black">{fmtCount(count as number, name, add?.fakeByGroup)}</span>
+                                                            </div>
+                                                        ))}
                                                     </div>
                                                 </div>
                                             )}
