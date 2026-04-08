@@ -21,6 +21,35 @@ import { useTodos } from '../hooks/useFirestore';
 import type { TodoItem, BusinessId, DayOfWeek } from '../types';
 import { DAYS_OF_WEEK } from '../types';
 
+// 요일별 색상 매핑
+const DAY_COLORS: Record<string, { text: string; bg: string; border: string }> = {
+  '월': { text: 'text-rose-400',    bg: 'bg-rose-500/20',    border: 'border-rose-500/40' },
+  '화': { text: 'text-orange-400',  bg: 'bg-orange-500/20',  border: 'border-orange-500/40' },
+  '수': { text: 'text-amber-400',   bg: 'bg-amber-500/20',   border: 'border-amber-500/40' },
+  '목': { text: 'text-emerald-400', bg: 'bg-emerald-500/20', border: 'border-emerald-500/40' },
+  '금': { text: 'text-blue-400',    bg: 'bg-blue-500/20',    border: 'border-blue-500/40' },
+  '토': { text: 'text-violet-400',  bg: 'bg-violet-500/20',  border: 'border-violet-500/40' },
+  '일': { text: 'text-red-400',     bg: 'bg-red-500/20',     border: 'border-red-500/40' },
+};
+
+// 요일 그룹별 정렬: 요일없음 → 월→일 → 완료
+const sortByDayGroup = (todoList: TodoItem[]): TodoItem[] => {
+  const incomplete = todoList.filter(t => !t.completed);
+  const completed = todoList.filter(t => t.completed);
+  const noDay = incomplete.filter(t => !t.day);
+  const byDay: Record<string, TodoItem[]> = {};
+  for (const day of DAYS_OF_WEEK) {
+    byDay[day] = incomplete.filter(t => t.day === day);
+  }
+  return [...noDay, ...DAYS_OF_WEEK.flatMap(day => byDay[day]), ...completed];
+};
+
+const getDayStyle = (day?: string) => {
+  if (!day || !DAY_COLORS[day]) return 'bg-zinc-800 border-zinc-700 text-zinc-500';
+  const c = DAY_COLORS[day];
+  return `${c.bg} ${c.border} ${c.text}`;
+};
+
 interface TodoListProps {
   businessId: BusinessId;
 }
@@ -126,10 +155,8 @@ const SortableTodoItem: React.FC<{
       <select
         value={todo.day || ''}
         onChange={(e: React.ChangeEvent<HTMLSelectElement>) => onDayChange(todo.id, (e.target.value || undefined) as DayOfWeek | undefined)}
-        className={`w-10 px-0 py-0.5 text-center text-xs rounded border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none ${
-          todo.day
-            ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-            : 'bg-zinc-800 border-zinc-700 text-zinc-500'
+        className={`w-10 px-0 py-0.5 text-center text-xs rounded border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none font-bold ${
+          getDayStyle(todo.day)
         }`}
       >
         <option value="">-</option>
@@ -175,7 +202,9 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
       day: newTodoDay,
     };
 
-    saveTodos([...todos, newTodo]);
+    // 새 메모를 맨 앞에 추가, 요일 선택 시 해당 요일 그룹으로 자동 정렬
+    const newList = [newTodo, ...todos];
+    saveTodos(newTodoDay ? sortByDayGroup(newList) : newList);
     setNewTodoText('');
     setNewTodoDay(undefined);
   };
@@ -184,10 +213,7 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
     const updatedTodos = todos.map(todo =>
       todo.id === id ? { ...todo, completed: !todo.completed } : todo
     );
-    // 완료된 항목은 아래로, 미완료 항목은 위로 (각 그룹 내 순서는 유지)
-    const incomplete = updatedTodos.filter(t => !t.completed);
-    const completed = updatedTodos.filter(t => t.completed);
-    saveTodos([...incomplete, ...completed]);
+    saveTodos(sortByDayGroup(updatedTodos));
   };
 
   const deleteTodo = (id: string) => {
@@ -222,7 +248,8 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
     const updatedTodos = todos.map(todo =>
       todo.id === id ? { ...todo, day } : todo
     );
-    saveTodos(updatedTodos);
+    // 요일 변경 시 해당 요일 그룹 위치로 자동 이동
+    saveTodos(sortByDayGroup(updatedTodos));
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -255,17 +282,15 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
             type="text"
             value={newTodoText}
             onChange={(e) => setNewTodoText(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyDown={handleKeyPress}
             placeholder="할일 추가..."
             className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm placeholder-zinc-500 focus:outline-none focus:border-rose-500 transition-colors"
           />
           <select
             value={newTodoDay || ''}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewTodoDay((e.target.value || undefined) as DayOfWeek | undefined)}
-            className={`w-14 px-1 py-2 text-center text-sm rounded-lg border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none ${
-              newTodoDay
-                ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-                : 'bg-zinc-800 border-zinc-700 text-zinc-500'
+            className={`w-14 px-1 py-2 text-center text-sm rounded-lg border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none font-bold ${
+              getDayStyle(newTodoDay)
             }`}
           >
             <option value="">요일</option>
