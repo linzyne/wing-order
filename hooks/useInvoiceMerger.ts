@@ -161,17 +161,7 @@ export const useInvoiceMerger = () => {
             const orderHeader = orderAoa[headerIdx];
             const invoiceHeader = useCustomInvoiceHeaders ? companyConfig.invoiceHeaders! : orderHeader;
 
-            const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
-            let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
-            let targetInvIdx = isCustomIdx ? 4 : findColIdx(invoiceHeader, ['운송장', '송장번호', '송장']);
-            let targetCourierIdx = isCustomIdx ? 3 : findColIdx(invoiceHeader, ['택배사', '배송사']);
-            let targetQtyIdx = findColIdx(orderHeader, ['수량']);
-
-            if (targetOrderIdx === -1) {
-                throw new Error("주문서에서 '주문번호' 열을 찾을 수 없습니다.");
-            }
-
-            // 헤더 매핑: 발주서 헤더 → 송장 헤더 인덱스 매핑
+            // 헤더 매핑: 발주서 헤더 → 송장 헤더 인덱스 매핑 (먼저 빌드)
             const headerMapping: Record<number, number> = {};
             if (useCustomInvoiceHeaders) {
                 for (let i = 0; i < orderHeader.length; i++) {
@@ -192,6 +182,30 @@ export const useInvoiceMerger = () => {
                         }
                     }
                 }
+            }
+
+            const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
+            let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
+            let targetInvIdx = isCustomIdx ? 4 : findColIdx(invoiceHeader, ['운송장', '송장번호', '송장']);
+            let targetCourierIdx = isCustomIdx ? 3 : findColIdx(invoiceHeader, ['택배사', '배송사']);
+            let targetQtyIdx = findColIdx(orderHeader, ['수량']);
+
+            // 키워드로 못 찾으면 매핑을 통해 역추적: invoiceHeader에서 해당 필드를 찾고, 매핑의 역으로 orderHeader 인덱스를 구함
+            if (useCustomInvoiceHeaders && targetOrderIdx === -1) {
+                const invOrderCol = findColIdx(invoiceHeader, ['주문번호', '주문정보', '오더번호']);
+                if (invOrderCol !== -1) {
+                    for (const [orderIdx, invIdx] of Object.entries(headerMapping)) {
+                        if (invIdx === invOrderCol) { targetOrderIdx = Number(orderIdx); break; }
+                    }
+                }
+            }
+            if (useCustomInvoiceHeaders && targetInvIdx === -1) {
+                const invTrackCol = findColIdx(invoiceHeader, ['운송장', '송장번호', '송장']);
+                if (invTrackCol !== -1) targetInvIdx = invTrackCol;
+            }
+
+            if (targetOrderIdx === -1) {
+                throw new Error("주문서에서 '주문번호' 열을 찾을 수 없습니다.");
             }
 
             const mgmtRows: any[][] = [invoiceHeader];
