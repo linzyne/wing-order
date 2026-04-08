@@ -1899,7 +1899,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         return (
                                         <div className="mt-1 flex gap-6 items-start">
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({masterProductSummary.masterRawTotalQty}건)</div>
+                                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({fmtTotal(masterProductSummary.masterRawTotalQty, (add?.realTotal || 0) + (add?.fakeTotal || 0))})</div>
                                                 <div>
                                                     {(() => {
                                                         // allOrderDetails에서 등록상품명별 W열 수량 합산 (실제+가구매 모두 포함), 회사별 그룹
@@ -1913,13 +1913,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             if (!grouped[company]) grouped[company] = [];
                                                             grouped[company].push([name, qty]);
                                                         });
+                                                        const masterFmtCount = (base: number, groupName: string) => {
+                                                            if (!has2) return <span className="font-black ml-1">{base}건</span>;
+                                                            const extra = (add?.realByGroup?.[groupName] || 0) + (add?.fakeByGroup?.[groupName] || 0);
+                                                            return <span className="font-black ml-1">{base}건{extra > 0 ? <span className="text-cyan-400">+{extra}건</span> : ''}</span>;
+                                                        };
                                                         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
                                                             <div key={company}>
                                                                 <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
                                                                 {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, qty]) => (
                                                                     <div key={name} className="flex text-sm gap-1 pl-2">
                                                                         <span className="text-zinc-400">{name}</span>
-                                                                        <span className="text-sky-300 font-black">{qty}건</span>
+                                                                        <span className="text-sky-300">{masterFmtCount(qty, name)}</span>
                                                                     </div>
                                                                 ))}
                                                             </div>
