@@ -1040,13 +1040,31 @@ const CompanyCard: React.FC<{
                                             const ws = wb.Sheets[wb.SheetNames[0]];
                                             const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
                                             if (aoa.length > 0) {
-                                                const headers = aoa[0].map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                // 헤더 행 자동 탐색: 첫 20행 중 키워드 포함 행 찾기
+                                                let headerRowIdx = -1;
+                                                for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
+                                                    const rowStr = (aoa[ri] || []).join('');
+                                                    if (rowStr.includes('번호') || rowStr.includes('송장') || rowStr.includes('운송장') || rowStr.includes('접수') || rowStr.includes('주문')) {
+                                                        headerRowIdx = ri;
+                                                        break;
+                                                    }
+                                                }
+                                                // 키워드 못 찾으면 비어있지 않은 셀이 가장 많은 행을 헤더로 사용
+                                                if (headerRowIdx === -1) {
+                                                    let maxCols = 0;
+                                                    for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
+                                                        const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
+                                                        if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
+                                                    }
+                                                    if (headerRowIdx === -1) headerRowIdx = 0;
+                                                }
+                                                const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
                                                 if (headers.length > 0) {
                                                     props.onUpdateVendorInvoiceHeaders(headers);
                                                     props.onUpdateVendorInvoiceFieldMap(headers.map((h: string) => inferVendorInvoiceField(h)));
                                                 }
                                             }
-                                        } catch { /* ignore */ }
+                                        } catch (err) { console.error('[송장양식 업로드 오류]', err); }
                                     };
                                     reader.readAsArrayBuffer(file);
                                     e.target.value = '';
