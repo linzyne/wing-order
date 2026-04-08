@@ -587,10 +587,14 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
-    const handleUpdateVendorInvoiceHeaders = (companyName: string, headers: string[]) => {
+    const handleUpdateVendorInvoiceHeaders = (companyName: string, headers: string[], fieldMap?: string[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].vendorInvoiceHeaders = headers.length > 0 ? headers : undefined;
-        if (headers.length === 0) newConfig[companyName].vendorInvoiceFieldMap = undefined;
+        if (headers.length === 0) {
+            newConfig[companyName].vendorInvoiceFieldMap = undefined;
+        } else if (fieldMap) {
+            newConfig[companyName].vendorInvoiceFieldMap = fieldMap;
+        }
         handleUpdate(newConfig);
     };
 
@@ -808,7 +812,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onUpdateOrderFormHeaders={(headers) => handleUpdateOrderFormHeaders(companyName, headers)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
-                            onUpdateVendorInvoiceHeaders={(headers) => handleUpdateVendorInvoiceHeaders(companyName, headers)}
+                            onUpdateVendorInvoiceHeaders={(headers, fieldMap) => handleUpdateVendorInvoiceHeaders(companyName, headers, fieldMap)}
                             onUpdateVendorInvoiceFieldMap={(fieldMap) => handleUpdateVendorInvoiceFieldMap(companyName, fieldMap)}
                             onAddProduct={() => handleAddProduct(companyName)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
@@ -863,7 +867,7 @@ const CompanyCard: React.FC<{
     onUpdateKeywords: (keywords: string[]) => void;
     onUpdateOrderFormHeaders: (headers: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
-    onUpdateVendorInvoiceHeaders: (headers: string[]) => void;
+    onUpdateVendorInvoiceHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateVendorInvoiceFieldMap: (fieldMap: string[]) => void;
     onAddProduct: () => void;
     onDeleteProduct: (productKey: string) => void;
@@ -1065,9 +1069,9 @@ const CompanyCard: React.FC<{
                                                 const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
                                                 console.log('[송장양식] headerRowIdx:', headerRowIdx, '헤더:', headers);
                                                 if (headers.length > 0) {
-                                                    props.onUpdateVendorInvoiceHeaders(headers);
-                                                    props.onUpdateVendorInvoiceFieldMap(headers.map((h: string) => inferVendorInvoiceField(h)));
-                                                    console.log('[송장양식] 저장 완료');
+                                                    const fieldMap = headers.map((h: string) => inferVendorInvoiceField(h));
+                                                    props.onUpdateVendorInvoiceHeaders(headers, fieldMap);
+                                                    console.log('[송장양식] 저장 완료, fieldMap:', fieldMap);
                                                 } else {
                                                     console.log('[송장양식] 헤더가 비어있음');
                                                 }
@@ -1083,13 +1087,9 @@ const CompanyCard: React.FC<{
                             value={(companyConfig.vendorInvoiceHeaders || []).join(', ')}
                             onSave={(val) => {
                                 const headers = val.split(/[,\t]+/).map(s => s.trim()).filter(Boolean);
-                                props.onUpdateVendorInvoiceHeaders(headers);
-                                if (headers.length > 0) {
-                                    const existingMap = companyConfig.vendorInvoiceFieldMap || [];
-                                    props.onUpdateVendorInvoiceFieldMap(headers.map((h, i) => existingMap[i] || inferVendorInvoiceField(h)));
-                                } else {
-                                    props.onUpdateVendorInvoiceFieldMap([]);
-                                }
+                                const existingMap = companyConfig.vendorInvoiceFieldMap || [];
+                                const fieldMap = headers.length > 0 ? headers.map((h, i) => existingMap[i] || inferVendorInvoiceField(h)) : undefined;
+                                props.onUpdateVendorInvoiceHeaders(headers, fieldMap);
                             }}
                             placeholder="업체에서 보내주는 송장파일의 헤더 (비워두면 자동 감지)"
                             className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
