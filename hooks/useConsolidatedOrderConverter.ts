@@ -670,15 +670,28 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
                     const headerRowIdx = findHeaderRowIndex(fullJson);
                     headers = fullJson[headerRowIdx];
                     const groupColIdx = 10;
-                    const targetKeywords = getKeywordsForCompany(targetCompanyName, pricingConfig);
+                    // 모든 회사 키워드 맵 생성 (위치 우선순위 매칭용)
+                    const allCompanyKeywords = new Map<string, string[]>();
+                    Object.keys(pricingConfig || {}).forEach(name => allCompanyKeywords.set(name, getKeywordsForCompany(name, pricingConfig)));
 
                     json.push(headers);
                     for (let i = headerRowIdx + 1; i < fullJson.length; i++) {
                         const row = fullJson[i];
                         if (!row) continue;
                         const groupVal = String(row[groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
-                        const isGroupMatched = targetKeywords.some(k => groupVal.includes(k.replace(/\s+/g, '').normalize('NFC')));
-                        if (isGroupMatched) json.push(row);
+                        // 모든 회사 중 키워드가 가장 앞에 매칭되는 회사 찾기
+                        let bestCompany = '';
+                        let bestPos = Infinity;
+                        for (const [name, keywords] of allCompanyKeywords.entries()) {
+                            for (const k of keywords) {
+                                const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
+                                if (pos !== -1 && pos < bestPos) {
+                                    bestPos = pos;
+                                    bestCompany = name;
+                                }
+                            }
+                        }
+                        if (bestCompany === targetCompanyName) json.push(row);
                     }
                 }
             }
