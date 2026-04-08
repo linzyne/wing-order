@@ -1030,8 +1030,10 @@ const CompanyCard: React.FC<{
                                 <DocumentArrowUpIcon className="w-3.5 h-3.5" />
                                 <span>양식 파일에서 읽기</span>
                                 <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
+                                    console.log('[송장양식] onChange 실행됨');
                                     const file = e.target.files?.[0];
-                                    if (!file) return;
+                                    if (!file) { console.log('[송장양식] 파일 없음'); return; }
+                                    console.log('[송장양식] 파일 선택:', file.name);
                                     const reader = new FileReader();
                                     reader.onload = (ev) => {
                                         try {
@@ -1039,7 +1041,9 @@ const CompanyCard: React.FC<{
                                             const wb = XLSX.read(data, { type: 'array' });
                                             const ws = wb.Sheets[wb.SheetNames[0]];
                                             const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                                            console.log('[송장양식] 파싱 완료, 행 수:', aoa.length);
                                             if (aoa.length > 0) {
+                                                console.log('[송장양식] 첫 5행:', aoa.slice(0, 5));
                                                 // 헤더 행 자동 탐색: 첫 20행 중 키워드 포함 행 찾기
                                                 let headerRowIdx = -1;
                                                 for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
@@ -1059,9 +1063,13 @@ const CompanyCard: React.FC<{
                                                     if (headerRowIdx === -1) headerRowIdx = 0;
                                                 }
                                                 const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                console.log('[송장양식] headerRowIdx:', headerRowIdx, '헤더:', headers);
                                                 if (headers.length > 0) {
                                                     props.onUpdateVendorInvoiceHeaders(headers);
                                                     props.onUpdateVendorInvoiceFieldMap(headers.map((h: string) => inferVendorInvoiceField(h)));
+                                                    console.log('[송장양식] 저장 완료');
+                                                } else {
+                                                    console.log('[송장양식] 헤더가 비어있음');
                                                 }
                                             }
                                         } catch (err) { console.error('[송장양식 업로드 오류]', err); }
