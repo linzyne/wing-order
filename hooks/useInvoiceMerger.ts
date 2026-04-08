@@ -145,7 +145,10 @@ export const useInvoiceMerger = () => {
             const orderWb = XLSX.read(await orderFile.arrayBuffer(), { type: 'array' });
             const orderAoa: any[][] = XLSX.utils.sheet_to_json(orderWb.Sheets[orderWb.SheetNames[0]], { header: 1 });
             let headerIdx = 0;
-            for (let i = 0; i < Math.min(orderAoa.length, 30); i++) if ((orderAoa[i] || []).join('').includes('주문번호')) { headerIdx = i; break; }
+            for (let i = 0; i < Math.min(orderAoa.length, 30); i++) {
+                const rowStr = (orderAoa[i] || []).join('');
+                if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { headerIdx = i; break; }
+            }
 
             const invoiceMap = await buildInvoiceMap(await vendorFile.arrayBuffer(), companyName, pricingConfig);
             console.log(`[송장디버그] processFiles - 업체: ${companyName}, businessId: ${businessId}`);
@@ -159,8 +162,8 @@ export const useInvoiceMerger = () => {
             const invoiceHeader = useCustomInvoiceHeaders ? companyConfig.invoiceHeaders! : orderHeader;
 
             const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
-            let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호']);
-            let targetInvIdx = isCustomIdx ? 4 : findColIdx(invoiceHeader, ['운송장', '송장번호']);
+            let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
+            let targetInvIdx = isCustomIdx ? 4 : findColIdx(invoiceHeader, ['운송장', '송장번호', '송장']);
             let targetCourierIdx = isCustomIdx ? 3 : findColIdx(invoiceHeader, ['택배사', '배송사']);
             let targetQtyIdx = findColIdx(orderHeader, ['수량']);
 
