@@ -56,12 +56,30 @@ export interface ProductPricing {
   aliases?: string[]; // 하위 호환성 위해 유지 (삭제 예정이지만 에러 방지)
 }
 
+export const ORDER_FORM_FIELD_TYPES = [
+  { key: 'recipientName',    label: '받는사람이름' },
+  { key: 'recipientPhone',   label: '받는사람전화번호' },
+  { key: 'recipientZipcode', label: '우편번호' },
+  { key: 'recipientAddress', label: '받는사람주소' },
+  { key: 'deliveryMessage',  label: '배송메시지' },
+  { key: 'productName',      label: '상품명' },
+  { key: 'qty',              label: '수량' },
+  { key: 'orderNumber',      label: '주문번호' },
+  { key: 'senderName',       label: '보내는사람이름' },
+  { key: 'senderPhone',      label: '보내는사람전화번호' },
+  { key: 'senderAddress',    label: '보내는사람주소' },
+  { key: 'empty',            label: '비워둠' },
+] as const;
+
+export type OrderFormFieldKey = typeof ORDER_FORM_FIELD_TYPES[number]['key'];
+
 export interface CompanyConfig {
   phone?: string;
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
   bankName?: string;
   accountNumber?: string;
   orderFormHeaders?: string[]; // 발주서 헤더
+  orderFormFieldMap?: string[]; // 발주서 필드 매핑 (orderFormHeaders와 1:1 대응)
   orderFormFilename?: string; // 발주서 양식 파일명
   invoiceHeaders?: string[]; // 송장 헤더
   invoiceFilename?: string; // 송장 양식 파일명

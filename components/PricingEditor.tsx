@@ -1,6 +1,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PricingConfig, CompanyConfig, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
+import { ORDER_FORM_FIELD_TYPES } from '../types';
+import { inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
 import {
     TrashIcon, PlusCircleIcon, DocumentArrowUpIcon, BuildingStorefrontIcon,
     PhoneIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon,
@@ -575,6 +577,13 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
     const handleUpdateOrderFormHeaders = (companyName: string, headers: string[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].orderFormHeaders = headers.length > 0 ? headers : undefined;
+        if (headers.length === 0) newConfig[companyName].orderFormFieldMap = undefined;
+        handleUpdate(newConfig);
+    };
+
+    const handleUpdateOrderFormFieldMap = (companyName: string, fieldMap: string[]) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].orderFormFieldMap = fieldMap.length > 0 ? fieldMap : undefined;
         handleUpdate(newConfig);
     };
 
@@ -785,6 +794,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onUpdateOrderFormHeaders={(headers) => handleUpdateOrderFormHeaders(companyName, headers)}
+                            onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
                             onAddProduct={() => handleAddProduct(companyName)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
                             onOpenProductEditor={(productKey, product) => setDialog({
@@ -837,6 +847,7 @@ const CompanyCard: React.FC<{
     onUpdateCourier: (courier: string) => void;
     onUpdateKeywords: (keywords: string[]) => void;
     onUpdateOrderFormHeaders: (headers: string[]) => void;
+    onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
     onAddProduct: () => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
@@ -938,6 +949,7 @@ const CompanyCard: React.FC<{
                                                 const headers = aoa[0].map((h: any) => String(h || '').trim()).filter(Boolean);
                                                 if (headers.length > 0) {
                                                     props.onUpdateOrderFormHeaders(headers);
+                                                    props.onUpdateOrderFormFieldMap(headers.map((h: string) => inferFieldFromHeader(h)));
                                                 }
                                             }
                                         } catch { /* ignore */ }
@@ -952,11 +964,46 @@ const CompanyCard: React.FC<{
                             onSave={(val) => {
                                 const headers = val.split(/[,\t]+/).map(s => s.trim()).filter(Boolean);
                                 props.onUpdateOrderFormHeaders(headers);
+                                if (headers.length > 0) {
+                                    const existingMap = companyConfig.orderFormFieldMap || [];
+                                    props.onUpdateOrderFormFieldMap(headers.map((h, i) => existingMap[i] || inferFieldFromHeader(h)));
+                                } else {
+                                    props.onUpdateOrderFormFieldMap([]);
+                                }
                             }}
                             placeholder="예: 받는사람, 전화번호, 주소, 품목명, 수량, 배송메세지, 주문번호"
                             className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                         />
                         <p className="text-[10px] text-zinc-600 mt-1">비워두면 기본 양식 사용. 양식 파일 업로드 또는 쉼표로 구분하여 입력</p>
+                        {companyConfig.orderFormHeaders && companyConfig.orderFormHeaders.length > 0 && (
+                            <div className="mt-3 space-y-1">
+                                <span className="text-[11px] font-black text-amber-500/80 uppercase">필드 매핑</span>
+                                {companyConfig.orderFormHeaders.map((header, idx) => {
+                                    const currentField = companyConfig.orderFormFieldMap?.[idx] || inferFieldFromHeader(header);
+                                    return (
+                                        <div key={idx} className="flex items-center gap-2">
+                                            <span className="text-[11px] font-bold text-zinc-500 w-36 truncate shrink-0" title={header}>
+                                                {header}
+                                            </span>
+                                            <span className="text-zinc-600 text-[10px]">&rarr;</span>
+                                            <select
+                                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500/40 transition-colors"
+                                                value={currentField}
+                                                onChange={(e) => {
+                                                    const newMap = [...(companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h)))];
+                                                    newMap[idx] = e.target.value;
+                                                    props.onUpdateOrderFormFieldMap(newMap);
+                                                }}
+                                            >
+                                                {ORDER_FORM_FIELD_TYPES.map(ft => (
+                                                    <option key={ft.key} value={ft.key}>{ft.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                     <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} />
                 </div>

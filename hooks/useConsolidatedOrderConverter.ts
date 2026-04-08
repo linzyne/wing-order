@@ -1,7 +1,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { GoogleGenAI } from "@google/genai";
-import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder, UnmatchedOrder } from '../types';
+import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder, UnmatchedOrder, OrderFormFieldKey } from '../types';
 import { BUSINESS_INFO, getBusinessInfo } from '../types';
 import { findProductConfig } from '../pricing';
 
@@ -403,6 +403,60 @@ export function getHeaderForCompany(companyName: string, config: CompanyConfig):
     return config.orderFormHeaders?.length ? config.orderFormHeaders : ['받는사람', '전화번호', '주소', '품목명', '수량', '배송메세지', '주문번호'];
 }
 
+/** 헤더명에서 필드 타입을 자동 추정 (전화번호/주소를 이름보다 먼저 체크) */
+export function inferFieldFromHeader(h: string): OrderFormFieldKey {
+    if (h.includes('받는분연락처') || h.includes('전화번호') || h.includes('핸드폰') || h.includes('휴대폰') || (h.includes('연락처') && !h.includes('발송인') && !h.includes('업체'))) return 'recipientPhone';
+    if (h.includes('우편번호')) return 'recipientZipcode';
+    if (h.includes('받는분주소') || (h.includes('주소') && !h.includes('발송인') && !h.includes('업체') && !h.includes('송하인') && !h.includes('보내는'))) return 'recipientAddress';
+    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인') || h.includes('수령인')) return 'recipientName';
+    if (h.includes('발송인전') || h.includes('발송인연락') || h.includes('업체전화') || h.includes('보내는사람전화')) return 'senderPhone';
+    if (h.includes('발송인주소') || h.includes('업체주소') || h.includes('보내는사람주소')) return 'senderAddress';
+    if (h.includes('발송인') || h.includes('송하인') || h.includes('업체명') || h.includes('보내는사람')) return 'senderName';
+    if (h.includes('제품명') || h.includes('품목') || h.includes('상품명') || h.includes('품번') || h.includes('스토어상품')) return 'productName';
+    if (h.includes('옵션')) return 'empty';
+    if (h.includes('수량') || h.includes('주문수량')) return 'qty';
+    if (h.includes('주문번호') || h.includes('주문정보')) return 'orderNumber';
+    if (h.includes('배송메') || h.includes('배송시사항') || h.includes('배송요청') || h.includes('배송사항')) return 'deliveryMessage';
+    if (h.includes('일자')) return 'empty';
+    return 'empty';
+}
+
+/** 일반 주문: 필드 키 → 값 변환 */
+function resolveFieldValue(field: OrderFormFieldKey, row: any[], orderName: string, senderName: string, senderPhone: string, senderAddress: string): any {
+    switch (field) {
+        case 'recipientName':    return String(row[26] || '');
+        case 'recipientPhone':   return String(row[27] || '');
+        case 'recipientZipcode': return String(row[28] || '');
+        case 'recipientAddress': return String(row[29] || '');
+        case 'deliveryMessage':  return String(row[30] || '');
+        case 'productName':      return orderName;
+        case 'qty':              return 1;
+        case 'orderNumber':      return String(row[2] || '');
+        case 'senderName':       return senderName;
+        case 'senderPhone':      return senderPhone;
+        case 'senderAddress':    return senderAddress;
+        case 'empty': default:   return '';
+    }
+}
+
+/** 수동 주문: 필드 키 → 값 변환 */
+function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orderName: string, senderName: string, senderPhone: string, senderAddress: string): any {
+    switch (field) {
+        case 'recipientName':    return mo.recipientName;
+        case 'recipientPhone':   return mo.phone;
+        case 'recipientZipcode': return '';
+        case 'recipientAddress': return mo.address;
+        case 'deliveryMessage':  return '';
+        case 'productName':      return orderName;
+        case 'qty':              return 1;
+        case 'orderNumber':      return '수동';
+        case 'senderName':       return senderName;
+        case 'senderPhone':      return senderPhone;
+        case 'senderAddress':    return senderAddress;
+        case 'empty': default:   return '';
+    }
+}
+
 async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도') {
     const orderName = config.orderFormName || config.displayName;
     if (companyName === '팜플로우') {
@@ -487,23 +541,13 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
         }
     } else {
         const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
+        const fieldMap = pricingConfig[companyName]?.orderFormFieldMap;
         for (let j = 0; j < qty; j++) {
             if (customHeaders.length > 0) {
                 const or = new Array(customHeaders.length).fill('');
                 customHeaders.forEach((h, idx) => {
-                    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인') || h.includes('수령인')) or[idx] = String(row[26] || '');
-                    else if (h.includes('발송인전') || h.includes('발송인연락') || h.includes('업체전화')) or[idx] = senderPhone;
-                    else if (h.includes('발송인주소') || h.includes('업체주소')) or[idx] = senderAddress;
-                    else if (h.includes('발송인') || h.includes('송하인') || h.includes('업체명')) or[idx] = senderName;
-                    else if (h.includes('받는분연락처') || h.includes('전화번호') || h.includes('핸드폰') || h.includes('휴대폰') || h.includes('연락처')) or[idx] = String(row[27] || '');
-                    else if (h.includes('우편번호')) or[idx] = String(row[28] || '');
-                    else if (h.includes('받는분주소') || h.includes('주소')) or[idx] = String(row[29] || '');
-                    else if (h.includes('제품명') || h.includes('품목') || h.includes('상품명') || h.includes('품번')) or[idx] = orderName;
-                    else if (h.includes('옵션')) or[idx] = '';
-                    else if (h.includes('수량')) or[idx] = 1;
-                    else if (h.includes('주문번호')) or[idx] = String(row[2] || '');
-                    else if (h.includes('배송메') || h.includes('배송시사항') || h.includes('배송요청') || h.includes('배송사항')) or[idx] = String(row[30] || '');
-                    else if (h.includes('일자')) or[idx] = '';
+                    const field = (fieldMap?.[idx] || inferFieldFromHeader(h)) as OrderFormFieldKey;
+                    or[idx] = resolveFieldValue(field, row, orderName, senderName, senderPhone, senderAddress);
                 });
                 outputRows.push(or);
             } else {
@@ -587,23 +631,13 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
         }
     } else {
         const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
+        const fieldMap = pricingConfig[companyName]?.orderFormFieldMap;
         for (let j = 0; j < mo.qty; j++) {
             if (customHeaders.length > 0) {
                 const or = new Array(customHeaders.length).fill('');
                 customHeaders.forEach((h, idx) => {
-                    if (h.includes('받는분성명') || h.includes('받는사람') || h.includes('수취인') || h.includes('수령인')) or[idx] = mo.recipientName;
-                    else if (h.includes('발송인전') || h.includes('발송인연락') || h.includes('업체전화')) or[idx] = senderPhone;
-                    else if (h.includes('발송인주소') || h.includes('업체주소')) or[idx] = senderAddress;
-                    else if (h.includes('발송인') || h.includes('송하인') || h.includes('업체명')) or[idx] = senderName;
-                    else if (h.includes('받는분연락처') || h.includes('전화번호') || h.includes('핸드폰') || h.includes('휴대폰') || h.includes('연락처')) or[idx] = mo.phone;
-                    else if (h.includes('우편번호')) or[idx] = '';
-                    else if (h.includes('받는분주소') || h.includes('주소')) or[idx] = mo.address;
-                    else if (h.includes('제품명') || h.includes('품목') || h.includes('상품명') || h.includes('품번')) or[idx] = orderName;
-                    else if (h.includes('옵션')) or[idx] = '';
-                    else if (h.includes('수량')) or[idx] = 1;
-                    else if (h.includes('주문번호')) or[idx] = '수동';
-                    else if (h.includes('배송메') || h.includes('배송시사항') || h.includes('배송요청') || h.includes('배송사항')) or[idx] = '';
-                    else if (h.includes('일자')) or[idx] = '';
+                    const field = (fieldMap?.[idx] || inferFieldFromHeader(h)) as OrderFormFieldKey;
+                    or[idx] = resolveManualFieldValue(field, mo, orderName, senderName, senderPhone, senderAddress);
                 });
                 outputRows.push(or);
             } else {
