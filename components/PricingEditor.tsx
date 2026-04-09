@@ -957,8 +957,10 @@ const CompanyCard: React.FC<{
                                 <DocumentArrowUpIcon className="w-3.5 h-3.5" />
                                 <span>양식 파일에서 읽기</span>
                                 <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
+                                    console.log('[발주서양식] onChange 실행됨');
                                     const file = e.target.files?.[0];
-                                    if (!file) return;
+                                    if (!file) { console.log('[발주서양식] 파일 없음'); return; }
+                                    console.log('[발주서양식] 파일 선택:', file.name);
                                     const reader = new FileReader();
                                     reader.onload = (ev) => {
                                         try {
@@ -966,14 +968,41 @@ const CompanyCard: React.FC<{
                                             const wb = XLSX.read(data, { type: 'array' });
                                             const ws = wb.Sheets[wb.SheetNames[0]];
                                             const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                                            console.log('[발주서양식] 파싱 완료, 행 수:', aoa.length);
                                             if (aoa.length > 0) {
-                                                const headers = aoa[0].map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                console.log('[발주서양식] 첫 5행:', aoa.slice(0, 5));
+                                                // 헤더 행 자동 탐색: 첫 20행 중 키워드 포함 행 찾기
+                                                let headerRowIdx = -1;
+                                                for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
+                                                    const rowStr = (aoa[ri] || []).join('');
+                                                    if (rowStr.includes('받는사람') || rowStr.includes('수취인') || rowStr.includes('수령인') ||
+                                                        rowStr.includes('품목') || rowStr.includes('상품') || rowStr.includes('주소') ||
+                                                        rowStr.includes('수량') || rowStr.includes('전화') || rowStr.includes('연락처') ||
+                                                        rowStr.includes('주문') || rowStr.includes('번호')) {
+                                                        headerRowIdx = ri;
+                                                        break;
+                                                    }
+                                                }
+                                                // 키워드 못 찾으면 비어있지 않은 셀이 가장 많은 행을 헤더로 사용
+                                                if (headerRowIdx === -1) {
+                                                    let maxCols = 0;
+                                                    for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
+                                                        const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
+                                                        if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
+                                                    }
+                                                    if (headerRowIdx === -1) headerRowIdx = 0;
+                                                }
+                                                const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                console.log('[발주서양식] headerRowIdx:', headerRowIdx, '헤더:', headers);
                                                 if (headers.length > 0) {
                                                     props.onUpdateOrderFormHeaders(headers);
                                                     props.onUpdateOrderFormFieldMap(headers.map((h: string) => inferFieldFromHeader(h)));
+                                                    console.log('[발주서양식] 저장 완료');
+                                                } else {
+                                                    console.log('[발주서양식] 헤더가 비어있음');
                                                 }
                                             }
-                                        } catch { /* ignore */ }
+                                        } catch (err) { console.error('[발주서양식 업로드 오류]', err); }
                                     };
                                     reader.readAsArrayBuffer(file);
                                     e.target.value = '';
