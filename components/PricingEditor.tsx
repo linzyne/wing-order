@@ -574,10 +574,14 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
-    const handleUpdateOrderFormHeaders = (companyName: string, headers: string[]) => {
+    const handleUpdateOrderFormHeaders = (companyName: string, headers: string[], fieldMap?: string[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].orderFormHeaders = headers.length > 0 ? headers : undefined;
-        if (headers.length === 0) newConfig[companyName].orderFormFieldMap = undefined;
+        if (headers.length === 0) {
+            newConfig[companyName].orderFormFieldMap = undefined;
+        } else if (fieldMap) {
+            newConfig[companyName].orderFormFieldMap = fieldMap;
+        }
         handleUpdate(newConfig);
     };
 
@@ -810,7 +814,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
-                            onUpdateOrderFormHeaders={(headers) => handleUpdateOrderFormHeaders(companyName, headers)}
+                            onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
                             onUpdateVendorInvoiceHeaders={(headers, fieldMap) => handleUpdateVendorInvoiceHeaders(companyName, headers, fieldMap)}
                             onUpdateVendorInvoiceFieldMap={(fieldMap) => handleUpdateVendorInvoiceFieldMap(companyName, fieldMap)}
@@ -995,9 +999,9 @@ const CompanyCard: React.FC<{
                                                 const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
                                                 console.log('[발주서양식] headerRowIdx:', headerRowIdx, '헤더:', headers);
                                                 if (headers.length > 0) {
-                                                    props.onUpdateOrderFormHeaders(headers);
-                                                    props.onUpdateOrderFormFieldMap(headers.map((h: string) => inferFieldFromHeader(h)));
-                                                    console.log('[발주서양식] 저장 완료');
+                                                    const fieldMap = headers.map((h: string) => inferFieldFromHeader(h));
+                                                    props.onUpdateOrderFormHeaders(headers, fieldMap);
+                                                    console.log('[발주서양식] 저장 완료, fieldMap:', fieldMap);
                                                 } else {
                                                     console.log('[발주서양식] 헤더가 비어있음');
                                                 }
