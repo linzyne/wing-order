@@ -773,11 +773,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const additionalRoundsSummary = useMemo(() => {
         const realByCompany: Record<string, number> = {};
         const fakeByCompany: Record<string, number> = {};
+        const shippingExcludedByGroup: Record<string, number> = {};
         const realByGroup: Record<string, number> = {};
         const fakeByGroup: Record<string, number> = {};
         const groupToCompany: Record<string, string> = {};
         let realTotal = 0;
         let fakeTotal = 0;
+        let shippingExcludedTotal = 0;
         let hasData = false;
 
         const fakeNums = new Set<string>();
@@ -785,6 +787,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const matches = line.trim().match(/[A-Za-z0-9-]{5,}/g);
             if (matches) matches.forEach(m => fakeNums.add(m.trim()));
         });
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
 
         (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([company, sessions]) => {
             sessions.forEach((session: SessionData) => {
@@ -796,8 +801,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     const orderNum = String(row[2] || '').trim();
                     const groupName = String(row[10] || '').trim();
                     const qty = parseInt(String(row[22] || '1'), 10) || 1;
-                    const isFake = fakeNums.has(orderNum);
                     if (groupName) groupToCompany[groupName] = company;
+                    // 출고예정일(H열) 체크
+                    if (row[7]) {
+                        const sd = new Date(String(row[7]).trim());
+                        if (!isNaN(sd.getTime()) && (sd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24) > 7) {
+                            shippingExcludedTotal += qty;
+                            if (groupName) shippingExcludedByGroup[groupName] = (shippingExcludedByGroup[groupName] || 0) + qty;
+                            return;
+                        }
+                    }
+                    const isFake = fakeNums.has(orderNum);
                     if (isFake) {
                         fakeTotal += qty;
                         fakeByCompany[company] = (fakeByCompany[company] || 0) + qty;
@@ -812,7 +826,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
 
         if (!hasData) return null;
-        return { realByCompany, fakeByCompany, realByGroup, fakeByGroup, groupToCompany, realTotal, fakeTotal };
+        return { realByCompany, fakeByCompany, realByGroup, fakeByGroup, shippingExcludedByGroup, groupToCompany, realTotal, fakeTotal, shippingExcludedTotal };
     }, [companySessions, allOrderRows, fakeOrderInput]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배사별)
@@ -2012,9 +2026,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     })()}
                                                 </div>
                                             </div>
-                                            {masterProductSummary.shippingExcludedTotal > 0 && (
+                                            {(masterProductSummary.shippingExcludedTotal > 0 || (add?.shippingExcludedTotal || 0) > 0) && (
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-orange-400 uppercase tracking-widest mb-1">출고예정일 제외 ({masterProductSummary.shippingExcludedTotal}건)</div>
+                                                <div className="text-xs font-black text-orange-400 uppercase tracking-widest mb-1">출고예정일 제외 ({fmtTotal(masterProductSummary.shippingExcludedTotal, add?.shippingExcludedTotal || 0)})</div>
                                                 <div>
                                                     {(() => {
                                                         const grouped: Record<string, [string, number][]> = {};
@@ -2038,7 +2052,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                                 {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
                                                                     <div key={name} className="flex text-sm gap-1 pl-2">
                                                                         <span className="text-zinc-400">{name}</span>
-                                                                        <span className={`font-black ${count > 0 ? 'text-orange-400' : 'text-zinc-700'}`}>{count}건</span>
+                                                                        <span className={`font-black ${count > 0 ? 'text-orange-400' : 'text-zinc-700'}`}>{fmtCount(count, name, add?.shippingExcludedByGroup)}</span>
                                                                     </div>
                                                                 ))}
                                                             </div>
