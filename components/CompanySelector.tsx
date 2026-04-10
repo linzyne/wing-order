@@ -2192,33 +2192,40 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         메모 / 썸네일
                                     </h3>
                                 </div>
-                                <div className="flex flex-wrap gap-1.5">
+                                <div className="flex flex-wrap gap-2">
                                     {thumbnailNotes.map(note => (
-                                        <div key={note.id} className="relative bg-zinc-900/80 rounded-lg border border-zinc-800 p-1.5 flex gap-1.5 items-start group animate-pop-in" style={{ width: 'calc(100% / 5 - 5px)', minWidth: '150px' }}>
+                                        <div key={note.id} className="relative bg-zinc-900/80 rounded-lg border border-zinc-800 p-2 flex flex-col gap-1 group animate-pop-in" style={{ width: 'calc(100% / 6 - 7px)', minWidth: '140px' }}>
                                             <button onClick={() => handleRemoveThumbnailNote(note.id)} className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-zinc-800 hover:bg-rose-500 text-zinc-500 hover:text-white rounded-full text-[9px] font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-zinc-700 z-10">×</button>
-                                            <label className="shrink-0 w-11 h-11 rounded-md border border-dashed border-zinc-700 hover:border-cyan-500/50 cursor-pointer flex items-center justify-center overflow-hidden transition-colors bg-zinc-950/50">
+                                            <input
+                                                type="text"
+                                                value={note.memos[0]}
+                                                onChange={(e) => handleThumbnailMemo(note.id, 0, e.target.value)}
+                                                placeholder="제목"
+                                                className="w-full bg-transparent border-none px-0 py-0 text-[10px] font-black text-zinc-200 placeholder:text-zinc-700 focus:ring-0 outline-none truncate"
+                                            />
+                                            <label className="w-full aspect-square rounded-md border border-dashed border-zinc-700 hover:border-cyan-500/50 cursor-pointer flex items-center justify-center overflow-hidden transition-colors bg-zinc-950/50">
                                                 {note.imageData ? (
                                                     <img src={note.imageData} alt="" className="w-full h-full object-cover rounded-md" />
                                                 ) : (
-                                                    <span className="text-zinc-700 text-[14px]">+</span>
+                                                    <span className="text-zinc-700 text-[20px]">+</span>
                                                 )}
                                                 <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleThumbnailImage(note.id, f); }} />
                                             </label>
-                                            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                                                {[0, 1, 2].map(idx => (
+                                            <div className="flex flex-col gap-0.5">
+                                                {[1, 2].map(idx => (
                                                     <input
                                                         key={idx}
                                                         type="text"
                                                         value={note.memos[idx]}
                                                         onChange={(e) => handleThumbnailMemo(note.id, idx, e.target.value)}
-                                                        placeholder={`메모 ${idx + 1}`}
+                                                        placeholder={`메모 ${idx}`}
                                                         className="w-full bg-zinc-950/60 border border-zinc-800 rounded px-1.5 py-0 text-[9px] font-bold text-zinc-300 placeholder:text-zinc-700 focus:ring-1 focus:ring-cyan-500/30 outline-none leading-[18px]"
                                                     />
                                                 ))}
                                             </div>
                                         </div>
                                     ))}
-                                    <button onClick={handleAddThumbnailNote} className="flex items-center justify-center rounded-lg border border-dashed border-zinc-700 hover:border-cyan-500/50 hover:text-cyan-400 text-zinc-600 transition-all" style={{ width: 'calc(100% / 5 - 5px)', minWidth: '150px', minHeight: '58px' }}>
+                                    <button onClick={handleAddThumbnailNote} className="flex items-center justify-center rounded-lg border border-dashed border-zinc-700 hover:border-cyan-500/50 hover:text-cyan-400 text-zinc-600 transition-all aspect-square" style={{ width: 'calc(100% / 6 - 7px)', minWidth: '140px' }}>
                                         <PlusCircleIcon className="w-5 h-5" />
                                     </button>
                                 </div>
