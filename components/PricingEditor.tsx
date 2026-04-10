@@ -593,6 +593,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    const handleUpdateDeadline = (companyName: string, deadline: string) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].deadline = deadline || undefined;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateKeywords = (companyName: string, keywords: string[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].keywords = keywords.length > 0 ? keywords : undefined;
@@ -838,6 +844,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateBank={(bank) => handleUpdateBank(companyName, bank)}
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
+                            onUpdateDeadline={(deadline) => handleUpdateDeadline(companyName, deadline)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
@@ -893,6 +900,7 @@ const CompanyCard: React.FC<{
     onUpdateBank: (bank: string) => void;
     onUpdateAccount: (account: string) => void;
     onUpdateCourier: (courier: string) => void;
+    onUpdateDeadline: (deadline: string) => void;
     onUpdateKeywords: (keywords: string[]) => void;
     onUpdateOrderFormHeaders: (headers: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
@@ -925,7 +933,7 @@ const CompanyCard: React.FC<{
             </div>
             {isExpanded && (
                 <div className="p-8 pt-0 space-y-8 animate-fade-in bg-gradient-to-b from-transparent to-rose-950/5">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
                             <PhoneIcon className="w-5 h-5 text-zinc-600" />
                             <EditableField
@@ -951,6 +959,15 @@ const CompanyCard: React.FC<{
                                 onSave={props.onUpdateAccount}
                                 placeholder="계좌번호"
                                 className="text-sm font-bold text-zinc-400 focus:outline-none"
+                            />
+                        </div>
+                        <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-rose-500/30 shadow-inner">
+                            <span className="text-lg">⏰</span>
+                            <EditableField
+                                value={companyConfig.deadline || ''}
+                                onSave={props.onUpdateDeadline}
+                                placeholder="마감시간 (예: 09:00)"
+                                className="text-sm font-bold text-rose-400 focus:outline-none"
                             />
                         </div>
                     </div>
