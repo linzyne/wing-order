@@ -116,6 +116,7 @@ export interface ExcludedOrder {
   phone: string;
   orderNumber: string;
   qty?: number;
+  groupName?: string;
 }
 
 export interface UnmatchedOrder {

@@ -795,39 +795,43 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             sessions.forEach((session: SessionData) => {
                 if (session.round <= 1) return;
                 const rows = allOrderRows[session.id];
-                if (!rows || rows.length === 0) return;
-                hasData = true;
-                rows.forEach(row => {
-                    const orderNum = String(row[2] || '').trim();
-                    const groupName = String(row[10] || '').trim();
-                    const qty = parseInt(String(row[22] || '1'), 10) || 1;
-                    if (groupName) groupToCompany[groupName] = company;
-                    // 출고예정일(H열) 체크
-                    if (row[7]) {
-                        const sd = new Date(String(row[7]).trim());
-                        if (!isNaN(sd.getTime()) && (sd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24) > 7) {
-                            shippingExcludedTotal += qty;
-                            if (groupName) shippingExcludedByGroup[groupName] = (shippingExcludedByGroup[groupName] || 0) + qty;
-                            return;
+                if (rows && rows.length > 0) {
+                    hasData = true;
+                    rows.forEach(row => {
+                        const orderNum = String(row[2] || '').trim();
+                        const groupName = String(row[10] || '').trim();
+                        const qty = parseInt(String(row[22] || '1'), 10) || 1;
+                        if (groupName) groupToCompany[groupName] = company;
+                        const isFake = fakeNums.has(orderNum);
+                        if (isFake) {
+                            fakeTotal += qty;
+                            fakeByCompany[company] = (fakeByCompany[company] || 0) + qty;
+                            if (groupName) fakeByGroup[groupName] = (fakeByGroup[groupName] || 0) + qty;
+                        } else {
+                            realTotal += qty;
+                            realByCompany[company] = (realByCompany[company] || 0) + qty;
+                            if (groupName) realByGroup[groupName] = (realByGroup[groupName] || 0) + qty;
                         }
-                    }
-                    const isFake = fakeNums.has(orderNum);
-                    if (isFake) {
-                        fakeTotal += qty;
-                        fakeByCompany[company] = (fakeByCompany[company] || 0) + qty;
-                        if (groupName) fakeByGroup[groupName] = (fakeByGroup[groupName] || 0) + qty;
-                    } else {
-                        realTotal += qty;
-                        realByCompany[company] = (realByCompany[company] || 0) + qty;
-                        if (groupName) realByGroup[groupName] = (realByGroup[groupName] || 0) + qty;
-                    }
-                });
+                    });
+                }
+                // 출고예정일 제외건은 allOrderRows에 없으므로 allExcludedDetails에서 카운트
+                const excluded = allExcludedDetails[session.id];
+                if (excluded && excluded.length > 0) {
+                    excluded.forEach(ex => {
+                        if (!String(ex.orderNumber || '').includes('출고예정일')) return;
+                        hasData = true;
+                        const qty = ex.qty || 1;
+                        const gn = ex.groupName || '';
+                        shippingExcludedTotal += qty;
+                        if (gn) shippingExcludedByGroup[gn] = (shippingExcludedByGroup[gn] || 0) + qty;
+                    });
+                }
             });
         });
 
         if (!hasData) return null;
         return { realByCompany, fakeByCompany, realByGroup, fakeByGroup, shippingExcludedByGroup, groupToCompany, realTotal, fakeTotal, shippingExcludedTotal };
-    }, [companySessions, allOrderRows, fakeOrderInput]);
+    }, [companySessions, allOrderRows, allExcludedDetails, fakeOrderInput]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배사별)
     const allExpenses = useMemo(() => {
