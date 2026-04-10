@@ -449,6 +449,64 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         saveManualOrders(manualOrders, businessId).catch(e => console.error('[Firestore] 수동발주 저장 실패:', e));
     }, [manualOrders]);
 
+    // 썸네일 + 메모 노트
+    interface ThumbnailNote { id: string; imageData: string; memos: [string, string, string]; }
+    const [thumbnailNotes, setThumbnailNotes] = useState<ThumbnailNote[]>([]);
+    const lastWrittenThumbnailNotesRef = useRef('[]');
+
+    // 썸네일 노트 Firestore 동기화 - 로드
+    useEffect(() => {
+        if (!workspace?.thumbnailNotes) return;
+        const str = JSON.stringify(workspace.thumbnailNotes);
+        if (str !== lastWrittenThumbnailNotesRef.current) {
+            setThumbnailNotes(workspace.thumbnailNotes as ThumbnailNote[]);
+            lastWrittenThumbnailNotesRef.current = str;
+        }
+    }, [workspace?.thumbnailNotes]);
+
+    // 썸네일 노트 변경 → Firestore 저장
+    const isInitialThumbnailLoad = useRef(true);
+    useEffect(() => {
+        if (isInitialThumbnailLoad.current) { isInitialThumbnailLoad.current = false; return; }
+        const currentStr = JSON.stringify(thumbnailNotes);
+        if (currentStr === lastWrittenThumbnailNotesRef.current) return;
+        lastWrittenThumbnailNotesRef.current = currentStr;
+        updateField('thumbnailNotes', thumbnailNotes).catch(e => console.error('[Firestore] 썸네일 노트 저장 실패:', e));
+    }, [thumbnailNotes]);
+
+    const handleAddThumbnailNote = () => {
+        setThumbnailNotes(prev => [...prev, { id: `tn-${Date.now()}`, imageData: '', memos: ['', '', ''] }]);
+    };
+    const handleRemoveThumbnailNote = (id: string) => {
+        setThumbnailNotes(prev => prev.filter(n => n.id !== id));
+    };
+    const handleThumbnailImage = (id: string, file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const maxSize = 200;
+                let w = img.width, h = img.height;
+                if (w > h) { h = (h / w) * maxSize; w = maxSize; } else { w = (w / h) * maxSize; h = maxSize; }
+                canvas.width = w; canvas.height = h;
+                canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
+                const compressed = canvas.toDataURL('image/jpeg', 0.7);
+                setThumbnailNotes(prev => prev.map(n => n.id === id ? { ...n, imageData: compressed } : n));
+            };
+            img.src = e.target?.result as string;
+        };
+        reader.readAsDataURL(file);
+    };
+    const handleThumbnailMemo = (id: string, idx: number, value: string) => {
+        setThumbnailNotes(prev => prev.map(n => {
+            if (n.id !== id) return n;
+            const memos = [...n.memos] as [string, string, string];
+            memos[idx] = value;
+            return { ...n, memos };
+        }));
+    };
+
     const [manualInput, setManualInput] = useState({
         companyName: '', recipientName: '', phone: '', address: '', productName: '', qty: '1'
     });
@@ -2124,6 +2182,46 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </button>
                             </div>
                         )}
+                        </div>
+
+                        {/* 썸네일 + 메모 노트 */}
+                        <div className="order-1 bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
+                                <div className="flex items-center justify-between mb-3">
+                                    <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                                        <PlusCircleIcon className="w-4 h-4 text-cyan-500" />
+                                        메모 / 썸네일
+                                    </h3>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {thumbnailNotes.map(note => (
+                                        <div key={note.id} className="relative bg-zinc-900/80 rounded-lg border border-zinc-800 p-1.5 flex gap-1.5 items-start group animate-pop-in" style={{ width: 'calc(100% / 5 - 5px)', minWidth: '150px' }}>
+                                            <button onClick={() => handleRemoveThumbnailNote(note.id)} className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-zinc-800 hover:bg-rose-500 text-zinc-500 hover:text-white rounded-full text-[9px] font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-zinc-700 z-10">×</button>
+                                            <label className="shrink-0 w-11 h-11 rounded-md border border-dashed border-zinc-700 hover:border-cyan-500/50 cursor-pointer flex items-center justify-center overflow-hidden transition-colors bg-zinc-950/50">
+                                                {note.imageData ? (
+                                                    <img src={note.imageData} alt="" className="w-full h-full object-cover rounded-md" />
+                                                ) : (
+                                                    <span className="text-zinc-700 text-[14px]">+</span>
+                                                )}
+                                                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleThumbnailImage(note.id, f); }} />
+                                            </label>
+                                            <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                                                {[0, 1, 2].map(idx => (
+                                                    <input
+                                                        key={idx}
+                                                        type="text"
+                                                        value={note.memos[idx]}
+                                                        onChange={(e) => handleThumbnailMemo(note.id, idx, e.target.value)}
+                                                        placeholder={`메모 ${idx + 1}`}
+                                                        className="w-full bg-zinc-950/60 border border-zinc-800 rounded px-1.5 py-0 text-[9px] font-bold text-zinc-300 placeholder:text-zinc-700 focus:ring-1 focus:ring-cyan-500/30 outline-none leading-[18px]"
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    <button onClick={handleAddThumbnailNote} className="flex items-center justify-center rounded-lg border border-dashed border-zinc-700 hover:border-cyan-500/50 hover:text-cyan-400 text-zinc-600 transition-all" style={{ width: 'calc(100% / 5 - 5px)', minWidth: '150px', minHeight: '58px' }}>
+                                        <PlusCircleIcon className="w-5 h-5" />
+                                    </button>
+                                </div>
                         </div>
 
                         <div className="order-1 bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
