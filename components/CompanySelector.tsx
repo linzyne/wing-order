@@ -684,8 +684,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const productToCompany: Record<string, string> = {};
         const realOrders: Record<string, number> = {};
         const fakeOrders: Record<string, number> = {};
+        const shippingDateExcluded: Record<string, number> = {};
         const unclaimedOrders: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number }[] = [];
-        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean }[] = [];
+        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean; isShippingExcluded: boolean }[] = [];
         const skippedOrders: { recipientName: string; productName: string; orderNumber: string; qty: number; reason: string }[] = [];
         let masterRawTotalQty = 0;
         let masterFileRowCount = 0; // 파일 내 비어있지 않은 데이터 행 수
@@ -729,12 +730,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             const isFake = fakeNums.has(orderNum);
             const company = productToCompany[groupName] || '';
-            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake });
-            if (isFake) {
+            // 출고예정일(H열, index 7) 체크: 오늘로부터 7일 초과 시 제외
+            let isShippingExcluded = false;
+            if (row[7]) {
+                const sd = new Date(String(row[7]).trim());
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                if (!isNaN(sd.getTime()) && (sd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24) > 7) {
+                    isShippingExcluded = true;
+                }
+            }
+            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake, isShippingExcluded });
+            if (isShippingExcluded) {
+                shippingDateExcluded[groupName] = (shippingDateExcluded[groupName] || 0) + qty;
+            } else if (isFake) {
                 fakeOrders[groupName] = (fakeOrders[groupName] || 0) + qty;
             } else {
                 realOrders[groupName] = (realOrders[groupName] || 0) + qty;
-                // 어떤 업체에도 매칭되지 않은 주문 수집
                 if (!company) {
                     unclaimedOrders.push({ recipientName, productName, groupName, orderNumber: orderNum, qty });
                 }
@@ -742,6 +754,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         const realTotal = Object.values(realOrders).reduce((a, b) => a + b, 0);
         const fakeTotal = Object.values(fakeOrders).reduce((a, b) => a + b, 0);
+        const shippingExcludedTotal = Object.values(shippingDateExcluded).reduce((a, b) => a + b, 0);
         // 업체별 마스터 주문 건수 (수량 기준)
         const companyOrderCounts: Record<string, number> = {};
         allOrderDetails.forEach(d => {
@@ -749,11 +762,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 companyOrderCounts[d.company] = (companyOrderCounts[d.company] || 0) + d.qty;
             }
         });
-        console.log(`[마스터검증] XLSX행수: ${masterOrderData.length - 1}, 데이터행: ${masterFileRowCount}, null행: ${nullRowCount}, masterRawTotalQty: ${masterRawTotalQty}, realTotal: ${realTotal}, fakeTotal: ${fakeTotal}, 합계: ${realTotal + fakeTotal}, skipped: ${skippedOrders.length}, unclaimed: ${unclaimedOrders.length}`);
+        console.log(`[마스터검증] XLSX행수: ${masterOrderData.length - 1}, 데이터행: ${masterFileRowCount}, null행: ${nullRowCount}, masterRawTotalQty: ${masterRawTotalQty}, realTotal: ${realTotal}, fakeTotal: ${fakeTotal}, shippingExcluded: ${shippingExcludedTotal}, 합계: ${realTotal + fakeTotal + shippingExcludedTotal}, skipped: ${skippedOrders.length}, unclaimed: ${unclaimedOrders.length}`);
         console.log(`[마스터검증] companyOrderCounts:`, companyOrderCounts);
         if (unclaimedOrders.length > 0) console.log(`[마스터검증] unclaimedOrders:`, unclaimedOrders);
         if (skippedOrders.length > 0) console.log(`[마스터검증] skippedOrders:`, skippedOrders);
-        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount };
+        return { realOrders, fakeOrders, shippingDateExcluded, realTotal, fakeTotal, shippingExcludedTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount };
     }, [masterOrderData, fakeOrderInput, pricingConfig]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
@@ -1869,7 +1882,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     {masterProductSummary && (() => {
                                         // 마스터 구매수량에서 품목별 누락 체크
                                         const totalMaster = masterProductSummary.masterRawTotalQty;
-                                        const totalRecognized = masterProductSummary.realTotal + masterProductSummary.fakeTotal;
+                                        const totalRecognized = masterProductSummary.realTotal + masterProductSummary.fakeTotal + masterProductSummary.shippingExcludedTotal;
                                         const diff = totalMaster - totalRecognized;
                                         const hasUnclaimed = masterProductSummary.unclaimedOrders.length > 0;
                                         const isOk = diff === 0 && !hasUnclaimed;
@@ -1885,6 +1898,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 <span className="text-emerald-400">실제 {masterProductSummary.realTotal}</span>
                                                 <span className="text-zinc-600">+</span>
                                                 <span className="text-amber-400">가구매 {masterProductSummary.fakeTotal}</span>
+                                                {masterProductSummary.shippingExcludedTotal > 0 && <>
+                                                    <span className="text-zinc-600">+</span>
+                                                    <span className="text-orange-400">출고예정일제외 {masterProductSummary.shippingExcludedTotal}</span>
+                                                </>}
                                                 {diff > 0 && <span className="text-red-400 ml-1">({diff}건 누락)</span>}
                                             </div>
                                             {diff > 0 && masterProductSummary.skippedOrders.length > 0 && (
@@ -1995,13 +2012,48 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     })()}
                                                 </div>
                                             </div>
+                                            {masterProductSummary.shippingExcludedTotal > 0 && (
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-black text-orange-400 uppercase tracking-widest mb-1">출고예정일 제외 ({masterProductSummary.shippingExcludedTotal}건)</div>
+                                                <div>
+                                                    {(() => {
+                                                        const grouped: Record<string, [string, number][]> = {};
+                                                        Object.entries(masterProductSummary.realOrders).forEach(([name]) => {
+                                                            const company = masterProductSummary.productToCompany[name] || '기타';
+                                                            if (!grouped[company]) grouped[company] = [];
+                                                            const cnt = (masterProductSummary.shippingDateExcluded[name] as number) || 0;
+                                                            grouped[company].push([name, cnt]);
+                                                        });
+                                                        // realOrders에 없지만 shippingDateExcluded에만 있는 품목 추가
+                                                        Object.entries(masterProductSummary.shippingDateExcluded).forEach(([name, cnt]) => {
+                                                            if (!masterProductSummary.realOrders[name]) {
+                                                                const company = masterProductSummary.productToCompany[name] || '기타';
+                                                                if (!grouped[company]) grouped[company] = [];
+                                                                grouped[company].push([name, cnt as number]);
+                                                            }
+                                                        });
+                                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
+                                                            <div key={company}>
+                                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
+                                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
+                                                                    <div key={name} className="flex text-sm gap-1 pl-2">
+                                                                        <span className="text-zinc-400">{name}</span>
+                                                                        <span className={`font-black ${count > 0 ? 'text-orange-400' : 'text-zinc-700'}`}>{count}건</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ));
+                                                    })()}
+                                                </div>
+                                            </div>
+                                            )}
                                         </div>
                                         );
                                     })()}
                                     {masterProductSummary && masterProductSummary.allOrderDetails.length > 0 && (
                                         <details className="mt-2">
                                             <summary className="text-[10px] font-black text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors select-none">
-                                                ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal}건` : ''})
+                                                ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal + masterProductSummary.shippingExcludedTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal + masterProductSummary.shippingExcludedTotal}건` : ''})
                                             </summary>
                                             <div className="mt-1 max-h-[300px] overflow-auto custom-scrollbar space-y-2 bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
                                                 {(() => {
@@ -2015,22 +2067,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     return Object.entries(grouped)
                                                         .sort(([a], [b]) => a === '미매칭' ? 1 : b === '미매칭' ? -1 : b.localeCompare(a))
                                                         .map(([company, orders]) => {
-                                                        const realCount = orders.filter(o => !o.isFake).reduce((s, o) => s + o.qty, 0);
+                                                        const realCount = orders.filter(o => !o.isFake && !o.isShippingExcluded).reduce((s, o) => s + o.qty, 0);
                                                         const fakeCount = orders.filter(o => o.isFake).reduce((s, o) => s + o.qty, 0);
+                                                        const shipExCount = orders.filter(o => o.isShippingExcluded).reduce((s, o) => s + o.qty, 0);
                                                         return (
                                                             <div key={company}>
                                                                 <div className="text-[11px] font-black text-zinc-300 flex items-center gap-2">
                                                                     <span className={company === '미매칭' ? 'text-red-400' : ''}>{company}</span>
-                                                                    <span className="text-zinc-600">{realCount}건{fakeCount > 0 ? ` + 가구매 ${fakeCount}건` : ''}</span>
+                                                                    <span className="text-zinc-600">{realCount}건{fakeCount > 0 ? ` + 가구매 ${fakeCount}건` : ''}{shipExCount > 0 ? ` + 출고예정일제외 ${shipExCount}건` : ''}</span>
                                                                 </div>
                                                                 <div className="space-y-0.5 mt-0.5">
                                                                     {orders.map((o, idx) => (
-                                                                        <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-amber-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
+                                                                        <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isShippingExcluded ? 'text-orange-400/70 line-through' : o.isFake ? 'text-amber-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
                                                                             <span className="min-w-[50px]">{o.recipientName}</span>
                                                                             <span className="text-zinc-600">{o.groupName}</span>
                                                                             <span className="truncate">{o.productName}</span>
                                                                             {o.qty > 1 && <span className="text-white font-bold">x{o.qty}</span>}
                                                                             {o.isFake && <span className="text-amber-500/50 text-[8px]">가구매</span>}
+                                                                            {o.isShippingExcluded && <span className="text-orange-400/50 text-[8px]">출고예정일제외</span>}
                                                                         </div>
                                                                     ))}
                                                                 </div>
