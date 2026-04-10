@@ -945,7 +945,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             <span className="text-zinc-200 font-bold text-[12px]">{f.recipientName}</span>
                                             <span className="text-[8px] bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded font-black">EXCLUDED</span>
                                         </div>
-                                        <div className="text-zinc-500 text-[10px] font-mono truncate">{f.productName}</div>
+                                        <div className="text-zinc-500 text-[10px] font-mono truncate">{f.productName}{f.qty > 1 ? ` ×${f.qty}` : ''}</div>
                                     </div>
                                 ))}
                             </div>
