@@ -308,6 +308,14 @@ const generateWorkbookForCompany = async (
                 const qty = parseInt(String(row[quantityColIdx] || row[22]), 10);
                 const validQty = (isNaN(qty) || qty < 1) ? 1 : qty;
 
+                if (row[7]) {
+                    const sd = new Date(String(row[7]).trim());
+                    if (!isNaN(sd.getTime()) && (sd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24) > 7) {
+                        excludedOrders.push({ companyName, recipientName, productName, phone, orderNumber: `${orderNumber} (출고예정일 7일 초과)`, qty: validQty });
+                        continue;
+                    }
+                }
+
                 if (fakeOrderNumbers.has(orderNumber)) {
                     excludedOrders.push({ companyName, recipientName, productName, phone, orderNumber: `${orderNumber} (제외)`, qty: validQty });
                     continue;
