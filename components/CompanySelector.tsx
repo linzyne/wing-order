@@ -68,7 +68,7 @@ const SortableCompanyRow: React.FC<{
 
     return (
         <DragHandleContext.Provider value={{ attributes, listeners }}>
-            <tbody ref={setNodeRef} style={style} className="divide-y divide-zinc-900">
+            <tbody ref={setNodeRef} style={style} className="border-b border-zinc-700/50">
                 {children}
             </tbody>
         </DragHandleContext.Provider>
@@ -2647,20 +2647,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <table className="w-full text-left border-collapse">
                             <thead>
                                 <tr className="sticky top-0 z-10 bg-zinc-950 text-zinc-500 text-[10px] font-black uppercase tracking-[0.15em]">
-                                    <th className="px-6 py-4 w-[35%] whitespace-nowrap">
+                                    <th className="px-6 py-2 w-[35%] whitespace-nowrap">
                                         <div className="flex items-center gap-3">
                                             <button onClick={handleSelectAllSessions} className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all ${isAllSelected ? 'bg-rose-500 border-rose-400 text-white' : 'bg-zinc-900 border-zinc-700 text-transparent hover:border-rose-500/50'}`} title="전체 선택"><CheckIcon className="w-3 h-3" /></button>
                                             <span>업체 정보</span>
                                         </div>
                                     </th>
-                                    <th className="px-6 py-4 w-[30%] text-center whitespace-nowrap">
+                                    <th className="px-6 py-2 w-[30%] text-center whitespace-nowrap">
                                         발주서
                                         {(() => {
                                             const total: number = Object.values(allOrderRows).reduce<number>((s, r) => s + (r as any[][]).length, 0);
                                             return total > 0 ? <span className="ml-2 text-white font-black text-xl normal-case tracking-normal">{total}건</span> : null;
                                         })()}
                                     </th>
-                                    <th className="px-6 py-4 w-[35%] text-center whitespace-nowrap">송장 매칭</th>
+                                    <th className="px-6 py-2 w-[35%] text-center whitespace-nowrap">송장 매칭</th>
                                 </tr>
                             </thead>
                             <SortableContext

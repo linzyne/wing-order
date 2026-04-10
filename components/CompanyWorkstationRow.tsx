@@ -542,7 +542,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     return (
         <>
             <tr className={`transition-all duration-300 border-none ${isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10'}`}>
-                <td className="px-6 py-4 min-w-[360px]">
+                <td className="px-6 py-2 min-w-[360px]">
                     <div className="flex flex-col gap-2">
                         {isFirstSession ? (
                             <>
@@ -678,13 +678,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className="px-6 py-4 text-center">
+                <td className="px-6 py-2 text-center">
                     <div className="flex flex-col items-center gap-2">
                         {localResult ? (
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="text-center">
-                                        <div className="text-rose-500 font-black text-xl">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                        <div className={`font-black ${isFirstSession ? 'text-rose-500 text-xl' : 'text-indigo-400 text-base'}`}>{isFirstSession ? '' : '+'}{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                     </div>
                                     <div className="h-6 w-px bg-zinc-800" />
@@ -757,7 +757,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="text-center">
-                                        <div className="text-rose-500 font-black text-xl">{syncedData.orderCount}</div>
+                                        <div className={`font-black ${isFirstSession ? 'text-rose-500 text-xl' : 'text-indigo-400 text-base'}`}>{isFirstSession ? '' : '+'}{syncedData.orderCount}</div>
                                         <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                     </div>
                                     <div className="h-6 w-px bg-zinc-800" />
@@ -872,7 +872,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className="px-6 py-4">
+                <td className="px-6 py-2">
                     <div className="flex flex-col items-center gap-2">
                         {!mergeResults ? (
                             <div className="flex flex-col items-center gap-2">
