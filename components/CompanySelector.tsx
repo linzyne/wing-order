@@ -391,9 +391,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 업체 순서 변경 → Firestore에 저장 (Firestore 로드 완료 후에만)
     useEffect(() => {
         if (!firestoreOrderLoaded) return;
+        const companies = Object.keys(pricingConfig);
         if (companyOrder.length === 0) {
             // Firestore에 저장된 순서가 없으면 기본 순서 생성
-            const companies = Object.keys(pricingConfig);
             if (companies.length === 0) return;
             const ordered = [...companies].sort((a, b) => {
                 const indexA = DEFAULT_PREFERRED_ORDER.indexOf(a);
@@ -406,6 +406,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setCompanyOrder(ordered);
             lastWrittenCompanyOrderRef.current = JSON.stringify(ordered);
             saveCompanyOrder(ordered, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
+            return;
+        }
+        // 새로 추가된 업체를 companyOrder에 자동 반영 (드래그 가능하도록)
+        const newCompanies = companies.filter(c => !companyOrder.includes(c));
+        const removedCompanies = companyOrder.filter(c => !companies.includes(c));
+        if (newCompanies.length > 0 || removedCompanies.length > 0) {
+            const updated = [
+                ...companyOrder.filter(c => companies.includes(c)),
+                ...newCompanies,
+            ];
+            setCompanyOrder(updated);
+            lastWrittenCompanyOrderRef.current = JSON.stringify(updated);
+            saveCompanyOrder(updated, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
             return;
         }
         const currentStr = JSON.stringify(companyOrder);
