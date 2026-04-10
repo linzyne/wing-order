@@ -147,10 +147,13 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: Number(e.target.value) || 0 } })}
                                     onPaste={(e) => {
                                         const text = e.clipboardData.getData('text');
-                                        const nums = text.trim().split(/[\s\t,]+/).map(Number).filter(n => !isNaN(n));
-                                        if (nums.length >= 3) {
-                                            e.preventDefault();
-                                            setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: nums[0], sellingPrice: nums[1], margin: nums[2] } });
+                                        const parts = text.trim().split(/\t+/);
+                                        if (parts.length >= 3) {
+                                            const nums = parts.map(s => Number(s.replace(/,/g, ''))).filter(n => !isNaN(n));
+                                            if (nums.length >= 3) {
+                                                e.preventDefault();
+                                                setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: nums[0], sellingPrice: nums[1], margin: nums[2] } });
+                                            }
                                         }
                                     }}
                                 />
@@ -163,6 +166,17 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
                                     value={dialog.product.sellingPrice || 0}
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, sellingPrice: Number(e.target.value) || 0 } })}
+                                    onPaste={(e) => {
+                                        const text = e.clipboardData.getData('text');
+                                        const parts = text.trim().split(/\t+/);
+                                        if (parts.length >= 3) {
+                                            const nums = parts.map(s => Number(s.replace(/,/g, ''))).filter(n => !isNaN(n));
+                                            if (nums.length >= 3) {
+                                                e.preventDefault();
+                                                setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: nums[0], sellingPrice: nums[1], margin: nums[2] } });
+                                            }
+                                        }
+                                    }}
                                 />
                             </div>
                             <div>
@@ -173,6 +187,17 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
                                     value={dialog.product.margin || 0}
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, margin: Number(e.target.value) || 0 } })}
+                                    onPaste={(e) => {
+                                        const text = e.clipboardData.getData('text');
+                                        const parts = text.trim().split(/\t+/);
+                                        if (parts.length >= 3) {
+                                            const nums = parts.map(s => Number(s.replace(/,/g, ''))).filter(n => !isNaN(n));
+                                            if (nums.length >= 3) {
+                                                e.preventDefault();
+                                                setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: nums[0], sellingPrice: nums[1], margin: nums[2] } });
+                                            }
+                                        }
+                                    }}
                                 />
                             </div>
                         </div>
