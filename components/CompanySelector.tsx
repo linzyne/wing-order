@@ -452,35 +452,30 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     interface ThumbnailNote { id: string; imageData: string; memos: [string, string, string]; }
     const [thumbnailNotes, setThumbnailNotes] = useState<ThumbnailNote[]>([]);
     const lastWrittenThumbnailNotesRef = useRef('[]');
-    const lastThumbnailLocalEditRef = useRef(0);
+    const thumbnailInitializedRef = useRef(false);
 
-    // 썸네일 노트 Firestore 동기화 - 로드 (로컬 편집/저장 직후 에코 무시)
-    const thumbnailSavePendingRef = useRef(false);
+    // 썸네일 노트 Firestore → 로컬 (최초 1회만, 이후 에코 무시)
     useEffect(() => {
-        if (!workspace?.thumbnailNotes) return;
-        if (thumbnailSavePendingRef.current) return;
-        if (Date.now() - lastThumbnailLocalEditRef.current < 5000) return;
-        const str = JSON.stringify(workspace.thumbnailNotes);
-        if (str !== lastWrittenThumbnailNotesRef.current) {
-            setThumbnailNotes(workspace.thumbnailNotes as ThumbnailNote[]);
-            lastWrittenThumbnailNotesRef.current = str;
+        if (thumbnailInitializedRef.current) return;
+        if (!workspace) return;
+        thumbnailInitializedRef.current = true;
+        if (workspace.thumbnailNotes) {
+            const data = workspace.thumbnailNotes as ThumbnailNote[];
+            setThumbnailNotes(data);
+            lastWrittenThumbnailNotesRef.current = JSON.stringify(data);
         }
-    }, [workspace?.thumbnailNotes]);
+    }, [workspace]);
 
-    // 썸네일 노트 변경 → Firestore 저장 (디바운스 500ms)
-    const isInitialThumbnailLoad = useRef(true);
+    // 썸네일 노트 로컬 → Firestore (디바운스 500ms)
     useEffect(() => {
-        if (isInitialThumbnailLoad.current) { isInitialThumbnailLoad.current = false; return; }
+        if (!thumbnailInitializedRef.current) return;
         const currentStr = JSON.stringify(thumbnailNotes);
         if (currentStr === lastWrittenThumbnailNotesRef.current) return;
-        thumbnailSavePendingRef.current = true;
         const timer = setTimeout(() => {
-            lastThumbnailLocalEditRef.current = Date.now();
             lastWrittenThumbnailNotesRef.current = currentStr;
-            thumbnailSavePendingRef.current = false;
             updateField('thumbnailNotes', thumbnailNotes).catch(e => console.error('[Firestore] 썸네일 노트 저장 실패:', e));
         }, 500);
-        return () => { clearTimeout(timer); thumbnailSavePendingRef.current = false; };
+        return () => clearTimeout(timer);
     }, [thumbnailNotes]);
 
     const handleAddThumbnailNote = () => {
@@ -508,7 +503,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         reader.readAsDataURL(file);
     };
     const handleThumbnailMemo = (id: string, idx: number, value: string) => {
-        lastThumbnailLocalEditRef.current = Date.now();
         setThumbnailNotes(prev => prev.map(n => {
             if (n.id !== id) return n;
             const memos = [...n.memos] as [string, string, string];
