@@ -2201,7 +2201,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 value={note.memos[0]}
                                                 onChange={(e) => handleThumbnailMemo(note.id, 0, e.target.value)}
                                                 placeholder="제목"
-                                                className="w-full bg-transparent border-none px-0 py-0 text-[10px] font-black text-zinc-200 placeholder:text-zinc-700 focus:ring-0 outline-none truncate"
+                                                className="w-full bg-transparent border-none px-0 py-0 text-[13px] font-black text-zinc-200 placeholder:text-zinc-700 focus:ring-0 outline-none truncate"
                                             />
                                             <label className="w-full aspect-square rounded-md border border-dashed border-zinc-700 hover:border-cyan-500/50 cursor-pointer flex items-center justify-center overflow-hidden transition-colors bg-zinc-950/50">
                                                 {note.imageData ? (
@@ -2219,7 +2219,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                         value={note.memos[idx]}
                                                         onChange={(e) => handleThumbnailMemo(note.id, idx, e.target.value)}
                                                         placeholder={`메모 ${idx}`}
-                                                        className="w-full bg-zinc-950/60 border border-zinc-800 rounded px-1.5 py-0 text-[9px] font-bold text-zinc-300 placeholder:text-zinc-700 focus:ring-1 focus:ring-cyan-500/30 outline-none leading-[18px]"
+                                                        className="w-full bg-zinc-950/60 border border-zinc-800 rounded px-1.5 py-0.5 text-[12px] font-bold text-zinc-300 placeholder:text-zinc-700 focus:ring-1 focus:ring-cyan-500/30 outline-none leading-[20px]"
                                                     />
                                                 ))}
                                             </div>
