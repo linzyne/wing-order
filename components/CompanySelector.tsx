@@ -452,10 +452,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     interface ThumbnailNote { id: string; imageData: string; memos: [string, string, string]; }
     const [thumbnailNotes, setThumbnailNotes] = useState<ThumbnailNote[]>([]);
     const lastWrittenThumbnailNotesRef = useRef('[]');
+    const lastThumbnailLocalEditRef = useRef(0);
 
-    // 썸네일 노트 Firestore 동기화 - 로드
+    // 썸네일 노트 Firestore 동기화 - 로드 (로컬 편집 직후 에코 무시)
     useEffect(() => {
         if (!workspace?.thumbnailNotes) return;
+        if (Date.now() - lastThumbnailLocalEditRef.current < 3000) return;
         const str = JSON.stringify(workspace.thumbnailNotes);
         if (str !== lastWrittenThumbnailNotesRef.current) {
             setThumbnailNotes(workspace.thumbnailNotes as ThumbnailNote[]);
@@ -463,14 +465,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     }, [workspace?.thumbnailNotes]);
 
-    // 썸네일 노트 변경 → Firestore 저장
+    // 썸네일 노트 변경 → Firestore 저장 (디바운스 500ms)
     const isInitialThumbnailLoad = useRef(true);
     useEffect(() => {
         if (isInitialThumbnailLoad.current) { isInitialThumbnailLoad.current = false; return; }
         const currentStr = JSON.stringify(thumbnailNotes);
         if (currentStr === lastWrittenThumbnailNotesRef.current) return;
-        lastWrittenThumbnailNotesRef.current = currentStr;
-        updateField('thumbnailNotes', thumbnailNotes).catch(e => console.error('[Firestore] 썸네일 노트 저장 실패:', e));
+        const timer = setTimeout(() => {
+            lastWrittenThumbnailNotesRef.current = currentStr;
+            updateField('thumbnailNotes', thumbnailNotes).catch(e => console.error('[Firestore] 썸네일 노트 저장 실패:', e));
+        }, 500);
+        return () => clearTimeout(timer);
     }, [thumbnailNotes]);
 
     const handleAddThumbnailNote = () => {
@@ -498,6 +503,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         reader.readAsDataURL(file);
     };
     const handleThumbnailMemo = (id: string, idx: number, value: string) => {
+        lastThumbnailLocalEditRef.current = Date.now();
         setThumbnailNotes(prev => prev.map(n => {
             if (n.id !== id) return n;
             const memos = [...n.memos] as [string, string, string];
