@@ -1029,8 +1029,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     totalItems += actualTotal;
                                                     const productConfig = pricingConfig[companyName]?.products?.[key];
                                                     const unitSupply = summary[key]?.totalPrice ? Math.round(summary[key].totalPrice / summary[key].count) : 0;
-                                                    const unitSelling = productConfig?.sellingPrice || 0;
-                                                    const unitMargin = unitSelling > 0 ? unitSelling - unitSupply : 0;
+                                                    const unitMargin = (productConfig as any)?.margin || 0;
                                                     const totalMargin = unitMargin * expectedCount;
                                                     grandTotalMargin += totalMargin;
                                                     return (
@@ -1041,7 +1040,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                                     {unitMargin > 0 && (
                                                                         <span className="text-emerald-400 text-[10px] font-black">+{unitMargin.toLocaleString()} × {expectedCount} = {totalMargin.toLocaleString()}</span>
                                                                     )}
-                                                                    {unitSelling > 0 && unitMargin <= 0 && (
+                                                                    {unitMargin < 0 && (
                                                                         <span className="text-red-400 text-[10px] font-black">{unitMargin.toLocaleString()} × {expectedCount}</span>
                                                                     )}
                                                                     <span>{expectedCount}개</span>
