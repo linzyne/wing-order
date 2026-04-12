@@ -452,31 +452,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     interface ThumbnailNote { id: string; imageData: string; memos: [string, string, string]; }
     const [thumbnailNotes, setThumbnailNotes] = useState<ThumbnailNote[]>([]);
     const lastWrittenThumbnailNotesRef = useRef('[]');
-    const thumbnailInitializedRef = useRef(false);
-
-    // 썸네일 노트 Firestore → 로컬 (최초 1회만, 이후 에코 무시)
-    useEffect(() => {
-        if (thumbnailInitializedRef.current) return;
-        if (!workspace) return;
-        thumbnailInitializedRef.current = true;
-        if (workspace.thumbnailNotes) {
-            const data = workspace.thumbnailNotes as ThumbnailNote[];
-            setThumbnailNotes(data);
-            lastWrittenThumbnailNotesRef.current = JSON.stringify(data);
-        }
-    }, [workspace]);
-
-    // 썸네일 노트 로컬 → Firestore (디바운스 500ms)
-    useEffect(() => {
-        if (!thumbnailInitializedRef.current) return;
-        const currentStr = JSON.stringify(thumbnailNotes);
-        if (currentStr === lastWrittenThumbnailNotesRef.current) return;
-        const timer = setTimeout(() => {
-            lastWrittenThumbnailNotesRef.current = currentStr;
-            updateField('thumbnailNotes', thumbnailNotes).catch(e => console.error('[Firestore] 썸네일 노트 저장 실패:', e));
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [thumbnailNotes]);
 
     const handleAddThumbnailNote = () => {
         setThumbnailNotes(prev => [...prev, { id: `tn-${Date.now()}`, imageData: '', memos: ['', '', ''] }]);
@@ -624,6 +599,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             }
         }
+        if (workspace.thumbnailNotes !== undefined) {
+            if (now >= (savingFieldsUntil.current['thumbnailNotes'] || 0)) {
+                const wsStr = JSON.stringify(workspace.thumbnailNotes);
+                if (wsStr !== lastWrittenThumbnailNotesRef.current) {
+                    setThumbnailNotes(workspace.thumbnailNotes as ThumbnailNote[]);
+                    lastWrittenThumbnailNotesRef.current = wsStr;
+                }
+            }
+        }
     }, [workspace]);
 
     // fakeOrderInput 변경 → Firestore에 debounce로 저장
@@ -665,6 +649,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             .then(() => { setTimeout(() => { savingFieldsUntil.current['expenses'] = 0; }, 1500); })
             .catch(e => { savingFieldsUntil.current['expenses'] = 0; console.error('[Firestore] expenses 저장 실패:', e); });
     }, [expenses, updateField]);
+
+    // thumbnailNotes 변경 → Firestore에 디바운스 저장
+    const thumbnailDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+    useEffect(() => {
+        if (!isReadyRef.current) return;
+        const currentStr = JSON.stringify(thumbnailNotes);
+        if (currentStr === lastWrittenThumbnailNotesRef.current) return;
+        if (thumbnailDebounceRef.current) clearTimeout(thumbnailDebounceRef.current);
+        thumbnailDebounceRef.current = setTimeout(() => {
+            savingFieldsUntil.current['thumbnailNotes'] = Date.now() + 30000;
+            lastWrittenThumbnailNotesRef.current = currentStr;
+            updateField('thumbnailNotes', thumbnailNotes)
+                .then(() => { setTimeout(() => { savingFieldsUntil.current['thumbnailNotes'] = 0; }, 1500); })
+                .catch(e => { savingFieldsUntil.current['thumbnailNotes'] = 0; console.error('[Firestore] 썸네일 노트 저장 실패:', e); });
+        }, 500);
+        return () => { if (thumbnailDebounceRef.current) clearTimeout(thumbnailDebounceRef.current); };
+    }, [thumbnailNotes, updateField]);
 
     // 가구매 명단 분석 (입력된 번호 vs 실제 발견된 번호)
     const fakeOrderAnalysis = useMemo(() => {
