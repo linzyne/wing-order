@@ -346,14 +346,27 @@ const generateWorkbookForCompany = async (
 
                 if (productConfigTuple) {
                     const [productKey, config] = productConfigTuple;
+                    const splitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
+                    const effectiveQty = qty * splitCount;
+                    const shipping = splitCount > 1 && config.shippingCost ? config.shippingCost : 0;
+                    const statsName = splitCount > 1 ? (config.orderFormName || config.displayName) : config.displayName;
+
                     if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
-                    summary[productKey].count += qty;
-                    summary[productKey].totalPrice += qty * config.supplyPrice;
-                    stats.add(config.displayName, qty, config.supplyPrice, parseDateFromRow(row, dateColIdx));
-                    if (!registeredProductNames[config.displayName]) {
-                        registeredProductNames[config.displayName] = String(row[groupColIdx] || '').trim();
+                    summary[productKey].count += effectiveQty;
+                    summary[productKey].totalPrice += effectiveQty * config.supplyPrice + shipping;
+
+                    const dateStr = parseDateFromRow(row, dateColIdx);
+                    if (shipping > 0) {
+                        stats.add(statsName, 1, config.supplyPrice + shipping, dateStr);
+                        if (effectiveQty > 1) stats.add(statsName, effectiveQty - 1, config.supplyPrice, dateStr);
+                    } else {
+                        stats.add(statsName, effectiveQty, config.supplyPrice, dateStr);
                     }
-                    await pushToOutputRows(companyName, outputRows, row, config, qty, pricingConfig, senderName, senderPhone, senderAddress);
+
+                    if (!registeredProductNames[statsName]) {
+                        registeredProductNames[statsName] = String(row[groupColIdx] || '').trim();
+                    }
+                    await pushToOutputRows(companyName, outputRows, row, config, effectiveQty, pricingConfig, senderName, senderPhone, senderAddress);
                     orderItems.push({
                         registeredProductName: String(row[regProductColIdx] || '').trim(),
                         registeredOptionName: String(row[regOptionColIdx] || '').trim(),
@@ -371,11 +384,22 @@ const generateWorkbookForCompany = async (
             const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, mo.productName, companyConfig.products, findProductConfig, pricingConfig);
             // 매칭 실패 시에도 수동 주문은 반드시 포함 (원래 입력 품목명 사용)
             const [productKey, config] = productConfigTuple || [mo.productName, { displayName: mo.productName, supplyPrice: 0 } as ProductPricing];
+            const moSplitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
+            const moEffectiveQty = mo.qty * moSplitCount;
+            const moShipping = moSplitCount > 1 && config.shippingCost ? config.shippingCost : 0;
+            const moStatsName = moSplitCount > 1 ? (config.orderFormName || config.displayName) : config.displayName;
+
             if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
-            summary[productKey].count += mo.qty;
-            summary[productKey].totalPrice += mo.qty * config.supplyPrice;
-            stats.add(config.displayName, mo.qty, config.supplyPrice, todayStr);
-            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress);
+            summary[productKey].count += moEffectiveQty;
+            summary[productKey].totalPrice += moEffectiveQty * config.supplyPrice + moShipping;
+
+            if (moShipping > 0) {
+                stats.add(moStatsName, 1, config.supplyPrice + moShipping, todayStr);
+                if (moEffectiveQty > 1) stats.add(moStatsName, moEffectiveQty - 1, config.supplyPrice, todayStr);
+            } else {
+                stats.add(moStatsName, moEffectiveQty, config.supplyPrice, todayStr);
+            }
+            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moEffectiveQty);
         }
 
         headerRow = getHeaderForCompany(companyName, companyConfig);
@@ -572,28 +596,29 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
     }
 }
 
-async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도') {
+async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', overrideQty?: number) {
     const orderName = config.orderFormName || config.displayName;
+    const rowQty = overrideQty ?? mo.qty;
     if (companyName === '팜플로우') {
-        for (let j = 0; j < mo.qty; j++) {
+        for (let j = 0; j < rowQty; j++) {
             const or = new Array(13).fill('');
             or[0] = '수동'; or[1] = mo.recipientName; or[2] = mo.phone; or[3] = mo.address; or[5] = orderName; or[6] = 1; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
             outputRows.push(or);
         }
     } else if (companyName === '웰그린') {
-        for (let j = 0; j < mo.qty; j++) {
+        for (let j = 0; j < rowQty; j++) {
             const or = new Array(19).fill('');
             or[1] = '수동'; or[2] = '안군농원'; or[4] = orderName; or[5] = 1; or[9] = mo.recipientName; or[10] = mo.recipientName; or[11] = mo.phone; or[12] = mo.phone; or[15] = mo.address; or[17] = '01042626343';
             outputRows.push(or);
         }
     } else if (companyName === '답도' || companyName === '한라봉_답도') {
-        for (let j = 0; j < mo.qty; j++) {
+        for (let j = 0; j < rowQty; j++) {
             const or = new Array(11).fill('');
             or[0] = '수동'; or[2] = '안군농원'; or[3] = '01042626343'; or[4] = mo.recipientName; or[5] = mo.phone; or[6] = mo.address; or[7] = orderName; or[8] = 1;
             outputRows.push(or);
         }
     } else if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) {
-        for (let j = 0; j < mo.qty; j++) {
+        for (let j = 0; j < rowQty; j++) {
             const or = new Array(15).fill('');
             or[0] = '수동';
             or[1] = '안군농원';
@@ -608,7 +633,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             outputRows.push(or);
         }
     } else if (companyName === '고랭지김치') {
-        for (let j = 0; j < mo.qty; j++) {
+        for (let j = 0; j < rowQty; j++) {
             const or = new Array(18).fill('');
             or[0] = '수동';
             or[1] = '미래찬';
@@ -632,7 +657,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             outputRows.push(or);
         }
     } else if (companyName === '제이제이' || companyName === '귤_제이') {
-        for (let j = 0; j < mo.qty; j++) {
+        for (let j = 0; j < rowQty; j++) {
             const or = new Array(11).fill('');
             or[0] = senderName;          // 송하인
             or[1] = senderAddress;       // 송하인주소
@@ -647,7 +672,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
     } else {
         const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
         const fieldMap = pricingConfig[companyName]?.orderFormFieldMap;
-        for (let j = 0; j < mo.qty; j++) {
+        for (let j = 0; j < rowQty; j++) {
             if (customHeaders.length > 0) {
                 const or = new Array(customHeaders.length).fill('');
                 customHeaders.forEach((h, idx) => {

@@ -53,6 +53,8 @@ export interface ProductPricing {
   siteProductName?: string; // 사이트용 (매칭용) - 구 aliases 대체
   sellingPrice?: number; // 판매가
   margin?: number; // 마진
+  shippingCost?: number; // 배송비 (1회, 선택)
+  orderSplitCount?: number; // 발주 분할 수 (예: 5 → 1kg x 5행 생성)
   aliases?: string[]; // 하위 호환성 위해 유지 (삭제 예정이지만 에러 방지)
 }
 

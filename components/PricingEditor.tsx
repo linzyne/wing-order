@@ -201,6 +201,31 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                 />
                             </div>
                         </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">배송비</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
+                                    placeholder="0"
+                                    value={dialog.product.shippingCost || ''}
+                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, shippingCost: Number(e.target.value.replace(/,/g, '')) || 0 } })}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">발주 분할 수</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
+                                    placeholder="미설정시 1"
+                                    value={dialog.product.orderSplitCount || ''}
+                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, orderSplitCount: Number(e.target.value) || 0 } })}
+                                />
+                            </div>
+                            <p className="col-span-2 text-[10px] text-zinc-600 -mt-2">분할 수 5 설정시, 1건 주문이 발주서 5행으로 생성됩니다. 배송비는 1회만 합산됩니다</p>
+                        </div>
                         <div>
                             <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">매칭 키워드 (별칭)</label>
                             <textarea
@@ -1234,6 +1259,12 @@ const ProductTable: React.FC<{
                                     <span className="font-bold text-zinc-200 text-sm">{product.displayName}</span>
                                     {product.orderFormName && (
                                         <span className="text-[10px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
+                                    )}
+                                    {product.orderSplitCount && product.orderSplitCount > 1 && (
+                                        <span className="text-[10px] text-sky-400 font-bold bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">x{product.orderSplitCount}</span>
+                                    )}
+                                    {product.shippingCost && product.shippingCost > 0 && (
+                                        <span className="text-[10px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>
                                     )}
                                 </div>
                                 {product.aliases && product.aliases.length > 0 && (
