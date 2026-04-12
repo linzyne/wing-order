@@ -347,26 +347,25 @@ const generateWorkbookForCompany = async (
                 if (productConfigTuple) {
                     const [productKey, config] = productConfigTuple;
                     const splitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
-                    const effectiveQty = qty * splitCount;
+                    const poRowQty = qty * splitCount; // 발주서 행 수만 분할
                     const shipping = splitCount > 1 && config.shippingCost ? config.shippingCost : 0;
-                    const statsName = splitCount > 1 ? (config.orderFormName || config.displayName) : config.displayName;
 
                     if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
-                    summary[productKey].count += effectiveQty;
-                    summary[productKey].totalPrice += effectiveQty * config.supplyPrice + shipping;
+                    summary[productKey].count += qty;
+                    summary[productKey].totalPrice += qty * config.supplyPrice + shipping;
 
                     const dateStr = parseDateFromRow(row, dateColIdx);
                     if (shipping > 0) {
-                        stats.add(statsName, 1, config.supplyPrice + shipping, dateStr);
-                        if (effectiveQty > 1) stats.add(statsName, effectiveQty - 1, config.supplyPrice, dateStr);
+                        stats.add(config.displayName, 1, config.supplyPrice + shipping, dateStr);
+                        if (qty > 1) stats.add(config.displayName, qty - 1, config.supplyPrice, dateStr);
                     } else {
-                        stats.add(statsName, effectiveQty, config.supplyPrice, dateStr);
+                        stats.add(config.displayName, qty, config.supplyPrice, dateStr);
                     }
 
-                    if (!registeredProductNames[statsName]) {
-                        registeredProductNames[statsName] = String(row[groupColIdx] || '').trim();
+                    if (!registeredProductNames[config.displayName]) {
+                        registeredProductNames[config.displayName] = String(row[groupColIdx] || '').trim();
                     }
-                    await pushToOutputRows(companyName, outputRows, row, config, effectiveQty, pricingConfig, senderName, senderPhone, senderAddress);
+                    await pushToOutputRows(companyName, outputRows, row, config, poRowQty, pricingConfig, senderName, senderPhone, senderAddress);
                     orderItems.push({
                         registeredProductName: String(row[regProductColIdx] || '').trim(),
                         registeredOptionName: String(row[regOptionColIdx] || '').trim(),
@@ -385,21 +384,20 @@ const generateWorkbookForCompany = async (
             // 매칭 실패 시에도 수동 주문은 반드시 포함 (원래 입력 품목명 사용)
             const [productKey, config] = productConfigTuple || [mo.productName, { displayName: mo.productName, supplyPrice: 0 } as ProductPricing];
             const moSplitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
-            const moEffectiveQty = mo.qty * moSplitCount;
+            const moPoRowQty = mo.qty * moSplitCount; // 발주서 행 수만 분할
             const moShipping = moSplitCount > 1 && config.shippingCost ? config.shippingCost : 0;
-            const moStatsName = moSplitCount > 1 ? (config.orderFormName || config.displayName) : config.displayName;
 
             if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
-            summary[productKey].count += moEffectiveQty;
-            summary[productKey].totalPrice += moEffectiveQty * config.supplyPrice + moShipping;
+            summary[productKey].count += mo.qty;
+            summary[productKey].totalPrice += mo.qty * config.supplyPrice + moShipping;
 
             if (moShipping > 0) {
-                stats.add(moStatsName, 1, config.supplyPrice + moShipping, todayStr);
-                if (moEffectiveQty > 1) stats.add(moStatsName, moEffectiveQty - 1, config.supplyPrice, todayStr);
+                stats.add(config.displayName, 1, config.supplyPrice + moShipping, todayStr);
+                if (mo.qty > 1) stats.add(config.displayName, mo.qty - 1, config.supplyPrice, todayStr);
             } else {
-                stats.add(moStatsName, moEffectiveQty, config.supplyPrice, todayStr);
+                stats.add(config.displayName, mo.qty, config.supplyPrice, todayStr);
             }
-            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moEffectiveQty);
+            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moPoRowQty);
         }
 
         headerRow = getHeaderForCompany(companyName, companyConfig);
