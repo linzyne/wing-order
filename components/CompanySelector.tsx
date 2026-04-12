@@ -2420,7 +2420,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <textarea placeholder={"한 줄에 하나씩, 순서/형식 자유\n예: 홍길동 국민 123-456-7890123 31000\n예: 50,000원 신한은행 김철수 110-123-456789"} value={bulkText} onChange={e => setBulkText(e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-xs font-mono text-zinc-300 focus:outline-none h-24 resize-none" />
                         <div className="flex justify-end">
                             <button onClick={() => {
-                                const BANKS = ['KB국민','국민','신한','우리','하나','NH농협','농협','IBK기업','기업','SC제일','씨티','카카오뱅크','카카오','토스뱅크','토스','새마을','수협','부산','대구','경남','광주','전북','제주','KDB산업','산업','우체국','케이뱅크','K뱅크'];
+                                const BANK_ALIAS: Record<string, string> = { '카뱅': '카카오뱅크', '카카오': '카카오뱅크', '토스': '토스뱅크' };
+                                const BANKS = ['KB국민','국민','신한','우리','하나','NH농협','농협','IBK기업','기업','SC제일','씨티','카카오뱅크','카뱅','카카오','토스뱅크','토스','새마을','수협','부산','대구','경남','광주','전북','제주','KDB산업','산업','우체국','케이뱅크','K뱅크'];
                                 const lines = bulkText.split('\n');
                                 const newEntries: ManualTransfer[] = [];
                                 lines.forEach((line, idx) => {
@@ -2434,7 +2435,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     let bank = '';
                                     for (const b of BANKS) {
                                         const m = r.match(new RegExp(b + '(은행)?'));
-                                        if (m) { bank = m[0]; r = r.replace(m[0], ' '); break; }
+                                        if (m) { bank = BANK_ALIAS[b] || m[0]; r = r.replace(m[0], ' '); break; }
                                     }
                                     // 3) 금액: 콤마 포맷 또는 원 접미사
                                     let amt = 0;
