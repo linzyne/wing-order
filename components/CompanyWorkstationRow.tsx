@@ -280,9 +280,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             handleLocalFileChange(batchFile, false, '');
         } else if (hasFileChanged) {
             if (masterFile) {
-                lastProcessedMasterRef.current = masterFile;
-                lastFakeOrdersRef.current = fakeOrderNumbers;
-                lastManualOrdersRef.current = manualOrdersStr;
+                // isProcessingRef 가드에 의해 스킵될 수 있으므로, ref는 실제 처리 시작 후 업데이트
+                if (!isProcessingRef.current) {
+                    lastProcessedMasterRef.current = masterFile;
+                    lastFakeOrdersRef.current = fakeOrderNumbers;
+                    lastManualOrdersRef.current = manualOrdersStr;
+                }
                 handleLocalFileChange(masterFile, true);
             }
         } else if (hasFakeOrdersChanged && lastProcessedMasterRef.current) {

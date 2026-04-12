@@ -280,7 +280,10 @@ const generateWorkbookForCompany = async (
 
             const groupColIdx = 10;
             const productColIdx = 11;
-            const quantityColIdx = 22;
+            // 수량 열 동적 탐색 (masterProductSummary와 동일 로직)
+            let quantityColIdx = headers.findIndex(h => h.includes('수량'));
+            if (quantityColIdx === -1) quantityColIdx = headers.findIndex(h => h.includes('구매수'));
+            if (quantityColIdx === -1) quantityColIdx = 22; // 기본값: W열
             const sourceOrderNumberIdx = 2;
             const recipientNameCol = 26;
             const recipientPhoneCol = 27;
