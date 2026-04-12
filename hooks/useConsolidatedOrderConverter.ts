@@ -210,6 +210,31 @@ const findBestMatchForProduct = async (
         return result;
     }
 
+    // 타플랫폼 옵션 형식 정리 후 재매칭 (예: "1박스:10kg/15000원/1개" → "10kg")
+    const cleanedRaw = rawProductName
+        .replace(/\d+박스[:\s]*/g, '')
+        .replace(/\/?\d+원/g, '')
+        .replace(/\/?\d+개/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (cleanedRaw !== rawProductName) {
+        const normalizedCleaned = normalize(cleanedRaw);
+        let bestCleanMatch: { entry: [string, ProductPricing]; len: number } | null = null;
+        for (const entry of availableEntries) {
+            const normDisplay = normalize(entry[1].displayName);
+            if (normalizedCleaned.includes(normDisplay)) {
+                if (!bestCleanMatch || normDisplay.length > bestCleanMatch.len) {
+                    bestCleanMatch = { entry, len: normDisplay.length };
+                }
+            }
+        }
+        if (bestCleanMatch) {
+            const result: [string, ProductPricing] = [bestCleanMatch.entry[0], bestCleanMatch.entry[1]];
+            cache.set(cacheKey, result);
+            return result;
+        }
+    }
+
     if (ai) {
         const availableDisplayNames = availableEntries.map(([, product]) => product.displayName);
         const prompt = `주문서 상품명 '${rawProductName}'와 가장 일치하는 품목을 골라줘. 품목 리스트:\n${availableDisplayNames.join('\n')}\n정확한 이름만 답변해줘.`;
