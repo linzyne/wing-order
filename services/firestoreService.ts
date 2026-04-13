@@ -243,22 +243,53 @@ export const saveCompanyOrder = async (order: string[], businessId?: string): Pr
 
 // ===== Courier Templates (택배 양식 관리) =====
 
+export interface FakeCourierSettings {
+  name: string;
+  unitPrice: number;
+  bankName: string;
+  accountNumber: string;
+}
+
+export const DEFAULT_FAKE_COURIER_SETTINGS: FakeCourierSettings = {
+  name: '택배대행',
+  unitPrice: 2270,
+  bankName: '카카오뱅크',
+  accountNumber: '3333-18-8744855',
+};
+
 export const subscribeCourierTemplates = (
-  callback: (templates: CourierTemplate[]) => void,
+  callback: (templates: CourierTemplate[], fakeCourierSettings: FakeCourierSettings) => void,
   businessId?: string
 ): Unsubscribe => {
   const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
   return onSnapshot(docRef, (snapshot) => {
-    callback(snapshot.exists() ? (snapshot.data().templates || []) : []);
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      callback(
+        data.templates || [],
+        data.fakeCourierSettings ? { ...DEFAULT_FAKE_COURIER_SETTINGS, ...data.fakeCourierSettings } : DEFAULT_FAKE_COURIER_SETTINGS
+      );
+    } else {
+      callback([], DEFAULT_FAKE_COURIER_SETTINGS);
+    }
   }, (error) => {
     console.error('[Firestore] CourierTemplates 구독 오류:', error);
-    callback([]);
+    callback([], DEFAULT_FAKE_COURIER_SETTINGS);
   });
 };
 
 export const saveCourierTemplates = async (templates: CourierTemplate[], businessId?: string): Promise<void> => {
   const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
-  await setDoc(docRef, { templates, updatedAt: Timestamp.now() });
+  const snapshot = await getDoc(docRef);
+  const existing = snapshot.exists() ? snapshot.data() : {};
+  await setDoc(docRef, { ...existing, templates, updatedAt: Timestamp.now() });
+};
+
+export const saveFakeCourierSettings = async (settings: FakeCourierSettings, businessId?: string): Promise<void> => {
+  const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
+  const snapshot = await getDoc(docRef);
+  const existing = snapshot.exists() ? snapshot.data() : {};
+  await setDoc(docRef, { ...existing, fakeCourierSettings: settings, updatedAt: Timestamp.now() });
 };
 
 // ===== Platform Configs (멀티 플랫폼 설정) =====

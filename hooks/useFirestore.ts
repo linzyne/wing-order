@@ -11,7 +11,10 @@ import {
   saveTodos as saveTodosToFirestore,
   subscribeCourierTemplates,
   saveCourierTemplates as saveCourierTemplatesToFirestore,
+  saveFakeCourierSettings as saveFakeCourierSettingsToFirestore,
   type DailyWorkspaceData,
+  type FakeCourierSettings,
+  DEFAULT_FAKE_COURIER_SETTINGS,
 } from '../services/firestoreService';
 import { DEFAULT_PRICING_CONFIG, DEFAULT_PRICING_CONFIG_조에 } from '../pricing';
 
@@ -131,13 +134,15 @@ export const usePlatformConfigs = (businessId?: string) => {
 // ===== Courier Templates Hook =====
 export const useCourierTemplates = (businessId?: string) => {
   const [courierTemplates, setCourierTemplates] = useState<CourierTemplate[]>([]);
+  const [fakeCourierSettings, setFakeCourierSettings] = useState<FakeCourierSettings>(DEFAULT_FAKE_COURIER_SETTINGS);
   const pendingSaves = useRef(0);
   const saveGraceUntil = useRef(0);
 
   useEffect(() => {
-    const unsubscribe = subscribeCourierTemplates((templates) => {
+    const unsubscribe = subscribeCourierTemplates((templates, settings) => {
       if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) return;
       setCourierTemplates(templates);
+      setFakeCourierSettings(settings);
     }, businessId);
     return unsubscribe;
   }, [businessId]);
@@ -155,7 +160,20 @@ export const useCourierTemplates = (businessId?: string) => {
     }
   }, [businessId]);
 
-  return { courierTemplates, saveTemplates };
+  const saveFakeCourierSettings = useCallback(async (newSettings: FakeCourierSettings) => {
+    pendingSaves.current++;
+    setFakeCourierSettings(newSettings);
+    try {
+      await saveFakeCourierSettingsToFirestore(newSettings, businessId);
+      saveGraceUntil.current = Date.now() + 1000;
+    } catch (e) {
+      console.error('[Config] FakeCourierSettings 저장 실패:', e);
+    } finally {
+      pendingSaves.current--;
+    }
+  }, [businessId]);
+
+  return { courierTemplates, saveTemplates, fakeCourierSettings, saveFakeCourierSettings };
 };
 
 // ===== Daily Workspace Hook =====

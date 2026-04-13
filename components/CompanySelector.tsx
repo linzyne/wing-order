@@ -4,7 +4,7 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
-import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon } from './icons';
+import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon, Cog6ToothIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder, subscribeQuickRecipients, saveQuickRecipients, type QuickRecipientData } from '../services/firestoreService';
@@ -289,7 +289,7 @@ const CourierTemplateManager: React.FC<{
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {} }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
-    const { courierTemplates, saveTemplates: saveCourierTemplates } = useCourierTemplates(businessId);
+    const { courierTemplates, saveTemplates: saveCourierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates(businessId);
 
     // 새로고침 시 워크스테이션 데이터 초기화 (마운트 = 새로고침에서만 발생, 사업자 전환 시에는 display:none으로 유지)
     // 다른 탭이 이미 세션 데이터를 보유 중일 수 있으므로, 기존 데이터가 없을 때만 초기화
@@ -565,6 +565,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [courierResults, setCourierResults] = useState<Record<string, { matched: number; total: number; notFound: string[] }>>({});
     const [courierMatchedRows, setCourierMatchedRows] = useState<Record<string, any[][]>>({});
     const [showTemplateManager, setShowTemplateManager] = useState(false);
+    const [showFakeCourierSettings, setShowFakeCourierSettings] = useState(false);
 
     const [manualTransfers, setManualTransfers] = useState<ManualTransfer[]>([]);
 
@@ -980,8 +981,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             autoExpenses.push({
                 id: 'auto-fake-default',
                 category: '물류비',
-                amount: fakeOrderAnalysis.inputNumbers.size * 2270,
-                description: `가구매 택배 ${fakeOrderAnalysis.inputNumbers.size}건`,
+                amount: fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice,
+                description: `${fakeCourierSettings.name} ${fakeOrderAnalysis.inputNumbers.size}건`,
                 isAuto: true,
             });
         }
@@ -1611,8 +1612,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label]); total += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2270;
-            depositRows.push(['카카오뱅크', '3333-18-8744855', deliveryFee, `택배대행(${fakeOrderAnalysis.inputNumbers.size}건)`]);
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
+            depositRows.push([fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, `${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
             total += deliveryFee;
         }
         if (depositRows.length === 0) { alert('선택된 업체 중 입금할 내역이 없습니다.'); return; }
@@ -1654,8 +1655,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         manualTransfers.forEach(t => { depositRows.push([t.label || '', t.bankName, t.accountNumber, t.amount, '']); depTotal += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2270;
-            depositRows.push([`택배대행(${fakeOrderAnalysis.inputNumbers.size}건)`, '카카오뱅크', '3333-18-8744855', deliveryFee, '']);
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
+            depositRows.push([`${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`, fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, '']);
             depTotal += deliveryFee;
         }
         if (depositRows.length > 1) depositRows.push([], ['', '', '합계', depTotal, '']);
@@ -1794,8 +1795,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             depTotal += t.amount;
         });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * 2270;
-            depositRows.push({ bankName: '카카오뱅크', accountNumber: '3333-18-8744855', amount: deliveryFee });
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
+            depositRows.push({ bankName: fakeCourierSettings.bankName, accountNumber: fakeCourierSettings.accountNumber, amount: deliveryFee });
             depTotal += deliveryFee;
         }
 
@@ -2701,6 +2702,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </h3>
                         </div>
                         <div className="flex gap-2">
+                            <button onClick={() => setShowFakeCourierSettings(!showFakeCourierSettings)} className={`p-1 transition-colors ${showFakeCourierSettings ? 'text-cyan-500' : 'text-zinc-600 hover:text-white'}`} title="가구매 택배 설정">
+                                <Cog6ToothIcon className="w-4 h-4" />
+                            </button>
                             <button onClick={() => setShowTemplateManager(!showTemplateManager)} className={`p-1 transition-colors ${showTemplateManager ? 'text-amber-500' : 'text-zinc-600 hover:text-white'}`} title="택배 양식 관리">
                                 <BoltIcon className="w-4 h-4" />
                             </button>
@@ -2771,6 +2775,39 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             templates={courierTemplates}
                             onSave={saveCourierTemplates}
                         />
+                    )}
+
+                    {showFakeCourierSettings && (
+                        <div className="mb-4 bg-zinc-900/50 p-4 rounded-xl border border-cyan-500/20 animate-fade-in">
+                            <h4 className="text-cyan-500 font-black text-[10px] uppercase tracking-widest mb-3">가구매 택배 설정</h4>
+                            <div className="flex flex-wrap gap-3">
+                                <div className="flex-1 min-w-[100px]">
+                                    <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배사명</label>
+                                    <input type="text" value={fakeCourierSettings.name} onChange={(e) => {
+                                        saveFakeCourierSettings({ ...fakeCourierSettings, name: e.target.value });
+                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
+                                </div>
+                                <div className="flex-1 min-w-[100px]">
+                                    <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">건당 단가</label>
+                                    <input type="number" value={fakeCourierSettings.unitPrice} onChange={(e) => {
+                                        const v = Number(e.target.value) || 0;
+                                        saveFakeCourierSettings({ ...fakeCourierSettings, unitPrice: v });
+                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
+                                </div>
+                                <div className="flex-1 min-w-[100px]">
+                                    <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">은행명</label>
+                                    <input type="text" value={fakeCourierSettings.bankName} onChange={(e) => {
+                                        saveFakeCourierSettings({ ...fakeCourierSettings, bankName: e.target.value });
+                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
+                                </div>
+                                <div className="flex-[2] min-w-[160px]">
+                                    <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">계좌번호</label>
+                                    <input type="text" value={fakeCourierSettings.accountNumber} onChange={(e) => {
+                                        saveFakeCourierSettings({ ...fakeCourierSettings, accountNumber: e.target.value });
+                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
+                                </div>
+                            </div>
+                        </div>
                     )}
 
                     {showFakeOrderInput ? (
