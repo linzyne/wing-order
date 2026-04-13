@@ -59,6 +59,7 @@ interface CompanyWorkstationRowProps {
     missingItems?: { groupName: string; diffQty: number }[];
     orderPlatformMap?: Map<string, string>;
     platformConfigs?: PlatformConfigs;
+    fakeCourierRows?: any[][];
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -68,7 +69,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     manualOrdersRejected = false, onManualOrdersApproval,
     businessId, onConfigChange, masterExpectedCount = 0,
     missingItems = [],
-    orderPlatformMap, platformConfigs
+    orderPlatformMap, platformConfigs,
+    fakeCourierRows
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -483,8 +485,16 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const handleDownloadOrder = () => localResult && XLSX.writeFile(localResult.workbook, localResult.fileName);
     const handleDownloadInvoice = (type: 'mgmt' | 'upload') => {
         if (!mergeResults) return;
-        if (type === 'mgmt') XLSX.writeFile(mergeResults.mgmtWorkbook, mergeResults.mgmtFileName);
-        else XLSX.writeFile(mergeResults.uploadWorkbook, mergeResults.uploadFileName);
+        if (fakeCourierRows && fakeCourierRows.length > 0) {
+            const rows = type === 'mgmt' ? [...(mergeResults.rows || [])] : [...(mergeResults.uploadRows || [])];
+            rows.push(...fakeCourierRows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([mergeResults.header, ...rows]), type === 'mgmt' ? '기록용' : '업로드용');
+            XLSX.writeFile(wb, type === 'mgmt' ? mergeResults.mgmtFileName : mergeResults.uploadFileName);
+        } else {
+            if (type === 'mgmt') XLSX.writeFile(mergeResults.mgmtWorkbook, mergeResults.mgmtFileName);
+            else XLSX.writeFile(mergeResults.uploadWorkbook, mergeResults.uploadFileName);
+        }
     };
     const handleDownloadPlatformInvoice = (platformName: string) => {
         const pResult = mergeResults?.platformUploadWorkbooks?.[platformName];

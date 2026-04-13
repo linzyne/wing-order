@@ -1517,6 +1517,28 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산발주서.xlsx`);
     };
 
+    // 업체별 가구매 택배 매칭 행 필터링
+    const getCourierRowsForCompany = (companyName: string): any[][] => {
+        if (Object.keys(courierMatchedRows).length === 0) return [];
+        const fakeOrderNums = new Set<string>();
+        (Object.values(allExcludedDetails).flat() as ExcludedOrder[]).forEach(ex => {
+            if (ex.companyName === companyName && String(ex.orderNumber || '').includes('(제외)')) {
+                const cleanNum = String(ex.orderNumber).replace(/\s*\(제외\)\s*/, '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (cleanNum) fakeOrderNums.add(cleanNum);
+            }
+        });
+        if (fakeOrderNums.size === 0) return [];
+        const filtered: any[][] = [];
+        (Object.values(courierMatchedRows) as any[][][]).forEach(rows => {
+            if (!rows || rows.length <= 1) return;
+            for (let i = 1; i < rows.length; i++) {
+                const orderNum = String(rows[i][2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (fakeOrderNums.has(orderNum)) filtered.push(rows[i]);
+            }
+        });
+        return filtered;
+    };
+
     const handleDownloadMergedInvoice = (companyName: string, type: 'mgmt' | 'upload') => {
         const sessions = companySessions[companyName] || [];
         const mergedRows: any[][] = [];
@@ -1528,6 +1550,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 mergedRows.push(...rows);
             }
         });
+        // 가구매 택배 병합
+        const courierRows = getCourierRowsForCompany(companyName);
+        if (courierRows.length > 0) mergedRows.push(...courierRows);
         if (mergedRows.length === 0) { alert('합산할 송장 데이터가 없습니다.'); return; }
         const wb = XLSX.utils.book_new();
         const aoa = headerRow.length > 0 ? [headerRow, ...mergedRows] : mergedRows;
@@ -2898,6 +2923,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     : (batchExpectedCounts[session.id] || 0)
                                                 }
                                                 missingItems={sIdx === 0 ? (missingOrderAnalysis?.missingByCompany?.[company] || []) : []}
+                                                fakeCourierRows={getCourierRowsForCompany(company)}
                                             />
                                         ) : null;
                                     })}
