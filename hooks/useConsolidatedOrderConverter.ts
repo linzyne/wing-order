@@ -456,6 +456,8 @@ const generateWorkbookForCompany = async (
 };
 
 export function getHeaderForCompany(companyName: string, config: CompanyConfig): string[] {
+    // 커스텀 헤더가 설정되어 있으면 하드코딩보다 우선 적용
+    if (config.orderFormHeaders?.length) return config.orderFormHeaders;
     if (companyName === '팜플로우') return ['출고번호', '받으시는 분 이름', '받으시는 분 전화', '받는분 주소', '배송메세지', '품목명', '수량', '보내시는 분', '보내시는 분 전화', '보내시는분 주소', '메모1', '택배사', '송장번호'];
     if (companyName === '웰그린') return ['', '쇼핑몰주문번호', '쇼핑몰', '상품명', '옵션(품목명)', '수량', '배송메세지', '', '', '받는분성명', '주문자', '받는분연락처', '주문자연락처', '', '우편번호', '받는분주소(전체, 분할)', '', '판매처연락처', '판매처주소'];
     if (companyName === '답도' || companyName === '한라봉_답도') return ['주문번호', '기재안해도됨', '송하인', '송하인 연락처', '수취인', '수취인 연락처', '주소', '상품명', '수량', '배송 메세지', '송장번호'];
@@ -463,7 +465,7 @@ export function getHeaderForCompany(companyName: string, config: CompanyConfig):
     if (companyName === '신선마켓' || companyName === '귤_신선') return ['주문번호', '품목명', '수량', '받는사람', '전화번호', '', '', '우편번호', '주소', '배송메세지'];
     if (companyName === '고랭지김치') return ['주문번호', '보내는사람', '전화번호1', '전화번호2', '우편번호', '주소', '받는사람', '전화번호1', '전화번호2', '우편번호', '주소', '상품명1', '상품상세1', '수량(A타입)', '수량(B타입)', '배송메시지', '운임구분', '운임'];
     if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) return ['주문번호', '고객주문처명', '수취인명', '수취인 우편번호', '수취인 주소', '수취인 전화번호', '수취인 이동통신', '상품명', '상품모델', '배송메세지', '비고', '수량', '신청건수', '포장재', '부피단위'];
-    return config.orderFormHeaders?.length ? config.orderFormHeaders : ['받는사람', '전화번호', '주소', '품목명', '수량', '배송메세지', '주문번호'];
+    return ['받는사람', '전화번호', '주소', '품목명', '수량', '배송메세지', '주문번호'];
 }
 
 /** 헤더명에서 필드 타입을 자동 추정 (전화번호/주소를 이름보다 먼저 체크) */
@@ -529,7 +531,19 @@ function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orde
 
 async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도') {
     const orderName = config.orderFormName || config.displayName;
-    if (companyName === '팜플로우') {
+    // 커스텀 헤더가 설정되어 있으면 하드코딩 분기를 건너뛰고 generic 경로 사용
+    const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
+    if (customHeaders.length > 0) {
+        const fieldMap = pricingConfig[companyName]?.orderFormFieldMap;
+        for (let j = 0; j < qty; j++) {
+            const or = new Array(customHeaders.length).fill('');
+            customHeaders.forEach((h, idx) => {
+                const field = (fieldMap?.[idx] || inferFieldFromHeader(h)) as OrderFormFieldKey;
+                or[idx] = resolveFieldValue(field, row, orderName, senderName, senderPhone, senderAddress);
+            });
+            outputRows.push(or);
+        }
+    } else if (companyName === '팜플로우') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(13).fill('');
             or[0] = String(row[2] || ''); or[1] = String(row[26] || ''); or[2] = String(row[27] || ''); or[3] = String(row[29] || '');
@@ -610,19 +624,8 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             outputRows.push(or);
         }
     } else {
-        const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
-        const fieldMap = pricingConfig[companyName]?.orderFormFieldMap;
         for (let j = 0; j < qty; j++) {
-            if (customHeaders.length > 0) {
-                const or = new Array(customHeaders.length).fill('');
-                customHeaders.forEach((h, idx) => {
-                    const field = (fieldMap?.[idx] || inferFieldFromHeader(h)) as OrderFormFieldKey;
-                    or[idx] = resolveFieldValue(field, row, orderName, senderName, senderPhone, senderAddress);
-                });
-                outputRows.push(or);
-            } else {
-                outputRows.push([String(row[26] || ''), String(row[27] || ''), String(row[29] || ''), orderName, 1, String(row[30] || ''), String(row[2] || '')]);
-            }
+            outputRows.push([String(row[26] || ''), String(row[27] || ''), String(row[29] || ''), orderName, 1, String(row[30] || ''), String(row[2] || '')]);
         }
     }
 }
@@ -630,7 +633,19 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
 async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', overrideQty?: number) {
     const orderName = config.orderFormName || config.displayName;
     const rowQty = overrideQty ?? mo.qty;
-    if (companyName === '팜플로우') {
+    // 커스텀 헤더가 설정되어 있으면 하드코딩 분기를 건너뛰고 generic 경로 사용
+    const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
+    if (customHeaders.length > 0) {
+        const fieldMap = pricingConfig[companyName]?.orderFormFieldMap;
+        for (let j = 0; j < rowQty; j++) {
+            const or = new Array(customHeaders.length).fill('');
+            customHeaders.forEach((h, idx) => {
+                const field = (fieldMap?.[idx] || inferFieldFromHeader(h)) as OrderFormFieldKey;
+                or[idx] = resolveManualFieldValue(field, mo, orderName, senderName, senderPhone, senderAddress);
+            });
+            outputRows.push(or);
+        }
+    } else if (companyName === '팜플로우') {
         for (let j = 0; j < rowQty; j++) {
             const or = new Array(13).fill('');
             or[0] = '수동'; or[1] = mo.recipientName; or[2] = mo.phone; or[3] = mo.address; or[5] = orderName; or[6] = 1; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
@@ -701,19 +716,8 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             outputRows.push(or);
         }
     } else {
-        const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
-        const fieldMap = pricingConfig[companyName]?.orderFormFieldMap;
         for (let j = 0; j < rowQty; j++) {
-            if (customHeaders.length > 0) {
-                const or = new Array(customHeaders.length).fill('');
-                customHeaders.forEach((h, idx) => {
-                    const field = (fieldMap?.[idx] || inferFieldFromHeader(h)) as OrderFormFieldKey;
-                    or[idx] = resolveManualFieldValue(field, mo, orderName, senderName, senderPhone, senderAddress);
-                });
-                outputRows.push(or);
-            } else {
-                outputRows.push([mo.recipientName, mo.phone, mo.address, orderName, 1, '', '수동']);
-            }
+            outputRows.push([mo.recipientName, mo.phone, mo.address, orderName, 1, '', '수동']);
         }
     }
 }

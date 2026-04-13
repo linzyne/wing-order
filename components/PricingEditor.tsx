@@ -927,7 +927,7 @@ const CompanyCard: React.FC<{
     onUpdateCourier: (courier: string) => void;
     onUpdateDeadline: (deadline: string) => void;
     onUpdateKeywords: (keywords: string[]) => void;
-    onUpdateOrderFormHeaders: (headers: string[]) => void;
+    onUpdateOrderFormHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
     onUpdateVendorInvoiceHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateVendorInvoiceFieldMap: (fieldMap: string[]) => void;
@@ -1021,110 +1021,139 @@ const CompanyCard: React.FC<{
                         />
                     </div>
                     <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3 mb-3">
                             <span className="text-lg">📋</span>
-                            <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">발주서 양식 헤더</span>
-                            <label className="ml-auto flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-lg text-[10px] font-black border border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all">
-                                <DocumentArrowUpIcon className="w-3.5 h-3.5" />
-                                <span>양식 파일에서 읽기</span>
-                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
-                                    console.log('[발주서양식] onChange 실행됨');
-                                    const file = e.target.files?.[0];
-                                    if (!file) { console.log('[발주서양식] 파일 없음'); return; }
-                                    console.log('[발주서양식] 파일 선택:', file.name);
-                                    const reader = new FileReader();
-                                    reader.onload = (ev) => {
-                                        try {
-                                            const data = new Uint8Array(ev.target?.result as ArrayBuffer);
-                                            const wb = XLSX.read(data, { type: 'array' });
-                                            const ws = wb.Sheets[wb.SheetNames[0]];
-                                            const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                                            console.log('[발주서양식] 파싱 완료, 행 수:', aoa.length);
-                                            if (aoa.length > 0) {
-                                                console.log('[발주서양식] 첫 5행:', aoa.slice(0, 5));
-                                                // 헤더 행 자동 탐색: 첫 20행 중 키워드 포함 행 찾기
-                                                let headerRowIdx = -1;
-                                                for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
-                                                    const rowStr = (aoa[ri] || []).join('');
-                                                    if (rowStr.includes('받는사람') || rowStr.includes('수취인') || rowStr.includes('수령인') ||
-                                                        rowStr.includes('품목') || rowStr.includes('상품') || rowStr.includes('주소') ||
-                                                        rowStr.includes('수량') || rowStr.includes('전화') || rowStr.includes('연락처') ||
-                                                        rowStr.includes('주문') || rowStr.includes('번호')) {
-                                                        headerRowIdx = ri;
-                                                        break;
-                                                    }
-                                                }
-                                                // 키워드 못 찾으면 비어있지 않은 셀이 가장 많은 행을 헤더로 사용
-                                                if (headerRowIdx === -1) {
-                                                    let maxCols = 0;
+                            <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">발주서 양식</span>
+                            <div className="ml-auto flex items-center gap-2">
+                                {companyConfig.orderFormHeaders && companyConfig.orderFormHeaders.length > 0 && (
+                                    <button
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black border border-zinc-700 text-zinc-500 hover:border-red-500/40 hover:text-red-400 transition-all"
+                                        onClick={() => {
+                                            props.onUpdateOrderFormHeaders([], []);
+                                        }}
+                                    >
+                                        <TrashIcon className="w-3 h-3" />
+                                        <span>초기화</span>
+                                    </button>
+                                )}
+                                <label className="flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-lg text-[10px] font-black border border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all">
+                                    <DocumentArrowUpIcon className="w-3.5 h-3.5" />
+                                    <span>파일에서 읽기</span>
+                                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                            try {
+                                                const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+                                                const wb = XLSX.read(data, { type: 'array' });
+                                                const ws = wb.Sheets[wb.SheetNames[0]];
+                                                const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                                                if (aoa.length > 0) {
+                                                    let headerRowIdx = -1;
                                                     for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
-                                                        const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
-                                                        if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
+                                                        const rowStr = (aoa[ri] || []).join('');
+                                                        if (rowStr.includes('받는사람') || rowStr.includes('수취인') || rowStr.includes('수령인') ||
+                                                            rowStr.includes('품목') || rowStr.includes('상품') || rowStr.includes('주소') ||
+                                                            rowStr.includes('수량') || rowStr.includes('전화') || rowStr.includes('연락처') ||
+                                                            rowStr.includes('주문') || rowStr.includes('번호')) {
+                                                            headerRowIdx = ri;
+                                                            break;
+                                                        }
                                                     }
-                                                    if (headerRowIdx === -1) headerRowIdx = 0;
+                                                    if (headerRowIdx === -1) {
+                                                        let maxCols = 0;
+                                                        for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
+                                                            const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
+                                                            if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
+                                                        }
+                                                        if (headerRowIdx === -1) headerRowIdx = 0;
+                                                    }
+                                                    const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                    if (headers.length > 0) {
+                                                        const fieldMap = headers.map((h: string) => inferFieldFromHeader(h));
+                                                        props.onUpdateOrderFormHeaders(headers, fieldMap);
+                                                    }
                                                 }
-                                                const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
-                                                console.log('[발주서양식] headerRowIdx:', headerRowIdx, '헤더:', headers);
-                                                if (headers.length > 0) {
-                                                    const fieldMap = headers.map((h: string) => inferFieldFromHeader(h));
-                                                    props.onUpdateOrderFormHeaders(headers, fieldMap);
-                                                    console.log('[발주서양식] 저장 완료, fieldMap:', fieldMap);
-                                                } else {
-                                                    console.log('[발주서양식] 헤더가 비어있음');
-                                                }
-                                            }
-                                        } catch (err) { console.error('[발주서양식 업로드 오류]', err); }
-                                    };
-                                    reader.readAsArrayBuffer(file);
-                                    e.target.value = '';
-                                }} />
-                            </label>
+                                            } catch (err) { console.error('[발주서양식 업로드 오류]', err); }
+                                        };
+                                        reader.readAsArrayBuffer(file);
+                                        e.target.value = '';
+                                    }} />
+                                </label>
+                            </div>
                         </div>
-                        <EditableField
-                            value={(companyConfig.orderFormHeaders || []).join(', ')}
-                            onSave={(val) => {
-                                const headers = val.split(/[,\t]+/).map(s => s.trim()).filter(Boolean);
-                                props.onUpdateOrderFormHeaders(headers);
-                                if (headers.length > 0) {
-                                    const existingMap = companyConfig.orderFormFieldMap || [];
-                                    props.onUpdateOrderFormFieldMap(headers.map((h, i) => existingMap[i] || inferFieldFromHeader(h)));
-                                } else {
-                                    props.onUpdateOrderFormFieldMap([]);
-                                }
-                            }}
-                            placeholder="예: 받는사람, 전화번호, 주소, 품목명, 수량, 배송메세지, 주문번호"
-                            className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
-                        />
-                        <p className="text-[10px] text-zinc-600 mt-1">비워두면 기본 양식 사용. 양식 파일 업로드 또는 쉼표로 구분하여 입력</p>
-                        {companyConfig.orderFormHeaders && companyConfig.orderFormHeaders.length > 0 && (
-                            <div className="mt-3 space-y-1">
-                                <span className="text-[11px] font-black text-amber-500/80 uppercase">필드 매핑</span>
+                        {companyConfig.orderFormHeaders && companyConfig.orderFormHeaders.length > 0 ? (
+                            <div className="space-y-1.5">
                                 {companyConfig.orderFormHeaders.map((header, idx) => {
                                     const currentField = companyConfig.orderFormFieldMap?.[idx] || inferFieldFromHeader(header);
                                     return (
                                         <div key={idx} className="flex items-center gap-2">
-                                            <span className="text-[11px] font-bold text-zinc-500 w-36 truncate shrink-0" title={header}>
-                                                {header}
-                                            </span>
-                                            <span className="text-zinc-600 text-[10px]">&rarr;</span>
+                                            <span className="text-[10px] font-bold text-zinc-600 w-5 text-right shrink-0">{idx + 1}</span>
                                             <select
-                                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500/40 transition-colors"
+                                                className="w-32 shrink-0 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-white outline-none focus:border-amber-500/40 transition-colors"
                                                 value={currentField}
                                                 onChange={(e) => {
-                                                    const newMap = [...(companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h)))];
-                                                    newMap[idx] = e.target.value;
-                                                    props.onUpdateOrderFormFieldMap(newMap);
+                                                    const newFieldMap = [...(companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h)))];
+                                                    newFieldMap[idx] = e.target.value;
+                                                    // 필드 변경 시 헤더명이 기본값이면 같이 변경 (단일 호출로 처리)
+                                                    const selectedType = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === e.target.value);
+                                                    const oldType = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === currentField);
+                                                    if (selectedType && oldType && header === oldType.label) {
+                                                        const newHeaders = [...companyConfig.orderFormHeaders!];
+                                                        newHeaders[idx] = selectedType.label;
+                                                        props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
+                                                    } else {
+                                                        props.onUpdateOrderFormFieldMap(newFieldMap);
+                                                    }
                                                 }}
                                             >
                                                 {ORDER_FORM_FIELD_TYPES.map(ft => (
                                                     <option key={ft.key} value={ft.key}>{ft.label}</option>
                                                 ))}
                                             </select>
+                                            <span className="text-zinc-600 text-[10px]">&rarr;</span>
+                                            <input
+                                                type="text"
+                                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-300 outline-none focus:border-amber-500/40 transition-colors"
+                                                value={header}
+                                                placeholder="헤더명"
+                                                onChange={(e) => {
+                                                    const newHeaders = [...companyConfig.orderFormHeaders!];
+                                                    newHeaders[idx] = e.target.value;
+                                                    props.onUpdateOrderFormHeaders(newHeaders);
+                                                }}
+                                            />
+                                            <button
+                                                className="p-1 text-zinc-600 hover:text-red-400 transition-colors shrink-0"
+                                                onClick={() => {
+                                                    const newHeaders = companyConfig.orderFormHeaders!.filter((_, i) => i !== idx);
+                                                    const newFieldMap = (companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h))).filter((_, i) => i !== idx);
+                                                    props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
+                                                }}
+                                            >
+                                                <TrashIcon className="w-3.5 h-3.5" />
+                                            </button>
                                         </div>
                                     );
                                 })}
                             </div>
+                        ) : (
+                            <p className="text-[11px] text-zinc-600 py-2">기본 양식 사용 중. 파일 업로드 또는 아래 버튼으로 열을 추가하세요.</p>
                         )}
+                        <button
+                            className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black border border-dashed border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all w-full justify-center"
+                            onClick={() => {
+                                const defaultField = 'empty';
+                                const defaultLabel = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === defaultField)!.label;
+                                const newHeaders = [...(companyConfig.orderFormHeaders || []), defaultLabel];
+                                const newFieldMap = [...(companyConfig.orderFormFieldMap || (companyConfig.orderFormHeaders || []).map(h => inferFieldFromHeader(h))), defaultField];
+                                props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
+                            }}
+                        >
+                            <PlusCircleIcon className="w-3.5 h-3.5" />
+                            <span>열 추가</span>
+                        </button>
                     </div>
                     <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
                         <div className="flex items-center gap-3 mb-2">
