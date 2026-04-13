@@ -338,7 +338,10 @@ const generateWorkbookForCompany = async (
 
                 if (row[7]) {
                     const sd = new Date(String(row[7]).trim());
-                    if (!isNaN(sd.getTime()) && (sd.getTime() - today.getTime()) / (1000 * 60 * 60 * 24) > 7) {
+                    sd.setHours(0, 0, 0, 0);
+                    const todayMidnight = new Date();
+                    todayMidnight.setHours(0, 0, 0, 0);
+                    if (!isNaN(sd.getTime()) && (sd.getTime() - todayMidnight.getTime()) / (1000 * 60 * 60 * 24) > 7) {
                         excludedOrders.push({ companyName, recipientName, productName, phone, orderNumber: `${orderNumber} (출고예정일 7일 초과)`, qty: validQty, groupName: String(row[groupColIdx] || '').trim() });
                         continue;
                     }
