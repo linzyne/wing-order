@@ -545,7 +545,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     return (
         <>
             <tr className={`transition-all duration-300 border-none ${isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10'}`}>
-                <td className="px-6 py-2 min-w-[360px]">
+                <td className={`px-6 min-w-[360px] ${isFirstSession ? 'py-2' : 'py-1'}`}>
                     <div className="flex flex-col gap-2">
                         {isFirstSession ? (
                             <>
@@ -681,8 +681,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className="px-6 py-2 text-center">
-                    <div className="flex flex-col items-center gap-2">
+                <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-1'}`}>
+                    <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {localResult ? (
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
                                 <div className="flex items-center justify-center gap-4">
@@ -883,8 +883,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className="px-6 py-2">
-                    <div className="flex flex-col items-center gap-2">
+                <td className={`px-6 ${isFirstSession ? 'py-2' : 'py-1'}`}>
+                    <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {!mergeResults ? (
                             <div className="flex flex-col items-center gap-2">
                                 <label className={`flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all shadow-md whitespace-nowrap ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFile ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
