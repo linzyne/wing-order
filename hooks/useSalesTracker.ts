@@ -61,7 +61,7 @@ export const saveDailySales = async (
             let margin = 0;
             if (companyConfig.products) {
               const productEntry = Object.values(companyConfig.products).find(
-                p => p.displayName === productName
+                p => (p.orderFormName || p.displayName) === productName || p.displayName === productName
               );
               if (productEntry?.margin) margin = productEntry.margin;
             }

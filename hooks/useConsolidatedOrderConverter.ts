@@ -383,11 +383,12 @@ const generateWorkbookForCompany = async (
                     summary[productKey].totalPrice += qty * config.supplyPrice + shipping;
 
                     const dateStr = parseDateFromRow(row, dateColIdx);
+                    const statsName = config.orderFormName || config.displayName;
                     if (shipping > 0) {
-                        stats.add(config.displayName, 1, config.supplyPrice + shipping, dateStr);
-                        if (qty > 1) stats.add(config.displayName, qty - 1, config.supplyPrice, dateStr);
+                        stats.add(statsName, 1, config.supplyPrice + shipping, dateStr);
+                        if (qty > 1) stats.add(statsName, qty - 1, config.supplyPrice, dateStr);
                     } else {
-                        stats.add(config.displayName, qty, config.supplyPrice, dateStr);
+                        stats.add(statsName, qty, config.supplyPrice, dateStr);
                     }
 
                     if (!registeredProductNames[config.displayName]) {
@@ -419,11 +420,12 @@ const generateWorkbookForCompany = async (
             summary[productKey].count += mo.qty;
             summary[productKey].totalPrice += mo.qty * config.supplyPrice + moShipping;
 
+            const moStatsName = config.orderFormName || config.displayName;
             if (moShipping > 0) {
-                stats.add(config.displayName, 1, config.supplyPrice + moShipping, todayStr);
-                if (mo.qty > 1) stats.add(config.displayName, mo.qty - 1, config.supplyPrice, todayStr);
+                stats.add(moStatsName, 1, config.supplyPrice + moShipping, todayStr);
+                if (mo.qty > 1) stats.add(moStatsName, mo.qty - 1, config.supplyPrice, todayStr);
             } else {
-                stats.add(config.displayName, mo.qty, config.supplyPrice, todayStr);
+                stats.add(moStatsName, mo.qty, config.supplyPrice, todayStr);
             }
             await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moPoRowQty);
         }
