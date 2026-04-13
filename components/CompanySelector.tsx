@@ -437,6 +437,54 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         saveCompanyOrder(companyOrder, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
     }, [companyOrder, pricingConfig, businessId, firestoreOrderLoaded]);
 
+    // pricingConfig에 새 업체 추가 시 companySessions에 자동 반영 (새로고침 없이 실시간 반영)
+    useEffect(() => {
+        const configCompanies = Object.keys(pricingConfig);
+        const sessionCompanies = Object.keys(companySessions);
+        const newCompanies = configCompanies.filter(c => !sessionCompanies.includes(c));
+        if (newCompanies.length > 0) {
+            setCompanySessions(prev => {
+                const next = { ...prev };
+                newCompanies.forEach(name => {
+                    next[name] = [{ id: `${name}-1`, companyName: name, round: 1 }];
+                });
+                return next;
+            });
+        }
+    }, [pricingConfig, companySessions]);
+
+    // pricingConfig 변경 시 detectedCompanies 재계산 (마스터 파일이 이미 업로드된 상태에서 새 업체 키워드 반영)
+    useEffect(() => {
+        if (!masterOrderData || masterOrderData.length < 2) return;
+        const groupColIdx = 10;
+        const companiesInFile = new Set<string>();
+        const companyKeywordsMap = new Map<string, string[]>();
+        Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+        for (let i = 1; i < masterOrderData.length; i++) {
+            const rawVal = String(masterOrderData[i]?.[groupColIdx] || '');
+            const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
+            if (!groupVal) continue;
+            let bestCompany = '';
+            let bestPos = Infinity;
+            for (const [name, keywords] of companyKeywordsMap.entries()) {
+                for (const k of keywords) {
+                    const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
+                    if (pos !== -1 && pos < bestPos) {
+                        bestPos = pos;
+                        bestCompany = name;
+                    }
+                }
+            }
+            if (bestCompany) companiesInFile.add(bestCompany);
+        }
+        // 기존 detectedCompanies와 다를 때만 업데이트
+        setDetectedCompanies(prev => {
+            const prevArr = [...prev].sort().join(',');
+            const newArr = [...companiesInFile].sort().join(',');
+            return prevArr === newArr ? prev : companiesInFile;
+        });
+    }, [pricingConfig, masterOrderData]);
+
     // 수동발주 Firestore 영구 저장 - 구독
     useEffect(() => {
         const unsubscribe = subscribeManualOrders((orders) => {
