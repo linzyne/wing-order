@@ -292,14 +292,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const { courierTemplates, saveTemplates: saveCourierTemplates } = useCourierTemplates(businessId);
 
     // 새로고침 시 워크스테이션 데이터 초기화 (마운트 = 새로고침에서만 발생, 사업자 전환 시에는 display:none으로 유지)
+    // 다른 탭이 이미 세션 데이터를 보유 중일 수 있으므로, 기존 데이터가 없을 때만 초기화
     const [workstationsReady, setWorkstationsReady] = useState(false);
     useEffect(() => {
         if (!isReady || workstationsReady) return;
-        Promise.all([
-            updateField('sessionResults', {}),
-            updateField('sessionWorkflows', {}),
-            updateField('sessionAdjustments', {}),
-        ]).finally(() => setWorkstationsReady(true));
+        const writes: Promise<void>[] = [];
+        if (!workspace?.sessionResults || Object.keys(workspace.sessionResults).length === 0) {
+            writes.push(updateField('sessionResults', {}));
+        }
+        if (!workspace?.sessionWorkflows || Object.keys(workspace.sessionWorkflows).length === 0) {
+            writes.push(updateField('sessionWorkflows', {}));
+        }
+        if (!workspace?.sessionAdjustments || Object.keys(workspace.sessionAdjustments).length === 0) {
+            writes.push(updateField('sessionAdjustments', {}));
+        }
+        if (writes.length > 0) {
+            Promise.all(writes).finally(() => setWorkstationsReady(true));
+        } else {
+            setWorkstationsReady(true);
+        }
     }, [isReady, updateField]);
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
@@ -452,6 +463,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     interface ThumbnailNote { id: string; imageData: string; memos: [string, string, string]; }
     const [thumbnailNotes, setThumbnailNotes] = useState<ThumbnailNote[]>([]);
     const lastWrittenThumbnailNotesRef = useRef('[]');
+    const thumbnailSyncedRef = useRef(false); // workspace에서 첫 동기화 전 빈 배열 저장 방지
 
     const handleAddThumbnailNote = () => {
         setThumbnailNotes(prev => [...prev, { id: `tn-${Date.now()}`, imageData: '', memos: ['', '', ''] }]);
@@ -600,6 +612,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
         }
         if (workspace.thumbnailNotes !== undefined) {
+            thumbnailSyncedRef.current = true;
             if (now >= (savingFieldsUntil.current['thumbnailNotes'] || 0)) {
                 const wsStr = JSON.stringify(workspace.thumbnailNotes);
                 if (wsStr !== lastWrittenThumbnailNotesRef.current) {
@@ -607,6 +620,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     lastWrittenThumbnailNotesRef.current = wsStr;
                 }
             }
+        } else if (!thumbnailSyncedRef.current) {
+            thumbnailSyncedRef.current = true; // workspace에 thumbnailNotes 필드 자체가 없는 경우
         }
     }, [workspace]);
 
@@ -653,7 +668,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // thumbnailNotes 변경 → Firestore에 디바운스 저장
     const thumbnailDebounceRef = useRef<ReturnType<typeof setTimeout>>();
     useEffect(() => {
-        if (!isReadyRef.current) return;
+        if (!isReadyRef.current || !thumbnailSyncedRef.current) return;
         const currentStr = JSON.stringify(thumbnailNotes);
         if (currentStr === lastWrittenThumbnailNotesRef.current) return;
         if (thumbnailDebounceRef.current) clearTimeout(thumbnailDebounceRef.current);
