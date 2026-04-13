@@ -2077,6 +2077,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             const fakeCount = (masterProductSummary.fakeOrders[name] as number) || 0;
                                                             grouped[company].push([name, fakeCount]);
                                                         });
+                                                        // realOrders에 없지만 fakeOrders에만 있는 품목 추가
+                                                        Object.entries(masterProductSummary.fakeOrders).forEach(([name, cnt]) => {
+                                                            if (!masterProductSummary.realOrders[name]) {
+                                                                const company = masterProductSummary.productToCompany[name] || '기타';
+                                                                if (!grouped[company]) grouped[company] = [];
+                                                                grouped[company].push([name, cnt as number]);
+                                                            }
+                                                        });
                                                         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
                                                             <div key={company}>
                                                                 <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
