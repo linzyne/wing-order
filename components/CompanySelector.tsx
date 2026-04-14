@@ -97,6 +97,29 @@ const CourierTemplateManager: React.FC<{
     const [newMapping, setNewMapping] = useState<Record<string, number>>({});
     const [newFixedValues, setNewFixedValues] = useState<Record<number, string>>({});
     const [showAddForm, setShowAddForm] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+
+    const resetForm = () => {
+        setNewName('');
+        setNewLabel('');
+        setNewUnitPrice('2270');
+        setNewHeaders([]);
+        setNewMapping({});
+        setNewFixedValues({});
+        setEditingId(null);
+        setShowAddForm(false);
+    };
+
+    const handleEditTemplate = (tmpl: CourierTemplate) => {
+        setEditingId(tmpl.id);
+        setNewName(tmpl.name);
+        setNewLabel(tmpl.label || '');
+        setNewUnitPrice(String(tmpl.unitPrice));
+        setNewHeaders(tmpl.headers);
+        setNewMapping({ ...tmpl.mapping } as Record<string, number>);
+        setNewFixedValues({ ...tmpl.fixedValues });
+        setShowAddForm(true);
+    };
 
     const handleTemplateFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -128,7 +151,7 @@ const CourierTemplateManager: React.FC<{
         if (missingFields.length > 0) { alert(`다음 열을 매핑해주세요: ${missingFields.map(f => f.label).join(', ')}`); return; }
 
         const template: CourierTemplate = {
-            id: `tmpl_${Date.now()}`,
+            id: editingId || `tmpl_${Date.now()}`,
             name: newName.trim(),
             label: newLabel.trim() || undefined,
             headers: newHeaders,
@@ -143,14 +166,12 @@ const CourierTemplateManager: React.FC<{
             unitPrice: Number(newUnitPrice) || 2270,
         };
 
-        onSave([...templates, template]);
-        setNewName('');
-        setNewLabel('');
-        setNewUnitPrice('2270');
-        setNewHeaders([]);
-        setNewMapping({});
-        setNewFixedValues({});
-        setShowAddForm(false);
+        if (editingId) {
+            onSave(templates.map((t: CourierTemplate) => t.id === editingId ? template : t));
+        } else {
+            onSave([...templates, template]);
+        }
+        resetForm();
     };
 
     const handleDeleteTemplate = (id: string) => {
@@ -176,15 +197,20 @@ const CourierTemplateManager: React.FC<{
                         </span>
                         <span className="bg-zinc-800 text-zinc-400 text-[9px] px-2 py-0.5 rounded-full">{tmpl.unitPrice.toLocaleString()}원/건</span>
                     </div>
-                    <button onClick={() => handleDeleteTemplate(tmpl.id)} className="text-zinc-700 hover:text-rose-500 transition-colors">
-                        <TrashIcon className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => handleEditTemplate(tmpl)} className="text-[9px] font-black text-zinc-500 hover:text-amber-400 transition-colors px-2 py-1 border border-zinc-800 hover:border-amber-500/40 rounded-lg">
+                            수정
+                        </button>
+                        <button onClick={() => handleDeleteTemplate(tmpl.id)} className="text-zinc-700 hover:text-rose-500 transition-colors">
+                            <TrashIcon className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
                 </div>
             ))}
 
             {/* 새 양식 추가 */}
             {!showAddForm ? (
-                <button onClick={() => setShowAddForm(true)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-zinc-700 rounded-xl text-[10px] font-black text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
+                <button onClick={() => { setEditingId(null); setShowAddForm(true); }} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-zinc-700 rounded-xl text-[10px] font-black text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
                     <PlusCircleIcon className="w-4 h-4" />
                     새 양식 추가
                 </button>
@@ -273,11 +299,11 @@ const CourierTemplateManager: React.FC<{
                     )}
 
                     <div className="flex gap-2 justify-end">
-                        <button onClick={() => { setShowAddForm(false); setNewHeaders([]); setNewMapping({}); setNewFixedValues({}); }} className="px-4 py-2 rounded-xl text-[10px] font-black text-zinc-500 hover:text-white border border-zinc-800 transition-colors">
+                        <button onClick={resetForm} className="px-4 py-2 rounded-xl text-[10px] font-black text-zinc-500 hover:text-white border border-zinc-800 transition-colors">
                             취소
                         </button>
                         <button onClick={handleSaveTemplate} className="px-4 py-2 rounded-xl text-[10px] font-black bg-amber-600 hover:bg-amber-500 text-white transition-colors shadow-lg">
-                            저장
+                            {editingId ? '수정 저장' : '저장'}
                         </button>
                     </div>
                 </div>
