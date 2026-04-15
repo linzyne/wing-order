@@ -1679,9 +1679,37 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const handleDownloadWorkLog = () => {
+        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
+
+        // 마진시트에서 매칭 실패할 품목 미리 감지 (단가관리에서 삭제/키변경된 경우)
+        const missingMargin: { company: string; regName: string; productKey: string; count: number }[] = [];
+        sortedCompanyNames.forEach(name => {
+            const companyConfig = pricingConfig[name];
+            if (!companyConfig) return;
+            (companySessions[name] || []).forEach(s => {
+                const items = allOrderItems[s.id];
+                if (!items) return;
+                const missingMap = new Map<string, number>();
+                for (const item of items) {
+                    if (companyConfig.products[item.matchedProductKey]) continue;
+                    const key = `${item.registeredProductName}::${item.matchedProductKey}`;
+                    missingMap.set(key, (missingMap.get(key) || 0) + item.qty);
+                }
+                missingMap.forEach((count, key) => {
+                    const [regName, productKey] = key.split('::');
+                    missingMargin.push({ company: name, regName, productKey, count });
+                });
+            });
+        });
+
+        if (missingMargin.length > 0) {
+            const lines = missingMargin.map(m => `• [${m.company}] ${m.regName || '(등록상품명 없음)'} / ${m.productKey} ×${m.count}`).join('\n');
+            const ok = window.confirm(`아래 품목은 단가관리에서 찾을 수 없어 마진시트에서 제외됩니다.\n(단가관리에서 삭제/변경되었을 수 있습니다)\n\n${lines}\n\n그대로 다운로드할까요?`);
+            if (!ok) return;
+        }
+
         const wb = XLSX.utils.book_new();
         const summarySheetData: any[][] = [];
-        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             let hasAddedHeader = false;
