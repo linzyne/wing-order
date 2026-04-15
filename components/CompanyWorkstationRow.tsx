@@ -835,10 +835,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
                                         <div className="text-zinc-500 font-black text-[10px]">{(() => {
                                             const fakeCount = excludedList.filter((e: any) => String(e.orderNumber || '').includes('(제외)')).length;
-                                            const shipCount = excludedList.filter((e: any) => String(e.orderNumber || '').includes('출고예정일')).length;
                                             const parts: string[] = [];
                                             if (fakeCount > 0) parts.push(`가구매 제외 ${fakeCount}건`);
-                                            if (shipCount > 0) parts.push(`출고예정일 제외 ${shipCount}건`);
                                             if (parts.length === 0) parts.push(`제외 ${excludedList.length}건`);
                                             return `모두 ${parts.join(' / ')}`;
                                         })()}</div>
@@ -964,7 +962,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div key={idx} className="bg-zinc-950/80 p-2.5 rounded-lg border border-rose-900/20 flex flex-col gap-1">
                                         <div className="flex justify-between items-center">
                                             <span className="text-zinc-200 font-bold text-[12px]">{f.recipientName}</span>
-                                            <span className={`text-[8px] px-1.5 py-0.5 rounded font-black ${String(f.orderNumber || '').includes('출고예정일') ? 'bg-orange-500/20 text-orange-400' : 'bg-rose-500/20 text-rose-400'}`}>{String(f.orderNumber || '').includes('출고예정일') ? '출고예정일제외' : 'EXCLUDED'}</span>
+                                            <span className="text-[8px] px-1.5 py-0.5 rounded font-black bg-rose-500/20 text-rose-400">EXCLUDED</span>
                                         </div>
                                         <div className="text-zinc-500 text-[10px] font-mono truncate">{f.productName}{f.qty > 1 ? ` ×${f.qty}` : ''}</div>
                                     </div>
