@@ -288,7 +288,7 @@ const QuestTimeline: React.FC = () => {
     if (burstId !== targetId) return null;
     return (
       <>
-        <span className="absolute inset-0 rounded-xl quest-flash pointer-events-none" />
+        <span className="absolute inset-0 rounded-lg quest-flash pointer-events-none" />
         {particles.map(p => (
           <span
             key={p.i}
@@ -307,7 +307,7 @@ const QuestTimeline: React.FC = () => {
     <div
       className={`relative mb-6 p-5 rounded-2xl border border-zinc-800 bg-gradient-to-br from-zinc-900/95 via-zinc-900/80 to-black/90 shadow-2xl overflow-hidden ${shake ? 'quest-shake' : ''}`}
     >
-      <div className="absolute inset-0 quest-grid-bg pointer-events-none opacity-40" />
+      <div className="absolute inset-[2px] rounded-2xl quest-grid-bg pointer-events-none opacity-20" />
       <div className="absolute -top-12 -left-12 w-40 h-40 rounded-full bg-rose-500/10 blur-3xl pointer-events-none" />
       <div className="absolute -bottom-12 -right-12 w-40 h-40 rounded-full bg-fuchsia-500/10 blur-3xl pointer-events-none" />
 
@@ -361,7 +361,7 @@ const QuestTimeline: React.FC = () => {
       </div>
 
       {/* Quest nodes */}
-      <div className="relative flex items-start gap-1 overflow-x-auto custom-scrollbar pb-1">
+      <div className="relative flex items-start gap-2 overflow-x-auto custom-scrollbar pb-1">
         {quests.length === 0 && !adding && (
           <div className="w-full text-center py-6 text-zinc-600 font-bold text-xs tracking-widest uppercase">
             ▸ No Active Quests — Press <span className="text-rose-400">+ ADD QUEST</span> to begin
@@ -383,8 +383,8 @@ const QuestTimeline: React.FC = () => {
                 </div>
               )}
               <div
-                className="flex-shrink-0 flex flex-col items-center gap-1.5 group relative"
-                style={{ minWidth: 88 }}
+                className="flex-shrink-0 flex flex-col items-center gap-2 group relative"
+                style={{ minWidth: 120, maxWidth: 180 }}
               >
                 <button
                   onClick={() => handleToggleQuest(q.id)}
@@ -393,10 +393,10 @@ const QuestTimeline: React.FC = () => {
                     startEditQuest(q);
                   }}
                   title="클릭: 완료 · 더블클릭: 수정"
-                  className={`relative w-12 h-12 rounded-xl flex items-center justify-center font-black text-lg transition-all duration-300 ${
+                  className={`relative h-10 min-w-[44px] px-3.5 rounded-lg flex items-center justify-center font-black text-base transition-all duration-300 ${
                     q.done
                       ? 'bg-gradient-to-br from-rose-400 via-fuchsia-500 to-amber-400 text-white shadow-[0_0_20px_rgba(244,63,94,0.8)] scale-105 quest-glow'
-                      : 'bg-zinc-800 text-zinc-500 border-2 border-dashed border-zinc-700 hover:border-rose-500 hover:text-rose-400 quest-idle'
+                      : 'bg-zinc-800/90 text-zinc-400 border border-zinc-700 hover:border-rose-500 hover:text-rose-300 quest-idle'
                   }`}
                 >
                   {q.done ? '✓' : q.label}
@@ -413,13 +413,13 @@ const QuestTimeline: React.FC = () => {
                       if (e.key === 'Enter') commitEdit();
                       if (e.key === 'Escape') cancelEdit();
                     }}
-                    className="w-20 px-1.5 py-0.5 text-[10px] font-bold bg-zinc-800 border border-rose-500 rounded text-white focus:outline-none focus:ring-1 focus:ring-rose-400 text-center"
+                    className="w-40 px-2 py-1 text-sm font-bold bg-zinc-800 border border-rose-500 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-rose-400 text-center"
                   />
                 ) : (
                   <div
                     onDoubleClick={() => startEditQuest(q)}
-                    className={`text-[10px] font-black text-center max-w-[84px] truncate uppercase tracking-wide cursor-text ${
-                      q.done ? 'text-rose-300 line-through opacity-70' : 'text-zinc-300'
+                    className={`text-sm font-black text-center leading-snug cursor-text px-1 break-words ${
+                      q.done ? 'text-rose-300 line-through opacity-70' : 'text-zinc-200'
                     }`}
                     title={`${q.title} (더블클릭 수정)`}
                   >
@@ -428,12 +428,28 @@ const QuestTimeline: React.FC = () => {
                 )}
 
                 {/* Sub-quests */}
-                <div className="flex flex-col gap-1 mt-1 w-full items-center">
+                <div className="flex flex-col gap-1.5 mt-0.5 w-full items-stretch">
                   {q.children.map((c, cIdx) => {
                     const subLabel = `${q.label}-${cIdx + 1}`;
                     const isEditingSub = editing?.kind === 'sub' && editing.id === c.id;
+                    if (isEditingSub) {
+                      return (
+                        <input
+                          key={c.id}
+                          ref={editInputRef}
+                          value={editValue}
+                          onChange={e => setEditValue(e.target.value)}
+                          onBlur={commitEdit}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') commitEdit();
+                            if (e.key === 'Escape') cancelEdit();
+                          }}
+                          className="w-full px-2 py-1.5 text-xs font-bold bg-zinc-900 border border-rose-500 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-rose-400 text-center"
+                        />
+                      );
+                    }
                     return (
-                      <div key={c.id} className="relative group/sub w-full flex justify-center">
+                      <div key={c.id} className="relative group/sub w-full flex">
                         <button
                           onClick={() => handleToggleSub(q.id, c.id)}
                           onDoubleClick={e => {
@@ -441,36 +457,21 @@ const QuestTimeline: React.FC = () => {
                             startEditSub(q.id, c);
                           }}
                           title="클릭: 완료 · 더블클릭: 수정"
-                          className={`relative flex items-center gap-1 px-2 py-1 rounded-md text-[9px] font-black transition-all max-w-[88px] ${
+                          className={`relative flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-black transition-all w-full ${
                             c.done
                               ? 'bg-gradient-to-r from-rose-500/80 to-fuchsia-500/80 text-white shadow-[0_0_10px_rgba(244,63,94,0.6)] quest-glow'
-                              : 'bg-zinc-800/80 text-zinc-400 border border-dashed border-zinc-700 hover:border-rose-500 hover:text-rose-300'
+                              : 'bg-zinc-800/80 text-zinc-300 border border-zinc-700 hover:border-rose-500 hover:text-rose-300'
                           }`}
                         >
-                          <span className="opacity-80">{c.done ? '✓' : subLabel}</span>
-                          {isEditingSub ? null : (
-                            <span className={`truncate ${c.done ? 'line-through opacity-80' : ''}`}>
-                              {c.title}
-                            </span>
-                          )}
+                          <span className="opacity-80 flex-shrink-0">{c.done ? '✓' : subLabel}</span>
+                          <span className={`truncate flex-1 text-left ${c.done ? 'line-through opacity-80' : ''}`}>
+                            {c.title}
+                          </span>
                           {renderBurst(c.id)}
                         </button>
-                        {isEditingSub && (
-                          <input
-                            ref={editInputRef}
-                            value={editValue}
-                            onChange={e => setEditValue(e.target.value)}
-                            onBlur={commitEdit}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') commitEdit();
-                              if (e.key === 'Escape') cancelEdit();
-                            }}
-                            className="absolute left-0 right-0 top-0 px-1.5 py-1 text-[9px] font-bold bg-zinc-900 border border-rose-500 rounded-md text-white focus:outline-none text-center"
-                          />
-                        )}
                         <button
                           onClick={() => handleRemoveSub(q.id, c.id)}
-                          className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full bg-zinc-700 hover:bg-red-500 text-white text-[8px] font-black opacity-0 group-hover/sub:opacity-100 transition-opacity flex items-center justify-center"
+                          className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-zinc-700 hover:bg-red-500 text-white text-[9px] font-black opacity-0 group-hover/sub:opacity-100 transition-opacity flex items-center justify-center z-10"
                           title="삭제"
                         >
                           ×
@@ -492,13 +493,13 @@ const QuestTimeline: React.FC = () => {
                           setAddingChildFor(null);
                         }
                       }}
-                      placeholder="하위..."
-                      className="w-20 px-1.5 py-0.5 text-[9px] font-bold bg-zinc-900 border border-rose-500 rounded text-white focus:outline-none text-center"
+                      placeholder="하위 할일..."
+                      className="w-full px-2 py-1.5 text-xs font-bold bg-zinc-900 border border-rose-500 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-rose-400 text-center"
                     />
                   ) : (
                     <button
                       onClick={() => setAddingChildFor(q.id)}
-                      className="text-[9px] font-black text-zinc-600 hover:text-rose-400 transition-colors border border-dashed border-zinc-800 hover:border-rose-500 rounded px-1.5 py-0.5"
+                      className="text-[11px] font-black text-zinc-500 hover:text-rose-400 transition-colors border border-dashed border-zinc-800 hover:border-rose-500 rounded-md px-2 py-1"
                       title="하위 퀘스트 추가"
                     >
                       + SUB
@@ -519,8 +520,8 @@ const QuestTimeline: React.FC = () => {
         })}
 
         {adding && (
-          <div className="flex-shrink-0 flex flex-col items-center gap-1.5 ml-1">
-            <div className="w-12 h-12 rounded-xl bg-zinc-800 border-2 border-rose-500 flex items-center justify-center font-black text-rose-400 text-lg animate-pulse">
+          <div className="flex-shrink-0 flex flex-col items-center gap-2 ml-1" style={{ minWidth: 120 }}>
+            <div className="h-10 min-w-[44px] px-3.5 rounded-lg bg-zinc-800 border border-rose-500 flex items-center justify-center font-black text-rose-400 text-base animate-pulse">
               {nextLetter(quests.length)}
             </div>
             <input
@@ -536,7 +537,7 @@ const QuestTimeline: React.FC = () => {
                 }
               }}
               placeholder="할일..."
-              className="w-24 px-2 py-1 text-[10px] font-bold bg-zinc-800 border border-rose-500 rounded text-white focus:outline-none focus:ring-1 focus:ring-rose-400"
+              className="w-40 px-2 py-1.5 text-sm font-bold bg-zinc-800 border border-rose-500 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-rose-400 text-center"
             />
           </div>
         )}
