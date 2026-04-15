@@ -16,6 +16,23 @@ interface Quest {
 }
 
 const STORAGE_KEY = 'quest-timeline-v1';
+const MEMO_STORAGE_KEY = 'quest-memos-v1';
+
+interface Memo {
+  id: string;
+  title: string;
+}
+
+const loadMemos = (): Memo[] => {
+  try {
+    const raw = localStorage.getItem(MEMO_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((m: any) => ({ id: String(m.id), title: String(m.title ?? '') }));
+  } catch {}
+  return [];
+};
 
 const nextLetter = (count: number): string => {
   let n = count;
@@ -59,6 +76,46 @@ const QuestTimeline: React.FC = () => {
   const [editValue, setEditValue] = useState('');
   const [burstId, setBurstId] = useState<string | null>(null);
   const [shake, setShake] = useState(false);
+  const [memos, setMemos] = useState<Memo[]>(loadMemos);
+  const [addingMemo, setAddingMemo] = useState(false);
+  const [newMemoTitle, setNewMemoTitle] = useState('');
+  const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
+  const [editMemoValue, setEditMemoValue] = useState('');
+  const memoInputRef = useRef<HTMLInputElement>(null);
+  const memoEditInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(MEMO_STORAGE_KEY, JSON.stringify(memos)); } catch {}
+  }, [memos]);
+  useEffect(() => { if (addingMemo) memoInputRef.current?.focus(); }, [addingMemo]);
+  useEffect(() => {
+    if (editingMemoId) {
+      memoEditInputRef.current?.focus();
+      memoEditInputRef.current?.select();
+    }
+  }, [editingMemoId]);
+
+  const handleAddMemo = () => {
+    const title = newMemoTitle.trim();
+    if (!title) { setAddingMemo(false); return; }
+    setMemos(prev => [...prev, { id: uid(), title }]);
+    setNewMemoTitle('');
+    setAddingMemo(false);
+  };
+  const handleRemoveMemo = (id: string) => {
+    setMemos(prev => prev.filter(m => m.id !== id));
+  };
+  const startEditMemo = (m: Memo) => {
+    setEditingMemoId(m.id);
+    setEditMemoValue(m.title);
+  };
+  const commitMemoEdit = () => {
+    if (!editingMemoId) return;
+    const value = editMemoValue.trim();
+    if (!value) { setEditingMemoId(null); return; }
+    setMemos(prev => prev.map(m => (m.id === editingMemoId ? { ...m, title: value } : m)));
+    setEditingMemoId(null);
+  };
   const inputRef = useRef<HTMLInputElement>(null);
   const childInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -585,6 +642,71 @@ const QuestTimeline: React.FC = () => {
               className="w-40 px-2 py-1.5 text-sm font-bold bg-zinc-800 border border-rose-500 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-rose-400 text-center"
             />
           </div>
+        )}
+      </div>
+
+      {/* Memo row — 메모 전용, 작은 사이즈, 사이안 컬러 */}
+      <div className="relative mt-3 pt-3 border-t border-zinc-800/60 flex items-center flex-wrap gap-1.5">
+        <span className="text-[9px] font-black text-cyan-500/80 tracking-widest uppercase mr-1">Memo</span>
+        {memos.map(m => {
+          const isEditingThis = editingMemoId === m.id;
+          if (isEditingThis) {
+            return (
+              <input
+                key={m.id}
+                ref={memoEditInputRef}
+                value={editMemoValue}
+                onChange={e => setEditMemoValue(e.target.value)}
+                onBlur={commitMemoEdit}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') commitMemoEdit();
+                  if (e.key === 'Escape') setEditingMemoId(null);
+                }}
+                className="h-5 px-1.5 text-[10px] font-bold bg-zinc-900 border border-cyan-500 rounded text-white focus:outline-none focus:ring-1 focus:ring-cyan-400 text-center"
+                style={{ width: Math.max(40, editMemoValue.length * 7 + 16) }}
+              />
+            );
+          }
+          return (
+            <div key={m.id} className="relative group/memo">
+              <button
+                onDoubleClick={() => startEditMemo(m)}
+                title="더블클릭 수정"
+                className="h-5 px-1.5 rounded bg-cyan-950/60 border border-cyan-800/60 hover:border-cyan-500 text-cyan-200 hover:text-cyan-100 text-[10px] font-black transition-all"
+              >
+                {m.title}
+              </button>
+              <button
+                onClick={() => handleRemoveMemo(m.id)}
+                className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-zinc-700 hover:bg-red-500 text-white text-[8px] font-black opacity-0 group-hover/memo:opacity-100 transition-opacity flex items-center justify-center"
+                title="삭제"
+              >
+                ×
+              </button>
+            </div>
+          );
+        })}
+        {addingMemo ? (
+          <input
+            ref={memoInputRef}
+            value={newMemoTitle}
+            onChange={e => setNewMemoTitle(e.target.value)}
+            onBlur={handleAddMemo}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleAddMemo();
+              if (e.key === 'Escape') { setNewMemoTitle(''); setAddingMemo(false); }
+            }}
+            placeholder="메모..."
+            className="h-5 w-24 px-1.5 text-[10px] font-bold bg-zinc-900 border border-cyan-500 rounded text-white focus:outline-none focus:ring-1 focus:ring-cyan-400 text-center"
+          />
+        ) : (
+          <button
+            onClick={() => { setNewMemoTitle(''); setAddingMemo(true); }}
+            className="h-5 px-1.5 rounded border border-dashed border-cyan-800/60 hover:border-cyan-500 text-cyan-600 hover:text-cyan-300 text-[10px] font-black transition-all"
+            title="메모 추가"
+          >
+            +
+          </button>
         )}
       </div>
     </div>
