@@ -2806,34 +2806,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 />
                             </div>
                             <div className="flex-1 space-y-3">
-                            {/* 다운로드 버튼: 저장된 템플릿별 */}
-                            {courierTemplates.length > 0 && (
-                                <div className="flex items-center gap-2 flex-wrap">
-                                    {courierTemplates.map((tmpl: CourierTemplate) => (
-                                        <button
-                                            key={tmpl.id}
-                                            onClick={() => handleCourierDownload(tmpl)}
-                                            disabled={!masterOrderFile || fakeOrderAnalysis.inputNumbers.size === 0}
-                                            className="flex-1 min-w-[140px] flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed bg-indigo-950/30 border-indigo-500/30 text-indigo-400 hover:bg-indigo-900/40 hover:border-indigo-500/50"
-                                        >
-                                            <ArrowDownTrayIcon className="w-4 h-4" />
-                                            <span>{tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
                             {courierTemplates.length === 0 && (
                                 <div className="text-center py-3 text-zinc-600 text-[10px] font-black border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-amber-500/30 hover:text-amber-500 transition-colors" onClick={() => setShowTemplateManager(true)}>
                                     택배 양식을 먼저 추가해주세요
                                 </div>
                             )}
-                            {/* 운송장 업로드: 저장된 템플릿별 */}
+                            {/* 양식별 다운로드 + 업로드 그룹 */}
                             {courierTemplates.map((tmpl: CourierTemplate) => {
                                 const file = courierFiles[tmpl.id];
                                 const result = courierResults[tmpl.id];
                                 const matched = courierMatchedRows[tmpl.id];
                                 return (
-                                    <div key={tmpl.id} className="space-y-2">
+                                    <div key={tmpl.id} className="space-y-2 p-2 rounded-xl border border-zinc-800/60 bg-zinc-950/40">
+                                        <button
+                                            onClick={() => handleCourierDownload(tmpl)}
+                                            disabled={!masterOrderFile || fakeOrderAnalysis.inputNumbers.size === 0}
+                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed bg-indigo-950/30 border-indigo-500/30 text-indigo-400 hover:bg-indigo-900/40 hover:border-indigo-500/50"
+                                        >
+                                            <ArrowDownTrayIcon className="w-4 h-4" />
+                                            <span>{tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
+                                        </button>
                                         <div className="flex items-center gap-2">
                                             <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${file ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
                                                 <ArrowUpTrayIcon className="w-4 h-4" />
