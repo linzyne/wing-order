@@ -1006,11 +1006,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </pre>
                             </div>
                             <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 shadow-xl">
-                                <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">원본 품목 검증 <span className="text-zinc-600">({(localResult?.orderItems || syncedData?.orderItems || []).length}건)</span></h5>
+                                <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">원본 품목 검증 <span className="text-zinc-600">({(cumulativeDepositText !== null ? (Object.values(combinedSummary) as { count: number }[]).reduce((a, b) => a + b.count, 0) : (localResult?.orderItems || syncedData?.orderItems || []).length)}건)</span></h5>
                                 <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800/50 max-h-[300px] overflow-auto custom-scrollbar">
                                     {(() => {
+                                        const isCumulative = cumulativeDepositText !== null;
                                         const items = localResult?.orderItems || syncedData?.orderItems || [];
-                                        const summary = localResult?.summary || syncedData?.itemSummary || {};
+                                        const summary = isCumulative ? combinedSummary : (localResult?.summary || syncedData?.itemSummary || {});
                                         const extractSizes = (s: string) => {
                                             const matches = s.match(/(\d+(?:\.\d+)?)\s*kg/gi) || [];
                                             return matches.map(m => m.replace(/\s/g, '').toLowerCase());
@@ -1034,7 +1035,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     const matchedSizes = extractSizes(key);
                                                     const entryList = Object.entries(rawEntries);
                                                     const actualTotal = entryList.reduce((a, [, c]) => a + c, 0);
-                                                    totalItems += actualTotal;
+                                                    totalItems += isCumulative ? expectedCount : actualTotal;
                                                     const productConfig = pricingConfig[companyName]?.products?.[key];
                                                     const unitSupply = summary[key]?.totalPrice ? Math.round(summary[key].totalPrice / summary[key].count) : 0;
                                                     const unitMargin = (productConfig as any)?.margin || 0;
