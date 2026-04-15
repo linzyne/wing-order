@@ -955,7 +955,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
         if (!hasData) return null;
         return { realByCompany, fakeByCompany, realByGroup, fakeByGroup, groupToCompany, realTotal, fakeTotal };
-    }, [companySessions, allOrderRows, fakeOrderInput]);
+    }, [companySessions, allOrderRows, fakeOrderInput, batchMasterRows]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배사별)
     const allExpenses = useMemo(() => {
