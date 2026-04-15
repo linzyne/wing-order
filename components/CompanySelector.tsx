@@ -544,6 +544,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setThumbnailNotes(prev => [...prev, { id: `tn-${Date.now()}`, imageData: '', memos: ['', '', ''] }]);
     };
     const handleRemoveThumbnailNote = (id: string) => {
+        const target = thumbnailNotes.find((n: ThumbnailNote) => n.id === id);
+        const label = target?.memos[0]?.trim() || '이 메모';
+        if (!window.confirm(`"${label}" 썸네일/메모를 삭제하시겠습니까?\n(이 동작은 되돌릴 수 없습니다)`)) return;
         setThumbnailNotes(prev => prev.filter(n => n.id !== id));
     };
     const handleThumbnailImage = (id: string, file: File) => {
@@ -690,10 +693,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (workspace.thumbnailNotes !== undefined) {
             thumbnailSyncedRef.current = true;
             if (now >= (savingFieldsUntil.current['thumbnailNotes'] || 0)) {
-                const wsStr = JSON.stringify(workspace.thumbnailNotes);
+                const serverNotes = workspace.thumbnailNotes as ThumbnailNote[];
+                const wsStr = JSON.stringify(serverNotes);
                 if (wsStr !== lastWrittenThumbnailNotesRef.current) {
-                    setThumbnailNotes(workspace.thumbnailNotes as ThumbnailNote[]);
-                    lastWrittenThumbnailNotesRef.current = wsStr;
+                    // 안전 가드: 서버가 빈 배열을 돌려줬는데 로컬에 노트가 있으면
+                    // 덮어쓰지 않고 로컬 데이터를 서버로 복구 업로드 → 내가 삭제하기 전엔 안 지워짐
+                    if (Array.isArray(serverNotes) && serverNotes.length === 0 && thumbnailNotes.length > 0) {
+                        console.warn('[썸네일] 서버 빈 상태 감지 → 로컬 데이터 복구 업로드');
+                        savingFieldsUntil.current['thumbnailNotes'] = Date.now() + 30000;
+                        updateField('thumbnailNotes', thumbnailNotes)
+                            .then(() => { setTimeout(() => { savingFieldsUntil.current['thumbnailNotes'] = 0; }, 1500); })
+                            .catch((e: unknown) => { savingFieldsUntil.current['thumbnailNotes'] = 0; console.error('[썸네일] 복구 업로드 실패:', e); });
+                    } else {
+                        setThumbnailNotes(serverNotes);
+                        lastWrittenThumbnailNotesRef.current = wsStr;
+                    }
                 }
             }
         } else if (!thumbnailSyncedRef.current) {

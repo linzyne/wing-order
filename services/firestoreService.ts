@@ -318,6 +318,36 @@ export const savePlatformConfigs = async (
   });
 };
 
+// ===== Quests (상단 게임 타임라인) =====
+// 사업자 공통, 단일 문서 — 삭제 방지를 위해 항상 merge 저장
+const QUESTS_DOC_ID = 'questTimeline';
+
+export const subscribeQuests = (
+  callback: (quests: any[] | null) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', QUESTS_DOC_ID);
+  return onSnapshot(docRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      callback(Array.isArray(data.quests) ? data.quests : []);
+    } else {
+      callback(null);
+    }
+  }, (error) => {
+    console.error('[Firestore] Quests 구독 오류:', error);
+    callback(null);
+  });
+};
+
+export const saveQuests = async (quests: any[]): Promise<void> => {
+  const docRef = doc(db, 'config', QUESTS_DOC_ID);
+  // merge:true — 기존 필드 보존, 실수로 문서 비우지 않기 위해
+  await setDoc(docRef, {
+    quests,
+    updatedAt: Timestamp.now(),
+  }, { merge: true });
+};
+
 // ===== Todos =====
 
 export const subscribeTodos = (
