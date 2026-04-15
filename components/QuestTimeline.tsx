@@ -363,10 +363,10 @@ const QuestTimeline: React.FC = () => {
       {/* Progress bar */}
       <div className="relative h-2 rounded-full bg-zinc-800/80 overflow-hidden mb-5 shadow-inner">
         <div
-          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-rose-500 via-fuchsia-500 to-amber-400 transition-all duration-700 ease-out"
+          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-rose-500 via-fuchsia-500 to-amber-400 transition-all duration-700 ease-out overflow-hidden"
           style={{ width: `${progress}%` }}
         >
-          <div className="absolute inset-0 quest-shine rounded-full" />
+          <div className="absolute inset-0 quest-shine" />
         </div>
         {progress > 0 && (
           <div
