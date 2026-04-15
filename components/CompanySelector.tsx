@@ -1752,6 +1752,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     const companyConfig = pricingConfig[marginCurrentCompany];
                     if (companyConfig) {
                         let sellingPrice = 0, supplyPrice = 0, margin = 0;
+                        let matchedDisplayName = '';
                         for (const productKey of Object.keys(companyConfig.products)) {
                             const product = companyConfig.products[productKey] as any;
                             const matchName = product.orderFormName || product.displayName;
@@ -1759,10 +1760,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 sellingPrice = product.sellingPrice || 0;
                                 supplyPrice = product.supplyPrice || 0;
                                 margin = product.margin || 0;
+                                matchedDisplayName = product.displayName;
                                 break;
                             }
                         }
-                        const regName = mergedRegNames[marginCurrentCompany]?.[productName] || marginCurrentCompany;
+                        const regName = mergedRegNames[marginCurrentCompany]?.[matchedDisplayName]
+                            || mergedRegNames[marginCurrentCompany]?.[productName]
+                            || marginCurrentCompany;
                         marginSheetData.push([regName, productName, count, sellingPrice, supplyPrice, margin, margin * count, '', '']);
                     }
                 }
@@ -1895,6 +1899,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     const companyConfig = pricingConfig[marginCurrentCompany];
                     if (companyConfig) {
                         let sellingPrice = 0, supplyPrice = 0, margin = 0;
+                        let matchedDisplayName = '';
                         for (const productKey of Object.keys(companyConfig.products)) {
                             const product = companyConfig.products[productKey] as any;
                             const matchName = product.orderFormName || product.displayName;
@@ -1902,10 +1907,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 sellingPrice = product.sellingPrice || 0;
                                 supplyPrice = product.supplyPrice || 0;
                                 margin = product.margin || 0;
+                                matchedDisplayName = product.displayName;
                                 break;
                             }
                         }
-                        const regName = mergedRegNames[marginCurrentCompany]?.[productName] || marginCurrentCompany;
+                        const regName = mergedRegNames[marginCurrentCompany]?.[matchedDisplayName]
+                            || mergedRegNames[marginCurrentCompany]?.[productName]
+                            || marginCurrentCompany;
                         const key = `${marginCurrentCompany}::${productName}`;
                         const existing = marginMap.get(key);
                         if (existing) {
