@@ -920,14 +920,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, [masterOrderData, fakeOrderInput, pricingConfig]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
+    // 차수별로 분리: [2차, 3차, 4차, ...] — 데이터 없는 차수는 0으로 채움
+    type RoundBucket = {
+        realByCompany: Record<string, number>;
+        fakeByCompany: Record<string, number>;
+        realByGroup: Record<string, number>;
+        fakeByGroup: Record<string, number>;
+        realTotal: number;
+        fakeTotal: number;
+    };
     const additionalRoundsSummary = useMemo(() => {
-        const realByCompany: Record<string, number> = {};
-        const fakeByCompany: Record<string, number> = {};
-        const realByGroup: Record<string, number> = {};
-        const fakeByGroup: Record<string, number> = {};
+        const buckets: Record<number, RoundBucket> = {};
         const groupToCompany: Record<string, string> = {};
-        let realTotal = 0;
-        let fakeTotal = 0;
+        const makeBucket = (): RoundBucket => ({
+            realByCompany: {}, fakeByCompany: {}, realByGroup: {}, fakeByGroup: {}, realTotal: 0, fakeTotal: 0,
+        });
+        let maxRound = 1;
         let hasData = false;
 
         const fakeNums = new Set<string>();
@@ -936,38 +944,53 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (matches) matches.forEach(m => fakeNums.add(m.trim()));
         });
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
         (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([company, sessions]) => {
             sessions.forEach((session: SessionData) => {
                 if (session.round <= 1) return;
-                // 마스터-포맷 원본 행이 있으면 우선 사용 (정확한 품목명/수량 집계)
+                if (session.round > maxRound) maxRound = session.round;
                 const rows = batchMasterRows[session.id] || allOrderRows[session.id];
-                if (rows && rows.length > 0) {
-                    hasData = true;
-                    rows.forEach(row => {
-                        const orderNum = String(row[2] || '').trim();
-                        const groupName = String(row[10] || '').trim();
-                        const qty = parseInt(String(row[22] || '1'), 10) || 1;
-                        if (groupName) groupToCompany[groupName] = company;
-                        const isFake = fakeNums.has(orderNum);
-                        if (isFake) {
-                            fakeTotal += qty;
-                            fakeByCompany[company] = (fakeByCompany[company] || 0) + qty;
-                            if (groupName) fakeByGroup[groupName] = (fakeByGroup[groupName] || 0) + qty;
-                        } else {
-                            realTotal += qty;
-                            realByCompany[company] = (realByCompany[company] || 0) + qty;
-                            if (groupName) realByGroup[groupName] = (realByGroup[groupName] || 0) + qty;
-                        }
-                    });
-                }
+                if (!rows || rows.length === 0) return;
+                hasData = true;
+                const b = buckets[session.round] || (buckets[session.round] = makeBucket());
+                rows.forEach(row => {
+                    const orderNum = String(row[2] || '').trim();
+                    const groupName = String(row[10] || '').trim();
+                    const qty = parseInt(String(row[22] || '1'), 10) || 1;
+                    if (groupName) groupToCompany[groupName] = company;
+                    const isFake = fakeNums.has(orderNum);
+                    if (isFake) {
+                        b.fakeTotal += qty;
+                        b.fakeByCompany[company] = (b.fakeByCompany[company] || 0) + qty;
+                        if (groupName) b.fakeByGroup[groupName] = (b.fakeByGroup[groupName] || 0) + qty;
+                    } else {
+                        b.realTotal += qty;
+                        b.realByCompany[company] = (b.realByCompany[company] || 0) + qty;
+                        if (groupName) b.realByGroup[groupName] = (b.realByGroup[groupName] || 0) + qty;
+                    }
+                });
             });
         });
 
-        if (!hasData) return null;
-        return { realByCompany, fakeByCompany, realByGroup, fakeByGroup, groupToCompany, realTotal, fakeTotal };
+        // 세션은 있지만 실제 데이터가 없는 경우에도 maxRound를 반영해 0건으로 표시
+        let sessionMax = 1;
+        (Object.values(companySessions) as SessionData[][]).forEach(sessions => {
+            sessions.forEach(s => { if (s.round > sessionMax) sessionMax = s.round; });
+        });
+        if (sessionMax > maxRound) maxRound = sessionMax;
+        if (maxRound < 2 && !hasData) return null;
+
+        const rounds: RoundBucket[] = [];
+        for (let r = 2; r <= maxRound; r++) {
+            rounds.push(buckets[r] || makeBucket());
+        }
+        if (rounds.length === 0) return null;
+        // 모든 차수가 완전히 0이면 숨김 (기존 동작 유지)
+        const anyNonZero = rounds.some(b => b.realTotal > 0 || b.fakeTotal > 0);
+        if (!anyNonZero) return null;
+
+        const realTotal = rounds.reduce((s, b) => s + b.realTotal, 0);
+        const fakeTotal = rounds.reduce((s, b) => s + b.fakeTotal, 0);
+        return { rounds, groupToCompany, realTotal, fakeTotal };
     }, [companySessions, allOrderRows, fakeOrderInput, batchMasterRows]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배사별)
@@ -1731,7 +1754,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         let sellingPrice = 0, supplyPrice = 0, margin = 0;
                         for (const productKey of Object.keys(companyConfig.products)) {
                             const product = companyConfig.products[productKey] as any;
-                            if (product.displayName === productName) {
+                            const matchName = product.orderFormName || product.displayName;
+                            if (matchName === productName) {
                                 sellingPrice = product.sellingPrice || 0;
                                 supplyPrice = product.supplyPrice || 0;
                                 margin = product.margin || 0;
@@ -1873,7 +1897,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         let sellingPrice = 0, supplyPrice = 0, margin = 0;
                         for (const productKey of Object.keys(companyConfig.products)) {
                             const product = companyConfig.products[productKey] as any;
-                            if (product.displayName === productName) {
+                            const matchName = product.orderFormName || product.displayName;
+                            if (matchName === productName) {
                                 sellingPrice = product.sellingPrice || 0;
                                 supplyPrice = product.supplyPrice || 0;
                                 margin = product.margin || 0;
@@ -2114,17 +2139,27 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     })()}
                                     {masterProductSummary && (() => {
                                         const add = additionalRoundsSummary;
-                                        const has2 = !!add;
-                                        const fmtTotal = (base: number, extra: number) => has2 ? `${base}건+${extra}건` : `${base}건`;
-                                        const fmtCount = (base: number, groupName: string, extraMap: Record<string, number> | undefined) => {
+                                        const has2 = !!add && add.rounds.length > 0;
+                                        const rounds = add?.rounds || [];
+                                        const fmtTotal = (base: number, extras: number[]) =>
+                                            has2 ? `${base}건${extras.map(e => `+${e}건`).join('')}` : `${base}건`;
+                                        const renderExtras = (extras: number[]) => extras.map((e, i) => (
+                                            <span key={i} className={e > 0 ? 'text-cyan-400' : 'text-zinc-700'}>+{e}건</span>
+                                        ));
+                                        const fmtCountFromExtras = (base: number, extras: number[]) => {
                                             if (!has2) return <span className="font-black ml-1">{base}건</span>;
-                                            const extra = extraMap?.[groupName] || 0;
-                                            return <span className="font-black ml-1">{base}건{extra > 0 ? <span className="text-cyan-400">+{extra}건</span> : ''}</span>;
+                                            return <span className="font-black ml-1">{base}건{renderExtras(extras)}</span>;
                                         };
+                                        const realExtrasFor = (name: string) => rounds.map(r => r.realByGroup[name] || 0);
+                                        const fakeExtrasFor = (name: string) => rounds.map(r => r.fakeByGroup[name] || 0);
+                                        const masterExtrasFor = (name: string) => rounds.map(r => (r.realByGroup[name] || 0) + (r.fakeByGroup[name] || 0));
+                                        const realTotalExtras = rounds.map(r => r.realTotal);
+                                        const fakeTotalExtras = rounds.map(r => r.fakeTotal);
+                                        const masterTotalExtras = rounds.map(r => r.realTotal + r.fakeTotal);
                                         return (
                                         <div className="mt-1 flex gap-6 items-start">
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({fmtTotal(masterProductSummary.masterRawTotalQty, (add?.realTotal || 0) + (add?.fakeTotal || 0))})</div>
+                                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({fmtTotal(masterProductSummary.masterRawTotalQty, masterTotalExtras)})</div>
                                                 <div>
                                                     {(() => {
                                                         // allOrderDetails에서 등록상품명별 W열 수량 합산 (실제+가구매 모두 포함), 회사별 그룹
@@ -2138,11 +2173,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             if (!grouped[company]) grouped[company] = [];
                                                             grouped[company].push([name, qty]);
                                                         });
-                                                        const masterFmtCount = (base: number, groupName: string) => {
-                                                            if (!has2) return <span className="font-black ml-1">{base}건</span>;
-                                                            const extra = (add?.realByGroup?.[groupName] || 0) + (add?.fakeByGroup?.[groupName] || 0);
-                                                            return <span className="font-black ml-1">{base}건{extra > 0 ? <span className="text-cyan-400">+{extra}건</span> : ''}</span>;
-                                                        };
+                                                        const masterFmtCount = (base: number, groupName: string) => fmtCountFromExtras(base, masterExtrasFor(groupName));
                                                         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
                                                             <div key={company}>
                                                                 <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
@@ -2158,7 +2189,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 </div>
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, add?.realTotal || 0)})</div>
+                                                <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, realTotalExtras)})</div>
                                                 <div>
                                                     {(() => {
                                                         const grouped: Record<string, [string, number][]> = {};
@@ -2173,7 +2204,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                                 {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
                                                                     <div key={name} className="flex text-sm gap-1 pl-2">
                                                                         <span className="text-zinc-400">{name}</span>
-                                                                        <span className="text-white font-black">{fmtCount(count, name, add?.realByGroup)}</span>
+                                                                        <span className="text-white font-black">{fmtCountFromExtras(count, realExtrasFor(name))}</span>
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -2182,7 +2213,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 </div>
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, add?.fakeTotal || 0)})</div>
+                                                <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, fakeTotalExtras)})</div>
                                                 <div>
                                                     {(() => {
                                                         // 실제 구매 목록 기준으로 회사별 그룹 생성
@@ -2207,7 +2238,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                                 {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
                                                                     <div key={name} className="flex text-sm gap-1 pl-2">
                                                                         <span className="text-zinc-400">{name}</span>
-                                                                        <span className={`font-black ${count > 0 ? 'text-amber-400' : 'text-zinc-700'}`}>{fmtCount(count, name, add?.fakeByGroup)}</span>
+                                                                        <span className={`font-black ${count > 0 ? 'text-amber-400' : 'text-zinc-700'}`}>{fmtCountFromExtras(count, fakeExtrasFor(name))}</span>
                                                                     </div>
                                                                 ))}
                                                             </div>
