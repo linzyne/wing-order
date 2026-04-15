@@ -137,9 +137,16 @@ export const useCourierTemplates = (businessId?: string) => {
   const [fakeCourierSettings, setFakeCourierSettings] = useState<FakeCourierSettings>(DEFAULT_FAKE_COURIER_SETTINGS);
   const pendingSaves = useRef(0);
   const saveGraceUntil = useRef(0);
+  const currentBusinessIdRef = useRef(businessId);
 
   useEffect(() => {
+    currentBusinessIdRef.current = businessId;
+    setCourierTemplates([]);
+    setFakeCourierSettings(DEFAULT_FAKE_COURIER_SETTINGS);
+    pendingSaves.current = 0;
+    saveGraceUntil.current = 0;
     const unsubscribe = subscribeCourierTemplates((templates, settings) => {
+      if (currentBusinessIdRef.current !== businessId) return;
       if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) return;
       setCourierTemplates(templates);
       setFakeCourierSettings(settings);
@@ -148,6 +155,7 @@ export const useCourierTemplates = (businessId?: string) => {
   }, [businessId]);
 
   const saveTemplates = useCallback(async (newTemplates: CourierTemplate[]) => {
+    if (currentBusinessIdRef.current !== businessId) return;
     pendingSaves.current++;
     setCourierTemplates(newTemplates);
     try {
@@ -161,6 +169,7 @@ export const useCourierTemplates = (businessId?: string) => {
   }, [businessId]);
 
   const saveFakeCourierSettings = useCallback(async (newSettings: FakeCourierSettings) => {
+    if (currentBusinessIdRef.current !== businessId) return;
     pendingSaves.current++;
     setFakeCourierSettings(newSettings);
     try {
