@@ -388,7 +388,7 @@ const generateWorkbookForCompany = async (
                     }
                     await pushToOutputRows(companyName, outputRows, row, config, poRowQty, pricingConfig, senderName, senderPhone, senderAddress);
                     orderItems.push({
-                        registeredProductName: String(row[regProductColIdx] || '').trim(),
+                        registeredProductName: String(row[groupColIdx] || '').trim(),
                         registeredOptionName: String(row[regOptionColIdx] || '').trim(),
                         matchedProductKey: productKey,
                         qty,

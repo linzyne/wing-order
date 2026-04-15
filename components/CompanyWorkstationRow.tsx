@@ -44,7 +44,7 @@ interface CompanyWorkstationRowProps {
     onSelectToggle?: (sessionId: string) => void;
     onVendorFileChange: (file: File | null) => void;
     onResultUpdate: (sessionId: string, totalPrice: number, excludedCount?: number, excludedDetails?: ExcludedOrder[]) => void;
-    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>) => void;
+    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]) => void;
     onAddSession: () => void;
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
@@ -324,7 +324,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const orderTotal = Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
         onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
-        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header, localResult.registeredProductNames, localResult.summary);
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header, localResult.registeredProductNames, localResult.summary, localResult.orderItems);
     }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
@@ -372,7 +372,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lastSyncedCallbackRef.current = key;
         onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
         const parseRows = (v: any) => typeof v === 'string' ? JSON.parse(v) : (v || []);
-        onDataUpdate(sessionId, parseRows(syncedData.orderRows), parseRows(syncedData.invoiceRows), parseRows(syncedData.uploadInvoiceRows), syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary);
+        onDataUpdate(sessionId, parseRows(syncedData.orderRows), parseRows(syncedData.invoiceRows), parseRows(syncedData.uploadInvoiceRows), syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary, syncedData.orderItems);
         if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 

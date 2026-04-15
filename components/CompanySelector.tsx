@@ -1518,6 +1518,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, []);
 
     const [allRegisteredNames, setAllRegisteredNames] = useState<Record<string, Record<string, string>>>({});
+    const [allOrderItems, setAllOrderItems] = useState<Record<string, { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]>>({});
 
     // 수동발주 취소/승인 상태 (업체별)
     const [manualOrdersRejectedCompanies, setManualOrdersRejectedCompanies] = useState<Set<string>>(new Set());
@@ -1530,7 +1531,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, []);
 
-    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>) => {
+    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]) => {
         setAllOrderRows(prev => ({ ...prev, [sessionId]: orderRows }));
         setAllInvoiceRows(prev => ({ ...prev, [sessionId]: invoiceRows }));
         setAllUploadInvoiceRows(prev => ({ ...prev, [sessionId]: uploadInvoiceRows }));
@@ -1538,6 +1539,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllSummaries(prev => ({ ...prev, [sessionId]: summaryExcel }));
         if (registeredProductNames) setAllRegisteredNames(prev => ({ ...prev, [sessionId]: registeredProductNames }));
         if (itemSummary) setAllItemSummaries(prev => ({ ...prev, [sessionId]: itemSummary }));
+        if (orderItems) setAllOrderItems(prev => ({ ...prev, [sessionId]: orderItems }));
     }, []);
 
     const handleToggleSessionSelection = (sessionId: string) => {
@@ -1726,51 +1728,48 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (orderSheetData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orderSheetData), "발주시트");
         if (invoiceSheetData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(invoiceSheetData), "송장시트");
 
-        // 마진시트 생성: 요약시트의 품목별 판매가, 공급가, 마진 정보
-        // 업체별 등록상품명 매핑 (displayName -> K열 값)
-        const mergedRegNames: Record<string, Record<string, string>> = {};
+        // 마진시트 생성: orderItems를 (회사, 등록상품명, productKey) 기준으로 집계
+        // K열 등록상품명은 원본 엑셀에서 그대로, 가격/마진은 단가관리에서 productKey로 직접 조회
+        const marginSheetData: any[][] = [['등록상품명', '품목명', '수량', '판매가', '공급가', '마진(개당)', '총마진', '지출금액', '지출내역']];
+        type MarginGroup = { regName: string; productName: string; count: number; sellingPrice: number; supplyPrice: number; margin: number };
+        const marginGroups: { company: string; key: string; data: MarginGroup }[] = [];
+        const marginGroupIndex = new Map<string, number>();
         sortedCompanyNames.forEach(name => {
+            const companyConfig = pricingConfig[name];
+            if (!companyConfig) return;
             (companySessions[name] || []).forEach(s => {
-                if (allRegisteredNames[s.id]) {
-                    if (!mergedRegNames[name]) mergedRegNames[name] = {};
-                    Object.assign(mergedRegNames[name], allRegisteredNames[s.id]);
+                const items = allOrderItems[s.id];
+                if (!items) return;
+                for (const item of items) {
+                    const product = companyConfig.products[item.matchedProductKey] as any;
+                    if (!product) continue;
+                    const regName = item.registeredProductName || name;
+                    const productName = product.orderFormName || product.displayName;
+                    const key = `${name}::${regName}::${item.matchedProductKey}`;
+                    const existingIdx = marginGroupIndex.get(key);
+                    if (existingIdx !== undefined) {
+                        marginGroups[existingIdx].data.count += item.qty;
+                    } else {
+                        marginGroupIndex.set(key, marginGroups.length);
+                        marginGroups.push({
+                            company: name,
+                            key,
+                            data: {
+                                regName,
+                                productName,
+                                count: item.qty,
+                                sellingPrice: product.sellingPrice || 0,
+                                supplyPrice: product.supplyPrice || 0,
+                                margin: product.margin || 0,
+                            },
+                        });
+                    }
                 }
             });
         });
-
-        const marginSheetData: any[][] = [['등록상품명', '품목명', '수량', '판매가', '공급가', '마진(개당)', '총마진', '지출금액', '지출내역']];
-        let marginCurrentCompany = '';
-        for (const row of summarySheetData) {
-            const firstCell = String(row[0] || '').trim();
-            const companyMatch = firstCell.match(/^\[(.+?)\s*정산내역\]$/);
-            if (companyMatch) { marginCurrentCompany = companyMatch[1]; continue; }
-            if (marginCurrentCompany && row.length >= 3) {
-                const productName = String(row[1] || '').trim();
-                const countMatch = String(row[2] || '').trim().match(/(\d+)개/);
-                if (productName && countMatch) {
-                    const count = parseInt(countMatch[1]);
-                    const companyConfig = pricingConfig[marginCurrentCompany];
-                    if (companyConfig) {
-                        let sellingPrice = 0, supplyPrice = 0, margin = 0;
-                        let matchedDisplayName = '';
-                        for (const productKey of Object.keys(companyConfig.products)) {
-                            const product = companyConfig.products[productKey] as any;
-                            const matchName = product.orderFormName || product.displayName;
-                            if (matchName === productName) {
-                                sellingPrice = product.sellingPrice || 0;
-                                supplyPrice = product.supplyPrice || 0;
-                                margin = product.margin || 0;
-                                matchedDisplayName = product.displayName;
-                                break;
-                            }
-                        }
-                        const regName = mergedRegNames[marginCurrentCompany]?.[matchedDisplayName]
-                            || mergedRegNames[marginCurrentCompany]?.[productName]
-                            || marginCurrentCompany;
-                        marginSheetData.push([regName, productName, count, sellingPrice, supplyPrice, margin, margin * count, '', '']);
-                    }
-                }
-            }
+        for (const g of marginGroups) {
+            const d = g.data;
+            marginSheetData.push([d.regName, d.productName, d.count, d.sellingPrice, d.supplyPrice, d.margin, d.margin * d.count, '', '']);
         }
 
         // 총 마진
@@ -1859,20 +1858,40 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             depTotal += deliveryFee;
         }
 
-        // 마진 데이터 수집
-        const mergedRegNames: Record<string, Record<string, string>> = {};
+        // 마진 데이터 수집: orderItems를 (회사, 등록상품명, productKey) 기준으로 집계
+        const marginMap = new Map<string, MarginRecord>();
         sortedCompanyNames.forEach(name => {
+            const companyConfig = pricingConfig[name];
+            if (!companyConfig) return;
             (companySessions[name] || []).forEach(s => {
-                if (allRegisteredNames[s.id]) {
-                    if (!mergedRegNames[name]) mergedRegNames[name] = {};
-                    Object.assign(mergedRegNames[name], allRegisteredNames[s.id]);
+                const items = allOrderItems[s.id];
+                if (!items) return;
+                for (const item of items) {
+                    const product = companyConfig.products[item.matchedProductKey] as any;
+                    if (!product) continue;
+                    const regName = item.registeredProductName || name;
+                    const productName = product.orderFormName || product.displayName;
+                    const margin = product.margin || 0;
+                    const key = `${name}::${regName}::${item.matchedProductKey}`;
+                    const existing = marginMap.get(key);
+                    if (existing) {
+                        existing.count += item.qty;
+                        existing.totalMargin += margin * item.qty;
+                    } else {
+                        marginMap.set(key, {
+                            registeredName: regName, productName, count: item.qty,
+                            sellingPrice: product.sellingPrice || 0,
+                            supplyPrice: product.supplyPrice || 0,
+                            marginPerUnit: margin, totalMargin: margin * item.qty,
+                        });
+                    }
                 }
             });
         });
+        const marginRecords = Array.from(marginMap.values());
+        const marginTotal = marginRecords.reduce((sum, r) => sum + r.totalMargin, 0);
 
-        // 요약 데이터에서 마진 정보 추출 (같은 상품은 합산)
-        const marginMap = new Map<string, MarginRecord>();
-        let marginCurrentCompany = '';
+        // summaryLines는 매출 records 생성 등 다른 곳에서 사용
         const summaryLines: string[][] = [];
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
@@ -1886,51 +1905,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             });
         });
-
-        for (const row of summaryLines) {
-            const firstCell = String(row[0] || '').trim();
-            const companyMatch = firstCell.match(/^\[(.+?)\s*정산내역\]$/);
-            if (companyMatch) { marginCurrentCompany = companyMatch[1]; continue; }
-            if (marginCurrentCompany && row.length >= 3) {
-                const productName = String(row[1] || '').trim();
-                const countMatch = String(row[2] || '').trim().match(/(\d+)개/);
-                if (productName && countMatch) {
-                    const count = parseInt(countMatch[1]);
-                    const companyConfig = pricingConfig[marginCurrentCompany];
-                    if (companyConfig) {
-                        let sellingPrice = 0, supplyPrice = 0, margin = 0;
-                        let matchedDisplayName = '';
-                        for (const productKey of Object.keys(companyConfig.products)) {
-                            const product = companyConfig.products[productKey] as any;
-                            const matchName = product.orderFormName || product.displayName;
-                            if (matchName === productName) {
-                                sellingPrice = product.sellingPrice || 0;
-                                supplyPrice = product.supplyPrice || 0;
-                                margin = product.margin || 0;
-                                matchedDisplayName = product.displayName;
-                                break;
-                            }
-                        }
-                        const regName = mergedRegNames[marginCurrentCompany]?.[matchedDisplayName]
-                            || mergedRegNames[marginCurrentCompany]?.[productName]
-                            || marginCurrentCompany;
-                        const key = `${marginCurrentCompany}::${productName}`;
-                        const existing = marginMap.get(key);
-                        if (existing) {
-                            existing.count += count;
-                            existing.totalMargin += margin * count;
-                        } else {
-                            marginMap.set(key, {
-                                registeredName: regName, productName, count,
-                                sellingPrice, supplyPrice, marginPerUnit: margin, totalMargin: margin * count,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-        const marginRecords = Array.from(marginMap.values());
-        const marginTotal = marginRecords.reduce((sum, r) => sum + r.totalMargin, 0);
 
         // 합산 summaryLines에서 매출 records 생성 (같은 업체+상품은 합산)
         const recordMap = new Map<string, SalesRecord>();
