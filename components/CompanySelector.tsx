@@ -4,7 +4,7 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
-import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, ChevronDownIcon, ChevronUpIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon, Cog6ToothIcon } from './icons';
+import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon, Cog6ToothIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder, subscribeQuickRecipients, saveQuickRecipients, type QuickRecipientData } from '../services/firestoreService';
@@ -588,7 +588,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     });
 
     const [fakeOrderInput, setFakeOrderInput] = useState('');
-    const [showFakeOrderInput, setShowFakeOrderInput] = useState(false);
     const [showFakeDetail, setShowFakeDetail] = useState(false);
 
     const [courierFiles, setCourierFiles] = useState<Record<string, File>>({});
@@ -2702,9 +2701,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <button onClick={() => setShowFakeDetail(!showFakeDetail)} className={`p-1 transition-colors ${showFakeDetail ? 'text-rose-500' : 'text-zinc-600 hover:text-white'}`} title="상세 누락 내역">
                                 <DocumentCheckIcon className="w-4 h-4" />
                             </button>
-                            <button onClick={() => setShowFakeOrderInput(!showFakeOrderInput)} className="text-zinc-500 hover:text-white transition-colors">
-                                {showFakeOrderInput ? <ChevronUpIcon className="w-4 h-4" /> : <ChevronDownIcon className="w-4 h-4" />}
-                            </button>
                         </div>
                     </div>
 
@@ -2801,11 +2797,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         </div>
                     )}
 
-                    {showFakeOrderInput ? (
-                        <div className="flex flex-col lg:flex-row gap-4 animate-fade-in">
+                    <div className="flex flex-col lg:flex-row gap-4">
                             <div className="flex-1">
                                 <textarea
-                                    autoFocus value={fakeOrderInput} onChange={(e: any) => setFakeOrderInput(e.target.value)}
+                                    value={fakeOrderInput} onChange={(e: any) => setFakeOrderInput(e.target.value)}
                                     placeholder="예: 홍길동 20231010-00001"
                                     className="w-full h-full min-h-[96px] bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
                                 />
@@ -2883,12 +2878,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 );
                             })}
                             </div>
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center h-24 border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:bg-zinc-800/20 transition-all" onClick={() => setShowFakeOrderInput(true)}>
-                            <span className="text-[10px] font-black text-zinc-600 uppercase tracking-widest">명단 입력하기</span>
-                        </div>
-                    )}
+                    </div>
                 </div>
                 <div className="flex justify-end mb-2">
                     <button onClick={handleResetWorkstations} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-zinc-500 hover:text-rose-400 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-rose-500/30 rounded-lg transition-all" title="워크스테이션 초기화">
