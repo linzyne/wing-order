@@ -51,6 +51,7 @@ const uid = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const QuestTimeline: React.FC = () => {
   const [quests, setQuests] = useState<Quest[]>(loadQuests);
   const [adding, setAdding] = useState(false);
+  const [insertingAt, setInsertingAt] = useState<number | null>(null);
   const [newTitle, setNewTitle] = useState('');
   const [addingChildFor, setAddingChildFor] = useState<string | null>(null);
   const [newChildTitle, setNewChildTitle] = useState('');
@@ -120,8 +121,8 @@ const QuestTimeline: React.FC = () => {
   };
 
   useEffect(() => {
-    if (adding) inputRef.current?.focus();
-  }, [adding]);
+    if (adding || insertingAt !== null) inputRef.current?.focus();
+  }, [adding, insertingAt]);
   useEffect(() => {
     if (addingChildFor) childInputRef.current?.focus();
   }, [addingChildFor]);
@@ -189,12 +190,27 @@ const QuestTimeline: React.FC = () => {
       setAdding(false);
       return;
     }
-    persist(prev => [
-      ...prev,
-      { id: uid(), label: nextLetter(prev.length), title, done: false, children: [] },
-    ]);
+    persist(prev => {
+      const next = [...prev, { id: uid(), label: '', title, done: false, children: [] }];
+      return next.map((q, i) => ({ ...q, label: nextLetter(i) }));
+    });
     setNewTitle('');
     setAdding(false);
+  };
+
+  const handleInsertAt = (index: number) => {
+    const title = newTitle.trim();
+    if (!title) {
+      setInsertingAt(null);
+      return;
+    }
+    persist(prev => {
+      const next = [...prev];
+      next.splice(index, 0, { id: uid(), label: '', title, done: false, children: [] });
+      return next.map((q, i) => ({ ...q, label: nextLetter(i) }));
+    });
+    setNewTitle('');
+    setInsertingAt(null);
   };
 
   const handleAddChild = (parentId: string) => {
@@ -328,7 +344,7 @@ const QuestTimeline: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setAdding(true)}
+            onClick={() => { setInsertingAt(null); setNewTitle(''); setAdding(true); }}
             className="px-3 py-1.5 text-[11px] font-black rounded-lg bg-rose-500 hover:bg-rose-400 text-white transition-all shadow-lg shadow-rose-900/40 hover:shadow-rose-500/40 hover:scale-105"
           >
             + ADD QUEST
@@ -361,7 +377,7 @@ const QuestTimeline: React.FC = () => {
       </div>
 
       {/* Quest nodes */}
-      <div className="relative flex items-start gap-2 overflow-x-auto custom-scrollbar pb-1">
+      <div className="relative flex items-start flex-wrap gap-x-1 gap-y-3 pb-1">
         {quests.length === 0 && !adding && (
           <div className="w-full text-center py-6 text-zinc-600 font-bold text-xs tracking-widest uppercase">
             ▸ No Active Quests — Press <span className="text-rose-400">+ ADD QUEST</span> to begin
@@ -369,22 +385,51 @@ const QuestTimeline: React.FC = () => {
         )}
         {quests.map((q, idx) => {
           const isEditingThis = editing?.kind === 'quest' && editing.id === q.id;
+          const isInsertingHere = insertingAt === idx;
           return (
             <React.Fragment key={q.id}>
-              {idx > 0 && (
-                <div className="flex-shrink-0 pt-5 px-1">
-                  <div
-                    className={`h-[3px] w-8 rounded-full transition-all duration-500 ${
-                      q.done && quests[idx - 1].done
-                        ? 'bg-gradient-to-r from-rose-500 to-fuchsia-500 shadow-[0_0_8px_rgba(244,63,94,0.7)]'
-                        : 'bg-zinc-800'
-                    }`}
+              {/* Insert zone before this item */}
+              {isInsertingHere ? (
+                <div className="flex-shrink-0 flex flex-col items-center gap-2 pt-0.5" style={{ minWidth: 100 }}>
+                  <div className="h-10 min-w-[44px] px-3.5 rounded-lg bg-zinc-800 border border-rose-500 flex items-center justify-center font-black text-rose-400 text-base animate-pulse">
+                    {nextLetter(idx)}
+                  </div>
+                  <input
+                    ref={inputRef}
+                    value={newTitle}
+                    onChange={e => setNewTitle(e.target.value)}
+                    onBlur={() => handleInsertAt(idx)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleInsertAt(idx);
+                      if (e.key === 'Escape') {
+                        setNewTitle('');
+                        setInsertingAt(null);
+                      }
+                    }}
+                    placeholder="할일..."
+                    className="w-28 px-2 py-1.5 text-sm font-bold bg-zinc-800 border border-rose-500 rounded-md text-white focus:outline-none focus:ring-1 focus:ring-rose-400 text-center"
                   />
                 </div>
+              ) : (
+                idx > 0 && (
+                  <button
+                    onClick={() => {
+                      setNewTitle('');
+                      setInsertingAt(idx);
+                      setAdding(false);
+                    }}
+                    className="flex-shrink-0 self-start pt-4 px-0.5 group/ins"
+                    title="여기에 추가"
+                  >
+                    <span className="block w-4 h-[3px] rounded-full bg-zinc-800 group-hover/ins:bg-rose-500 group-hover/ins:shadow-[0_0_8px_rgba(244,63,94,0.7)] transition-all relative">
+                      <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[10px] font-black text-zinc-700 group-hover/ins:text-rose-400 transition-colors">+</span>
+                    </span>
+                  </button>
+                )
               )}
               <div
                 className="flex-shrink-0 flex flex-col items-center gap-2 group relative"
-                style={{ minWidth: 120, maxWidth: 180 }}
+                style={{ minWidth: 100, maxWidth: 160 }}
               >
                 <button
                   onClick={() => handleToggleQuest(q.id)}
@@ -520,7 +565,7 @@ const QuestTimeline: React.FC = () => {
         })}
 
         {adding && (
-          <div className="flex-shrink-0 flex flex-col items-center gap-2 ml-1" style={{ minWidth: 120 }}>
+          <div className="flex-shrink-0 flex flex-col items-center gap-2 ml-1" style={{ minWidth: 100 }}>
             <div className="h-10 min-w-[44px] px-3.5 rounded-lg bg-zinc-800 border border-rose-500 flex items-center justify-center font-black text-rose-400 text-base animate-pulse">
               {nextLetter(quests.length)}
             </div>
