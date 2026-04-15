@@ -90,6 +90,7 @@ export interface CompanyConfig {
   accountNumber?: string;
   orderFormHeaders?: string[]; // 발주서 헤더
   orderFormFieldMap?: string[]; // 발주서 필드 매핑 (orderFormHeaders와 1:1 대응)
+  orderFormFixedValues?: Record<string, string>; // 발주서 고정값 (열 인덱스 → 고정 텍스트). 값이 있으면 필드 매핑 대신 이 값이 출력됨.
   orderFormFilename?: string; // 발주서 양식 파일명
   invoiceHeaders?: string[]; // 송장 헤더
   invoiceFilename?: string; // 송장 양식 파일명

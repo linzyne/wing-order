@@ -647,6 +647,18 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    const handleUpdateOrderFormFixedValue = (companyName: string, idx: number, value: string) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        const current: Record<string, string> = { ...(newConfig[companyName].orderFormFixedValues || {}) };
+        if (value === '') {
+            delete current[String(idx)];
+        } else {
+            current[String(idx)] = value;
+        }
+        newConfig[companyName].orderFormFixedValues = Object.keys(current).length > 0 ? current : undefined;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateVendorInvoiceHeaders = (companyName: string, headers: string[], fieldMap?: string[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].vendorInvoiceHeaders = headers.length > 0 ? headers : undefined;
@@ -873,6 +885,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
+                            onUpdateOrderFormFixedValue={(idx, value) => handleUpdateOrderFormFixedValue(companyName, idx, value)}
                             onUpdateVendorInvoiceHeaders={(headers, fieldMap) => handleUpdateVendorInvoiceHeaders(companyName, headers, fieldMap)}
                             onUpdateVendorInvoiceFieldMap={(fieldMap) => handleUpdateVendorInvoiceFieldMap(companyName, fieldMap)}
                             onAddProduct={() => handleAddProduct(companyName)}
@@ -929,6 +942,7 @@ const CompanyCard: React.FC<{
     onUpdateKeywords: (keywords: string[]) => void;
     onUpdateOrderFormHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
+    onUpdateOrderFormFixedValue: (idx: number, value: string) => void;
     onUpdateVendorInvoiceHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateVendorInvoiceFieldMap: (fieldMap: string[]) => void;
     onAddProduct: () => void;
@@ -1087,12 +1101,16 @@ const CompanyCard: React.FC<{
                             <div className="space-y-1.5">
                                 {companyConfig.orderFormHeaders.map((header, idx) => {
                                     const currentField = companyConfig.orderFormFieldMap?.[idx] || inferFieldFromHeader(header);
+                                    const fixedValue = companyConfig.orderFormFixedValues?.[String(idx)] || '';
+                                    const hasFixed = fixedValue !== '';
                                     return (
                                         <div key={idx} className="flex items-center gap-2">
                                             <span className="text-[10px] font-bold text-zinc-600 w-5 text-right shrink-0">{idx + 1}</span>
                                             <select
-                                                className="w-32 shrink-0 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-white outline-none focus:border-amber-500/40 transition-colors"
+                                                className={`w-32 shrink-0 bg-zinc-900 border rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-amber-500/40 transition-colors ${hasFixed ? 'border-zinc-800 text-zinc-600 line-through' : 'border-zinc-700 text-white'}`}
                                                 value={currentField}
+                                                disabled={hasFixed}
+                                                title={hasFixed ? '고정값이 설정되어 있어 필드 매핑이 무시됩니다' : ''}
                                                 onChange={(e) => {
                                                     const newFieldMap = [...(companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h)))];
                                                     newFieldMap[idx] = e.target.value;
@@ -1115,7 +1133,7 @@ const CompanyCard: React.FC<{
                                             <span className="text-zinc-600 text-[10px]">&rarr;</span>
                                             <input
                                                 type="text"
-                                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-300 outline-none focus:border-amber-500/40 transition-colors"
+                                                className="flex-1 min-w-0 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-300 outline-none focus:border-amber-500/40 transition-colors"
                                                 value={header}
                                                 placeholder="헤더명"
                                                 onChange={(e) => {
@@ -1123,6 +1141,14 @@ const CompanyCard: React.FC<{
                                                     newHeaders[idx] = e.target.value;
                                                     props.onUpdateOrderFormHeaders(newHeaders);
                                                 }}
+                                            />
+                                            <input
+                                                type="text"
+                                                className={`w-28 shrink-0 bg-zinc-900 border rounded-lg px-2 py-1.5 text-[11px] outline-none transition-colors ${hasFixed ? 'border-amber-500/60 text-amber-300 focus:border-amber-400' : 'border-zinc-800 text-zinc-400 focus:border-amber-500/40'}`}
+                                                value={fixedValue}
+                                                placeholder="고정값"
+                                                title="값을 입력하면 필드 매핑을 무시하고 이 값이 항상 출력됩니다"
+                                                onChange={(e) => props.onUpdateOrderFormFixedValue(idx, e.target.value)}
                                             />
                                             <button
                                                 className="p-1 text-zinc-600 hover:text-red-400 transition-colors shrink-0"
