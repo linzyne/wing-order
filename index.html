@@ -43,6 +43,67 @@
       .custom-scrollbar::-webkit-scrollbar-thumb:hover {
         background: #fb7185;
       }
+
+      /* ===== Quest Timeline (gamified) ===== */
+      .quest-grid-bg {
+        background-image:
+          linear-gradient(rgba(244, 63, 94, 0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(244, 63, 94, 0.08) 1px, transparent 1px);
+        background-size: 24px 24px;
+      }
+      .quest-shine {
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+        animation: questShine 2.2s linear infinite;
+      }
+      @keyframes questShine {
+        0%   { transform: translateX(-100%); }
+        100% { transform: translateX(200%); }
+      }
+      .quest-glow {
+        animation: questGlow 1.6s ease-in-out infinite alternate;
+      }
+      @keyframes questGlow {
+        0%   { box-shadow: 0 0 14px rgba(244, 63, 94, 0.55), 0 0 28px rgba(244, 63, 94, 0.25); }
+        100% { box-shadow: 0 0 24px rgba(251, 191, 36, 0.85), 0 0 44px rgba(217, 70, 239, 0.55); }
+      }
+      .quest-idle {
+        animation: questIdle 2.8s ease-in-out infinite;
+      }
+      @keyframes questIdle {
+        0%, 100% { transform: translateY(0); opacity: 0.85; }
+        50%      { transform: translateY(-2px); opacity: 1; }
+      }
+      .quest-flash {
+        background: radial-gradient(circle, rgba(255,255,255,0.95) 0%, rgba(244,63,94,0.6) 40%, transparent 70%);
+        animation: questFlash 0.7s ease-out forwards;
+      }
+      @keyframes questFlash {
+        0%   { opacity: 0; transform: scale(0.6); }
+        30%  { opacity: 1; transform: scale(1.8); }
+        100% { opacity: 0; transform: scale(2.6); }
+      }
+      .quest-particle {
+        animation: questParticle 0.85s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+      }
+      @keyframes questParticle {
+        0% {
+          opacity: 1;
+          transform: translate(-50%, -50%) rotate(var(--angle)) translateX(0) scale(1.2);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -50%) rotate(var(--angle)) translateX(var(--dist)) scale(0.2);
+        }
+      }
+      .quest-shake {
+        animation: questShake 0.45s cubic-bezier(.36,.07,.19,.97) both;
+      }
+      @keyframes questShake {
+        10%, 90% { transform: translateX(-1px); }
+        20%, 80% { transform: translateX(2px); }
+        30%, 50%, 70% { transform: translateX(-3px); }
+        40%, 60% { transform: translateX(3px); }
+      }
     </style>
 
 <link rel="stylesheet" href="/index.css">

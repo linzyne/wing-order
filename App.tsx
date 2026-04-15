@@ -4,6 +4,7 @@ import CompanySelector from './components/CompanySelector';
 import PricingEditor from './components/PricingEditor';
 import SalesTracker from './components/SalesTracker';
 import TodoList from './components/TodoList';
+import QuestTimeline from './components/QuestTimeline';
 import OrderStatusBanner from './components/OrderStatusBanner';
 import DynamicBusinessPanel from './components/DynamicBusinessPanel';
 import AddBusinessModal from './components/AddBusinessModal';
@@ -224,6 +225,9 @@ const App: React.FC = () => {
             </button>
           </nav>
         </header>
+
+        {/* 게임형 퀘스트 타임라인 */}
+        <QuestTimeline />
 
         {/* 발주 미완료 경고 배너 */}
         <OrderStatusBanner
