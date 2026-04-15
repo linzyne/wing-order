@@ -701,9 +701,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                     </div>
                                     <div className="h-6 w-px bg-zinc-800" />
-                                    <button onClick={handleDownloadOrder} className="bg-white text-zinc-950 px-3 py-1 rounded font-black text-[10px] hover:bg-rose-50 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
+                                    <button onClick={handleDownloadOrder} className={`${isFirstSession ? 'bg-white text-zinc-950 hover:bg-rose-50' : 'bg-indigo-500 text-white hover:bg-indigo-600'} px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all`}><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
                                     {onDownloadMergedOrder && isFirstSession && (
-                                        <button onClick={onDownloadMergedOrder} className="bg-indigo-500 text-white px-3 py-1 rounded font-black text-[10px] hover:bg-indigo-600 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>합산</span></button>
+                                        <button onClick={onDownloadMergedOrder} className="bg-zinc-800 text-white border border-zinc-700 px-3 py-1 rounded font-black text-[10px] hover:bg-zinc-700 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>합산</span></button>
                                     )}
                                 </div>
                                 {unmatchedList.length > 0 && (
