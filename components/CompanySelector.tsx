@@ -2199,7 +2199,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     return (
         <div className="space-y-6 animate-fade-in">
             <div>
-                <section className="bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
+                <section className="glass rounded-[1.8rem] p-6 shadow-xl">
                     <div className="flex flex-col gap-6">
                         {/* 썸네일 + 메모 노트 */}
                         <div className="bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
@@ -2412,8 +2412,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             {isActive && document.getElementById('manual-order-portal') && createPortal(
                 <>
                 {/* 1) 수동 발주 추가 */}
-                <details className="bg-zinc-950/40 rounded-2xl border border-zinc-800/50 mb-3 group/manual">
-                    <summary className="flex items-center justify-between gap-2 p-4 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
+                <details className="glass-light rounded-2xl mb-3 group/manual">
+                    <summary className="flex items-center justify-between gap-2 p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden hover:bg-zinc-800/20 rounded-2xl transition-colors duration-200">
                         <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
                             <PlusCircleIcon className="w-4 h-4 text-rose-500" />
                             수동 발주 추가
@@ -2471,7 +2471,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </select>
                             <div className="flex gap-2">
                                 <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-14 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <button type="submit" className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-xl text-xs transition-all shadow-lg">추가</button>
+                                <button type="submit" className="flex-1 btn-accent rounded-xl text-xs">추가</button>
                             </div>
                         </div>
                     </form>
@@ -2494,7 +2494,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 <div className="mb-3 flex flex-col gap-2">
                     <label
                         htmlFor={`file-upload-sidebar-${businessId}`}
-                        className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-zinc-700 hover:border-rose-500/50 hover:bg-rose-950/10 cursor-pointer transition-all"
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-zinc-800/80 hover:border-rose-500/40 hover:bg-rose-500/5 cursor-pointer transition-all duration-200"
                         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
                         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     >
@@ -2559,10 +2559,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 </div>
 
                 {/* 3) 가구매 명단 설정 */}
-                <div className="bg-zinc-950/40 p-4 rounded-2xl border border-zinc-800/50 mb-3">
+                <div className="glass-light p-4 rounded-2xl mb-3">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                            <div className="bg-rose-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-rose-500" /></div>
+                            <div className="bg-rose-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-rose-400" /></div>
                             <h3 className="text-zinc-200 font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5">
                                 가구매 명단 설정
                                 {fakeOrderAnalysis.inputNumbers.size > 0 && (
@@ -2758,7 +2758,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             )}
 
             <div className="flex flex-col lg:flex-row gap-6">
-            <section className="flex-1 bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
+            <section className="flex-1 glass rounded-[1.8rem] p-6 shadow-xl">
                 <div className="flex flex-col gap-6">
                     <div className="flex flex-col gap-4 w-full">
                         <div className="flex items-center gap-6">
@@ -2852,7 +2852,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 </div>
             </section>
 
-            <section className="lg:w-[400px] shrink-0 bg-zinc-900/40 rounded-[2.5rem] p-6 border border-zinc-800 shadow-xl overflow-hidden">
+            <section className="lg:w-[400px] shrink-0 glass rounded-[1.8rem] p-6 shadow-xl overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
                         <div className="bg-indigo-500/10 p-2 rounded-lg"><BoltIcon className="w-4 h-4 text-indigo-500" /></div>
@@ -2923,7 +2923,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             </section>
             </div>
 
-            <section className="bg-zinc-900/20 rounded-[2.5rem] border border-zinc-900 overflow-hidden shadow-2xl">
+            <section className="glass rounded-[1.8rem] overflow-hidden shadow-xl">
                 <div className="p-6 border-b border-zinc-900 bg-zinc-900/40 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="bg-zinc-800 p-2 rounded-xl border border-zinc-700"><BuildingStorefrontIcon className="w-5 h-5 text-rose-500" /></div>

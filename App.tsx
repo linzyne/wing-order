@@ -129,98 +129,104 @@ const App: React.FC = () => {
       <div className="flex gap-3 py-4 animate-fade-in">
         <div className="flex-1 min-w-0">
           <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-2 gap-4">
-          <div className="flex items-center gap-5">
-            <div className="bg-zinc-900 p-3 rounded-[1.2rem] shadow-2xl border border-zinc-800">
-              <ChartBarIcon className="w-8 h-8 text-rose-500" />
+          <div className="flex items-center gap-4">
+            <div className="relative p-3 rounded-2xl bg-gradient-to-br from-rose-500/20 to-rose-600/5 border border-rose-500/20">
+              <ChartBarIcon className="w-7 h-7 text-rose-400" />
+              <div className="absolute inset-0 rounded-2xl bg-rose-500/5 blur-xl" />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-white tracking-tight">
-                윙 <span className="text-rose-500">발주매니저</span>
+              <h1 className="text-xl font-black text-white tracking-tight">
+                윙 <span className="bg-gradient-to-r from-rose-400 to-pink-500 bg-clip-text text-transparent">발주매니저</span>
               </h1>
-              <p className="text-zinc-500 font-bold text-[10px] mt-0.5 uppercase tracking-wider">Automated Order Management</p>
+              <p className="text-zinc-600 font-bold text-[9px] mt-0.5 uppercase tracking-[0.2em]">Order Management</p>
             </div>
-            <div className="flex items-center ml-4 p-1 bg-zinc-900 rounded-xl border border-zinc-800">
-              {/* 하드코딩 사업자 */}
-              {HARDCODED_OPTIONS.map(b => (
+            <div className="flex items-center ml-3 p-0.5 glass rounded-xl gap-0.5">
+              {HARDCODED_OPTIONS.map(b => {
+                const isActive = currentBusiness === b.id;
+                const color = b.id === '조에' ? '#f472b6' : '#f43f5e';
+                return (
                 <button
                   key={b.id}
                   onClick={() => handleBusinessChange(b.id)}
-                  className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
-                    currentBusiness === b.id
+                  className={`px-3 py-1.5 text-[11px] font-black rounded-[10px] transition-all duration-200 ${
+                    isActive
                       ? 'text-white shadow-lg'
-                      : 'text-zinc-500 hover:text-white'
+                      : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
                   }`}
-                  style={currentBusiness === b.id ? { backgroundColor: b.id === '조에' ? '#f472b6' : '#f43f5e' } : {}}
+                  style={isActive ? { background: `linear-gradient(135deg, ${color}, ${color}dd)`, boxShadow: `0 4px 16px ${color}33` } : {}}
                 >
                   {b.label}
                 </button>
-              ))}
-              {/* 동적 사업자 */}
-              {dynamicBusinesses.map(b => (
+                );
+              })}
+              {dynamicBusinesses.map(b => {
+                const isActive = currentBusiness === b.id;
+                const color = b.buttonColor || '#8b5cf6';
+                return (
                 <div key={b.id} className="relative group">
                   <button
                     onClick={() => handleBusinessChange(b.id)}
-                    className={`px-3 py-1.5 text-xs font-black rounded-lg transition-all ${
-                      currentBusiness === b.id
+                    className={`px-3 py-1.5 text-[11px] font-black rounded-[10px] transition-all duration-200 ${
+                      isActive
                         ? 'text-white shadow-lg'
-                        : 'text-zinc-500 hover:text-white'
+                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
                     }`}
-                    style={currentBusiness === b.id ? { backgroundColor: b.buttonColor || '#8b5cf6' } : {}}
+                    style={isActive ? { background: `linear-gradient(135deg, ${color}, ${color}dd)`, boxShadow: `0 4px 16px ${color}33` } : {}}
                   >
                     {b.displayName}
                   </button>
                   <button
                     onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDeleteBusiness(b.id); }}
-                    className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full items-center justify-center text-white hidden group-hover:flex"
+                    className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-zinc-700 hover:bg-red-500 rounded-full items-center justify-center text-white hidden group-hover:flex transition-colors"
                     title="사업자 삭제"
                   >
-                    <span className="text-[8px] font-black">X</span>
+                    <span className="text-[7px] font-black">×</span>
                   </button>
                 </div>
-              ))}
-              {/* 사업자 추가 버튼 */}
+                );
+              })}
               <button
                 onClick={() => setShowAddModal(true)}
-                className="px-2 py-1.5 text-zinc-600 hover:text-zinc-300 transition-colors"
+                className="px-1.5 py-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
                 title="사업자 추가"
               >
-                <PlusCircleIcon className="w-4 h-4" />
+                <PlusCircleIcon className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
-          <nav className="flex p-1.5 bg-zinc-900 rounded-2xl border border-zinc-800 shadow-xl">
+          <nav className="flex p-1 glass rounded-2xl">
             <button
               onClick={() => setActiveTab('converter')}
-              className={`flex items-center gap-2 px-6 py-2.5 text-sm font-black rounded-xl transition-all ${
+              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl transition-all duration-200 ${
                 activeTab === 'converter'
-                  ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20'
-                  : 'text-zinc-500 hover:text-white'
+                  ? 'btn-accent'
+                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40'
               }`}
             >
-              <WrenchScrewdriverIcon className="w-4 h-4" />
-              <span>발주서/송장 관리</span>
+              <WrenchScrewdriverIcon className="w-3.5 h-3.5" />
+              <span>발주서/송장</span>
             </button>
             <button
               onClick={() => setActiveTab('pricing')}
-              className={`flex items-center gap-2 px-6 py-2.5 text-sm font-black rounded-xl transition-all ${
+              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl transition-all duration-200 ${
                 activeTab === 'pricing'
-                  ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20'
-                  : 'text-zinc-500 hover:text-white'
+                  ? 'btn-accent'
+                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40'
               }`}
             >
-              <Cog6ToothIcon className="w-4 h-4" />
-              <span>품목/업체 설정</span>
+              <Cog6ToothIcon className="w-3.5 h-3.5" />
+              <span>품목/업체</span>
             </button>
             <button
               onClick={() => setActiveTab('sales')}
-              className={`flex items-center gap-2 px-6 py-2.5 text-sm font-black rounded-xl transition-all ${
+              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl transition-all duration-200 ${
                 activeTab === 'sales'
-                  ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20'
-                  : 'text-zinc-500 hover:text-white'
+                  ? 'btn-accent'
+                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40'
               }`}
             >
-              <ChartBarIcon className="w-4 h-4" />
+              <ChartBarIcon className="w-3.5 h-3.5" />
               <span>매출현황</span>
             </button>
           </nav>
@@ -279,9 +285,9 @@ const App: React.FC = () => {
           ))}
         </main>
 
-          <footer className="text-center mt-12 text-zinc-600 font-bold text-xs pb-8">
-            <p className="flex items-center justify-center gap-1">
-              Made with <span className="text-rose-500">❤️</span> for Wing Business &copy; {new Date().getFullYear()}
+          <footer className="text-center mt-16 pb-8">
+            <p className="text-zinc-700 font-bold text-[10px] tracking-widest uppercase">
+              Wing Business &copy; {new Date().getFullYear()}
             </p>
           </footer>
         </div>

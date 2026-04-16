@@ -269,9 +269,9 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
   };
 
   return (
-    <div className="bg-zinc-900 rounded-2xl border border-zinc-800 shadow-xl overflow-hidden h-fit sticky top-2">
-      <div className="bg-gradient-to-r from-rose-500 to-rose-600 px-4 py-3">
-        <h2 className="text-base font-black text-white">메모 & 할일</h2>
+    <div className="glass rounded-2xl shadow-xl overflow-hidden h-fit sticky top-2">
+      <div className="bg-gradient-to-r from-rose-500/90 to-pink-600/90 px-4 py-2.5">
+        <h2 className="text-[13px] font-black text-white tracking-wide">메모 & 할일</h2>
       </div>
 
       <div className="p-4">
@@ -299,7 +299,7 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
           <button
             onClick={addTodo}
             disabled={!newTodoText.trim()}
-            className="px-3 py-2 bg-rose-500 hover:bg-rose-600 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+            className="px-3 py-2 btn-accent disabled:opacity-30 disabled:cursor-not-allowed disabled:transform-none rounded-lg"
           >
             <PlusIcon className="w-5 h-5" />
           </button>
