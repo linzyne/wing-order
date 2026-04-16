@@ -1130,13 +1130,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, [expenses, courierResults, courierTemplates, fakeOrderAnalysis.inputNumbers.size]);
 
     // 플랫폼 자동 감지
-    const detectPlatform = (headerRow: any[]): { platform: PlatformConfig; name: string; score: number } | null => {
+    const detectPlatform = (allRows: any[][]): { platform: PlatformConfig; name: string; score: number } | null => {
         const normalize = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase().normalize('NFC');
-        const uploadedHeaders = headerRow.map(normalize);
         let bestMatch: { platform: PlatformConfig; name: string; score: number } | null = null;
 
         for (const [platformName, pc] of Object.entries(platformConfigs) as [string, PlatformConfig][]) {
             if (pc.sampleHeaders && pc.sampleHeaders.length > 0) {
+                const headerRowIdx = pc.headerRowIndex || 0;
+                const headerRow = allRows[headerRowIdx];
+                if (!headerRow) continue;
+                const uploadedHeaders = headerRow.map(normalize);
                 const sampleNormalized = pc.sampleHeaders.map(normalize);
                 let matchCount = 0;
                 for (let i = 0; i < Math.min(sampleNormalized.length, uploadedHeaders.length); i++) {
@@ -1184,7 +1187,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (!json || json.length < 2) return;
 
             // 플랫폼 감지 및 정규화
-            const detectedPlatform = detectPlatform(json[0]);
+            const detectedPlatform = detectPlatform(json);
             let platformName: string | null = null;
 
             if (detectedPlatform) {
@@ -1278,7 +1281,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (!json || json.length < 2) { alert('유효한 주문서가 아닙니다.'); return; }
 
             // 플랫폼 감지 및 정규화 (마스터 업로드와 동일)
-            const detectedPlatform = detectPlatform(json[0]);
+            const detectedPlatform = detectPlatform(json);
             if (detectedPlatform) {
                 const platformName = detectedPlatform.name;
                 const pc = detectedPlatform.platform;
