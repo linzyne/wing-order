@@ -2251,17 +2251,179 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 </section>
             </div>
 
+            {masterOrderFile && masterProductSummary && (
+                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 shadow-inner animate-pop-in">
+                    {(() => {
+                        const add = additionalRoundsSummary;
+                        const has2 = !!add && add.rounds.length > 0;
+                        const rounds = add?.rounds || [];
+                        const fmtTotal = (base: number, extras: number[]) =>
+                            has2 ? `${base}건${extras.map(e => `+${e}건`).join('')}` : `${base}건`;
+                        const renderExtras = (extras: number[]) => extras.map((e, i) => (
+                            <span key={i} className={e > 0 ? 'text-cyan-400' : 'text-zinc-700'}>+{e}건</span>
+                        ));
+                        const fmtCountFromExtras = (base: number, extras: number[]) => {
+                            if (!has2) return <span className="font-black ml-1">{base}건</span>;
+                            return <span className="font-black ml-1">{base}건{renderExtras(extras)}</span>;
+                        };
+                        const realExtrasFor = (name: string) => rounds.map(r => r.realByGroup[name] || 0);
+                        const fakeExtrasFor = (name: string) => rounds.map(r => r.fakeByGroup[name] || 0);
+                        const masterExtrasFor = (name: string) => rounds.map(r => (r.realByGroup[name] || 0) + (r.fakeByGroup[name] || 0));
+                        const realTotalExtras = rounds.map(r => r.realTotal);
+                        const fakeTotalExtras = rounds.map(r => r.fakeTotal);
+                        const masterTotalExtras = rounds.map(r => r.realTotal + r.fakeTotal);
+                        return (
+                        <div className="flex gap-6 items-start">
+                            <div className="flex-1 min-w-0">
+                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({fmtTotal(masterProductSummary.masterRawTotalQty, masterTotalExtras)})</div>
+                                <div>
+                                    {(() => {
+                                        const qtyByProduct: Record<string, number> = {};
+                                        masterProductSummary.allOrderDetails.forEach((d: any) => {
+                                            if (d.groupName) qtyByProduct[d.groupName] = (qtyByProduct[d.groupName] || 0) + d.qty;
+                                        });
+                                        const grouped: Record<string, [string, number][]> = {};
+                                        Object.entries(qtyByProduct).forEach(([name, qty]) => {
+                                            const company = masterProductSummary.productToCompany[name] || '기타';
+                                            if (!grouped[company]) grouped[company] = [];
+                                            grouped[company].push([name, qty]);
+                                        });
+                                        const masterFmtCount = (base: number, groupName: string) => fmtCountFromExtras(base, masterExtrasFor(groupName));
+                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
+                                            <div key={company}>
+                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
+                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, qty]) => (
+                                                    <div key={name} className="flex text-sm gap-1 pl-2">
+                                                        <span className="text-zinc-400">{name}</span>
+                                                        <span className="text-sky-300">{masterFmtCount(qty, name)}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, realTotalExtras)})</div>
+                                <div>
+                                    {(() => {
+                                        const grouped: Record<string, [string, number][]> = {};
+                                        Object.entries(masterProductSummary.realOrders).forEach(([name, count]) => {
+                                            const company = masterProductSummary.productToCompany[name] || '기타';
+                                            if (!grouped[company]) grouped[company] = [];
+                                            grouped[company].push([name, count as number]);
+                                        });
+                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
+                                            <div key={company}>
+                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
+                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
+                                                    <div key={name} className="flex text-sm gap-1 pl-2">
+                                                        <span className="text-zinc-400">{name}</span>
+                                                        <span className="text-white font-black">{fmtCountFromExtras(count, realExtrasFor(name))}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, fakeTotalExtras)})</div>
+                                <div>
+                                    {(() => {
+                                        const grouped: Record<string, [string, number][]> = {};
+                                        Object.entries(masterProductSummary.realOrders).forEach(([name]) => {
+                                            const company = masterProductSummary.productToCompany[name] || '기타';
+                                            if (!grouped[company]) grouped[company] = [];
+                                            const fakeCount = (masterProductSummary.fakeOrders[name] as number) || 0;
+                                            grouped[company].push([name, fakeCount]);
+                                        });
+                                        Object.entries(masterProductSummary.fakeOrders).forEach(([name, cnt]) => {
+                                            if (!masterProductSummary.realOrders[name]) {
+                                                const company = masterProductSummary.productToCompany[name] || '기타';
+                                                if (!grouped[company]) grouped[company] = [];
+                                                grouped[company].push([name, cnt as number]);
+                                            }
+                                        });
+                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
+                                            <div key={company}>
+                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
+                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
+                                                    <div key={name} className="flex text-sm gap-1 pl-2">
+                                                        <span className="text-zinc-400">{name}</span>
+                                                        <span className={`font-black ${count > 0 ? 'text-amber-400' : 'text-zinc-700'}`}>{fmtCountFromExtras(count, fakeExtrasFor(name))}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                            </div>
+                        </div>
+                        );
+                    })()}
+                    {masterProductSummary.allOrderDetails.length > 0 && (
+                        <details className="mt-3">
+                            <summary className="text-[10px] font-black text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors select-none">
+                                ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal}건` : ''})
+                            </summary>
+                            <div className="mt-1 max-h-[300px] overflow-auto custom-scrollbar space-y-2 bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
+                                {(() => {
+                                    const details = masterProductSummary.allOrderDetails;
+                                    const grouped: Record<string, typeof details> = {};
+                                    details.forEach(d => {
+                                        const key = d.company || '미매칭';
+                                        if (!grouped[key]) grouped[key] = [];
+                                        grouped[key].push(d);
+                                    });
+                                    return Object.entries(grouped)
+                                        .sort(([a], [b]) => a === '미매칭' ? 1 : b === '미매칭' ? -1 : b.localeCompare(a))
+                                        .map(([company, orders]) => {
+                                        const realCount = orders.filter(o => !o.isFake).reduce((s, o) => s + o.qty, 0);
+                                        const fakeCount = orders.filter(o => o.isFake).reduce((s, o) => s + o.qty, 0);
+                                        return (
+                                            <div key={company}>
+                                                <div className="text-[11px] font-black text-zinc-300 flex items-center gap-2">
+                                                    <span className={company === '미매칭' ? 'text-red-400' : ''}>{company}</span>
+                                                    <span className="text-zinc-600">{realCount}건{fakeCount > 0 ? ` + 가구매 ${fakeCount}건` : ''}</span>
+                                                </div>
+                                                <div className="space-y-0.5 mt-0.5">
+                                                    {orders.map((o, idx) => (
+                                                        <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-amber-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
+                                                            <span className="min-w-[50px]">{o.recipientName}</span>
+                                                            <span className="text-zinc-600">{o.groupName}</span>
+                                                            <span className="truncate">{o.productName}</span>
+                                                            {o.qty > 1 && <span className="text-white font-bold">x{o.qty}</span>}
+                                                            {o.isFake && <span className="text-amber-500/50 text-[8px]">가구매</span>}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                        </details>
+                    )}
+                </div>
+            )}
+
             {/* 사이드바 포탈: 수동 발주 + 발주서 업로드 + 가구매 명단 */}
             {isActive && document.getElementById('manual-order-portal') && createPortal(
                 <>
                 {/* 1) 수동 발주 추가 */}
-                <div className="bg-zinc-950/40 p-4 rounded-2xl border border-zinc-800/50 mb-3">
-                    <div className="flex items-center justify-between gap-2 mb-3">
+                <details className="bg-zinc-950/40 rounded-2xl border border-zinc-800/50 mb-3 group/manual">
+                    <summary className="flex items-center justify-between gap-2 p-4 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
                         <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
                             <PlusCircleIcon className="w-4 h-4 text-rose-500" />
                             수동 발주 추가
+                            {manualOrders.length > 0 && (
+                                <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black">{manualOrders.length}</span>
+                            )}
                         </h3>
-                    </div>
+                        <span className="text-zinc-600 text-[10px] transition-transform group-open/manual:rotate-180">▼</span>
+                    </summary>
+                    <div className="px-4 pb-4">
                     <div className="flex flex-wrap gap-1.5 mb-3">
                         <span className="text-zinc-600 text-[9px] font-black uppercase self-center mr-0.5">빠른 선택 :</span>
                         {quickRecipients.map(p => (
@@ -2325,15 +2487,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             ))}
                         </div>
                     )}
-                </div>
+                    </div>
+                </details>
 
                 {/* 2) 발주서 엑셀 파일 업로드 */}
-                <div className="mb-3 flex flex-col gap-3">
-                    <FileUpload
-                        id={`file-upload-sidebar-${businessId}`}
-                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }}
-                        onDrop={(e) => { const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
-                    />
+                <div className="mb-3 flex flex-col gap-2">
+                    <label
+                        htmlFor={`file-upload-sidebar-${businessId}`}
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-zinc-700 hover:border-rose-500/50 hover:bg-rose-950/10 cursor-pointer transition-all"
+                        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
+                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    >
+                        <ArrowUpTrayIcon className="w-4 h-4 text-rose-500 shrink-0" />
+                        <span className="text-[10px] font-black text-zinc-400">발주서 엑셀 업로드</span>
+                        <input id={`file-upload-sidebar-${businessId}`} type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }} />
+                    </label>
                     {masterOrderFile && (
                         <div className="bg-zinc-950 p-3 rounded-2xl border border-zinc-800 shadow-inner flex flex-col gap-2 animate-pop-in">
                             <div className="flex justify-between items-center">

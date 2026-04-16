@@ -126,8 +126,8 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen p-2 font-sans text-zinc-100 transition-colors duration-300" style={{ backgroundColor: bgColor }}>
-      <div className="flex gap-4 py-4 animate-fade-in">
-        <div className="w-full max-w-5xl">
+      <div className="flex gap-3 py-4 animate-fade-in">
+        <div className="flex-1 min-w-0">
           <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-2 gap-4">
           <div className="flex items-center gap-5">
             <div className="bg-zinc-900 p-3 rounded-[1.2rem] shadow-2xl border border-zinc-800">
@@ -253,6 +253,7 @@ const App: React.FC = () => {
                 onConfigChange={(newConfig) => configMap[b.id].pricing.saveConfig(newConfig)}
                 businessId={b.id}
                 platformConfigs={configMap[b.id].platform.platformConfigs}
+                isActive={activeTab === 'converter' && currentBusiness === b.id}
               />
             </div>
           ))}
@@ -285,7 +286,11 @@ const App: React.FC = () => {
           </footer>
         </div>
 
-        <div className="w-80 flex-shrink-0">
+        <div className="w-64 flex-shrink-0 sticky top-2 self-start max-h-screen overflow-y-auto custom-scrollbar">
+          <div id="manual-order-portal" />
+        </div>
+
+        <div className="w-72 flex-shrink-0 sticky top-2 self-start">
           <TodoList businessId={currentBusiness} />
         </div>
       </div>
