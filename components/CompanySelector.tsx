@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
@@ -41,7 +42,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -417,7 +418,7 @@ const CourierTemplateManager: React.FC<{
     );
 };
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {} }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
     const { courierTemplates, saveTemplates: saveCourierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates(businessId);
@@ -740,17 +741,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     };
 
-    // 원본 주문서 업로드 시 감지된 업체를 상단으로 자동 정렬
-    useEffect(() => {
-        if (companyOrder.length === 0 || detectedCompanies.size === 0) return;
-        const detected = companyOrder.filter(c => detectedCompanies.has(c));
-        const undetected = companyOrder.filter(c => !detectedCompanies.has(c));
-        const newOrder = [...detected, ...undetected];
-        if (JSON.stringify(newOrder) !== JSON.stringify(companyOrder)) {
-            setCompanyOrder(newOrder);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [detectedCompanies]);
 
     // 비용(지출내역) 관리
     const EXPENSE_CATEGORIES = ['임대료', '통신비', '소모품비', '물류비', '마케팅', '식비', '기타', '이자'];
@@ -2211,226 +2201,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             <div>
                 <section className="bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
                     <div className="flex flex-col gap-6">
-                        <div className="order-2 flex flex-col gap-4">
-                                <FileUpload
-                                    id={`file-upload-${businessId}`}
-                                    onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }}
-                                    onDrop={(e) => { const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
-                                />
-                            {masterOrderFile && (
-                                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 shadow-inner flex flex-col gap-3 min-w-[200px] animate-pop-in">
-                                    <div className="flex justify-between items-center">
-                                        <h4 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest">Master File</h4>
-                                        <button onClick={clearMasterFile} className="text-zinc-700 hover:text-rose-500 p-1"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
-                                    </div>
-                                    <div className="text-white font-black text-sm truncate max-w-[150px]">{masterOrderFile.name}</div>
-                                    <div className="flex items-center gap-2">
-                                        <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black">{detectedCompanies.size}개 업체 탐지</span>
-                                    </div>
-                                    {masterProductSummary && (() => {
-                                        // 마스터 구매수량에서 품목별 누락 체크
-                                        const totalMaster = masterProductSummary.masterRawTotalQty;
-                                        const totalRecognized = masterProductSummary.realTotal + masterProductSummary.fakeTotal;
-                                        const diff = totalMaster - totalRecognized;
-                                        const hasUnclaimed = masterProductSummary.unclaimedOrders.length > 0;
-                                        const isOk = diff === 0 && !hasUnclaimed;
-                                        return (
-                                        <div className={`rounded-lg px-2.5 py-1.5 text-[10px] font-black ${
-                                            isOk ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                                                : 'bg-red-600/20 border-2 border-red-500/60 text-red-400'
-                                        }`}>
-                                            <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span>{isOk ? '✓' : '⚠'}</span>
-                                                <span className="text-sky-400">마스터 {totalMaster}건</span>
-                                                <span className="text-zinc-600">=</span>
-                                                <span className="text-emerald-400">실제 {masterProductSummary.realTotal}</span>
-                                                <span className="text-zinc-600">+</span>
-                                                <span className="text-amber-400">가구매 {masterProductSummary.fakeTotal}</span>
-                                                {diff > 0 && <span className="text-red-400 ml-1">({diff}건 누락)</span>}
-                                            </div>
-                                            {diff > 0 && masterProductSummary.skippedOrders.length > 0 && (
-                                                <div className="text-red-300 mt-0.5 pl-3">
-                                                    등록상품명 없음 {masterProductSummary.skippedOrders.length}건
-                                                </div>
-                                            )}
-                                            {hasUnclaimed && (
-                                                <div className="text-amber-300 mt-0.5 pl-3">
-                                                    업체 미매칭: {masterProductSummary.unclaimedOrders.map(u => u.groupName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
-                                                </div>
-                                            )}
-                                        </div>
-                                        );
-                                    })()}
-                                    {masterProductSummary && (() => {
-                                        const add = additionalRoundsSummary;
-                                        const has2 = !!add && add.rounds.length > 0;
-                                        const rounds = add?.rounds || [];
-                                        const fmtTotal = (base: number, extras: number[]) =>
-                                            has2 ? `${base}건${extras.map(e => `+${e}건`).join('')}` : `${base}건`;
-                                        const renderExtras = (extras: number[]) => extras.map((e, i) => (
-                                            <span key={i} className={e > 0 ? 'text-cyan-400' : 'text-zinc-700'}>+{e}건</span>
-                                        ));
-                                        const fmtCountFromExtras = (base: number, extras: number[]) => {
-                                            if (!has2) return <span className="font-black ml-1">{base}건</span>;
-                                            return <span className="font-black ml-1">{base}건{renderExtras(extras)}</span>;
-                                        };
-                                        const realExtrasFor = (name: string) => rounds.map(r => r.realByGroup[name] || 0);
-                                        const fakeExtrasFor = (name: string) => rounds.map(r => r.fakeByGroup[name] || 0);
-                                        const masterExtrasFor = (name: string) => rounds.map(r => (r.realByGroup[name] || 0) + (r.fakeByGroup[name] || 0));
-                                        const realTotalExtras = rounds.map(r => r.realTotal);
-                                        const fakeTotalExtras = rounds.map(r => r.fakeTotal);
-                                        const masterTotalExtras = rounds.map(r => r.realTotal + r.fakeTotal);
-                                        return (
-                                        <div className="mt-1 flex gap-6 items-start">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({fmtTotal(masterProductSummary.masterRawTotalQty, masterTotalExtras)})</div>
-                                                <div>
-                                                    {(() => {
-                                                        // allOrderDetails에서 등록상품명별 W열 수량 합산 (실제+가구매 모두 포함), 회사별 그룹
-                                                        const qtyByProduct: Record<string, number> = {};
-                                                        masterProductSummary.allOrderDetails.forEach((d: any) => {
-                                                            if (d.groupName) qtyByProduct[d.groupName] = (qtyByProduct[d.groupName] || 0) + d.qty;
-                                                        });
-                                                        const grouped: Record<string, [string, number][]> = {};
-                                                        Object.entries(qtyByProduct).forEach(([name, qty]) => {
-                                                            const company = masterProductSummary.productToCompany[name] || '기타';
-                                                            if (!grouped[company]) grouped[company] = [];
-                                                            grouped[company].push([name, qty]);
-                                                        });
-                                                        const masterFmtCount = (base: number, groupName: string) => fmtCountFromExtras(base, masterExtrasFor(groupName));
-                                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
-                                                            <div key={company}>
-                                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
-                                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, qty]) => (
-                                                                    <div key={name} className="flex text-sm gap-1 pl-2">
-                                                                        <span className="text-zinc-400">{name}</span>
-                                                                        <span className="text-sky-300">{masterFmtCount(qty, name)}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ));
-                                                    })()}
-                                                </div>
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, realTotalExtras)})</div>
-                                                <div>
-                                                    {(() => {
-                                                        const grouped: Record<string, [string, number][]> = {};
-                                                        Object.entries(masterProductSummary.realOrders).forEach(([name, count]) => {
-                                                            const company = masterProductSummary.productToCompany[name] || '기타';
-                                                            if (!grouped[company]) grouped[company] = [];
-                                                            grouped[company].push([name, count as number]);
-                                                        });
-                                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
-                                                            <div key={company}>
-                                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
-                                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
-                                                                    <div key={name} className="flex text-sm gap-1 pl-2">
-                                                                        <span className="text-zinc-400">{name}</span>
-                                                                        <span className="text-white font-black">{fmtCountFromExtras(count, realExtrasFor(name))}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ));
-                                                    })()}
-                                                </div>
-                                            </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, fakeTotalExtras)})</div>
-                                                <div>
-                                                    {(() => {
-                                                        // 실제 구매 목록 기준으로 회사별 그룹 생성
-                                                        const grouped: Record<string, [string, number][]> = {};
-                                                        Object.entries(masterProductSummary.realOrders).forEach(([name]) => {
-                                                            const company = masterProductSummary.productToCompany[name] || '기타';
-                                                            if (!grouped[company]) grouped[company] = [];
-                                                            const fakeCount = (masterProductSummary.fakeOrders[name] as number) || 0;
-                                                            grouped[company].push([name, fakeCount]);
-                                                        });
-                                                        // realOrders에 없지만 fakeOrders에만 있는 품목 추가
-                                                        Object.entries(masterProductSummary.fakeOrders).forEach(([name, cnt]) => {
-                                                            if (!masterProductSummary.realOrders[name]) {
-                                                                const company = masterProductSummary.productToCompany[name] || '기타';
-                                                                if (!grouped[company]) grouped[company] = [];
-                                                                grouped[company].push([name, cnt as number]);
-                                                            }
-                                                        });
-                                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
-                                                            <div key={company}>
-                                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
-                                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
-                                                                    <div key={name} className="flex text-sm gap-1 pl-2">
-                                                                        <span className="text-zinc-400">{name}</span>
-                                                                        <span className={`font-black ${count > 0 ? 'text-amber-400' : 'text-zinc-700'}`}>{fmtCountFromExtras(count, fakeExtrasFor(name))}</span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        ));
-                                                    })()}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        );
-                                    })()}
-                                    {masterProductSummary && masterProductSummary.allOrderDetails.length > 0 && (
-                                        <details className="mt-2">
-                                            <summary className="text-[10px] font-black text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors select-none">
-                                                ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal}건` : ''})
-                                            </summary>
-                                            <div className="mt-1 max-h-[300px] overflow-auto custom-scrollbar space-y-2 bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
-                                                {(() => {
-                                                    const details = masterProductSummary.allOrderDetails;
-                                                    const grouped: Record<string, typeof details> = {};
-                                                    details.forEach(d => {
-                                                        const key = d.company || '미매칭';
-                                                        if (!grouped[key]) grouped[key] = [];
-                                                        grouped[key].push(d);
-                                                    });
-                                                    return Object.entries(grouped)
-                                                        .sort(([a], [b]) => a === '미매칭' ? 1 : b === '미매칭' ? -1 : b.localeCompare(a))
-                                                        .map(([company, orders]) => {
-                                                        const realCount = orders.filter(o => !o.isFake).reduce((s, o) => s + o.qty, 0);
-                                                        const fakeCount = orders.filter(o => o.isFake).reduce((s, o) => s + o.qty, 0);
-                                                        return (
-                                                            <div key={company}>
-                                                                <div className="text-[11px] font-black text-zinc-300 flex items-center gap-2">
-                                                                    <span className={company === '미매칭' ? 'text-red-400' : ''}>{company}</span>
-                                                                    <span className="text-zinc-600">{realCount}건{fakeCount > 0 ? ` + 가구매 ${fakeCount}건` : ''}</span>
-                                                                </div>
-                                                                <div className="space-y-0.5 mt-0.5">
-                                                                    {orders.map((o, idx) => (
-                                                                        <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-amber-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
-                                                                            <span className="min-w-[50px]">{o.recipientName}</span>
-                                                                            <span className="text-zinc-600">{o.groupName}</span>
-                                                                            <span className="truncate">{o.productName}</span>
-                                                                            {o.qty > 1 && <span className="text-white font-bold">x{o.qty}</span>}
-                                                                            {o.isFake && <span className="text-amber-500/50 text-[8px]">가구매</span>}
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    });
-                                                })()}
-                                            </div>
-                                        </details>
-                                    )}
-                                </div>
-                            )}
-                        {masterOrderFile && (
-                            <div className="bg-zinc-950 p-3 rounded-2xl border border-dashed border-zinc-700 hover:border-rose-500/50 transition-all">
-                                <input ref={batchFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleBatchUpload(f); e.target.value = ''; } }} />
-                                <button onClick={() => batchFileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 py-2 text-[11px] font-black text-zinc-500 hover:text-rose-400 transition-colors">
-                                    <PlusCircleIcon className="w-4 h-4" />
-                                    <span>{(() => { let max = 0; (Object.values(companySessions) as SessionData[][]).forEach(ss => ss.forEach(s => { if (s.round > max) max = s.round; })); return `${max + 1}차 주문서 일괄 업로드`; })()}</span>
-                                </button>
-                            </div>
-                        )}
-                        </div>
-
                         {/* 썸네일 + 메모 노트 */}
-                        <div className="order-1 bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
+                        <div className="bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
                                 <div className="flex items-center justify-between mb-3">
                                     <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
                                         <PlusCircleIcon className="w-4 h-4 text-cyan-500" />
@@ -2475,75 +2247,347 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     </button>
                                 </div>
                         </div>
-
-                        <div className="order-1 bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                                <div className="flex items-center gap-3">
-                                    <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                        <PlusCircleIcon className="w-4 h-4 text-rose-500" />
-                                        수동 발주 추가
-                                    </h3>
-                                </div>
-                                    <div className="flex flex-wrap gap-2 items-center">
-                                        <span className="text-zinc-600 text-[9px] font-black uppercase self-center mr-1">빠른 선택 :</span>
-                                        {quickRecipients.map(p => (
-                                            <div key={p.name} className="group relative flex items-center">
-                                                <button type="button" onClick={() => handleQuickSelect(p)} className="px-3 py-1 bg-zinc-800 hover:bg-rose-500 hover:text-white border border-zinc-700 rounded-full text-[10px] font-black text-zinc-400 transition-all shadow-sm">{p.name}</button>
-                                                <button type="button" onClick={() => { if (confirm(`'${p.name}' 수령자를 삭제할까요?`)) { const updated = quickRecipients.filter(r => r.name !== p.name); setQuickRecipients(updated); saveQuickRecipients(updated, businessId); } }} className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-zinc-700 hover:bg-red-500 text-zinc-400 hover:text-white rounded-full text-[8px] font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">×</button>
-                                            </div>
-                                        ))}
-                                        {!showAddRecipient ? (
-                                            <button type="button" onClick={() => setShowAddRecipient(true)} className="px-2 py-1 border border-dashed border-zinc-700 hover:border-rose-500 rounded-full text-[10px] font-black text-zinc-600 hover:text-rose-400 transition-all">+ 추가</button>
-                                        ) : (
-                                            <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-xl px-2 py-1">
-                                                <input placeholder="이름" value={newRecipient.name} onChange={e => setNewRecipient(prev => ({...prev, name: e.target.value}))} className="w-14 bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
-                                                <input placeholder="전화번호" value={newRecipient.phone} onChange={e => setNewRecipient(prev => ({...prev, phone: e.target.value}))} className="w-24 bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
-                                                <input placeholder="주소" value={newRecipient.address} onChange={e => setNewRecipient(prev => ({...prev, address: e.target.value}))} className="w-40 bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
-                                                <button type="button" onClick={() => { if (!newRecipient.name.trim()) return; const updated = [...quickRecipients, { name: newRecipient.name.trim(), phone: newRecipient.phone.trim(), address: newRecipient.address.trim() }]; setQuickRecipients(updated); saveQuickRecipients(updated, businessId); setNewRecipient({ name: '', phone: '', address: '' }); setShowAddRecipient(false); }} className="px-2 py-0.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[9px] font-black transition-all">등록</button>
-                                                <button type="button" onClick={() => { setShowAddRecipient(false); setNewRecipient({ name: '', phone: '', address: '' }); }} className="px-1.5 py-0.5 text-zinc-500 hover:text-zinc-300 text-[9px] font-black transition-all">취소</button>
-                                            </div>
-                                        )}
-                                    </div>
-                            </div>
-
-                            <form onSubmit={handleAddManualOrder} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                                    <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value, productName: ''})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
-                                        <option value="">업체 선택</option>
-                                        {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
-                                    </select>
-                                    <input placeholder="수령자" value={manualInput.recipientName} onChange={e => setManualInput({...manualInput, recipientName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                    <input placeholder="전화번호" value={manualInput.phone} onChange={e => setManualInput({...manualInput, phone: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                    <input placeholder="주소" value={manualInput.address} onChange={e => setManualInput({...manualInput, address: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                    <select value={manualInput.productName} onChange={e => setManualInput({...manualInput, productName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
-                                        <option value="">품목 선택</option>
-                                        {manualInput.companyName && pricingConfig[manualInput.companyName]?.products &&
-                                            Object.entries(pricingConfig[manualInput.companyName].products).map(([key, p]: [string, any]) => (
-                                                <option key={key} value={p.displayName || key}>{p.displayName || key} ({(Number(p.supplyPrice) || 0).toLocaleString()}원)</option>
-                                            ))
-                                        }
-                                    </select>
-                                    <div className="flex gap-2">
-                                        <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-16 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                        <button type="submit" className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-xl text-xs transition-all shadow-lg">추가</button>
-                                    </div>
-                            </form>
-
-                            {manualOrders.length > 0 && (
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                    {manualOrders.map(o => (
-                                        <div key={o.id} className="bg-zinc-900 px-3 py-1.5 rounded-lg border border-zinc-800 flex items-center gap-2 group animate-pop-in">
-                                            <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
-                                            <span className="text-[11px] font-bold text-zinc-300">{o.recipientName}</span>
-                                            <span className="text-[10px] text-zinc-600 truncate max-w-[100px]">{o.productName}</span>
-                                            <button onClick={() => handleRemoveManualOrder(o.id)} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
                     </div>
                 </section>
             </div>
+
+            {/* 사이드바 포탈: 수동 발주 + 발주서 업로드 + 가구매 명단 */}
+            {isActive && document.getElementById('manual-order-portal') && createPortal(
+                <>
+                {/* 1) 수동 발주 추가 */}
+                <div className="bg-zinc-950/40 p-4 rounded-2xl border border-zinc-800/50 mb-3">
+                    <div className="flex items-center justify-between gap-2 mb-3">
+                        <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                            <PlusCircleIcon className="w-4 h-4 text-rose-500" />
+                            수동 발주 추가
+                        </h3>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mb-3">
+                        <span className="text-zinc-600 text-[9px] font-black uppercase self-center mr-0.5">빠른 선택 :</span>
+                        {quickRecipients.map(p => (
+                            <div key={p.name} className="group relative flex items-center">
+                                <button type="button" onClick={() => handleQuickSelect(p)} className="px-2.5 py-1 bg-zinc-800 hover:bg-rose-500 hover:text-white border border-zinc-700 rounded-full text-[10px] font-black text-zinc-400 transition-all shadow-sm">{p.name}</button>
+                                <button type="button" onClick={() => { if (confirm(`'${p.name}' 수령자를 삭제할까요?`)) { const updated = quickRecipients.filter(r => r.name !== p.name); setQuickRecipients(updated); saveQuickRecipients(updated, businessId); } }} className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-zinc-700 hover:bg-red-500 text-zinc-400 hover:text-white rounded-full text-[8px] font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all">×</button>
+                            </div>
+                        ))}
+                        {!showAddRecipient ? (
+                            <button type="button" onClick={() => setShowAddRecipient(true)} className="px-2 py-1 border border-dashed border-zinc-700 hover:border-rose-500 rounded-full text-[10px] font-black text-zinc-600 hover:text-rose-400 transition-all">+ 추가</button>
+                        ) : (
+                            <div className="flex flex-col gap-1.5 w-full bg-zinc-900 border border-zinc-700 rounded-xl px-2 py-1.5 mt-1">
+                                <div className="flex gap-1.5">
+                                    <input placeholder="이름" value={newRecipient.name} onChange={e => setNewRecipient(prev => ({...prev, name: e.target.value}))} className="flex-1 bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
+                                    <input placeholder="전화번호" value={newRecipient.phone} onChange={e => setNewRecipient(prev => ({...prev, phone: e.target.value}))} className="flex-1 bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
+                                </div>
+                                <input placeholder="주소" value={newRecipient.address} onChange={e => setNewRecipient(prev => ({...prev, address: e.target.value}))} className="w-full bg-transparent text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
+                                <div className="flex gap-1.5 justify-end">
+                                    <button type="button" onClick={() => { if (!newRecipient.name.trim()) return; const updated = [...quickRecipients, { name: newRecipient.name.trim(), phone: newRecipient.phone.trim(), address: newRecipient.address.trim() }]; setQuickRecipients(updated); saveQuickRecipients(updated, businessId); setNewRecipient({ name: '', phone: '', address: '' }); setShowAddRecipient(false); }} className="px-2 py-0.5 bg-rose-500 hover:bg-rose-600 text-white rounded-lg text-[9px] font-black transition-all">등록</button>
+                                    <button type="button" onClick={() => { setShowAddRecipient(false); setNewRecipient({ name: '', phone: '', address: '' }); }} className="px-1.5 py-0.5 text-zinc-500 hover:text-zinc-300 text-[9px] font-black transition-all">취소</button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    <form onSubmit={handleAddManualOrder} className="flex flex-col gap-2">
+                        <div className="grid grid-cols-2 gap-2">
+                            <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value, productName: ''})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
+                                <option value="">업체 선택</option>
+                                {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
+                            </select>
+                            <input placeholder="수령자" value={manualInput.recipientName} onChange={e => setManualInput({...manualInput, recipientName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <input placeholder="전화번호" value={manualInput.phone} onChange={e => setManualInput({...manualInput, phone: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                            <input placeholder="주소" value={manualInput.address} onChange={e => setManualInput({...manualInput, address: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                            <select value={manualInput.productName} onChange={e => setManualInput({...manualInput, productName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
+                                <option value="">품목 선택</option>
+                                {manualInput.companyName && pricingConfig[manualInput.companyName]?.products &&
+                                    Object.entries(pricingConfig[manualInput.companyName].products).map(([key, p]: [string, any]) => (
+                                        <option key={key} value={p.displayName || key}>{p.displayName || key} ({(Number(p.supplyPrice) || 0).toLocaleString()}원)</option>
+                                    ))
+                                }
+                            </select>
+                            <div className="flex gap-2">
+                                <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-14 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                                <button type="submit" className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-black rounded-xl text-xs transition-all shadow-lg">추가</button>
+                            </div>
+                        </div>
+                    </form>
+                    {manualOrders.length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                            {manualOrders.map(o => (
+                                <div key={o.id} className="bg-zinc-900 px-2.5 py-1 rounded-lg border border-zinc-800 flex items-center gap-1.5 group animate-pop-in">
+                                    <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
+                                    <span className="text-[10px] font-bold text-zinc-300">{o.recipientName}</span>
+                                    <span className="text-[9px] text-zinc-600 truncate max-w-[60px]">{o.productName}</span>
+                                    <button onClick={() => handleRemoveManualOrder(o.id)} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* 2) 발주서 엑셀 파일 업로드 */}
+                <div className="mb-3 flex flex-col gap-3">
+                    <FileUpload
+                        id={`file-upload-sidebar-${businessId}`}
+                        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }}
+                        onDrop={(e) => { const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
+                    />
+                    {masterOrderFile && (
+                        <div className="bg-zinc-950 p-3 rounded-2xl border border-zinc-800 shadow-inner flex flex-col gap-2 animate-pop-in">
+                            <div className="flex justify-between items-center">
+                                <h4 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest">Master File</h4>
+                                <button onClick={clearMasterFile} className="text-zinc-700 hover:text-rose-500 p-1"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
+                            </div>
+                            <div className="text-white font-black text-xs truncate">{masterOrderFile.name}</div>
+                            <div className="flex items-center gap-2">
+                                <span className="bg-rose-500 text-white px-2 py-0.5 rounded-full text-[9px] font-black">{detectedCompanies.size}개 업체 탐지</span>
+                            </div>
+                            {masterProductSummary && (() => {
+                                const totalMaster = masterProductSummary.masterRawTotalQty;
+                                const totalRecognized = masterProductSummary.realTotal + masterProductSummary.fakeTotal;
+                                const diff = totalMaster - totalRecognized;
+                                const hasUnclaimed = masterProductSummary.unclaimedOrders.length > 0;
+                                const isOk = diff === 0 && !hasUnclaimed;
+                                return (
+                                <div className={`rounded-lg px-2 py-1.5 text-[10px] font-black ${
+                                    isOk ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                                        : 'bg-red-600/20 border-2 border-red-500/60 text-red-400'
+                                }`}>
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                        <span>{isOk ? '✓' : '⚠'}</span>
+                                        <span className="text-sky-400">마스터 {totalMaster}건</span>
+                                        <span className="text-zinc-600">=</span>
+                                        <span className="text-emerald-400">실제 {masterProductSummary.realTotal}</span>
+                                        <span className="text-zinc-600">+</span>
+                                        <span className="text-amber-400">가구매 {masterProductSummary.fakeTotal}</span>
+                                        {diff > 0 && <span className="text-red-400 ml-1">({diff}건 누락)</span>}
+                                    </div>
+                                    {diff > 0 && masterProductSummary.skippedOrders.length > 0 && (
+                                        <div className="text-red-300 mt-0.5 pl-3">
+                                            등록상품명 없음 {masterProductSummary.skippedOrders.length}건
+                                        </div>
+                                    )}
+                                    {hasUnclaimed && (
+                                        <div className="text-amber-300 mt-0.5 pl-3">
+                                            업체 미매칭: {masterProductSummary.unclaimedOrders.map(u => u.groupName).filter((v, i, a) => a.indexOf(v) === i).join(', ')}
+                                        </div>
+                                    )}
+                                </div>
+                                );
+                            })()}
+                        </div>
+                    )}
+                    {masterOrderFile && (
+                        <div className="bg-zinc-950 p-2 rounded-2xl border border-dashed border-zinc-700 hover:border-rose-500/50 transition-all">
+                            <input ref={batchFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleBatchUpload(f); e.target.value = ''; } }} />
+                            <button onClick={() => batchFileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 py-1.5 text-[10px] font-black text-zinc-500 hover:text-rose-400 transition-colors">
+                                <PlusCircleIcon className="w-3.5 h-3.5" />
+                                <span>{(() => { let max = 0; (Object.values(companySessions) as SessionData[][]).forEach(ss => ss.forEach(s => { if (s.round > max) max = s.round; })); return `${max + 1}차 주문서 일괄 업로드`; })()}</span>
+                            </button>
+                        </div>
+                    )}
+                </div>
+
+                {/* 3) 가구매 명단 설정 */}
+                <div className="bg-zinc-950/40 p-4 rounded-2xl border border-zinc-800/50 mb-3">
+                    <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                            <div className="bg-rose-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-rose-500" /></div>
+                            <h3 className="text-zinc-200 font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5">
+                                가구매 명단 설정
+                                {fakeOrderAnalysis.inputNumbers.size > 0 && (
+                                    <div className="flex gap-1">
+                                        <span className="bg-zinc-800 text-zinc-400 text-[8px] px-1.5 py-0.5 rounded-full animate-pop-in border border-zinc-700">
+                                            총 {fakeOrderAnalysis.inputNumbers.size}명
+                                        </span>
+                                        <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full animate-pop-in">
+                                            매칭 {fakeOrderAnalysis.matched.length}
+                                        </span>
+                                        {fakeOrderAnalysis.missing.length > 0 && (
+                                            <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full animate-pop-in">
+                                                미발견 {fakeOrderAnalysis.missing.length}
+                                            </span>
+                                        )}
+                                    </div>
+                                )}
+                            </h3>
+                        </div>
+                        <div className="flex gap-1">
+                            <button onClick={() => setShowFakeCourierSettings(!showFakeCourierSettings)} className={`p-1 transition-colors ${showFakeCourierSettings ? 'text-cyan-500' : 'text-zinc-600 hover:text-white'}`} title="가구매 택배 설정">
+                                <Cog6ToothIcon className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setShowTemplateManager(!showTemplateManager)} className={`p-1 transition-colors ${showTemplateManager ? 'text-amber-500' : 'text-zinc-600 hover:text-white'}`} title="택배 양식 관리">
+                                <BoltIcon className="w-3.5 h-3.5" />
+                            </button>
+                            <button onClick={() => setShowFakeDetail(!showFakeDetail)} className={`p-1 transition-colors ${showFakeDetail ? 'text-rose-500' : 'text-zinc-600 hover:text-white'}`} title="상세 누락 내역">
+                                <DocumentCheckIcon className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    </div>
+
+                    {showFakeDetail && fakeOrderAnalysis.inputNumbers.size > 0 && (
+                        <div className="mb-3 bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in max-h-[250px] overflow-auto custom-scrollbar">
+                            <div className="space-y-3">
+                                {fakeOrderAnalysis.missing.length > 0 && (
+                                    <div>
+                                        <h4 className="text-rose-500 font-black text-[10px] mb-2 tracking-widest flex items-center gap-1.5">
+                                            <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-pulse" />
+                                            미발견 ({fakeOrderAnalysis.missing.length}건)
+                                        </h4>
+                                        <div className="space-y-1">
+                                            {fakeOrderAnalysis.missing.map(num => {
+                                                const name = fakeOrderAnalysis.nameMap[num];
+                                                return (
+                                                    <div key={num} className="flex items-center gap-2 bg-rose-950/30 border border-rose-500/20 px-2.5 py-1.5 rounded-lg">
+                                                        {name && <span className="text-[11px] font-black text-white">{name}</span>}
+                                                        <span className="text-[10px] font-mono text-rose-400">{num}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                                <div>
+                                    <h4 className="text-emerald-500 font-black text-[10px] mb-2 tracking-widest flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+                                        매칭 ({fakeOrderAnalysis.matched.length}건)
+                                    </h4>
+                                    <div className="space-y-1">
+                                        {fakeOrderAnalysis.matched.map(num => {
+                                            const detail = fakeOrderAnalysis.foundDetails[num];
+                                            return (
+                                                <div key={num} className="flex items-center justify-between bg-zinc-900/50 px-2.5 py-1.5 rounded-lg border border-zinc-800/50">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[11px] font-black text-white">{detail.recipientName}</span>
+                                                        <span className="text-[9px] font-mono text-zinc-500">{num}</span>
+                                                    </div>
+                                                    <span className="text-[9px] bg-zinc-800 text-emerald-500 px-1.5 py-0.5 rounded-full font-black border border-emerald-500/20">{detail.companyName}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {showTemplateManager && (
+                        <CourierTemplateManager
+                            templates={courierTemplates}
+                            onSave={saveCourierTemplates}
+                        />
+                    )}
+
+                    {showFakeCourierSettings && (
+                        <div className="mb-3 bg-zinc-900/50 p-3 rounded-xl border border-cyan-500/20 animate-fade-in">
+                            <h4 className="text-cyan-500 font-black text-[9px] uppercase tracking-widest mb-2">가구매 택배 설정</h4>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-0.5 block">택배사명</label>
+                                    <input type="text" value={fakeCourierSettings.name} onChange={(e) => {
+                                        saveFakeCourierSettings({ ...fakeCourierSettings, name: e.target.value });
+                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
+                                </div>
+                                <div>
+                                    <label className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-0.5 block">건당 단가</label>
+                                    <input type="number" value={fakeCourierSettings.unitPrice} onChange={(e) => {
+                                        const v = Number(e.target.value) || 0;
+                                        saveFakeCourierSettings({ ...fakeCourierSettings, unitPrice: v });
+                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
+                                </div>
+                                <div>
+                                    <label className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-0.5 block">은행명</label>
+                                    <input type="text" value={fakeCourierSettings.bankName} onChange={(e) => {
+                                        saveFakeCourierSettings({ ...fakeCourierSettings, bankName: e.target.value });
+                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
+                                </div>
+                                <div>
+                                    <label className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-0.5 block">계좌번호</label>
+                                    <input type="text" value={fakeCourierSettings.accountNumber} onChange={(e) => {
+                                        saveFakeCourierSettings({ ...fakeCourierSettings, accountNumber: e.target.value });
+                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="flex flex-col gap-3">
+                        <textarea
+                            value={fakeOrderInput} onChange={(e: any) => setFakeOrderInput(e.target.value)}
+                            placeholder="예: 홍길동 20231010-00001"
+                            className="w-full min-h-[80px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
+                        />
+                        <div className="space-y-2">
+                            {courierTemplates.length === 0 && (
+                                <div className="text-center py-2 text-zinc-600 text-[9px] font-black border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-amber-500/30 hover:text-amber-500 transition-colors" onClick={() => setShowTemplateManager(true)}>
+                                    택배 양식을 먼저 추가해주세요
+                                </div>
+                            )}
+                            {courierTemplates.map((tmpl: CourierTemplate) => {
+                                const file = courierFiles[tmpl.id];
+                                const result = courierResults[tmpl.id];
+                                const matched = courierMatchedRows[tmpl.id];
+                                return (
+                                    <div key={tmpl.id} className="space-y-1.5 p-2 rounded-xl border border-zinc-800/60 bg-zinc-950/40">
+                                        <button
+                                            onClick={() => handleCourierDownload(tmpl)}
+                                            disabled={!masterOrderFile || fakeOrderAnalysis.inputNumbers.size === 0}
+                                            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed bg-indigo-950/30 border-indigo-500/30 text-indigo-400 hover:bg-indigo-900/40 hover:border-indigo-500/50"
+                                        >
+                                            <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                            <span>{tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
+                                        </button>
+                                        <div className="flex items-center gap-1.5">
+                                            <label className={`flex-1 flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md ${file ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
+                                                <ArrowUpTrayIcon className="w-3.5 h-3.5" />
+                                                <span className="truncate">{file ? file.name : `${tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} 운송장 업로드`}</span>
+                                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); e.target.value = ''; }} />
+                                            </label>
+                                            {file && (
+                                                <button onClick={() => {
+                                                    setCourierFiles(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
+                                                    setCourierResults(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
+                                                    setCourierMatchedRows(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
+                                                }} className="p-1.5 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
+                                                    <ArrowPathIcon className="w-3 h-3" />
+                                                </button>
+                                            )}
+                                        </div>
+                                        {result && (
+                                            <div className="bg-zinc-950/80 p-2 rounded-xl border border-zinc-800 animate-fade-in space-y-1.5">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {result.matched}건</span>
+                                                    <span className="text-zinc-500 text-[8px] font-black">/ 가구매 {result.total}건</span>
+                                                    {result.notFound.length > 0 && (
+                                                        <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {result.notFound.length}건</span>
+                                                    )}
+                                                </div>
+                                                {result.notFound.length > 0 && (
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {result.notFound.map((num: string) => (
+                                                            <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded text-[8px] font-mono">{num}</span>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                {matched && (
+                                                    <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
+                                                        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                                        운송장완료 다운로드 ({result.matched}건)
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+                </>,
+                document.getElementById('manual-order-portal')!
+            )}
 
             <div className="flex flex-col lg:flex-row gap-6">
             <section className="flex-1 bg-zinc-900/60 rounded-[2.5rem] p-6 border border-zinc-800 shadow-2xl backdrop-blur-md">
@@ -2823,210 +2867,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     )}
                 </div>
 
-                <div className="m-4 p-6 rounded-2xl border border-zinc-700 bg-zinc-950">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                            <div className="bg-rose-500/10 p-2 rounded-lg"><BoltIcon className="w-4 h-4 text-rose-500" /></div>
-                            <h3 className="text-zinc-200 font-black text-xs uppercase tracking-widest flex items-center gap-2">
-                                가구매 명단 설정
-                                {fakeOrderAnalysis.inputNumbers.size > 0 && (
-                                    <div className="flex gap-1">
-                                        <span className="bg-zinc-800 text-zinc-400 text-[9px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700">
-                                            총 {fakeOrderAnalysis.inputNumbers.size}명
-                                        </span>
-                                        <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
-                                            매칭 {fakeOrderAnalysis.matched.length}
-                                        </span>
-                                        {fakeOrderAnalysis.missing.length > 0 && (
-                                            <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
-                                                미발견 {fakeOrderAnalysis.missing.length}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
-                            </h3>
-                        </div>
-                        <div className="flex gap-2">
-                            <button onClick={() => setShowFakeCourierSettings(!showFakeCourierSettings)} className={`p-1 transition-colors ${showFakeCourierSettings ? 'text-cyan-500' : 'text-zinc-600 hover:text-white'}`} title="가구매 택배 설정">
-                                <Cog6ToothIcon className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => setShowTemplateManager(!showTemplateManager)} className={`p-1 transition-colors ${showTemplateManager ? 'text-amber-500' : 'text-zinc-600 hover:text-white'}`} title="택배 양식 관리">
-                                <BoltIcon className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => setShowFakeDetail(!showFakeDetail)} className={`p-1 transition-colors ${showFakeDetail ? 'text-rose-500' : 'text-zinc-600 hover:text-white'}`} title="상세 누락 내역">
-                                <DocumentCheckIcon className="w-4 h-4" />
-                            </button>
-                        </div>
-                    </div>
-
-                    {showFakeDetail && fakeOrderAnalysis.inputNumbers.size > 0 && (
-                        <div className="mb-4 bg-zinc-950/80 p-4 rounded-xl border border-zinc-800 animate-fade-in max-h-[300px] overflow-auto custom-scrollbar">
-                            <div className="space-y-4">
-                                {fakeOrderAnalysis.missing.length > 0 && (
-                                    <div>
-                                        <h4 className="text-rose-500 font-black text-xs mb-3 tracking-widest flex items-center gap-2">
-                                            <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
-                                            파일에서 찾지 못한 주문 ({fakeOrderAnalysis.missing.length}건)
-                                        </h4>
-                                        <div className="grid grid-cols-1 gap-2">
-                                            {fakeOrderAnalysis.missing.map(num => {
-                                                const name = fakeOrderAnalysis.nameMap[num];
-                                                return (
-                                                    <div key={num} className="flex items-center justify-between bg-rose-950/30 border border-rose-500/20 px-4 py-3 rounded-xl">
-                                                        <div className="flex items-center gap-3">
-                                                            {name && <span className="text-sm font-black text-white">{name}</span>}
-                                                            <span className="text-xs font-mono text-rose-400">{num}</span>
-                                                        </div>
-                                                        <span className="text-[11px] text-rose-500 font-bold bg-rose-950/50 px-2.5 py-1 rounded-lg border border-rose-500/20">주문서에서 미발견 - 업체 발주 누락 또는 주문번호 오류</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                )}
-                                <div>
-                                    <h4 className="text-emerald-500 font-black text-xs mb-3 tracking-widest flex items-center gap-2">
-                                        <span className="w-2 h-2 bg-emerald-500 rounded-full" />
-                                        정상 제외 완료 ({fakeOrderAnalysis.matched.length}건)
-                                    </h4>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {fakeOrderAnalysis.matched.map(num => {
-                                            const detail = fakeOrderAnalysis.foundDetails[num];
-                                            return (
-                                                <div key={num} className="flex items-center justify-between bg-zinc-900/50 px-4 py-3 rounded-xl border border-zinc-800/50">
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-sm font-black text-white">{detail.recipientName}</span>
-                                                        <span className="text-xs font-mono text-zinc-500">{num}</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs text-zinc-400 font-bold">{detail.productName}</span>
-                                                        <span className="text-[11px] bg-zinc-800 text-emerald-500 px-2.5 py-1 rounded-full font-black border border-emerald-500/20">{detail.companyName}</span>
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* 양식 관리 패널 */}
-                    {showTemplateManager && (
-                        <CourierTemplateManager
-                            templates={courierTemplates}
-                            onSave={saveCourierTemplates}
-                        />
-                    )}
-
-                    {showFakeCourierSettings && (
-                        <div className="mb-4 bg-zinc-900/50 p-4 rounded-xl border border-cyan-500/20 animate-fade-in">
-                            <h4 className="text-cyan-500 font-black text-[10px] uppercase tracking-widest mb-3">가구매 택배 설정</h4>
-                            <div className="flex flex-wrap gap-3">
-                                <div className="flex-1 min-w-[100px]">
-                                    <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배사명</label>
-                                    <input type="text" value={fakeCourierSettings.name} onChange={(e) => {
-                                        saveFakeCourierSettings({ ...fakeCourierSettings, name: e.target.value });
-                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
-                                </div>
-                                <div className="flex-1 min-w-[100px]">
-                                    <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">건당 단가</label>
-                                    <input type="number" value={fakeCourierSettings.unitPrice} onChange={(e) => {
-                                        const v = Number(e.target.value) || 0;
-                                        saveFakeCourierSettings({ ...fakeCourierSettings, unitPrice: v });
-                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
-                                </div>
-                                <div className="flex-1 min-w-[100px]">
-                                    <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">은행명</label>
-                                    <input type="text" value={fakeCourierSettings.bankName} onChange={(e) => {
-                                        saveFakeCourierSettings({ ...fakeCourierSettings, bankName: e.target.value });
-                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
-                                </div>
-                                <div className="flex-[2] min-w-[160px]">
-                                    <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">계좌번호</label>
-                                    <input type="text" value={fakeCourierSettings.accountNumber} onChange={(e) => {
-                                        saveFakeCourierSettings({ ...fakeCourierSettings, accountNumber: e.target.value });
-                                    }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="flex flex-col lg:flex-row gap-4">
-                            <div className="flex-1">
-                                <textarea
-                                    value={fakeOrderInput} onChange={(e: any) => setFakeOrderInput(e.target.value)}
-                                    placeholder="예: 홍길동 20231010-00001"
-                                    className="w-full h-full min-h-[96px] bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
-                                />
-                            </div>
-                            <div className="flex-1 space-y-3">
-                            {courierTemplates.length === 0 && (
-                                <div className="text-center py-3 text-zinc-600 text-[10px] font-black border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-amber-500/30 hover:text-amber-500 transition-colors" onClick={() => setShowTemplateManager(true)}>
-                                    택배 양식을 먼저 추가해주세요
-                                </div>
-                            )}
-                            {/* 양식별 다운로드 + 업로드 그룹 */}
-                            {courierTemplates.map((tmpl: CourierTemplate) => {
-                                const file = courierFiles[tmpl.id];
-                                const result = courierResults[tmpl.id];
-                                const matched = courierMatchedRows[tmpl.id];
-                                return (
-                                    <div key={tmpl.id} className="space-y-2 p-2 rounded-xl border border-zinc-800/60 bg-zinc-950/40">
-                                        <button
-                                            onClick={() => handleCourierDownload(tmpl)}
-                                            disabled={!masterOrderFile || fakeOrderAnalysis.inputNumbers.size === 0}
-                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed bg-indigo-950/30 border-indigo-500/30 text-indigo-400 hover:bg-indigo-900/40 hover:border-indigo-500/50"
-                                        >
-                                            <ArrowDownTrayIcon className="w-4 h-4" />
-                                            <span>{tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
-                                        </button>
-                                        <div className="flex items-center gap-2">
-                                            <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${file ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
-                                                <ArrowUpTrayIcon className="w-4 h-4" />
-                                                <span>{file ? file.name : `${tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} 운송장 업로드`}</span>
-                                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); e.target.value = ''; }} />
-                                            </label>
-                                            {file && (
-                                                <button onClick={() => {
-                                                    setCourierFiles(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
-                                                    setCourierResults(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
-                                                    setCourierMatchedRows(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
-                                                }} className="p-2 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
-                                                    <ArrowPathIcon className="w-3.5 h-3.5" />
-                                                </button>
-                                            )}
-                                        </div>
-                                        {result && (
-                                            <div className="bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in space-y-2">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="bg-emerald-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">매칭 {result.matched}건</span>
-                                                    <span className="text-zinc-500 text-[9px] font-black">/ 가구매 {result.total}건</span>
-                                                    {result.notFound.length > 0 && (
-                                                        <span className="bg-rose-500 text-white text-[9px] px-2 py-0.5 rounded-full font-black">미매칭 {result.notFound.length}건</span>
-                                                    )}
-                                                </div>
-                                                {result.notFound.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {result.notFound.map((num: string) => (
-                                                            <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1.5 py-0.5 rounded text-[9px] font-mono">{num}</span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                {matched && (
-                                                    <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[10px] font-black transition-colors shadow-lg">
-                                                        <ArrowDownTrayIcon className="w-4 h-4" />
-                                                        {tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} 운송장완료 다운로드 ({result.matched}건)
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })}
-                            </div>
-                    </div>
-                </div>
                 <div className="flex justify-end mb-2">
                     <button onClick={handleResetWorkstations} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-zinc-500 hover:text-rose-400 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-rose-500/30 rounded-lg transition-all" title="워크스테이션 초기화">
                         <ArrowPathIcon className="w-3.5 h-3.5" />
