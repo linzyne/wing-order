@@ -310,6 +310,15 @@ const PlatformConfigDialog: React.FC<{
     const [invoiceColumns, setInvoiceColumns] = useState<Partial<PlatformInvoiceMapping>>(initial?.invoiceColumns || {});
     const [detectHeaders, setDetectHeaders] = useState<string>(initial?.detectHeaders?.join(', ') || '');
     const [showInvoice, setShowInvoice] = useState(!!initial?.invoiceColumns);
+    const [parsedRows, setParsedRows] = useState<any[][] | null>(null);
+
+    // headerRowIndex 변경 시 해당 행에서 헤더 재추출
+    useEffect(() => {
+        if (parsedRows && parsedRows.length > headerRowIndex) {
+            const headers = parsedRows[headerRowIndex].map((h: any) => String(h || ''));
+            setSampleHeaders(headers);
+        }
+    }, [headerRowIndex, parsedRows]);
 
     const handleSampleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -321,6 +330,7 @@ const PlatformConfigDialog: React.FC<{
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+                setParsedRows(json);
                 if (json.length > headerRowIndex) {
                     const headers = json[headerRowIndex].map((h: any) => String(h || ''));
                     setSampleHeaders(headers);
