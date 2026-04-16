@@ -96,6 +96,8 @@ const CourierTemplateManager: React.FC<{
     const [newHeaders, setNewHeaders] = useState<string[]>([]);
     const [newMapping, setNewMapping] = useState<Record<string, number>>({});
     const [newFixedValues, setNewFixedValues] = useState<Record<number, string>>({});
+    const [newReturnHeaders, setNewReturnHeaders] = useState<string[]>([]);
+    const [newReturnMapping, setNewReturnMapping] = useState<Record<string, number>>({});
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -106,6 +108,8 @@ const CourierTemplateManager: React.FC<{
         setNewHeaders([]);
         setNewMapping({});
         setNewFixedValues({});
+        setNewReturnHeaders([]);
+        setNewReturnMapping({});
         setEditingId(null);
         setShowAddForm(false);
     };
@@ -118,6 +122,8 @@ const CourierTemplateManager: React.FC<{
         setNewHeaders(tmpl.headers);
         setNewMapping({ ...tmpl.mapping } as Record<string, number>);
         setNewFixedValues({ ...tmpl.fixedValues });
+        setNewReturnHeaders(tmpl.returnHeaders || []);
+        setNewReturnMapping(tmpl.returnMapping ? { ...tmpl.returnMapping } as Record<string, number> : {});
         setShowAddForm(true);
     };
 
@@ -142,6 +148,41 @@ const CourierTemplateManager: React.FC<{
             }
         };
         reader.readAsArrayBuffer(file);
+        e.target.value = '';
+    };
+
+    const handleReturnFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try {
+                const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                if (aoa.length > 0) {
+                    const headers = aoa[0].map((h: any) => String(h || ''));
+                    setNewReturnHeaders(headers);
+                    // 자동 감지: 주문번호/운송장번호 열 찾기
+                    const autoMapping: Record<string, number> = {};
+                    headers.forEach((h, idx) => {
+                        const lower = h.toLowerCase().replace(/\s+/g, '');
+                        if (!autoMapping.orderNumber && (lower.includes('주문번호') || lower.includes('관리번호') || lower.includes('오더번호') || lower === 'id')) {
+                            autoMapping.orderNumber = idx;
+                        }
+                        if (!autoMapping.trackingNumber && (lower.includes('운송장') || lower.includes('송장번호') || lower.includes('등기') || lower.includes('tracking'))) {
+                            autoMapping.trackingNumber = idx;
+                        }
+                    });
+                    setNewReturnMapping(autoMapping);
+                }
+            } catch (err) {
+                alert('운송장 파일을 읽을 수 없습니다.');
+            }
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value = '';
     };
 
     const handleSaveTemplate = () => {
@@ -164,6 +205,10 @@ const CourierTemplateManager: React.FC<{
             },
             fixedValues: newFixedValues,
             unitPrice: Number(newUnitPrice) || 2270,
+            returnHeaders: newReturnHeaders.length > 0 ? newReturnHeaders : undefined,
+            returnMapping: (newReturnMapping.orderNumber !== undefined && newReturnMapping.trackingNumber !== undefined)
+                ? { orderNumber: newReturnMapping.orderNumber, trackingNumber: newReturnMapping.trackingNumber }
+                : undefined,
         };
 
         if (editingId) {
@@ -195,6 +240,11 @@ const CourierTemplateManager: React.FC<{
                         <span className="text-[9px] text-zinc-500 font-mono">
                             {COURIER_DATA_FIELDS.map(f => `${f.label}:${colIndexToLetter(tmpl.mapping[f.key])}`).join('  ')}
                         </span>
+                        {tmpl.returnMapping && (
+                            <span className="text-[9px] text-emerald-500/70 font-mono">
+                                운송장: 주문번호:{colIndexToLetter(tmpl.returnMapping.orderNumber)} 송장:{colIndexToLetter(tmpl.returnMapping.trackingNumber)}
+                            </span>
+                        )}
                         <span className="bg-zinc-800 text-zinc-400 text-[9px] px-2 py-0.5 rounded-full">{tmpl.unitPrice.toLocaleString()}원/건</span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -297,6 +347,61 @@ const CourierTemplateManager: React.FC<{
                             )}
                         </div>
                     )}
+
+                    {/* 운송장 완료 파일 양식 (택배사에서 돌아오는 파일) */}
+                    <div className="border-t border-zinc-800 pt-3 mt-3">
+                        <div className="flex items-center gap-2 mb-2">
+                            <label className="text-[9px] text-emerald-500 font-black uppercase tracking-widest">운송장 완료 파일 양식</label>
+                            <span className="text-[8px] text-zinc-600">(택배사에서 송장번호 채워서 보내주는 파일)</span>
+                        </div>
+                        <label className="flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-emerald-500/40 hover:text-emerald-400">
+                            <ArrowUpTrayIcon className="w-4 h-4" />
+                            <span>{newReturnHeaders.length > 0 ? `${newReturnHeaders.length}개 열 감지됨` : '운송장 완료 파일 선택'}</span>
+                            <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={handleReturnFileUpload} />
+                        </label>
+                        {newReturnHeaders.length > 0 && (
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[9px] text-emerald-400/80 font-bold">주문번호 열</span>
+                                    <select
+                                        value={newReturnMapping.orderNumber ?? ''}
+                                        onChange={(e) => {
+                                            if (e.target.value === '') {
+                                                setNewReturnMapping(prev => { const n = { ...prev }; delete n.orderNumber; return n; });
+                                            } else {
+                                                setNewReturnMapping(prev => ({ ...prev, orderNumber: Number(e.target.value) }));
+                                            }
+                                        }}
+                                        className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+                                    >
+                                        <option value="">선택...</option>
+                                        {newReturnHeaders.map((h, idx) => (
+                                            <option key={idx} value={idx}>{colIndexToLetter(idx)}: {h || '(빈 열)'}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="flex flex-col gap-1">
+                                    <span className="text-[9px] text-emerald-400/80 font-bold">운송장번호 열</span>
+                                    <select
+                                        value={newReturnMapping.trackingNumber ?? ''}
+                                        onChange={(e) => {
+                                            if (e.target.value === '') {
+                                                setNewReturnMapping(prev => { const n = { ...prev }; delete n.trackingNumber; return n; });
+                                            } else {
+                                                setNewReturnMapping(prev => ({ ...prev, trackingNumber: Number(e.target.value) }));
+                                            }
+                                        }}
+                                        className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+                                    >
+                                        <option value="">선택...</option>
+                                        {newReturnHeaders.map((h, idx) => (
+                                            <option key={idx} value={idx}>{colIndexToLetter(idx)}: {h || '(빈 열)'}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
                     <div className="flex gap-2 justify-end">
                         <button onClick={resetForm} className="px-4 py-2 rounded-xl text-[10px] font-black text-zinc-500 hover:text-white border border-zinc-800 transition-colors">
@@ -1361,22 +1466,28 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             });
             if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
 
-            // 운송장 파일 읽기: 매핑된 열에서 주문번호/운송장번호 추출
+            // 운송장 파일 읽기: returnMapping 우선, 없으면 기존 mapping 사용
             const courierData = await file.arrayBuffer();
             const courierWb = XLSX.read(courierData, { type: 'array' });
             const courierWs = courierWb.Sheets[courierWb.SheetNames[0]];
             const courierAoa: any[][] = XLSX.utils.sheet_to_json(courierWs, { header: 1 });
 
+            const rm = template.returnMapping;
+            const orderColIdx = rm ? rm.orderNumber : template.mapping.orderNumber;
+            const trackingColIdx = rm ? rm.trackingNumber : template.mapping.trackingNumber;
+            console.log(`[가구매송장] ${template.name} 운송장 업로드 - returnMapping: ${rm ? '있음' : '없음(기존 mapping 사용)'}, 주문번호열: ${orderColIdx}, 송장번호열: ${trackingColIdx}`);
+
             const trackingMap = new Map<string, string>();
             for (let i = 1; i < courierAoa.length; i++) {
                 const row = courierAoa[i];
                 if (!row) continue;
-                const orderNum = String(row[template.mapping.orderNumber] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                const trackingNum = String(row[template.mapping.trackingNumber] || '').trim();
+                const orderNum = String(row[orderColIdx] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                const trackingNum = String(row[trackingColIdx] || '').trim();
                 if (orderNum && trackingNum && trackingNum.length >= 5) {
                     trackingMap.set(orderNum, trackingNum);
                 }
             }
+            console.log(`[가구매송장] trackingMap: ${trackingMap.size}건, 가구매: ${fakeOrderNums.size}건`);
 
             // 원본 주문서에서 매칭
             const masterData = await masterOrderFile.arrayBuffer();
@@ -2871,7 +2982,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <label className={`flex-1 flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${file ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
                                                 <ArrowUpTrayIcon className="w-4 h-4" />
                                                 <span>{file ? file.name : `${tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} 운송장 업로드`}</span>
-                                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); }} />
+                                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); e.target.value = ''; }} />
                                             </label>
                                             {file && (
                                                 <button onClick={() => {

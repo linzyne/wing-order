@@ -192,6 +192,11 @@ export interface CourierTemplate {
   };
   fixedValues: Record<number, string>; // 열 index → 고정값 (보내는사람, 상품명 등)
   unitPrice: number;      // 건당 단가 (물류비 계산용)
+  returnHeaders?: string[];   // 운송장 완료 파일(택배사→우리) 헤더
+  returnMapping?: {
+    orderNumber: number;      // 운송장 완료 파일의 주문번호 열 index
+    trackingNumber: number;   // 운송장 완료 파일의 운송장번호 열 index
+  };
 }
 
 // ===== 멀티 플랫폼 설정 =====
