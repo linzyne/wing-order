@@ -273,13 +273,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const manualOrdersStr = JSON.stringify(manualOrders);
         const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
         const hasBatchFileChanged = batchFile && batchFile !== lastProcessedBatchRef.current;
-        const hasFakeOrdersChanged = isFirstSession && fakeOrderNumbers !== lastFakeOrdersRef.current;
+        const hasFakeOrdersChanged = fakeOrderNumbers !== lastFakeOrdersRef.current;
         const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
 
         if (hasBatchFileChanged && batchFile) {
-            // N차 일괄 업로드: 가구매 제외 없이 처리
+            // N차 일괄 업로드: 가구매 제외 포함하여 처리
             lastProcessedBatchRef.current = batchFile;
-            handleLocalFileChange(batchFile, false, '');
+            lastFakeOrdersRef.current = fakeOrderNumbers;
+            handleLocalFileChange(batchFile, false);
         } else if (hasFileChanged) {
             if (masterFile) {
                 // isProcessingRef 가드에 의해 스킵될 수 있으므로, ref는 실제 처리 시작 후 업데이트
@@ -290,11 +291,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 }
                 handleLocalFileChange(masterFile, true);
             }
-        } else if (hasFakeOrdersChanged && lastProcessedMasterRef.current) {
-            // 가구매 변경: 이미 파일 처리가 된 이후에만 재처리
+        } else if (hasFakeOrdersChanged && (lastProcessedMasterRef.current || lastProcessedBatchRef.current)) {
+            // 가구매 변경: 이미 파일 처리가 된 이후에만 재처리 (1차/N차 모두)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
-            handleLocalFileChange(lastProcessedMasterRef.current, false);
+            const fileToReprocess = lastProcessedMasterRef.current || lastProcessedBatchRef.current;
+            handleLocalFileChange(fileToReprocess, false);
         } else if (hasManualOrdersChanged) {
             // 수동주문 변경: 파일 유무와 관계없이 처리
             lastFakeOrdersRef.current = fakeOrderNumbers;
