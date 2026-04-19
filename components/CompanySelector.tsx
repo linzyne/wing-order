@@ -5,7 +5,7 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
-import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon } from './icons';
+import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder, subscribeQuickRecipients, saveQuickRecipients, type QuickRecipientData } from '../services/firestoreService';
@@ -2517,7 +2517,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 <details className="glass-light rounded-2xl mb-3 group/manual">
                     <summary className="flex items-center justify-between gap-2 p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden hover:bg-zinc-800/20 rounded-2xl transition-colors duration-200">
                         <h3 className="text-zinc-400 font-black text-[12px] uppercase tracking-widest flex items-center gap-2">
-                            <PlusCircleIcon className="w-4 h-4 text-rose-500" />
+                            <div className="bg-rose-500/10 p-1 rounded-lg"><PlusCircleIcon className="w-3.5 h-3.5 text-rose-400" /></div>
                             수동 발주 추가
                             {manualOrders.length > 0 && (
                                 <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black">{manualOrders.length}</span>
@@ -2596,7 +2596,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 <details className="glass-light rounded-2xl mb-3 group/transfer">
                     <summary className="flex items-center justify-between gap-2 p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden hover:bg-zinc-800/20 rounded-2xl transition-colors duration-200">
                         <h3 className="text-zinc-400 font-black text-[12px] uppercase tracking-widest flex items-center gap-2">
-                            <BoltIcon className="w-4 h-4 text-indigo-500" />
+                            <div className="bg-indigo-500/10 p-1 rounded-lg"><ArrowDownTrayIcon className="w-3.5 h-3.5 text-indigo-400" /></div>
                             수동 입금 추가
                             {manualTransfers.length > 0 && (
                                 <span className="bg-indigo-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black">{manualTransfers.length}</span>
@@ -2672,7 +2672,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
                         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     >
-                        <ArrowUpTrayIcon className="w-4 h-4 text-rose-500 shrink-0" />
+                        <div className="bg-amber-500/10 p-1 rounded-lg shrink-0"><DocumentArrowUpIcon className="w-3.5 h-3.5 text-amber-400" /></div>
                         <span className="text-[12px] font-black text-zinc-400">발주서 엑셀 업로드</span>
                         <input id={`file-upload-sidebar-${businessId}`} type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }} />
                     </label>
@@ -2736,7 +2736,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 <div className="glass-light p-4 rounded-2xl mb-3">
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                            <div className="bg-rose-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-rose-400" /></div>
+                            <div className="bg-violet-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-violet-400" /></div>
                             <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-1.5">
                                 가구매 명단 설정
                                 {fakeOrderAnalysis.inputNumbers.size > 0 && (
