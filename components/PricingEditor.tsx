@@ -982,41 +982,41 @@ const CompanyCard: React.FC<{
             </div>
             {isExpanded && (
                 <div className="p-8 pt-0 space-y-8 animate-fade-in bg-gradient-to-b from-transparent to-rose-950/5">
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
-                            <PhoneIcon className="w-5 h-5 text-zinc-600" />
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">
+                            <PhoneIcon className="w-4 h-4 text-zinc-600 shrink-0" />
                             <EditableField
                                 value={companyConfig.phone || ''}
                                 onSave={props.onUpdatePhone}
                                 placeholder="연락처"
-                                className="text-sm font-bold text-zinc-400 focus:outline-none"
+                                className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                             />
                         </div>
-                        <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
-                            <span className="text-lg">🏦</span>
+                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">
+                            <span className="text-sm shrink-0">🏦</span>
                             <EditableField
                                 value={companyConfig.bankName || ''}
                                 onSave={props.onUpdateBank}
                                 placeholder="은행명"
-                                className="text-sm font-bold text-zinc-400 focus:outline-none"
+                                className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                             />
                         </div>
-                        <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
-                            <span className="text-lg">💳</span>
+                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner col-span-2 md:col-span-2">
+                            <span className="text-sm shrink-0">💳</span>
                             <EditableField
                                 value={companyConfig.accountNumber || ''}
                                 onSave={props.onUpdateAccount}
                                 placeholder="계좌번호"
-                                className="text-sm font-bold text-zinc-400 focus:outline-none"
+                                className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                             />
                         </div>
-                        <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-rose-500/30 shadow-inner">
-                            <span className="text-lg">⏰</span>
+                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-rose-500/30 shadow-inner">
+                            <span className="text-sm shrink-0">⏰</span>
                             <EditableField
                                 value={companyConfig.deadline || ''}
                                 onSave={props.onUpdateDeadline}
-                                placeholder="마감시간 (예: 09:00)"
-                                className="text-sm font-bold text-rose-400 focus:outline-none"
+                                placeholder="마감 (예: 09:00)"
+                                className="text-sm font-bold text-rose-400 focus:outline-none w-full"
                             />
                         </div>
                     </div>
