@@ -1304,60 +1304,58 @@ const ProductTable: React.FC<{
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
 }> = React.memo(({ products, onAddProduct, onDeleteProduct, onOpenProductEditor }) => (
     <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-        <table className="w-full text-sm text-left">
-            <thead className="bg-zinc-900/50 text-zinc-600 font-black uppercase tracking-widest text-[12px]">
+        <table className="w-full text-sm text-left table-fixed">
+            <thead className="bg-zinc-900/50 text-zinc-600 font-black uppercase tracking-widest text-[11px]">
                 <tr>
-                    <th className="px-4 py-2 w-[40%]">품목 명칭</th>
-                    <th className="px-4 py-2 text-right w-[15%]">공급가</th>
-                    <th className="px-4 py-2 text-right w-[15%]">판매가</th>
-                    <th className="px-4 py-2 text-right w-[10%]">마진</th>
-                    <th className="px-4 py-2 text-center w-[20%]">관리</th>
+                    <th className="px-5 py-3 w-[35%]">품목</th>
+                    <th className="px-3 py-3 text-right w-[18%] whitespace-nowrap">공급가</th>
+                    <th className="px-3 py-3 text-right w-[18%] whitespace-nowrap">판매가</th>
+                    <th className="px-3 py-3 text-right w-[18%] whitespace-nowrap">마진</th>
+                    <th className="px-3 py-3 text-center w-[11%]"></th>
                 </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-900">
+            <tbody className="divide-y divide-zinc-900/60">
                 {Object.keys(products).sort((a, b) => products[a].displayName.localeCompare(products[b].displayName, 'ko')).map((productKey) => {
                     const product = products[productKey];
+                    const margin = product.margin || 0;
                     return (
-                        <tr key={productKey} className="hover:bg-zinc-900/40 transition-colors">
-                            <td className="px-4 py-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-bold text-zinc-200 text-sm">{product.displayName}</span>
+                        <tr key={productKey} onClick={() => onOpenProductEditor(productKey, product)} className="hover:bg-zinc-900/40 transition-colors cursor-pointer group">
+                            <td className="px-5 py-3">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-black text-zinc-100 text-[13px]">{product.displayName}</span>
                                     {product.orderFormName && (
-                                        <span className="text-[10px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
+                                        <span className="text-[9px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
                                     )}
                                     {product.orderSplitCount && product.orderSplitCount > 1 && (
-                                        <span className="text-[10px] text-sky-400 font-bold bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">x{product.orderSplitCount}</span>
+                                        <span className="text-[9px] text-sky-400 font-bold bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">x{product.orderSplitCount}</span>
                                     )}
                                     {product.shippingCost && product.shippingCost > 0 && (
-                                        <span className="text-[10px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>
+                                        <span className="text-[9px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>
                                     )}
                                 </div>
                                 {product.aliases && product.aliases.length > 0 && (
-                                    <div className="text-[10px] text-zinc-600 truncate max-w-xs">{product.aliases.join(', ')}</div>
+                                    <div className="text-[10px] text-zinc-600 truncate max-w-xs mt-0.5">{product.aliases.join(', ')}</div>
                                 )}
                             </td>
-                            <td className="px-4 py-2 text-right font-black text-rose-500 text-sm">
-                                {product.supplyPrice.toLocaleString()}원
+                            <td className="px-3 py-3 text-right font-black text-rose-400 text-[13px] whitespace-nowrap">
+                                {product.supplyPrice.toLocaleString()}
                             </td>
-                            <td className="px-4 py-2 text-right font-bold text-zinc-300 text-sm">
-                                {(product.sellingPrice || 0).toLocaleString()}원
+                            <td className="px-3 py-3 text-right font-bold text-zinc-400 text-[13px] whitespace-nowrap">
+                                {(product.sellingPrice || 0).toLocaleString()}
                             </td>
-                            <td className="px-4 py-2 text-right font-bold text-emerald-400 text-sm">
-                                {(product.margin || 0).toLocaleString()}원
+                            <td className={`px-3 py-3 text-right font-black text-[13px] whitespace-nowrap ${margin > 0 ? 'text-sky-400' : margin < 0 ? 'text-red-400' : 'text-zinc-600'}`}>
+                                {margin.toLocaleString()}
                             </td>
-                            <td className="px-4 py-2 text-center">
-                                <div className="flex items-center justify-center gap-4">
-                                    <button onClick={() => onOpenProductEditor(productKey, product)} className="text-indigo-400 hover:text-indigo-300 font-black text-[11px] underline underline-offset-2">상세</button>
-                                    <button onClick={() => onDeleteProduct(productKey)} className="text-zinc-700 hover:text-red-500 transition-colors"><TrashIcon className="w-4 h-4" /></button>
-                                </div>
+                            <td className="px-3 py-3 text-center">
+                                <button onClick={(e) => { e.stopPropagation(); onDeleteProduct(productKey); }} className="text-zinc-800 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><TrashIcon className="w-4 h-4" /></button>
                             </td>
                         </tr>
                     )
                 })}
                 <tr>
                     <td colSpan={5} className="p-0">
-                        <button onClick={onAddProduct} className="w-full flex items-center justify-center gap-3 text-rose-400 bg-zinc-900/30 hover:bg-zinc-900/60 transition-all font-black py-6 text-base border-t border-zinc-900">
-                            <PlusCircleIcon className="w-6 h-6" />
+                        <button onClick={onAddProduct} className="w-full flex items-center justify-center gap-2 text-zinc-500 hover:text-rose-400 bg-zinc-900/20 hover:bg-zinc-900/50 transition-all font-black py-4 text-sm border-t border-zinc-900/60">
+                            <PlusCircleIcon className="w-5 h-5" />
                             <span>새 품목 추가</span>
                         </button>
                     </td>
