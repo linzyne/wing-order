@@ -982,62 +982,56 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
-                                <div className="flex items-center justify-center gap-3">
-                                    <div className="flex flex-col items-center gap-1">
-                                        <div className="text-emerald-400 font-black text-[9px] uppercase tracking-widest">{currentStat?.mgmt || 0}건</div>
-                                        <button onClick={() => handleDownloadInvoice('mgmt')} className="bg-emerald-600 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-emerald-700 shadow-md">기록용</button>
-                                    </div>
-                                    <div className="flex flex-col items-center gap-1 relative">
-                                        <div className="text-rose-400 font-black text-[9px] uppercase tracking-widest">{currentStat?.upload || 0}건</div>
-                                        <div className="flex items-center gap-1.5">
-                                            {mergeResults?.platformUploadWorkbooks && Object.keys(mergeResults.platformUploadWorkbooks).length > 0 ? (
-                                                <div className="relative" ref={platformDropdownRef}>
-                                                    <button onClick={() => setShowPlatformDropdown(!showPlatformDropdown)}
-                                                        className="bg-rose-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-rose-600 shadow-md flex items-center gap-1">
-                                                        업로드용 <ChevronDownIcon className={`w-3 h-3 transition-transform ${showPlatformDropdown ? 'rotate-180' : ''}`} />
-                                                    </button>
-                                                    {showPlatformDropdown && (
-                                                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 min-w-[120px] py-1 animate-fade-in">
-                                                            <button onClick={() => { handleDownloadAllPlatformInvoices(); setShowPlatformDropdown(false); }}
-                                                                className="w-full px-3 py-1.5 text-left text-[9px] font-black text-violet-400 hover:bg-violet-500/20 flex items-center gap-1.5 transition-colors">
-                                                                <ArrowDownTrayIcon className="w-3 h-3" /> 통합 다운로드
-                                                            </button>
-                                                            <div className="border-t border-zinc-800 my-0.5" />
-                                                            <button onClick={() => { handleDownloadInvoice('upload'); setShowPlatformDropdown(false); }}
-                                                                className="w-full px-3 py-1.5 text-left text-[9px] font-black text-rose-400 hover:bg-rose-500/20 flex items-center gap-1.5 transition-colors">
-                                                                <ArrowDownTrayIcon className="w-3 h-3" /> 쿠팡 {currentStat?.upload || 0}건
-                                                            </button>
-                                                            {(Object.entries(mergeResults.platformUploadWorkbooks) as [string, PlatformUploadResult][]).map(([pName, pResult]) => (
-                                                                <button key={pName} onClick={() => { handleDownloadPlatformInvoice(pName); setShowPlatformDropdown(false); }}
-                                                                    className="w-full px-3 py-1.5 text-left text-[9px] font-black text-violet-400 hover:bg-violet-500/20 flex items-center gap-1.5 transition-colors">
-                                                                    <ArrowDownTrayIcon className="w-3 h-3" /> {pName} {pResult.count}건
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <button onClick={() => handleDownloadInvoice('upload')} className="bg-rose-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-rose-600 shadow-md">업로드용</button>
-                                            )}
-                                            <button
-                                                onClick={() => onSelectToggle?.(sessionId)}
-                                                className={`w-6 h-6 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-rose-500 border-rose-400 text-white shadow-md' : 'bg-zinc-900 border-zinc-700 text-transparent hover:border-rose-500/50'}`}
-                                            >
-                                                <CheckIcon className="w-3.5 h-3.5" />
+                            <div className="flex items-center gap-2 animate-fade-in">
+                                <div className="relative" ref={platformDropdownRef}>
+                                    <button onClick={() => setShowPlatformDropdown(!showPlatformDropdown)}
+                                        className="bg-zinc-700 text-white px-3 py-1 rounded font-black text-[10px] hover:bg-zinc-600 shadow-md flex items-center gap-1.5">
+                                        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                        <span>{currentStat?.mgmt || 0}건</span>
+                                        <ChevronDownIcon className={`w-3 h-3 transition-transform ${showPlatformDropdown ? 'rotate-180' : ''}`} />
+                                    </button>
+                                    {showPlatformDropdown && (
+                                        <div className="absolute top-full right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 min-w-[140px] py-1 animate-fade-in">
+                                            <button onClick={() => { handleDownloadInvoice('mgmt'); setShowPlatformDropdown(false); }}
+                                                className="w-full px-3 py-1.5 text-left text-[9px] font-black text-emerald-400 hover:bg-emerald-500/20 flex items-center gap-1.5 transition-colors">
+                                                <ArrowDownTrayIcon className="w-3 h-3" /> 기록용
                                             </button>
+                                            <button onClick={() => { handleDownloadInvoice('upload'); setShowPlatformDropdown(false); }}
+                                                className="w-full px-3 py-1.5 text-left text-[9px] font-black text-rose-400 hover:bg-rose-500/20 flex items-center gap-1.5 transition-colors">
+                                                <ArrowDownTrayIcon className="w-3 h-3" /> 업로드용
+                                            </button>
+                                            {mergeResults?.platformUploadWorkbooks && Object.keys(mergeResults.platformUploadWorkbooks).length > 0 && (
+                                                <>
+                                                    <div className="border-t border-zinc-800 my-0.5" />
+                                                    <button onClick={() => { handleDownloadAllPlatformInvoices(); setShowPlatformDropdown(false); }}
+                                                        className="w-full px-3 py-1.5 text-left text-[9px] font-black text-violet-400 hover:bg-violet-500/20 flex items-center gap-1.5 transition-colors">
+                                                        <ArrowDownTrayIcon className="w-3 h-3" /> 통합 다운로드
+                                                    </button>
+                                                    {(Object.entries(mergeResults.platformUploadWorkbooks) as [string, PlatformUploadResult][]).map(([pName, pResult]) => (
+                                                        <button key={pName} onClick={() => { handleDownloadPlatformInvoice(pName); setShowPlatformDropdown(false); }}
+                                                            className="w-full px-3 py-1.5 text-left text-[9px] font-black text-violet-400 hover:bg-violet-500/20 flex items-center gap-1.5 transition-colors">
+                                                            <ArrowDownTrayIcon className="w-3 h-3" /> {pName} {pResult.count}건
+                                                        </button>
+                                                    ))}
+                                                </>
+                                            )}
+                                            {onDownloadMergedInvoice && isFirstSession && (
+                                                <>
+                                                    <div className="border-t border-zinc-800 my-0.5" />
+                                                    <button onClick={() => { onDownloadMergedInvoice('mgmt'); setShowPlatformDropdown(false); }}
+                                                        className="w-full px-3 py-1.5 text-left text-[9px] font-black text-indigo-400 hover:bg-indigo-500/20 flex items-center gap-1.5 transition-colors">
+                                                        <ArrowDownTrayIcon className="w-3 h-3" /> 합산 기록용
+                                                    </button>
+                                                    <button onClick={() => { onDownloadMergedInvoice('upload'); setShowPlatformDropdown(false); }}
+                                                        className="w-full px-3 py-1.5 text-left text-[9px] font-black text-indigo-400 hover:bg-indigo-500/20 flex items-center gap-1.5 transition-colors">
+                                                        <ArrowDownTrayIcon className="w-3 h-3" /> 합산 업로드용
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
-                                    </div>
-                                    <div className="pt-2">
-                                        <button onClick={() => { onVendorFileChange(null); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
-                                    </div>
+                                    )}
                                 </div>
-                                {onDownloadMergedInvoice && isFirstSession && (
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <button onClick={() => onDownloadMergedInvoice('mgmt')} className="bg-indigo-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-indigo-600 shadow-md flex items-center gap-1"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산 기록용</span></button>
-                                        <button onClick={() => onDownloadMergedInvoice('upload')} className="bg-indigo-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-indigo-600 shadow-md flex items-center gap-1"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산 업로드용</span></button>
-                                    </div>
-                                )}
+                                <button onClick={() => { onVendorFileChange(null); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
                             </div>
                         )}
                     </div>

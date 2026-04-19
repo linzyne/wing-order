@@ -2340,6 +2340,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         const realTotalExtras = rounds.map(r => r.realTotal);
                         const fakeTotalExtras = rounds.map(r => r.fakeTotal);
                         const masterTotalExtras = rounds.map(r => r.realTotal + r.fakeTotal);
+                        // 2차+에만 존재하는 품목 수집
+                        const extraOnlyGroups = new Set<string>();
+                        if (has2) {
+                            rounds.forEach(r => {
+                                Object.keys(r.realByGroup).forEach(g => {
+                                    if (!masterProductSummary.realOrders[g] && !masterProductSummary.fakeOrders[g]) extraOnlyGroups.add(g);
+                                });
+                                Object.keys(r.fakeByGroup).forEach(g => {
+                                    if (!masterProductSummary.realOrders[g] && !masterProductSummary.fakeOrders[g]) extraOnlyGroups.add(g);
+                                });
+                            });
+                        }
+                        const extraGroupCompany = (g: string) => add?.groupToCompany?.[g] || masterProductSummary.productToCompany[g] || '기타';
                         return (
                         <div className="flex gap-6 items-start">
                             <div className="flex-1 min-w-0">
@@ -2355,6 +2368,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             const company = masterProductSummary.productToCompany[name] || '기타';
                                             if (!grouped[company]) grouped[company] = [];
                                             grouped[company].push([name, qty]);
+                                        });
+                                        // 2차+에만 있는 품목 추가
+                                        extraOnlyGroups.forEach(g => {
+                                            const company = extraGroupCompany(g);
+                                            if (!grouped[company]) grouped[company] = [];
+                                            grouped[company].push([g, 0]);
                                         });
                                         const masterFmtCount = (base: number, groupName: string) => fmtCountFromExtras(base, masterExtrasFor(groupName));
                                         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
@@ -2380,6 +2399,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             const company = masterProductSummary.productToCompany[name] || '기타';
                                             if (!grouped[company]) grouped[company] = [];
                                             grouped[company].push([name, count as number]);
+                                        });
+                                        // 2차+에만 있는 품목 추가 (1차 실제구매 0건)
+                                        extraOnlyGroups.forEach(g => {
+                                            const company = extraGroupCompany(g);
+                                            if (!grouped[company]) grouped[company] = [];
+                                            grouped[company].push([g, 0]);
                                         });
                                         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
                                             <div key={company}>
@@ -2411,6 +2436,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 const company = masterProductSummary.productToCompany[name] || '기타';
                                                 if (!grouped[company]) grouped[company] = [];
                                                 grouped[company].push([name, cnt as number]);
+                                            }
+                                        });
+                                        // 2차+에만 있는 품목 추가 (1차 가구매 0건)
+                                        extraOnlyGroups.forEach(g => {
+                                            const company = extraGroupCompany(g);
+                                            if (!grouped[company]) grouped[company] = [];
+                                            // 실제구매에서 이미 추가한 경우 중복 방지
+                                            if (!grouped[company].some(([n]) => n === g)) {
+                                                grouped[company].push([g, 0]);
                                             }
                                         });
                                         return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
