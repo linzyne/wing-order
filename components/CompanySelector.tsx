@@ -489,11 +489,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [batchFiles, setBatchFiles] = useState<Record<string, File>>({});
     const [batchExpectedCounts, setBatchExpectedCounts] = useState<Record<string, number>>({});
     const [batchMasterRows, setBatchMasterRows] = useState<Record<string, any[][]>>({});
+    const [batchPlatforms, setBatchPlatforms] = useState<Record<string, string>>({}); // sessionId → 플랫폼명
     const batchFileInputRef = useRef<HTMLInputElement>(null);
     // 멀티 플랫폼: 업로드된 플랫폼 목록 + 건수
     const [uploadedPlatforms, setUploadedPlatforms] = useState<{ name: string; count: number }[]>([]);
     // 행별 출처 플랫폼 (인덱스 = masterOrderData 행 인덱스, 값 = 플랫폼 이름 또는 null=쿠팡)
     const [rowPlatformSources, setRowPlatformSources] = useState<(string | null)[]>([]);
+
+    // rowPlatformSources + masterOrderData → 주문번호→플랫폼 Map 생성
+    const orderPlatformMap = useMemo(() => {
+        const map = new Map<string, string>();
+        if (!masterOrderData || rowPlatformSources.length === 0) return map;
+        for (let i = 1; i < masterOrderData.length; i++) {
+            const platform = rowPlatformSources[i];
+            if (!platform) continue; // null = 쿠팡(기본) → Map에 안 넣음
+            const orderNum = String(masterOrderData[i]?.[2] || '').trim();
+            if (orderNum) map.set(orderNum.replace(/[^A-Z0-9]/gi, '').toUpperCase(), platform);
+        }
+        return map;
+    }, [masterOrderData, rowPlatformSources]);
 
     const [isBulkMode, setIsBulkMode] = useState(false);
     const [bulkText, setBulkText] = useState('');
@@ -948,7 +962,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const realOrders: Record<string, number> = {};
         const fakeOrders: Record<string, number> = {};
         const unclaimedOrders: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number }[] = [];
-        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean }[] = [];
+        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean; platform: string }[] = [];
         const skippedOrders: { recipientName: string; productName: string; orderNumber: string; qty: number; reason: string }[] = [];
         let masterRawTotalQty = 0;
         let masterFileRowCount = 0; // 파일 내 비어있지 않은 데이터 행 수
@@ -992,7 +1006,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             const isFake = fakeNums.has(orderNum);
             const company = productToCompany[groupName] || '';
-            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake });
+            const platform = rowPlatformSources[i] || '쿠팡';
+            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake, platform });
             if (isFake) {
                 fakeOrders[groupName] = (fakeOrders[groupName] || 0) + qty;
             } else {
@@ -1016,7 +1031,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (unclaimedOrders.length > 0) console.log(`[마스터검증] unclaimedOrders:`, unclaimedOrders);
         if (skippedOrders.length > 0) console.log(`[마스터검증] skippedOrders:`, skippedOrders);
         return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount };
-    }, [masterOrderData, fakeOrderInput, pricingConfig]);
+    }, [masterOrderData, fakeOrderInput, pricingConfig, rowPlatformSources]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
     // 차수별로 분리: [2차, 3차, 4차, ...] — 데이터 없는 차수는 0으로 채움
@@ -1027,12 +1042,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         fakeByGroup: Record<string, number>;
         realTotal: number;
         fakeTotal: number;
+        platform: string;
     };
     const additionalRoundsSummary = useMemo(() => {
         const buckets: Record<number, RoundBucket> = {};
         const groupToCompany: Record<string, string> = {};
         const makeBucket = (): RoundBucket => ({
-            realByCompany: {}, fakeByCompany: {}, realByGroup: {}, fakeByGroup: {}, realTotal: 0, fakeTotal: 0,
+            realByCompany: {}, fakeByCompany: {}, realByGroup: {}, fakeByGroup: {}, realTotal: 0, fakeTotal: 0, platform: '쿠팡',
         });
         let maxRound = 1;
         let hasData = false;
@@ -1051,6 +1067,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (!rows || rows.length === 0) return;
                 hasData = true;
                 const b = buckets[session.round] || (buckets[session.round] = makeBucket());
+                // 배치 세션의 플랫폼명 설정
+                if (batchPlatforms[session.id]) b.platform = batchPlatforms[session.id];
                 rows.forEach(row => {
                     const orderNum = String(row[2] || '').trim();
                     const groupName = String(row[10] || '').trim();
@@ -1090,7 +1108,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const realTotal = rounds.reduce((s, b) => s + b.realTotal, 0);
         const fakeTotal = rounds.reduce((s, b) => s + b.fakeTotal, 0);
         return { rounds, groupToCompany, realTotal, fakeTotal };
-    }, [companySessions, allOrderRows, fakeOrderInput, batchMasterRows]);
+    }, [companySessions, allOrderRows, fakeOrderInput, batchMasterRows, batchPlatforms]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배사별)
     const allExpenses = useMemo(() => {
@@ -1379,6 +1397,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setBatchFiles(prev => ({ ...prev, ...newBatchFiles }));
             setBatchExpectedCounts(prev => ({ ...prev, ...newExpectedCounts }));
             setBatchMasterRows(prev => ({ ...prev, ...newBatchMasterRows }));
+            // 배치 세션별 플랫폼명 저장
+            const batchPlatformName = detectedPlatform ? detectedPlatform.name : '쿠팡';
+            const newBatchPlatforms: Record<string, string> = {};
+            for (const sessionId of Object.keys(newBatchFiles)) {
+                newBatchPlatforms[sessionId] = batchPlatformName;
+            }
+            setBatchPlatforms(prev => ({ ...prev, ...newBatchPlatforms }));
         } catch (error) {
             console.error("Batch upload failed:", error);
             alert('파일 처리 중 오류가 발생했습니다.');
@@ -2276,14 +2301,38 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         const add = additionalRoundsSummary;
                         const has2 = !!add && add.rounds.length > 0;
                         const rounds = add?.rounds || [];
+                        // 1차 플랫폼 약어
+                        const masterPlatform = uploadedPlatforms.length > 0 ? uploadedPlatforms[0].name : '쿠팡';
+                        const roundPlatforms = [masterPlatform, ...rounds.map(r => r.platform || '쿠팡')];
+                        // 플랫폼 약어 매핑
+                        const platformAbbr = (p: string) => {
+                            const n = p.replace(/\s/g, '');
+                            if (n === '쿠팡') return 'C';
+                            if (n.startsWith('토스') || n === 'toss') return 'T';
+                            if (n.startsWith('지마켓') || n === 'gmarket') return 'G';
+                            if (n.startsWith('옥션') || n === 'auction') return 'A';
+                            if (n.startsWith('네이버') || n === 'naver') return 'N';
+                            if (n.startsWith('11번가') || n === '11st') return '11';
+                            if (n.startsWith('위메프') || n === 'wemakeprice') return 'W';
+                            if (n.startsWith('인터파크') || n === 'interpark') return 'I';
+                            return p.charAt(0).toUpperCase();
+                        };
+                        const platformColor = (p: string) => {
+                            const n = p.replace(/\s/g, '');
+                            if (n === '쿠팡') return 'text-rose-400';
+                            if (n.startsWith('토스') || n === 'toss') return 'text-blue-400';
+                            if (n.startsWith('지마켓') || n === 'gmarket') return 'text-green-400';
+                            return 'text-purple-400';
+                        };
                         const fmtTotal = (base: number, extras: number[]) =>
-                            has2 ? `${base}건${extras.map(e => `+${e}건`).join('')}` : `${base}건`;
+                            has2 ? `${platformAbbr(roundPlatforms[0])}${base}건${extras.map((e, i) => `+${platformAbbr(roundPlatforms[i + 1])}${e}건`).join('')}` : `${platformAbbr(roundPlatforms[0])}${base}건`;
                         const renderExtras = (extras: number[]) => extras.map((e, i) => (
-                            <span key={i} className={e > 0 ? 'text-cyan-400' : 'text-zinc-700'}>+{e}건</span>
+                            <span key={i} className={e > 0 ? 'text-cyan-400' : 'text-zinc-700'}>+<span className={e > 0 ? platformColor(roundPlatforms[i + 1]) : 'text-zinc-700'}>{platformAbbr(roundPlatforms[i + 1])}</span>{e}건</span>
                         ));
                         const fmtCountFromExtras = (base: number, extras: number[]) => {
-                            if (!has2) return <span className="font-black ml-1">{base}건</span>;
-                            return <span className="font-black ml-1">{base}건{renderExtras(extras)}</span>;
+                            const baseColor = base > 0 ? platformColor(roundPlatforms[0]) : 'text-zinc-700';
+                            if (!has2) return <span className="font-black ml-1"><span className={baseColor}>{platformAbbr(roundPlatforms[0])}</span>{base}건</span>;
+                            return <span className="font-black ml-1"><span className={baseColor}>{platformAbbr(roundPlatforms[0])}</span>{base}건{renderExtras(extras)}</span>;
                         };
                         const realExtrasFor = (name: string) => rounds.map(r => r.realByGroup[name] || 0);
                         const fakeExtrasFor = (name: string) => rounds.map(r => r.fakeByGroup[name] || 0);
@@ -2312,10 +2361,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <div key={company}>
                                                 <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
                                                 {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, qty]) => (
-                                                    <div key={name} className="flex text-sm gap-1 pl-2">
+                                                    <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
                                                         <span className="text-zinc-400">{name}</span>
                                                         <span className="text-sky-300">{masterFmtCount(qty, name)}</span>
-                                                    </div>
+                                                                                                            </div>
                                                 ))}
                                             </div>
                                         ));
@@ -2336,10 +2385,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <div key={company}>
                                                 <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
                                                 {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
-                                                    <div key={name} className="flex text-sm gap-1 pl-2">
+                                                    <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
                                                         <span className="text-zinc-400">{name}</span>
                                                         <span className="text-white font-black">{fmtCountFromExtras(count, realExtrasFor(name))}</span>
-                                                    </div>
+                                                                                                            </div>
                                                 ))}
                                             </div>
                                         ));
@@ -2368,10 +2417,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <div key={company}>
                                                 <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
                                                 {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
-                                                    <div key={name} className="flex text-sm gap-1 pl-2">
+                                                    <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
                                                         <span className="text-zinc-400">{name}</span>
                                                         <span className={`font-black ${count > 0 ? 'text-amber-400' : 'text-zinc-700'}`}>{fmtCountFromExtras(count, fakeExtrasFor(name))}</span>
-                                                    </div>
+                                                                                                            </div>
                                                 ))}
                                             </div>
                                         ));
@@ -3099,11 +3148,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             >
                                 {sortCompanies(Object.keys(pricingConfig)).map(company => (
                                     <SortableCompanyRow key={company} id={company}>
-                                        {(companySessions[company] || []).map((session, sIdx) => {
-                                        const prevItems = (companySessions[company] || [])
+                                        {(() => {
+                                        // 업체의 라운드별 수량+플랫폼 계산
+                                        const sessions = companySessions[company] || [];
+                                        const masterPlatformName = uploadedPlatforms.length > 0 ? uploadedPlatforms[0].name : '쿠팡';
+                                        const roundOrderCountsForCompany = sessions.map(s => {
+                                            const count = allOrderRows[s.id]?.length
+                                                || (allItemSummaries[s.id] ? Object.values(allItemSummaries[s.id]).reduce((a: number, b: any) => a + b.count, 0) : 0);
+                                            const platform = s.round <= 1 ? masterPlatformName : (batchPlatforms[s.id] || '쿠팡');
+                                            return { round: s.round, count, platform };
+                                        });
+                                        const companyTotal = roundOrderCountsForCompany.reduce((s, r) => s + r.count, 0);
+                                        return sessions.map((session, sIdx) => {
+                                        const prevItems = sessions
                                             .slice(0, sIdx)
                                             .map(ps => ({ round: ps.round, summary: allItemSummaries[ps.id] || {} }))
                                             .filter(item => Object.keys(item.summary).length > 0);
+                                        const sessionPlatform = session.round <= 1 ? masterPlatformName : (batchPlatforms[session.id] || '쿠팡');
                                         return workstationsReady ? (
                                             <CompanyWorkstationRow
                                                 key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
@@ -3124,9 +3185,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 }
                                                 missingItems={sIdx === 0 ? (missingOrderAnalysis?.missingByCompany?.[company] || []) : []}
                                                 fakeCourierRows={getCourierRowsForCompany(company)}
+                                                orderPlatformMap={orderPlatformMap}
+                                                platformConfigs={platformConfigs}
+                                                roundPlatform={sessionPlatform}
+                                                companyTotalOrders={companyTotal}
+                                                roundOrderCounts={roundOrderCountsForCompany}
                                             />
                                         ) : null;
-                                    })}
+                                    });
+                                    })()}
                                 </SortableCompanyRow>
                             ))}
                             </SortableContext>

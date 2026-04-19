@@ -15,6 +15,26 @@ import type { SessionResultData } from '../services/firestoreService';
 
 declare var XLSX: any;
 
+const platformAbbr = (p: string) => {
+    const n = p.replace(/\s/g, '');
+    if (n === '쿠팡') return 'C';
+    if (n.startsWith('토스') || n === 'toss') return 'T';
+    if (n.startsWith('지마켓') || n === 'gmarket') return 'G';
+    if (n.startsWith('옥션') || n === 'auction') return 'A';
+    if (n.startsWith('네이버') || n === 'naver') return 'N';
+    if (n.startsWith('11번가') || n === '11st') return '11';
+    if (n.startsWith('위메프') || n === 'wemakeprice') return 'W';
+    if (n.startsWith('인터파크') || n === 'interpark') return 'I';
+    return p.charAt(0).toUpperCase();
+};
+const platformColorClass = (p: string) => {
+    const n = p.replace(/\s/g, '');
+    if (n === '쿠팡') return 'text-rose-400';
+    if (n.startsWith('토스') || n === 'toss') return 'text-blue-400';
+    if (n.startsWith('지마켓') || n === 'gmarket') return 'text-green-400';
+    return 'text-purple-400';
+};
+
 interface WorkflowStatus {
     order: boolean;
     deposit: boolean;
@@ -60,6 +80,9 @@ interface CompanyWorkstationRowProps {
     orderPlatformMap?: Map<string, string>;
     platformConfigs?: PlatformConfigs;
     fakeCourierRows?: any[][];
+    roundPlatform?: string;          // 이 세션의 플랫폼명
+    companyTotalOrders?: number;     // 업체 전체 합계 (1차+2차+...)
+    roundOrderCounts?: { round: number; count: number; platform: string }[]; // 라운드별 수량+플랫폼
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -70,7 +93,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     businessId, onConfigChange, masterExpectedCount = 0,
     missingItems = [],
     orderPlatformMap, platformConfigs,
-    fakeCourierRows
+    fakeCourierRows,
+    roundPlatform = '쿠팡', companyTotalOrders = 0, roundOrderCounts = []
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -502,6 +526,27 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const pResult = mergeResults?.platformUploadWorkbooks?.[platformName];
         if (pResult) XLSX.writeFile(pResult.workbook, pResult.fileName);
     };
+    const handleDownloadAllPlatformInvoices = () => {
+        if (!mergeResults?.platformUploadWorkbooks) return;
+        // 쿠팡(기본) 업로드용도 함께 다운로드
+        handleDownloadInvoice('upload');
+        // 각 플랫폼별 파일 순차 다운로드 (브라우저 차단 방지용 딜레이)
+        const entries = Object.entries(mergeResults.platformUploadWorkbooks) as [string, PlatformUploadResult][];
+        entries.forEach(([, pResult], idx) => {
+            setTimeout(() => XLSX.writeFile(pResult.workbook, pResult.fileName), (idx + 1) * 300);
+        });
+    };
+    const [showPlatformDropdown, setShowPlatformDropdown] = useState(false);
+    const platformDropdownRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (platformDropdownRef.current && !platformDropdownRef.current.contains(e.target as Node)) {
+                setShowPlatformDropdown(false);
+            }
+        };
+        if (showPlatformDropdown) document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showPlatformDropdown]);
 
     const handleAddAdj = () => {
         const amount = parseInt(adjAmount);
@@ -697,16 +742,27 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {localResult ? (
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
+                                {isFirstSession && (
+                                    <div className="flex items-center justify-center gap-4">
+                                        <div className="text-center">
+                                            <div className="text-rose-500 font-black text-xl">{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                        </div>
+                                        <div className="h-6 w-px bg-zinc-800" />
+                                        {onDownloadMergedOrder ? (
+                                            <button onClick={onDownloadMergedOrder} className="bg-zinc-800 text-white border border-zinc-700 px-3 py-1 rounded font-black text-[10px] hover:bg-zinc-700 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>합산</span></button>
+                                        ) : (
+                                            <button onClick={handleDownloadOrder} className="bg-rose-500 text-white hover:bg-rose-600 px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
+                                        )}
+                                    </div>
+                                )}
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="text-center">
-                                        <div className={`font-black ${isFirstSession ? 'text-rose-500 text-xl' : 'text-indigo-400 text-base'}`}>{isFirstSession ? '' : '+'}{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                        <div className={`font-black ${!isFirstSession ? 'text-indigo-400 text-base' : 'text-indigo-400 text-base'}`}>{!isFirstSession && '+'}{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                     </div>
                                     <div className="h-6 w-px bg-zinc-800" />
-                                    <button onClick={handleDownloadOrder} className={`${isFirstSession ? 'bg-rose-500 text-white hover:bg-rose-600' : 'bg-indigo-500 text-white hover:bg-indigo-600'} px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all`}><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
-                                    {onDownloadMergedOrder && isFirstSession && (
-                                        <button onClick={onDownloadMergedOrder} className="bg-zinc-800 text-white border border-zinc-700 px-3 py-1 rounded font-black text-[10px] hover:bg-zinc-700 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>합산</span></button>
-                                    )}
+                                    <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
                                 </div>
                                 {unmatchedList.length > 0 && (
                                     <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
@@ -772,8 +828,24 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="text-center">
-                                        <div className={`font-black ${isFirstSession ? 'text-rose-500 text-xl' : 'text-indigo-400 text-base'}`}>{isFirstSession ? '' : '+'}{syncedData.orderCount}</div>
-                                        <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                        {isFirstSession && roundOrderCounts.length > 1 ? (
+                                            <>
+                                                <div className="text-rose-500 font-black text-xl">{companyTotalOrders}</div>
+                                                <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                                <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                                                    {roundOrderCounts.map((r, i) => (
+                                                        <span key={i} className={`text-[10px] font-black ${platformColorClass(r.platform)}`}>
+                                                            {platformAbbr(r.platform)}{r.count}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <div className={`font-black ${isFirstSession ? 'text-rose-500 text-xl' : 'text-indigo-400 text-base'}`}>{isFirstSession ? '' : '+'}{syncedData.orderCount}</div>
+                                                <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                            </>
+                                        )}
                                     </div>
                                     <div className="h-6 w-px bg-zinc-800" />
                                     <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
@@ -919,8 +991,36 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="flex flex-col items-center gap-1 relative">
                                         <div className="text-rose-400 font-black text-[9px] uppercase tracking-widest">{currentStat?.upload || 0}건</div>
                                         <div className="flex items-center gap-1.5">
-                                            <button onClick={() => handleDownloadInvoice('upload')} className="bg-rose-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-rose-600 shadow-md">업로드용</button>
-                                            <button 
+                                            {mergeResults?.platformUploadWorkbooks && Object.keys(mergeResults.platformUploadWorkbooks).length > 0 ? (
+                                                <div className="relative" ref={platformDropdownRef}>
+                                                    <button onClick={() => setShowPlatformDropdown(!showPlatformDropdown)}
+                                                        className="bg-rose-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-rose-600 shadow-md flex items-center gap-1">
+                                                        업로드용 <ChevronDownIcon className={`w-3 h-3 transition-transform ${showPlatformDropdown ? 'rotate-180' : ''}`} />
+                                                    </button>
+                                                    {showPlatformDropdown && (
+                                                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 min-w-[120px] py-1 animate-fade-in">
+                                                            <button onClick={() => { handleDownloadAllPlatformInvoices(); setShowPlatformDropdown(false); }}
+                                                                className="w-full px-3 py-1.5 text-left text-[9px] font-black text-violet-400 hover:bg-violet-500/20 flex items-center gap-1.5 transition-colors">
+                                                                <ArrowDownTrayIcon className="w-3 h-3" /> 통합 다운로드
+                                                            </button>
+                                                            <div className="border-t border-zinc-800 my-0.5" />
+                                                            <button onClick={() => { handleDownloadInvoice('upload'); setShowPlatformDropdown(false); }}
+                                                                className="w-full px-3 py-1.5 text-left text-[9px] font-black text-rose-400 hover:bg-rose-500/20 flex items-center gap-1.5 transition-colors">
+                                                                <ArrowDownTrayIcon className="w-3 h-3" /> 쿠팡 {currentStat?.upload || 0}건
+                                                            </button>
+                                                            {(Object.entries(mergeResults.platformUploadWorkbooks) as [string, PlatformUploadResult][]).map(([pName, pResult]) => (
+                                                                <button key={pName} onClick={() => { handleDownloadPlatformInvoice(pName); setShowPlatformDropdown(false); }}
+                                                                    className="w-full px-3 py-1.5 text-left text-[9px] font-black text-violet-400 hover:bg-violet-500/20 flex items-center gap-1.5 transition-colors">
+                                                                    <ArrowDownTrayIcon className="w-3 h-3" /> {pName} {pResult.count}건
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <button onClick={() => handleDownloadInvoice('upload')} className="bg-rose-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-rose-600 shadow-md">업로드용</button>
+                                            )}
+                                            <button
                                                 onClick={() => onSelectToggle?.(sessionId)}
                                                 className={`w-6 h-6 rounded border flex items-center justify-center transition-all ${isSelected ? 'bg-rose-500 border-rose-400 text-white shadow-md' : 'bg-zinc-900 border-zinc-700 text-transparent hover:border-rose-500/50'}`}
                                             >
@@ -932,16 +1032,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <button onClick={() => { onVendorFileChange(null); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
                                     </div>
                                 </div>
-                                {mergeResults?.platformUploadWorkbooks && (
-                                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                                        {(Object.entries(mergeResults.platformUploadWorkbooks) as [string, PlatformUploadResult][]).map(([pName, pResult]) => (
-                                            <button key={pName} onClick={() => handleDownloadPlatformInvoice(pName)}
-                                                className="bg-violet-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-violet-600 shadow-md flex items-center gap-1">
-                                                <ArrowDownTrayIcon className="w-3 h-3" /><span>{pName} {pResult.count}건</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
                                 {onDownloadMergedInvoice && isFirstSession && (
                                     <div className="flex items-center gap-2 mt-1">
                                         <button onClick={() => onDownloadMergedInvoice('mgmt')} className="bg-indigo-500 text-white px-2 py-1 rounded font-black text-[9px] hover:bg-indigo-600 shadow-md flex items-center gap-1"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산 기록용</span></button>
