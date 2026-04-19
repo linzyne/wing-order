@@ -270,7 +270,7 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
 
   return (
     <div className="glass rounded-2xl shadow-xl overflow-hidden h-fit sticky top-2">
-      <div className="bg-gradient-to-r from-rose-500/90 to-pink-600/90 px-4 py-2.5">
+      <div className="bg-zinc-800/80 border-b border-zinc-700/50 px-4 py-2.5">
         <h2 className="text-[13px] font-black text-white tracking-wide">메모 & 할일</h2>
       </div>
 
@@ -283,12 +283,12 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
             onChange={(e) => setNewTodoText(e.target.value)}
             onKeyDown={handleKeyPress}
             placeholder="할일 추가..."
-            className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm placeholder-zinc-500 focus:outline-none focus:border-rose-500 transition-colors"
+            className="flex-1 px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm placeholder-zinc-500 focus:outline-none focus:border-zinc-500 transition-colors"
           />
           <select
             value={newTodoDay || ''}
             onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setNewTodoDay((e.target.value || undefined) as DayOfWeek | undefined)}
-            className="w-14 px-1 py-2 text-center text-sm rounded-lg border cursor-pointer focus:outline-none focus:border-rose-500 appearance-none font-bold bg-zinc-800 border-zinc-700 text-zinc-500"
+            className="w-14 px-1 py-2 text-center text-sm rounded-lg border cursor-pointer focus:outline-none focus:border-zinc-500 appearance-none font-bold bg-zinc-800 border-zinc-700 text-zinc-500"
             style={getDayInlineStyle(newTodoDay)}
           >
             <option value="">요일</option>
@@ -299,7 +299,7 @@ const TodoList: React.FC<TodoListProps> = ({ businessId }) => {
           <button
             onClick={addTodo}
             disabled={!newTodoText.trim()}
-            className="px-3 py-2 btn-accent disabled:opacity-30 disabled:cursor-not-allowed disabled:transform-none rounded-lg"
+            className="px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed rounded-lg transition-colors"
           >
             <PlusIcon className="w-5 h-5" />
           </button>

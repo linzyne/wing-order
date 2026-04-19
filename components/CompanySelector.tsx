@@ -5,7 +5,7 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
-import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon, Cog6ToothIcon } from './icons';
+import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder, subscribeQuickRecipients, saveQuickRecipients, type QuickRecipientData } from '../services/firestoreService';
@@ -42,7 +42,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -418,7 +418,7 @@ const CourierTemplateManager: React.FC<{
     );
 };
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false, isCurrent = false }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
     const { courierTemplates, saveTemplates: saveCourierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates(businessId);
@@ -2428,12 +2428,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             )}
 
             {/* 사이드바 포탈: 수동 발주 + 발주서 업로드 + 가구매 명단 */}
-            {isActive && document.getElementById('manual-order-portal') && createPortal(
+            {isCurrent && document.getElementById('manual-order-portal') && createPortal(
                 <>
                 {/* 1) 수동 발주 추가 */}
                 <details className="glass-light rounded-2xl mb-3 group/manual">
                     <summary className="flex items-center justify-between gap-2 p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden hover:bg-zinc-800/20 rounded-2xl transition-colors duration-200">
-                        <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                        <h3 className="text-zinc-400 font-black text-[12px] uppercase tracking-widest flex items-center gap-2">
                             <PlusCircleIcon className="w-4 h-4 text-rose-500" />
                             수동 발주 추가
                             {manualOrders.length > 0 && (
@@ -2512,7 +2512,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 {/* 1-2) 수동 입금 추가 */}
                 <details className="glass-light rounded-2xl mb-3 group/transfer">
                     <summary className="flex items-center justify-between gap-2 p-3 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden hover:bg-zinc-800/20 rounded-2xl transition-colors duration-200">
-                        <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                        <h3 className="text-zinc-400 font-black text-[12px] uppercase tracking-widest flex items-center gap-2">
                             <BoltIcon className="w-4 h-4 text-indigo-500" />
                             수동 입금 추가
                             {manualTransfers.length > 0 && (
@@ -2585,12 +2585,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 <div className="mb-3 flex flex-col gap-2">
                     <label
                         htmlFor={`file-upload-sidebar-${businessId}`}
-                        className="flex items-center gap-2 px-3 py-2.5 rounded-xl border border-dashed border-zinc-800/80 hover:border-rose-500/40 hover:bg-rose-500/5 cursor-pointer transition-all duration-200"
+                        className="flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-800 border border-zinc-700/40 hover:border-zinc-600 cursor-pointer transition-all duration-200"
                         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
                         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     >
                         <ArrowUpTrayIcon className="w-4 h-4 text-rose-500 shrink-0" />
-                        <span className="text-[10px] font-black text-zinc-400">발주서 엑셀 업로드</span>
+                        <span className="text-[12px] font-black text-zinc-400">발주서 엑셀 업로드</span>
                         <input id={`file-upload-sidebar-${businessId}`} type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }} />
                     </label>
                     {masterOrderFile && (
@@ -2654,7 +2654,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
                             <div className="bg-rose-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-rose-400" /></div>
-                            <h3 className="text-zinc-200 font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5">
+                            <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-1.5">
                                 가구매 명단 설정
                                 {fakeOrderAnalysis.inputNumbers.size > 0 && (
                                     <div className="flex gap-1">
@@ -2788,20 +2788,28 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 const file = courierFiles[tmpl.id];
                                 const result = courierResults[tmpl.id];
                                 const matched = courierMatchedRows[tmpl.id];
+                                const fullName = tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name;
+                                const isOffice = fullName.includes('사무실');
+                                const isAgent = fullName.includes('대행');
+                                const cs = isOffice
+                                    ? { border: 'border-amber-500/30', bg: 'bg-amber-950/30', text: 'text-amber-400', hoverBg: 'hover:bg-amber-900/40', hoverBorder: 'hover:border-amber-500/50', activeBg: 'bg-amber-950/30 border-amber-500/30 text-amber-400', inactiveBorder: 'hover:border-amber-500/40 hover:text-amber-400' }
+                                    : isAgent
+                                    ? { border: 'border-cyan-500/30', bg: 'bg-cyan-950/30', text: 'text-cyan-400', hoverBg: 'hover:bg-cyan-900/40', hoverBorder: 'hover:border-cyan-500/50', activeBg: 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400', inactiveBorder: 'hover:border-cyan-500/40 hover:text-cyan-400' }
+                                    : { border: 'border-indigo-500/30', bg: 'bg-indigo-950/30', text: 'text-indigo-400', hoverBg: 'hover:bg-indigo-900/40', hoverBorder: 'hover:border-indigo-500/50', activeBg: 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400', inactiveBorder: 'hover:border-indigo-500/40 hover:text-indigo-400' };
                                 return (
-                                    <div key={tmpl.id} className="space-y-1.5 p-2 rounded-xl border border-zinc-800/60 bg-zinc-950/40">
+                                    <div key={tmpl.id} className={`space-y-1.5 p-2 rounded-xl border ${cs.border} bg-zinc-950/40`}>
                                         <button
                                             onClick={() => handleCourierDownload(tmpl)}
                                             disabled={!masterOrderFile || fakeOrderAnalysis.inputNumbers.size === 0}
-                                            className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed bg-indigo-950/30 border-indigo-500/30 text-indigo-400 hover:bg-indigo-900/40 hover:border-indigo-500/50"
+                                            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed ${cs.bg} ${cs.border} ${cs.text} ${cs.hoverBg} ${cs.hoverBorder}`}
                                         >
                                             <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                                            <span>{tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
+                                            <span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
                                         </button>
                                         <div className="flex items-center gap-1.5">
-                                            <label className={`flex-1 flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md ${file ? 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400'}`}>
+                                            <label className={`flex-1 flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md ${file ? cs.activeBg : `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}`}`}>
                                                 <ArrowUpTrayIcon className="w-3.5 h-3.5" />
-                                                <span className="truncate">{file ? file.name : `${tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name} 운송장 업로드`}</span>
+                                                <span className="truncate flex items-center gap-1">{file ? file.name : (<>{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} 운송장 업로드</>)}</span>
                                                 <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); e.target.value = ''; }} />
                                             </label>
                                             {file && (
@@ -2849,7 +2857,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 <div className="glass-light p-4 rounded-2xl mb-3">
                     <div className="flex items-center gap-3 mb-4">
                         <div className="bg-orange-500/10 p-2 rounded-lg"><ChartBarIcon className="w-4 h-4 text-orange-500" /></div>
-                        <h3 className="text-zinc-200 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
+                        <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-2">
                             비용 관리
                             {allExpenses.length > 0 && (
                                 <span className="bg-orange-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
@@ -2945,20 +2953,49 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 document.getElementById('manual-order-portal')!
             )}
 
+            <div className="sticky top-0 z-30 rounded-2xl px-4 py-2.5 shadow-2xl backdrop-blur-2xl bg-zinc-950/70 border border-zinc-800/40">
+                <div className="flex flex-wrap items-center gap-2">
+                    <button onClick={handleDownloadMergedUploadInvoices} disabled={selectedSessionIds.size === 0} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95 disabled:opacity-25 disabled:cursor-not-allowed">
+                        <BoltIcon className="w-3.5 h-3.5" /><span>송장 병합</span>{selectedSessionIds.size > 0 && <span className="bg-zinc-700/60 text-[10px] px-1.5 py-0.5 rounded-full">{selectedSessionIds.size}</span>}
+                    </button>
+                    <button onClick={handleDownloadDepositList} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95">
+                        <ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>입금목록</span>
+                    </button>
+                    <button onClick={handleDownloadWorkLog} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95">
+                        <ClipboardDocumentCheckIcon className="w-3.5 h-3.5" /><span>업무일지</span>
+                    </button>
+                    <div className="flex flex-col items-end gap-1">
+                        <button
+                            onClick={handleSaveToSalesHistory}
+                            disabled={saveStatus === 'saving'}
+                            className={`group flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 active:scale-95 border ${
+                                saveStatus === 'success'
+                                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                    : saveStatus === 'error'
+                                    ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                                    : saveStatus === 'saving'
+                                    ? 'bg-zinc-800/60 text-zinc-500 border-zinc-700/30 cursor-wait'
+                                    : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/30 hover:text-white hover:border-zinc-600 hover:bg-zinc-700/60'
+                            }`}
+                        >
+                            <ChartBarIcon className="w-3.5 h-3.5" />
+                            <span>{
+                                saveStatus === 'saving' ? '저장 중...'
+                                : saveStatus === 'success' ? '기록 완료!'
+                                : saveStatus === 'error' ? '저장 실패'
+                                : '기록하기'
+                            }</span>
+                        </button>
+                        {saveStatus === 'error' && saveError && (
+                            <span className="text-red-400 text-[10px] font-bold max-w-[200px] text-right">{saveError}</span>
+                        )}
+                    </div>
+                </div>
+            </div>
+
             <div className="flex flex-col lg:flex-row gap-6">
             <section className="flex-1 glass rounded-[1.8rem] p-6 shadow-xl">
-                <div className="flex flex-col gap-6">
-                    <div className="flex flex-col gap-4 w-full">
-                        <div className="flex items-center gap-6">
-                            <div className="bg-rose-500/10 p-4 rounded-[1.5rem] border border-rose-500/20 shadow-inner"><span className="text-3xl">💰</span></div>
-                            <div>
-                                <h2 className="text-zinc-500 font-black text-[10px] uppercase tracking-[0.2em] mb-0.5">Total Daily Settlement</h2>
-                                <div className="flex items-baseline gap-2">
-                                    <span className="text-4xl font-black text-white drop-shadow-lg">{grandTotal.toLocaleString()}</span>
-                                    <span className="text-xl font-black text-rose-500">원</span>
-                                </div>
-                            </div>
-                        </div>
+                <div className="flex flex-col gap-4">
                         {missingOrderAnalysis && missingOrderAnalysis.missingGroups.length > 0 && (
                             <div className="bg-red-500/10 border-2 border-red-500/50 rounded-xl px-4 py-3 animate-fade-in">
                                 <div className="text-red-400 text-[12px] font-black flex items-center gap-1 mb-2">
@@ -3004,40 +3041,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             ))}
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-3 shrink-0">
-                        <button onClick={handleDownloadMergedUploadInvoices} disabled={selectedSessionIds.size === 0} className={`flex items-center gap-3 px-4 py-2.5 rounded-xl font-black text-xs transition-all border shadow-lg disabled:opacity-30 disabled:cursor-not-allowed ${selectedSessionIds.size > 0 ? 'bg-rose-500 text-white border-rose-400 ring-4 ring-rose-500/10' : 'bg-zinc-800 text-zinc-500 border-zinc-700'}`}>
-                            <BoltIcon className="w-4 h-4" /><span>송장 병합 ({selectedSessionIds.size})</span>
-                        </button>
-                        <button onClick={handleDownloadDepositList} className="flex items-center gap-3 bg-zinc-800 text-zinc-300 hover:text-white px-4 py-2.5 rounded-xl font-black text-xs transition-all border border-zinc-700 hover:border-zinc-500 shadow-lg"><ArrowDownTrayIcon className="w-4 h-4" /><span>입금목록</span></button>
-                        <button onClick={handleDownloadWorkLog} className="flex items-center gap-3 bg-rose-500 text-white hover:bg-rose-600 px-6 py-2.5 rounded-xl font-black text-sm transition-all shadow-xl border border-rose-400/20"><ClipboardDocumentCheckIcon className="w-5 h-5" /><span>업무일지</span></button>
-                        <div className="flex flex-col items-end gap-1">
-                            <button
-                                onClick={handleSaveToSalesHistory}
-                                disabled={saveStatus === 'saving'}
-                                className={`flex items-center gap-3 px-6 py-2.5 rounded-xl font-black text-sm transition-all shadow-xl border ${
-                                    saveStatus === 'success'
-                                        ? 'bg-emerald-500 text-white border-emerald-400/20'
-                                        : saveStatus === 'error'
-                                        ? 'bg-red-500 text-white border-red-400/20'
-                                        : saveStatus === 'saving'
-                                        ? 'bg-zinc-700 text-zinc-400 border-zinc-600 cursor-wait'
-                                        : 'bg-indigo-500 text-white hover:bg-indigo-600 border-indigo-400/20'
-                                }`}
-                            >
-                                <ChartBarIcon className="w-5 h-5" />
-                                <span>{
-                                    saveStatus === 'saving' ? '저장 중...'
-                                    : saveStatus === 'success' ? '기록 완료!'
-                                    : saveStatus === 'error' ? '저장 실패'
-                                    : '기록하기'
-                                }</span>
-                            </button>
-                            {saveStatus === 'error' && saveError && (
-                                <span className="text-red-400 text-[11px] font-bold max-w-[200px] text-right">{saveError}</span>
-                            )}
-                        </div>
-                    </div>
-                </div>
             </section>
 
             </div>

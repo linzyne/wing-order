@@ -342,9 +342,12 @@ const QuestTimeline: React.FC = () => {
   const cancelEdit = () => setEditing(null);
 
   const handleReset = () => {
-    if (!window.confirm('⚠️ 모든 퀘스트를 초기화합니다. 정말 삭제하시겠습니까?\n(이 동작은 되돌릴 수 없습니다)')) return;
-    if (!window.confirm('한 번 더 확인합니다. 정말 모든 퀘스트를 지우시겠습니까?')) return;
-    persist(() => []);
+    if (!window.confirm('모든 퀘스트의 완료 상태를 초기화합니다.')) return;
+    persist(prev => prev.map(q => ({
+      ...q,
+      done: false,
+      children: q.children.map(c => ({ ...c, done: false })),
+    })));
   };
 
   const particles = useMemo(
@@ -402,7 +405,7 @@ const QuestTimeline: React.FC = () => {
         <div className="flex items-center gap-2">
           <button
             onClick={() => { setInsertingAt(null); setNewTitle(''); setAdding(true); }}
-            className="px-3 py-1.5 text-[11px] font-black rounded-lg bg-rose-500 hover:bg-rose-400 text-white transition-all shadow-lg shadow-rose-900/40 hover:shadow-rose-500/40 hover:scale-105"
+            className="px-3 py-1.5 text-[11px] font-black rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition-all"
           >
             + ADD QUEST
           </button>
@@ -417,27 +420,12 @@ const QuestTimeline: React.FC = () => {
         </div>
       </div>
 
-      {/* Progress bar */}
-      <div className="relative h-2 rounded-full bg-zinc-800/80 overflow-hidden mb-5 shadow-inner">
-        <div
-          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-rose-500 via-fuchsia-500 to-amber-400 transition-all duration-700 ease-out overflow-hidden"
-          style={{ width: `${progress}%` }}
-        >
-          <div className="absolute inset-0 quest-shine" />
-        </div>
-        {progress > 0 && (
-          <div
-            className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white shadow-[0_0_12px_rgba(244,63,94,0.9)] transition-all duration-700"
-            style={{ left: `calc(${progress}% - 6px)` }}
-          />
-        )}
-      </div>
 
       {/* Quest nodes */}
       <div className="relative flex items-start flex-wrap gap-x-1 gap-y-3 pb-1">
         {quests.length === 0 && !adding && (
           <div className="w-full text-center py-6 text-zinc-600 font-bold text-xs tracking-widest uppercase">
-            ▸ No Active Quests — Press <span className="text-rose-400">+ ADD QUEST</span> to begin
+            ▸ No Active Quests — Press <span className="text-zinc-300">+ ADD QUEST</span> to begin
           </div>
         )}
         {quests.map((q, idx) => {

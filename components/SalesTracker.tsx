@@ -7,7 +7,7 @@ import { getBusinessInfo } from '../types';
 
 declare var XLSX: any;
 
-type ViewMode = 'settlement' | 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits' | 'margin';
+type ViewMode = 'settlement' | 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits' | 'margin' | 'monthlyAnalysis';
 type DateMode = 'month' | 'range';
 
 const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ isActive, businessId }) => {
@@ -154,6 +154,61 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     });
     return { records, total };
   }, [filteredHistory]);
+
+  // 월별분석: 선택 연도의 전체 월별 품목별 마진 + 비용 데이터
+  const monthlyAnalysisData = useMemo(() => {
+    const yearStr = String(selectedYear);
+    const yearHistory = salesHistory.filter(d => d.date.startsWith(yearStr));
+
+    // 품목별 월별 마진
+    const productMonthMargin = new Map<string, Map<number, number>>();
+    // 월별 비용
+    const monthExpenses = new Map<number, { total: number; byCategory: Map<string, number> }>();
+
+    yearHistory.forEach(d => {
+      const month = parseInt(d.date.slice(5, 7));
+
+      // 마진 데이터 (registeredName 기준 — productName은 "2kg" 등 단위만 있을 수 있음)
+      if (d.marginRecords) {
+        d.marginRecords.forEach(r => {
+          const label = r.registeredName || r.productName;
+          if (!productMonthMargin.has(label)) {
+            productMonthMargin.set(label, new Map());
+          }
+          const pm = productMonthMargin.get(label)!;
+          pm.set(month, (pm.get(month) || 0) + r.totalMargin);
+        });
+      }
+
+      // 비용 데이터
+      if (d.expenseRecords) {
+        if (!monthExpenses.has(month)) {
+          monthExpenses.set(month, { total: 0, byCategory: new Map() });
+        }
+        const me = monthExpenses.get(month)!;
+        d.expenseRecords.forEach(r => {
+          me.total += r.amount;
+          me.byCategory.set(r.category, (me.byCategory.get(r.category) || 0) + r.amount);
+        });
+      }
+    });
+
+    // 데이터가 있는 월 목록
+    const activeMonths = new Set<number>();
+    yearHistory.forEach(d => activeMonths.add(parseInt(d.date.slice(5, 7))));
+    const months = Array.from(activeMonths).sort((a, b) => a - b);
+
+    // 품목 목록 (연간 마진 총합 내림차순)
+    const products = Array.from(productMonthMargin.entries())
+      .map(([name, pm]) => ({ name, annualTotal: Array.from(pm.values()).reduce((s, v) => s + v, 0) }))
+      .sort((a, b) => b.annualTotal - a.annualTotal);
+
+    // 비용 카테고리 목록
+    const expenseCategories = new Set<string>();
+    monthExpenses.forEach(me => me.byCategory.forEach((_, cat) => expenseCategories.add(cat)));
+
+    return { productMonthMargin, monthExpenses, months, products, expenseCategories: Array.from(expenseCategories) };
+  }, [salesHistory, selectedYear]);
 
   const productSummary = useMemo(() => {
     const map = new Map<string, { count: number; totalPrice: number; margin: number }>();
@@ -835,6 +890,185 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     );
   };
 
+  const renderMonthlyAnalysisView = () => {
+    const { productMonthMargin, monthExpenses, months, products, expenseCategories } = monthlyAnalysisData;
+    if (months.length === 0) {
+      return (
+        <div className="p-12 text-center">
+          <p className="text-zinc-600 font-bold text-sm">{selectedYear}년 마진 데이터가 없습니다.</p>
+        </div>
+      );
+    }
+
+    // 히트맵 색상 계산 (양수: 에메랄드, 음수: 로즈)
+    const getHeatColor = (value: number, max: number) => {
+      if (value === 0 || max === 0) return '';
+      const intensity = Math.min(Math.abs(value) / max, 1);
+      if (value > 0) return `rgba(16, 185, 129, ${0.08 + intensity * 0.35})`;
+      return `rgba(244, 63, 94, ${0.08 + intensity * 0.35})`;
+    };
+
+    // 테이블1: 품목별 순이익의 최대값
+    const allMarginValues = products.flatMap(p =>
+      months.map(m => productMonthMargin.get(p.name)?.get(m) || 0)
+    );
+    const maxMargin = Math.max(...allMarginValues.map(Math.abs), 1);
+
+    // 월별 마진 합계
+    const monthMarginTotals = months.map(m =>
+      products.reduce((sum, p) => sum + (productMonthMargin.get(p.name)?.get(m) || 0), 0)
+    );
+    const annualMarginTotal = monthMarginTotals.reduce((s, v) => s + v, 0);
+
+    // 테이블2: 월별 비용 합계
+    const monthExpenseTotals = months.map(m => monthExpenses.get(m)?.total || 0);
+    const annualExpenseTotal = monthExpenseTotals.reduce((s, v) => s + v, 0);
+
+    // 월별 실질 순수익
+    const monthNetTotals = months.map((m, i) => monthMarginTotals[i] - monthExpenseTotals[i]);
+    const annualNetTotal = annualMarginTotal - annualExpenseTotal;
+    const maxNet = Math.max(...monthNetTotals.map(Math.abs), 1);
+
+    return (
+      <div className="divide-y divide-zinc-900">
+        {/* 테이블 1: 품목별 순이익 히트맵 */}
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-emerald-400 text-lg">📊</span>
+            <h3 className="text-white font-black text-sm uppercase tracking-widest">{selectedYear}년 품목별 순이익</h3>
+            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full font-black border border-emerald-500/20">
+              연간 {annualMarginTotal.toLocaleString()}원
+            </span>
+          </div>
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left min-w-[600px]">
+              <thead>
+                <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
+                  <th className="pb-2 pr-3 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">품목</th>
+                  {months.map(m => (
+                    <th key={m} className="pb-2 px-2 text-right whitespace-nowrap">{m}월</th>
+                  ))}
+                  <th className="pb-2 pl-3 text-right border-l border-zinc-800">연간합계</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-900/30">
+                {products.map(p => (
+                  <tr key={p.name} className="text-xs group">
+                    <td className="py-2.5 pr-3 font-bold text-zinc-300 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10 group-hover:text-white transition-colors">{p.name}</td>
+                    {months.map(m => {
+                      const val = productMonthMargin.get(p.name)?.get(m) || 0;
+                      return (
+                        <td key={m} className="py-2.5 px-2 text-right font-mono tabular-nums" style={{ background: getHeatColor(val, maxMargin) }}>
+                          <span className={val > 0 ? 'text-emerald-400 font-bold' : val < 0 ? 'text-rose-400 font-bold' : 'text-zinc-700'}>
+                            {val === 0 ? '-' : val.toLocaleString()}
+                          </span>
+                        </td>
+                      );
+                    })}
+                    <td className={`py-2.5 pl-3 text-right font-black border-l border-zinc-800 ${p.annualTotal > 0 ? 'text-emerald-400' : p.annualTotal < 0 ? 'text-rose-400' : 'text-zinc-600'}`}>
+                      {p.annualTotal.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-zinc-700 text-xs font-black">
+                  <td className="py-3 pr-3 text-zinc-400 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">월합계</td>
+                  {monthMarginTotals.map((total, i) => (
+                    <td key={months[i]} className={`py-3 px-2 text-right ${total > 0 ? 'text-emerald-400' : total < 0 ? 'text-rose-400' : 'text-zinc-600'}`}>
+                      {total.toLocaleString()}
+                    </td>
+                  ))}
+                  <td className={`py-3 pl-3 text-right border-l border-zinc-800 text-base ${annualMarginTotal > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {annualMarginTotal.toLocaleString()}원
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        {/* 테이블 2: 실질 순수익 (마진 - 비용) */}
+        <div className="p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-rose-400 text-lg">💰</span>
+            <h3 className="text-white font-black text-sm uppercase tracking-widest">{selectedYear}년 실질 순수익</h3>
+            <span className={`text-[10px] px-2.5 py-1 rounded-full font-black border ${annualNetTotal >= 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+              연간 {annualNetTotal.toLocaleString()}원
+            </span>
+          </div>
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full text-left min-w-[600px]">
+              <thead>
+                <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
+                  <th className="pb-2 pr-3 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">항목</th>
+                  {months.map(m => (
+                    <th key={m} className="pb-2 px-2 text-right whitespace-nowrap">{m}월</th>
+                  ))}
+                  <th className="pb-2 pl-3 text-right border-l border-zinc-800">연간합계</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-900/30">
+                {/* 품목별 마진 합계 */}
+                <tr className="text-xs">
+                  <td className="py-2.5 pr-3 font-bold text-emerald-400 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">품목 마진 합계</td>
+                  {monthMarginTotals.map((v, i) => (
+                    <td key={months[i]} className="py-2.5 px-2 text-right font-mono tabular-nums text-emerald-400 font-bold">
+                      {v === 0 ? '-' : v.toLocaleString()}
+                    </td>
+                  ))}
+                  <td className="py-2.5 pl-3 text-right font-black text-emerald-400 border-l border-zinc-800">{annualMarginTotal.toLocaleString()}</td>
+                </tr>
+                {/* 비용 카테고리별 */}
+                {expenseCategories.map(cat => (
+                  <tr key={cat} className="text-xs group">
+                    <td className="py-2.5 pr-3 font-bold text-rose-400/70 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10 group-hover:text-rose-400 transition-colors">- {cat}</td>
+                    {months.map(m => {
+                      const val = monthExpenses.get(m)?.byCategory.get(cat) || 0;
+                      return (
+                        <td key={m} className="py-2.5 px-2 text-right font-mono tabular-nums text-rose-400/70">
+                          {val === 0 ? '-' : `-${val.toLocaleString()}`}
+                        </td>
+                      );
+                    })}
+                    <td className="py-2.5 pl-3 text-right font-bold text-rose-400/70 border-l border-zinc-800">
+                      -{months.reduce((s, m) => s + (monthExpenses.get(m)?.byCategory.get(cat) || 0), 0).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+                {/* 비용 소계 */}
+                <tr className="text-xs border-t border-zinc-800">
+                  <td className="py-2.5 pr-3 font-bold text-rose-400 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">비용 합계</td>
+                  {monthExpenseTotals.map((v, i) => (
+                    <td key={months[i]} className="py-2.5 px-2 text-right font-mono tabular-nums text-rose-400 font-bold">
+                      {v === 0 ? '-' : `-${v.toLocaleString()}`}
+                    </td>
+                  ))}
+                  <td className="py-2.5 pl-3 text-right font-black text-rose-400 border-l border-zinc-800">-{annualExpenseTotal.toLocaleString()}</td>
+                </tr>
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-zinc-700 text-xs font-black">
+                  <td className="py-3 pr-3 text-white sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">실질 순수익</td>
+                  {monthNetTotals.map((v, i) => (
+                    <td key={months[i]} className="py-3 px-2 text-right" style={{ background: getHeatColor(v, maxNet) }}>
+                      <span className={v > 0 ? 'text-emerald-400' : v < 0 ? 'text-rose-400' : 'text-zinc-600'}>
+                        {v.toLocaleString()}
+                      </span>
+                    </td>
+                  ))}
+                  <td className={`py-3 pl-3 text-right text-base border-l border-zinc-800 ${annualNetTotal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {annualNetTotal.toLocaleString()}원
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const tabs: [ViewMode, string][] = [
     ['settlement', '업체별정산'],
     ['byDate', '날짜별'],
@@ -844,6 +1078,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     ['invoices', '송장내역'],
     ['deposits', '입금내역'],
     ['margin', '마진시트'],
+    ['monthlyAnalysis', '월별분석'],
   ];
 
   return (
@@ -1118,6 +1353,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
           {viewMode === 'invoices' && renderInvoicesView()}
           {viewMode === 'deposits' && renderDepositsView()}
           {viewMode === 'margin' && renderMarginView()}
+          {viewMode === 'monthlyAnalysis' && renderMonthlyAnalysisView()}
         </section>
       )}
     </div>

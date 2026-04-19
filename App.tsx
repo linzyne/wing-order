@@ -127,33 +127,30 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen p-2 font-sans text-zinc-100 transition-colors duration-300" style={{ backgroundColor: bgColor }}>
       <div className="flex gap-3 py-4 animate-fade-in">
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 max-w-[calc(100%-42rem)] bg-zinc-800 rounded-2xl p-2 shadow-xl border border-zinc-700/40">
           <header className="flex flex-col md:flex-row items-center justify-between mb-8 px-2 gap-4">
           <div className="flex items-center gap-4">
-            <div className="relative p-3 rounded-2xl bg-gradient-to-br from-rose-500/20 to-rose-600/5 border border-rose-500/20">
-              <ChartBarIcon className="w-7 h-7 text-rose-400" />
-              <div className="absolute inset-0 rounded-2xl bg-rose-500/5 blur-xl" />
+            <div className="relative p-3 rounded-2xl bg-zinc-800/60 border border-zinc-700/40">
+              <ChartBarIcon className="w-7 h-7 text-zinc-400" />
             </div>
             <div>
               <h1 className="text-xl font-black text-white tracking-tight">
-                윙 <span className="bg-gradient-to-r from-rose-400 to-pink-500 bg-clip-text text-transparent">발주매니저</span>
+                윙 <span className="text-zinc-300">발주매니저</span>
               </h1>
               <p className="text-zinc-600 font-bold text-[9px] mt-0.5 uppercase tracking-[0.2em]">Order Management</p>
             </div>
             <div className="flex items-center ml-3 p-0.5 glass rounded-xl gap-0.5">
               {HARDCODED_OPTIONS.map(b => {
                 const isActive = currentBusiness === b.id;
-                const color = b.id === '조에' ? '#f472b6' : '#f43f5e';
                 return (
                 <button
                   key={b.id}
                   onClick={() => handleBusinessChange(b.id)}
-                  className={`px-3 py-1.5 text-[11px] font-black rounded-[10px] transition-all duration-200 ${
+                  className={`px-3 py-1.5 text-[11px] font-black rounded-[10px] whitespace-nowrap transition-all duration-200 ${
                     isActive
-                      ? 'text-white shadow-lg'
+                      ? 'text-white bg-zinc-700 shadow-lg shadow-zinc-900/50'
                       : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
                   }`}
-                  style={isActive ? { background: `linear-gradient(135deg, ${color}, ${color}dd)`, boxShadow: `0 4px 16px ${color}33` } : {}}
                 >
                   {b.label}
                 </button>
@@ -161,17 +158,15 @@ const App: React.FC = () => {
               })}
               {dynamicBusinesses.map(b => {
                 const isActive = currentBusiness === b.id;
-                const color = b.buttonColor || '#8b5cf6';
                 return (
                 <div key={b.id} className="relative group">
                   <button
                     onClick={() => handleBusinessChange(b.id)}
                     className={`px-3 py-1.5 text-[11px] font-black rounded-[10px] transition-all duration-200 ${
                       isActive
-                        ? 'text-white shadow-lg'
+                        ? 'text-white bg-zinc-700 shadow-lg shadow-zinc-900/50'
                         : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
                     }`}
-                    style={isActive ? { background: `linear-gradient(135deg, ${color}, ${color}dd)`, boxShadow: `0 4px 16px ${color}33` } : {}}
                   >
                     {b.displayName}
                   </button>
@@ -198,7 +193,7 @@ const App: React.FC = () => {
           <nav className="flex p-1 glass rounded-2xl">
             <button
               onClick={() => setActiveTab('converter')}
-              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl transition-all duration-200 ${
+              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'converter'
                   ? 'btn-accent'
                   : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40'
@@ -209,7 +204,7 @@ const App: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('pricing')}
-              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl transition-all duration-200 ${
+              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'pricing'
                   ? 'btn-accent'
                   : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40'
@@ -220,7 +215,7 @@ const App: React.FC = () => {
             </button>
             <button
               onClick={() => setActiveTab('sales')}
-              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl transition-all duration-200 ${
+              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'sales'
                   ? 'btn-accent'
                   : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40'
@@ -235,14 +230,6 @@ const App: React.FC = () => {
         {/* 게임형 퀘스트 타임라인 */}
         <QuestTimeline />
 
-        {/* 발주 미완료 경고 배너 */}
-        <OrderStatusBanner
-          workspaces={workspaces}
-          isReady={workspacesReady}
-          currentBusiness={currentBusiness}
-          onSwitchBusiness={handleSwitchFromBanner}
-          allBusinesses={allBusinesses}
-        />
 
         {!isDynamicBusiness && configSource === 'default' && (
           <div className="mb-4 px-4 py-3 bg-amber-900/30 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-bold text-center">
@@ -260,6 +247,7 @@ const App: React.FC = () => {
                 businessId={b.id}
                 platformConfigs={configMap[b.id].platform.platformConfigs}
                 isActive={activeTab === 'converter' && currentBusiness === b.id}
+                isCurrent={currentBusiness === b.id}
               />
             </div>
           ))}
@@ -292,11 +280,11 @@ const App: React.FC = () => {
           </footer>
         </div>
 
-        <div className="w-64 flex-shrink-0 sticky top-2 self-start max-h-screen overflow-y-auto custom-scrollbar">
+        <div className="w-[18rem] flex-shrink-0 sticky top-2 self-start max-h-screen overflow-y-auto custom-scrollbar glass rounded-2xl p-2 shadow-xl">
           <div id="manual-order-portal" />
         </div>
 
-        <div className="w-72 flex-shrink-0 sticky top-2 self-start">
+        <div className="flex-1 min-w-[18rem] max-w-[22rem] flex-shrink-0 sticky top-2 self-start glass rounded-2xl p-2 shadow-xl">
           <TodoList businessId={currentBusiness} />
         </div>
       </div>
