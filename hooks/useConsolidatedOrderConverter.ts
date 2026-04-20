@@ -763,7 +763,9 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
                     for (let i = headerRowIdx + 1; i < fullJson.length; i++) {
                         const row = fullJson[i];
                         if (!row) continue;
-                        const groupVal = String(row[groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
+                        const rawGroup = String(row[groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
+                        // groupName이 없으면 productName(11열)으로 폴백
+                        const groupVal = rawGroup || String(row[11] || '').replace(/\s+/g, '').normalize('NFC');
                         // 모든 회사 중 키워드가 가장 앞에 매칭되는 회사 찾기
                         let bestCompany = '';
                         let bestPos = Infinity;

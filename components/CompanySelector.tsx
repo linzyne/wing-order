@@ -976,12 +976,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (!hasAnyData) continue;
             masterFileRowCount++;
             const orderNum = String(row[2] || '').trim();
-            const groupName = String(row[10] || '').trim();
+            const rawGroupName = String(row[10] || '').trim();
             const rawQtyVal = row[qtyColIdx];
             const qty = parseInt(String(rawQtyVal != null ? rawQtyVal : '1'), 10) || 1;
-            if (i <= 3) console.log(`[마스터검증] 행${i}: row길이=${row.length}, qtyCol[${qtyColIdx}]=${JSON.stringify(rawQtyVal)}, qty=${qty}, groupName="${groupName}"`);
             const recipientName = String(row[26] || '').trim();
             const productName = String(row[11] || '').trim();
+            // groupName이 없으면 productName으로 폴백 (토스 등 그룹명 없는 플랫폼)
+            const groupName = rawGroupName || productName;
+            if (i <= 3) console.log(`[마스터검증] 행${i}: row길이=${row.length}, qtyCol[${qtyColIdx}]=${JSON.stringify(rawQtyVal)}, qty=${qty}, groupName="${groupName}"`);
             masterRawTotalQty += qty;
             if (!groupName) {
                 skippedOrders.push({ recipientName, productName, orderNumber: orderNum, qty, reason: '등록상품명 없음' });
@@ -1071,7 +1073,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (batchPlatforms[session.id]) b.platform = batchPlatforms[session.id];
                 rows.forEach(row => {
                     const orderNum = String(row[2] || '').trim();
-                    const groupName = String(row[10] || '').trim();
+                    const rawGroup = String(row[10] || '').trim();
+                    // groupName이 없으면 productName으로 폴백 (토스 등 그룹명 없는 플랫폼)
+                    const groupName = rawGroup || String(row[11] || '').trim();
                     const qty = parseInt(String(row[22] || '1'), 10) || 1;
                     if (groupName) groupToCompany[groupName] = company;
                     const isFake = fakeNums.has(orderNum);
@@ -1247,18 +1251,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
 
             const groupColIdx = 10;
+            const productColIdx = 11;
             const companiesInFile = new Set<string>();
             const companyKeywordsMap = new Map<string, string[]>();
             Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
             for (let i = 1; i < json.length; i++) {
-                const rawVal = String(json[i][groupColIdx] || '');
-                const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
-                if (!groupVal) continue;
+                const rawGroup = String(json[i][groupColIdx] || '');
+                const groupVal = rawGroup.replace(/\s+/g, '').normalize('NFC');
+                // groupName이 없으면 productName으로 폴백 (토스 등 그룹명 없는 플랫폼)
+                const matchTarget = groupVal || String(json[i][productColIdx] || '').replace(/\s+/g, '').normalize('NFC');
+                if (!matchTarget) continue;
                 let bestCompany = '';
                 let bestPos = Infinity;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
                     for (const k of keywords) {
-                        const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
+                        const pos = matchTarget.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
                         if (pos !== -1 && pos < bestPos) {
                             bestPos = pos;
                             bestCompany = name;
@@ -1336,11 +1343,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
 
             const groupColIdx = 10;
+            const productColIdx = 11;
             const companyRowCounts: Record<string, number> = {};
             const companyKeywordsMap = new Map<string, string[]>();
             Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
             for (let i = 1; i < json.length; i++) {
-                const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
+                const rawGroup = String(json[i][groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
+                // groupName이 없으면 productName으로 폴백 (토스 등 그룹명 없는 플랫폼)
+                const groupVal = rawGroup || String(json[i][productColIdx] || '').replace(/\s+/g, '').normalize('NFC');
                 if (!groupVal) continue;
                 let bestCompany = '';
                 let bestPos = Infinity;
