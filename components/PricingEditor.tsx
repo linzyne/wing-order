@@ -747,6 +747,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
     const handleUpdateProduct = (companyName: string, productKey: string, newProduct: ProductPricing) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         const cleanProduct = stripUndefined(newProduct);
+        console.log('[품목 저장] splitMode:', cleanProduct.splitMode, '| orderSplitCount:', cleanProduct.orderSplitCount);
         const newProductKey = cleanProduct.displayName;
         if (productKey === newProductKey) {
             newConfig[companyName].products[productKey] = cleanProduct;
