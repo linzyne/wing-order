@@ -67,12 +67,36 @@ export interface ProcessedResult {
     platformUploadWorkbooks?: Record<string, PlatformUploadResult>; // 플랫폼별 업로드 파일
 }
 
+/** vendorAoa + 특정 열 인덱스로 invoiceMap을 빌드하는 순수 함수 */
+const buildMapFromColumns = (vendorAoa: any[][], vOrderIdx: number, vInvIdx: number): Map<string, string[]> => {
+    const invoiceMap = new Map<string, string[]>();
+    for (const row of vendorAoa) {
+        if (!row || row.length <= Math.max(vOrderIdx, vInvIdx)) continue;
+        const key = normalizeOrderNum(row[vOrderIdx]);
+        const val = normalizeValue(row[vInvIdx]);
+        if (key && val.length >= 5) {
+            const existing = invoiceMap.get(key) || [];
+            if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
+        }
+    }
+    return invoiceMap;
+};
+
 export const useInvoiceMerger = () => {
     const [status, setStatus] = useState<ProcessingStatus>('idle');
     const [error, setError] = useState<string | null>(null);
     const [results, setResults] = useState<ProcessedResult | null>(null);
 
-    const buildInvoiceMap = async (vendorData: ArrayBuffer, companyName: string, pricingConfig?: PricingConfig) => {
+    /**
+     * 업체 송장파일을 파싱하여 주문번호→송장번호 맵 + 원본 데이터를 반환.
+     * orderNums가 주어지면 매칭 0건 시 다른 열로 자동 재시도.
+     */
+    const buildInvoiceMap = async (
+        vendorData: ArrayBuffer,
+        companyName: string,
+        pricingConfig?: PricingConfig,
+        orderNums?: Set<string> // 주문서의 주문번호 집합 (자동 재탐색용)
+    ) => {
         const vendorWorkbook = XLSX.read(vendorData, { type: 'array' });
         const vendorSheet = vendorWorkbook.Sheets[vendorWorkbook.SheetNames[0]];
         const vendorAoa: any[][] = XLSX.utils.sheet_to_json(vendorSheet, { header: 1 });
@@ -80,6 +104,8 @@ export const useInvoiceMerger = () => {
 
         let vOrderIdx = -1, vInvIdx = -1;
         const vendorConfig = pricingConfig?.[companyName];
+
+        // --- 1단계: 기존 방식으로 열 감지 ---
         if (vendorConfig?.vendorInvoiceFieldMap && vendorConfig.vendorInvoiceFieldMap.length > 0) {
             vOrderIdx = vendorConfig.vendorInvoiceFieldMap.indexOf('orderNumber');
             vInvIdx = vendorConfig.vendorInvoiceFieldMap.indexOf('trackingNumber');
@@ -116,25 +142,48 @@ export const useInvoiceMerger = () => {
             }
         }
 
-        const invoiceMap = new Map<string, string[]>();
-        console.log(`[송장디버그] 업체: ${companyName}, vOrderIdx: ${vOrderIdx}, vInvIdx: ${vInvIdx}`);
-        console.log(`[송장디버그] 송장파일 헤더(첫 행):`, vendorAoa[0]);
-        console.log(`[송장디버그] 송장파일 총 행수: ${vendorAoa.length}`);
-        if (vendorAoa.length > 1) console.log(`[송장디버그] 송장파일 데이터 샘플(2행):`, vendorAoa[1]);
-        for (const row of vendorAoa) {
-            if (!row || row.length <= Math.max(vOrderIdx, vInvIdx)) continue;
-            const key = normalizeOrderNum(row[vOrderIdx]);
-            const val = normalizeValue(row[vInvIdx]);
-            if (key && val.length >= 5) {
-                const existing = invoiceMap.get(key) || [];
-                if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
+        const invoiceMap = buildMapFromColumns(vendorAoa, vOrderIdx, vInvIdx);
+        console.log(`[송장] 업체: ${companyName}, 감지 열: 주문=${vOrderIdx}, 송장=${vInvIdx}, map크기=${invoiceMap.size}`);
+
+        // --- 2단계: 실제 주문번호와 매칭 테스트 → 0건이면 자동 재탐색 ---
+        if (orderNums && orderNums.size > 0 && invoiceMap.size > 0) {
+            let hitCount = 0;
+            for (const num of orderNums) {
+                if (invoiceMap.has(num)) { hitCount++; if (hitCount >= 3) break; }
+            }
+
+            if (hitCount === 0) {
+                console.log(`[송장] ⚠ 초기 감지 열(${vOrderIdx})로 매칭 0건 → 모든 열 자동 재탐색 시작`);
+                // 업체 파일의 모든 열을 후보로 시도
+                const maxCols = Math.max(...vendorAoa.slice(0, 5).map(r => r?.length || 0));
+                let bestCol = vOrderIdx, bestHits = 0;
+
+                for (let ci = 0; ci < maxCols; ci++) {
+                    if (ci === vOrderIdx || ci === vInvIdx) continue;
+                    // 이 열의 값들이 주문번호 집합과 겹치는지 빠르게 체크
+                    let colHits = 0;
+                    for (let ri = 1; ri < Math.min(vendorAoa.length, 50); ri++) {
+                        const row = vendorAoa[ri];
+                        if (!row) continue;
+                        const key = normalizeOrderNum(row[ci]);
+                        if (key && orderNums.has(key)) { colHits++; if (colHits >= 5) break; }
+                    }
+                    if (colHits > bestHits) {
+                        bestHits = colHits;
+                        bestCol = ci;
+                    }
+                }
+
+                if (bestHits > 0 && bestCol !== vOrderIdx) {
+                    console.log(`[송장] ✓ 자동 재탐색 성공: 열 ${vOrderIdx} → 열 ${bestCol} (${bestHits}건 매칭)`);
+                    const betterMap = buildMapFromColumns(vendorAoa, bestCol, vInvIdx);
+                    return betterMap;
+                } else {
+                    console.log(`[송장] ✗ 자동 재탐색 실패: 매칭되는 열을 찾지 못함`);
+                }
             }
         }
-        console.log(`[송장디버그] invoiceMap 크기: ${invoiceMap.size}`);
-        if (invoiceMap.size > 0) {
-            const sample = Array.from(invoiceMap.entries()).slice(0, 3);
-            console.log(`[송장디버그] invoiceMap 샘플:`, sample);
-        }
+
         return invoiceMap;
     };
 
@@ -150,15 +199,32 @@ export const useInvoiceMerger = () => {
                 if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { headerIdx = i; break; }
             }
 
-            const invoiceMap = await buildInvoiceMap(await vendorFile.arrayBuffer(), companyName, pricingConfig);
-            console.log(`[송장디버그] processFiles - 업체: ${companyName}, businessId: ${businessId}`);
-            console.log(`[송장디버그] 주문서 총 행수: ${orderAoa.length}, headerIdx: ${headerIdx}`);
-            console.log(`[송장디버그] 주문서 헤더:`, orderAoa[headerIdx]);
+            // 주문서의 주문번호 열 감지
+            const orderHeader = orderAoa[headerIdx];
+            const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
+            let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
+
+            // 주문서에서 주문번호 샘플 추출 (자동 재탐색용)
+            const targetKeywords = getKeywordsForCompany(companyName, pricingConfig);
+            const orderNums = new Set<string>();
+            for (let i = headerIdx + 1; i < orderAoa.length; i++) {
+                const row = orderAoa[i]; if (!row) continue;
+                if (!skipGroupCheck) {
+                    const rowGroupValue = String(row[GROUP_ID_COL_IDX] || '').replace(/\s+/g, '');
+                    if (!targetKeywords.some(k => rowGroupValue.includes(k.replace(/\s+/g, '')))) continue;
+                }
+                const num = normalizeOrderNum(row[targetOrderIdx]);
+                if (num) orderNums.add(num);
+            }
+
+            // 업체 파일 → invoiceMap 빌드 (orderNums 전달하여 자동 재탐색 활성화)
+            const vendorBuffer = await vendorFile.arrayBuffer();
+            const invoiceMap = await buildInvoiceMap(vendorBuffer, companyName, pricingConfig, orderNums);
+            console.log(`[송장] processFiles - 업체: ${companyName}, 주문서 행수: ${orderAoa.length}, 주문번호 수: ${orderNums.size}`);
 
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
             const companyConfig = pricingConfig?.[companyName];
             const useCustomInvoiceHeaders = companyConfig?.invoiceHeaders && companyConfig.invoiceHeaders.length > 0;
-            const orderHeader = orderAoa[headerIdx];
             const invoiceHeader = useCustomInvoiceHeaders ? companyConfig.invoiceHeaders! : orderHeader;
 
             // 헤더 매핑: 발주서 헤더 → 송장 헤더 인덱스 매핑 (먼저 빌드)
@@ -184,8 +250,6 @@ export const useInvoiceMerger = () => {
                 }
             }
 
-            const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
-            let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
             let targetInvIdx = isCustomIdx ? 4 : findColIdx(invoiceHeader, ['운송장', '송장번호', '송장']);
             let targetCourierIdx = isCustomIdx ? 3 : findColIdx(invoiceHeader, ['택배사', '배송사']);
             let targetQtyIdx = findColIdx(orderHeader, ['수량']);
@@ -215,27 +279,18 @@ export const useInvoiceMerger = () => {
             // 플랫폼별 업로드 데이터 (플랫폼명 → 데이터 행 배열)
             const platformUploadData: Record<string, any[][]> = {};
 
-            const targetKeywords = getKeywordsForCompany(companyName, pricingConfig);
-            console.log(`[송장디버그] targetOrderIdx: ${targetOrderIdx}, targetInvIdx: ${targetInvIdx}, isCustomIdx: ${isCustomIdx}`);
-            console.log(`[송장디버그] skipGroupCheck: ${skipGroupCheck}, targetKeywords:`, targetKeywords);
-
-            let debugSkippedByGroup = 0;
-            let debugSkippedNoInvoice = 0;
-            let debugMatched = 0;
-
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
 
                 if (!skipGroupCheck) {
                     const rowGroupValue = String(row[GROUP_ID_COL_IDX] || '').replace(/\s+/g, '');
                     const isGroupMatched = targetKeywords.some(k => rowGroupValue.includes(k.replace(/\s+/g, '')));
-                    if (!isGroupMatched) { debugSkippedByGroup++; continue; }
+                    if (!isGroupMatched) continue;
                 }
 
                 const orderNum = normalizeOrderNum(row[targetOrderIdx]);
                 const invoices = invoiceMap.get(orderNum);
                 if (invoices && invoices.length > 0) {
-                    debugMatched++;
                     uploadCount++;
                     invoices.forEach(inv => {
                         mgmtCount++;
