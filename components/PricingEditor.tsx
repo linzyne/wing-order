@@ -224,7 +224,30 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, orderSplitCount: Number(e.target.value) || 0 } })}
                                 />
                             </div>
-                            <p className="col-span-2 text-[10px] text-zinc-600 -mt-2">분할 수 5 설정시, 1건 주문이 발주서 5행으로 생성됩니다. 배송비는 1회만 합산됩니다</p>
+                            <div className="col-span-2 -mt-1">
+                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">분할 방식</label>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${(!dialog.product.splitMode || dialog.product.splitMode === 'row') ? 'bg-sky-500/20 border-sky-500/50 text-sky-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}
+                                        onClick={() => setDialog({ ...dialog, product: { ...dialog.product, splitMode: 'row' } })}
+                                    >
+                                        행 분할
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${dialog.product.splitMode === 'quantity' ? 'bg-violet-500/20 border-violet-500/50 text-violet-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}
+                                        onClick={() => setDialog({ ...dialog, product: { ...dialog.product, splitMode: 'quantity' } })}
+                                    >
+                                        수량 변환
+                                    </button>
+                                </div>
+                            </div>
+                            <p className="col-span-2 text-[10px] text-zinc-600 -mt-2">
+                                {(!dialog.product.splitMode || dialog.product.splitMode === 'row')
+                                    ? '행 분할: 분할 수 2 설정시, 1건 주문이 발주서 2행(각 수량 1)으로 생성됩니다'
+                                    : '수량 변환: 분할 수 2 설정시, 1건 주문이 발주서 1행(수량 2)으로 생성됩니다'}
+                            </p>
                         </div>
                         <div>
                             <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">매칭 키워드 (별칭)</label>
@@ -1327,7 +1350,9 @@ const ProductTable: React.FC<{
                                         <span className="text-[9px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
                                     )}
                                     {product.orderSplitCount && product.orderSplitCount > 1 && (
-                                        <span className="text-[9px] text-sky-400 font-bold bg-sky-500/10 px-1.5 py-0.5 rounded border border-sky-500/20">x{product.orderSplitCount}</span>
+                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${product.splitMode === 'quantity' ? 'text-violet-400 bg-violet-500/10 border-violet-500/20' : 'text-sky-400 bg-sky-500/10 border-sky-500/20'}`}>
+                                            {product.splitMode === 'quantity' ? `qty×${product.orderSplitCount}` : `x${product.orderSplitCount}`}
+                                        </span>
                                     )}
                                     {product.shippingCost && product.shippingCost > 0 && (
                                         <span className="text-[9px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>

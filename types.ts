@@ -55,6 +55,7 @@ export interface ProductPricing {
   margin?: number; // 마진
   shippingCost?: number; // 배송비 (1회, 선택)
   orderSplitCount?: number; // 발주 분할 수 (예: 5 → 1kg x 5행 생성)
+  splitMode?: 'row' | 'quantity'; // 분할 방식: row=행 분할(기본), quantity=수량 변환(1행 유지, 수량 증가)
   aliases?: string[]; // 하위 호환성 위해 유지 (삭제 예정이지만 에러 방지)
 }
 
