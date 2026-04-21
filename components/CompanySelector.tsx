@@ -1223,48 +1223,118 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return [...autoExpenses, ...expenses];
     }, [expenses, courierResults, courierTemplates, fakeOrderAnalysis.inputNumbers.size]);
 
-    // 플랫폼 자동 감지
-    const detectPlatform = (allRows: any[][]): { platform: PlatformConfig; name: string; score: number } | null => {
+    // 플랫폼 자동 감지 (헤더 행 자동 탐색 + 이름 기반 열 리맵)
+    const detectPlatform = (allRows: any[][]): { platform: PlatformConfig; name: string; score: number; columnRemap?: Record<number, number>; actualHeaderRowIdx: number; actualDataStartRow: number } | null => {
         const normalize = (s: any) => String(s || '').replace(/\s+/g, '').toLowerCase().normalize('NFC');
-        let bestMatch: { platform: PlatformConfig; name: string; score: number } | null = null;
+        let bestMatch: { platform: PlatformConfig; name: string; score: number; columnRemap?: Record<number, number>; actualHeaderRowIdx: number; actualDataStartRow: number } | null = null;
 
         for (const [platformName, pc] of Object.entries(platformConfigs) as [string, PlatformConfig][]) {
-            if (pc.sampleHeaders && pc.sampleHeaders.length > 0) {
-                const headerRowIdx = pc.headerRowIndex || 0;
-                const headerRow = allRows[headerRowIdx];
-                if (!headerRow) continue;
+            if (!pc.sampleHeaders || pc.sampleHeaders.length === 0) continue;
+            const sampleNormalized = pc.sampleHeaders.map(normalize);
+            const nonEmptySamples = sampleNormalized.filter(h => h);
+            if (nonEmptySamples.length === 0) continue;
+
+            // 저장된 headerRowIndex 및 주변 행(±2)을 모두 시도하여 가장 잘 맞는 행 찾기
+            const storedIdx = pc.headerRowIndex || 0;
+            const candidateRows = new Set([storedIdx, storedIdx - 2, storedIdx - 1, storedIdx + 1, storedIdx + 2]);
+            // 0~14행도 추가 후보로 검사 (안내문 줄 수 변동 대비)
+            for (let r = 0; r < Math.min(allRows.length, 15); r++) candidateRows.add(r);
+
+            for (const rowIdx of candidateRows) {
+                if (rowIdx < 0 || rowIdx >= allRows.length) continue;
+                const headerRow = allRows[rowIdx];
+                if (!headerRow || headerRow.length < 3) continue;
+
                 const uploadedHeaders = headerRow.map(normalize);
-                const sampleNormalized = pc.sampleHeaders.map(normalize);
-                let matchCount = 0;
+
+                // 1) 위치 기반 매칭 (기존)
+                let positionalMatchCount = 0;
                 for (let i = 0; i < Math.min(sampleNormalized.length, uploadedHeaders.length); i++) {
-                    if (sampleNormalized[i] === uploadedHeaders[i]) matchCount++;
+                    if (sampleNormalized[i] && sampleNormalized[i] === uploadedHeaders[i]) positionalMatchCount++;
                 }
-                const score = matchCount / Math.max(sampleNormalized.length, uploadedHeaders.length);
-                if (score >= 0.7 && (!bestMatch || score > bestMatch.score)) {
-                    bestMatch = { platform: pc, name: platformName, score };
+                const positionalScore = positionalMatchCount / nonEmptySamples.length;
+
+                // 2) 이름 기반 매칭 — 헤더 이름으로 열을 찾아 리맵
+                const columnRemap: Record<number, number> = {};
+                const usedActualIndices = new Set<number>();
+                let nameMatchCount = 0;
+                for (let si = 0; si < sampleNormalized.length; si++) {
+                    if (!sampleNormalized[si]) continue;
+                    // 같은 위치에 있으면 우선 사용
+                    if (si < uploadedHeaders.length && sampleNormalized[si] === uploadedHeaders[si] && !usedActualIndices.has(si)) {
+                        columnRemap[si] = si;
+                        usedActualIndices.add(si);
+                        nameMatchCount++;
+                        continue;
+                    }
+                    // 다른 위치에서 찾기
+                    const actualIdx = uploadedHeaders.findIndex((h, idx) => h === sampleNormalized[si] && !usedActualIndices.has(idx));
+                    if (actualIdx !== -1) {
+                        columnRemap[si] = actualIdx;
+                        usedActualIndices.add(actualIdx);
+                        nameMatchCount++;
+                    }
+                }
+                const nameScore = nameMatchCount / nonEmptySamples.length;
+
+                const effectiveScore = Math.max(positionalScore, nameScore);
+                const needsRemap = nameScore > positionalScore && Object.keys(columnRemap).some(k => columnRemap[Number(k)] !== Number(k));
+                // 헤더 행이 저장된 것과 다르면 dataStartRow도 보정
+                const headerOffset = rowIdx - storedIdx;
+                const storedDataStart = pc.dataStartRow ?? (storedIdx + 1);
+                const actualDataStart = storedDataStart + headerOffset;
+
+                if (effectiveScore >= 0.6 && (!bestMatch || effectiveScore > bestMatch.score)) {
+                    bestMatch = {
+                        platform: pc,
+                        name: platformName,
+                        score: effectiveScore,
+                        columnRemap: needsRemap ? columnRemap : undefined,
+                        actualHeaderRowIdx: rowIdx,
+                        actualDataStartRow: actualDataStart,
+                    };
                 }
             }
+        }
+        if (bestMatch) {
+            const storedIdx = bestMatch.platform.headerRowIndex || 0;
+            const rowShifted = bestMatch.actualHeaderRowIdx !== storedIdx;
+            const colShifted = !!bestMatch.columnRemap;
+            console.log(`[플랫폼 감지] ✅ "${bestMatch.name}" (${Math.round(bestMatch.score * 100)}%)${rowShifted ? ` — 헤더 행 변경: ${storedIdx}→${bestMatch.actualHeaderRowIdx}` : ''}${colShifted ? ' — 열 위치 변경, 리맵 적용' : ''}`);
+            if (bestMatch.columnRemap) console.log(`[플랫폼 감지] columnRemap:`, bestMatch.columnRemap);
+        } else {
+            console.log(`[플랫폼 감지] ❌ 매칭되는 플랫폼 없음`);
         }
         return bestMatch;
     };
 
-    // 플랫폼 데이터를 쿠팡 컬럼 위치로 정규화
-    const normalizePlatformRow = (row: any[], mapping: PlatformConfig['orderColumns']): any[] => {
-        const normalized: any[] = new Array(31).fill('');
-        normalized[2] = row[mapping.orderNumber] ?? '';
+    // 플랫폼 데이터를 쿠팡 컬럼 위치로 정규화 (columnRemap: 열 위치 변경 시 리맵)
+    const normalizePlatformRow = (row: any[], mapping: PlatformConfig['orderColumns'], columnRemap?: Record<number, number>): any[] => {
+        // columnRemap이 있으면 config의 열 인덱스를 실제 파일의 열 인덱스로 변환
+        const col = (configIdx: number | undefined | null): number | undefined | null => {
+            if (configIdx == null) return configIdx;
+            if (!columnRemap) return configIdx;
+            return columnRemap[configIdx] ?? configIdx;
+        };
 
-        if (mapping.groupName != null) {
-            normalized[10] = row[mapping.groupName] ?? '';
+        const normalized: any[] = new Array(31).fill('');
+        normalized[2] = row[col(mapping.orderNumber)!] ?? '';
+
+        const effectiveGroupName = col(mapping.groupName);
+        if (effectiveGroupName != null) {
+            normalized[10] = row[effectiveGroupName] ?? '';
         } else {
             // groupName 미매핑: 상품명~수량 사이의 미매핑 텍스트 열을 결합 (상품 관리 코드 등)
+            const effectiveProductName = col(mapping.productName)!;
+            const effectiveQuantity = col(mapping.quantity);
             const mappedIndices = new Set(
-                [mapping.orderNumber, mapping.productName, mapping.optionName, mapping.quantity,
-                 mapping.recipientName, mapping.recipientPhone, mapping.postalCode,
-                 mapping.address, mapping.deliveryMessage, mapping.orderDate]
+                [col(mapping.orderNumber), effectiveProductName, col(mapping.optionName), effectiveQuantity,
+                 col(mapping.recipientName), col(mapping.recipientPhone), col(mapping.postalCode),
+                 col(mapping.address), col(mapping.deliveryMessage), col(mapping.orderDate)]
                 .filter(v => v != null) as number[]
             );
-            const rangeStart = Math.max(0, mapping.productName - 2);
-            const rangeEnd = Math.min(row.length - 1, (mapping.quantity ?? mapping.productName) + 2);
+            const rangeStart = Math.max(0, effectiveProductName - 2);
+            const rangeEnd = Math.min(row.length - 1, (effectiveQuantity ?? effectiveProductName) + 2);
             const extras: string[] = [];
             for (let c = rangeStart; c <= rangeEnd; c++) {
                 if (mappedIndices.has(c)) continue;
@@ -1276,18 +1346,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             normalized[10] = extras.join(' ');
         }
 
-        let productName = String(row[mapping.productName] ?? '').trim();
-        if (mapping.optionName != null && row[mapping.optionName]) {
-            const optionName = String(row[mapping.optionName]).trim();
+        const effectiveProdIdx = col(mapping.productName)!;
+        const effectiveOptIdx = col(mapping.optionName);
+        let productName = String(row[effectiveProdIdx] ?? '').trim();
+        if (effectiveOptIdx != null && row[effectiveOptIdx]) {
+            const optionName = String(row[effectiveOptIdx]).trim();
             if (optionName) productName = productName ? `${productName} ${optionName}` : optionName;
         }
         normalized[11] = productName;
-        normalized[22] = row[mapping.quantity] ?? '';
-        normalized[26] = row[mapping.recipientName] ?? '';
-        normalized[27] = row[mapping.recipientPhone] ?? '';
-        normalized[28] = mapping.postalCode != null ? (row[mapping.postalCode] ?? '') : '';
-        normalized[29] = row[mapping.address] ?? '';
-        normalized[30] = mapping.deliveryMessage != null ? (row[mapping.deliveryMessage] ?? '') : '';
+        normalized[22] = row[col(mapping.quantity)!] ?? '';
+        normalized[26] = row[col(mapping.recipientName)!] ?? '';
+        normalized[27] = row[col(mapping.recipientPhone)!] ?? '';
+        const effectivePostal = col(mapping.postalCode);
+        normalized[28] = effectivePostal != null ? (row[effectivePostal] ?? '') : '';
+        normalized[29] = row[col(mapping.address)!] ?? '';
+        const effectiveMsg = col(mapping.deliveryMessage);
+        normalized[30] = effectiveMsg != null ? (row[effectiveMsg] ?? '') : '';
         return normalized;
     };
 
@@ -1309,8 +1383,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (detectedPlatform) {
                 platformName = detectedPlatform.name;
                 const pc = detectedPlatform.platform;
-                const headerRowIdx = pc.headerRowIndex || 0;
-                const dataStart = pc.dataStartRow || headerRowIdx + 1;
+                // 자동 감지된 헤더 행/데이터 시작 행 사용 (토스 등 양식 변경 대응)
+                const dataStart = detectedPlatform.actualDataStartRow;
 
                 // 쿠팡 형식 헤더 생성
                 const coupangHeader = new Array(31).fill('');
@@ -1328,7 +1402,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 for (let i = dataStart; i < json.length; i++) {
                     const row = json[i];
                     if (!row || row.every((c: any) => !c)) continue;
-                    normalized.push(normalizePlatformRow(row, pc.orderColumns));
+                    normalized.push(normalizePlatformRow(row, pc.orderColumns, detectedPlatform.columnRemap));
                 }
 
                 json = normalized;
@@ -1344,7 +1418,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 }));
 
-                console.log(`✅ [Platform] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치): ${json.length - 1}건 정규화`);
+                console.log(`✅ [Platform] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치)${detectedPlatform.columnRemap ? ' [열 리맵]' : ''}, 헤더행=${detectedPlatform.actualHeaderRowIdx}, 데이터시작=${dataStart}: ${json.length - 1}건 정규화`);
             } else {
                 setUploadedPlatforms([{ name: '쿠팡', count: json.length - 1 }]);
                 setRowPlatformSources([]);
@@ -1417,8 +1491,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (detectedPlatform) {
                 const platformName = detectedPlatform.name;
                 const pc = detectedPlatform.platform;
-                const headerRowIdx = pc.headerRowIndex || 0;
-                const dataStart = pc.dataStartRow || headerRowIdx + 1;
+                const dataStart = detectedPlatform.actualDataStartRow;
 
                 // 쿠팡 형식 헤더 생성
                 const coupangHeader = new Array(31).fill('');
@@ -1436,11 +1509,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 for (let i = dataStart; i < json.length; i++) {
                     const row = json[i];
                     if (!row || row.every((c: any) => !c)) continue;
-                    normalized.push(normalizePlatformRow(row, pc.orderColumns));
+                    normalized.push(normalizePlatformRow(row, pc.orderColumns, detectedPlatform.columnRemap));
                 }
 
                 json = normalized;
-                console.log(`✅ [배치 정규화] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치): ${json.length - 1}건 정규화`);
+                console.log(`✅ [배치 정규화] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치)${detectedPlatform.columnRemap ? ' [열 리맵]' : ''}, 헤더행=${detectedPlatform.actualHeaderRowIdx}, 데이터시작=${dataStart}: ${json.length - 1}건 정규화`);
             }
 
             // 정규화된 데이터를 파일로 생성 (플랫폼 파일인 경우)
