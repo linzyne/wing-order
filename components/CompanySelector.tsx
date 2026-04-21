@@ -176,22 +176,32 @@ const CourierTemplateManager: React.FC<{
 
     const handleTemplateFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
+        console.log('[택배양식] 파일 선택:', file?.name, file?.size);
         if (!file) return;
         const reader = new FileReader();
+        reader.onerror = () => {
+            console.error('[택배양식] FileReader 에러:', reader.error);
+            alert('파일을 읽을 수 없습니다.');
+        };
         reader.onload = (ev) => {
             try {
                 const data = new Uint8Array(ev.target?.result as ArrayBuffer);
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                console.log('[택배양식] 파싱 완료:', aoa.length, '행, 헤더:', aoa[0]);
                 if (aoa.length > 0) {
                     const headers = aoa[0].map((h: any) => String(h || ''));
+                    console.log('[택배양식] 헤더 설정:', headers.length, '열');
                     setNewHeaders(headers);
                     setNewMapping({});
                     setNewFixedValues({});
+                } else {
+                    alert('파일에 데이터가 없습니다.');
                 }
             } catch (err) {
-                alert('양식 파일을 읽을 수 없습니다.');
+                console.error('[택배양식] 파싱 에러:', err);
+                alert('양식 파일을 읽을 수 없습니다: ' + (err as Error).message);
             }
         };
         reader.readAsArrayBuffer(file);
