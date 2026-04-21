@@ -330,40 +330,36 @@ export const useInvoiceMerger = () => {
                         mgmtRows.push(newRow);
                     });
 
-                    // 플랫폼별 업로드 행 분기
+                    // 플랫폼별 업로드 행 분기 (주문번호당 1행)
                     const rowPlatform = orderPlatformMap?.get(orderNum) || null;
                     if (rowPlatform && platformConfigs?.[rowPlatform]?.invoiceColumns) {
                         // 비-쿠팡 플랫폼: 해당 플랫폼 양식으로 업로드 행 생성
                         const invMapping = platformConfigs[rowPlatform].invoiceColumns!;
                         const maxCol = Math.max(invMapping.orderNumber, invMapping.trackingNumber, invMapping.courierName ?? 0) + 1;
+                        const pRow = new Array(maxCol).fill('');
+                        pRow[invMapping.orderNumber] = row[targetOrderIdx];
+                        pRow[invMapping.trackingNumber] = invoices[0];
+                        if (invMapping.courierName !== undefined) pRow[invMapping.courierName] = getCourierName(companyName, pricingConfig);
                         if (!platformUploadData[rowPlatform]) platformUploadData[rowPlatform] = [];
-                        invoices.forEach(inv => {
-                            const pRow = new Array(maxCol).fill('');
-                            pRow[invMapping.orderNumber] = row[targetOrderIdx];
-                            pRow[invMapping.trackingNumber] = inv;
-                            if (invMapping.courierName !== undefined) pRow[invMapping.courierName] = getCourierName(companyName, pricingConfig);
-                            platformUploadData[rowPlatform].push(pRow);
-                        });
+                        platformUploadData[rowPlatform].push(pRow);
                     } else {
-                        // 쿠팡 (기본): 송장번호별로 행 생성
-                        invoices.forEach(inv => {
-                            let upRow: any[];
-                            if (useCustomInvoiceHeaders) {
-                                upRow = new Array(invoiceHeader.length).fill('');
-                                for (let oldIdx = 0; oldIdx < row.length; oldIdx++) {
-                                    const newIdx = headerMapping[oldIdx];
-                                    if (newIdx !== undefined) {
-                                        upRow[newIdx] = row[oldIdx];
-                                    }
+                        // 쿠팡 (기본): 주문번호당 1행
+                        let upRow: any[];
+                        if (useCustomInvoiceHeaders) {
+                            upRow = new Array(invoiceHeader.length).fill('');
+                            for (let oldIdx = 0; oldIdx < row.length; oldIdx++) {
+                                const newIdx = headerMapping[oldIdx];
+                                if (newIdx !== undefined) {
+                                    upRow[newIdx] = row[oldIdx];
                                 }
-                            } else {
-                                upRow = [...row];
                             }
+                        } else {
+                            upRow = [...row];
+                        }
 
-                            if (targetInvIdx !== -1) upRow[targetInvIdx] = inv;
-                            if (targetCourierIdx !== -1) upRow[targetCourierIdx] = getCourierName(companyName, pricingConfig);
-                            uploadRows.push(upRow);
-                        });
+                        if (targetInvIdx !== -1) upRow[targetInvIdx] = invoices[0];
+                        if (targetCourierIdx !== -1) upRow[targetCourierIdx] = getCourierName(companyName, pricingConfig);
+                        uploadRows.push(upRow);
                     }
                 } else {
                     failures.push({ orderNum, recipient: String(row[26] || '알수없음'), reason: '송장 미매칭' });
