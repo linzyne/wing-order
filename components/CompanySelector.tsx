@@ -189,15 +189,24 @@ const CourierTemplateManager: React.FC<{
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                console.log('[택배양식] 파싱 완료:', aoa.length, '행, 헤더:', aoa[0]);
-                if (aoa.length > 0) {
-                    const headers = aoa[0].map((h: any) => String(h || ''));
+                // 빈 행 건너뛰고 첫 번째 실제 헤더 행 찾기
+                let headerRow: any[] | null = null;
+                for (let i = 0; i < aoa.length; i++) {
+                    const row = aoa[i];
+                    if (row && row.length > 0 && row.some((cell: any) => cell !== null && cell !== undefined && String(cell).trim() !== '')) {
+                        headerRow = row;
+                        console.log('[택배양식] 헤더 행 발견: 행', i, row);
+                        break;
+                    }
+                }
+                if (headerRow) {
+                    const headers = headerRow.map((h: any) => String(h || ''));
                     console.log('[택배양식] 헤더 설정:', headers.length, '열');
                     setNewHeaders(headers);
                     setNewMapping({});
                     setNewFixedValues({});
                 } else {
-                    alert('파일에 데이터가 없습니다.');
+                    alert('파일에 헤더 데이터가 없습니다.');
                 }
             } catch (err) {
                 console.error('[택배양식] 파싱 에러:', err);
@@ -218,8 +227,17 @@ const CourierTemplateManager: React.FC<{
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
                 const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                if (aoa.length > 0) {
-                    const headers = aoa[0].map((h: any) => String(h || ''));
+                // 빈 행 건너뛰고 첫 번째 실제 헤더 행 찾기
+                let headerRow: any[] | null = null;
+                for (let i = 0; i < aoa.length; i++) {
+                    const row = aoa[i];
+                    if (row && row.length > 0 && row.some((cell: any) => cell !== null && cell !== undefined && String(cell).trim() !== '')) {
+                        headerRow = row;
+                        break;
+                    }
+                }
+                if (headerRow) {
+                    const headers = headerRow.map((h: any) => String(h || ''));
                     setNewReturnHeaders(headers);
                     // 자동 감지: 주문번호/운송장번호 열 찾기
                     const autoMapping: Record<string, number> = {};
