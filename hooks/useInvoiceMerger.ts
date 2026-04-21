@@ -289,6 +289,7 @@ export const useInvoiceMerger = () => {
             const failures: FailureDetail[] = [];
             // 플랫폼별 업로드 데이터 (플랫폼명 → 데이터 행 배열)
             const platformUploadData: Record<string, any[][]> = {};
+            const processedOrderNums = new Set<string>();
 
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
@@ -300,8 +301,10 @@ export const useInvoiceMerger = () => {
                 }
 
                 const orderNum = normalizeOrderNum(row[targetOrderIdx]);
+                if (processedOrderNums.has(orderNum)) continue;
                 const invoices = invoiceMap.get(orderNum);
                 if (invoices && invoices.length > 0) {
+                    processedOrderNums.add(orderNum);
                     uploadCount++;
                     invoices.forEach(inv => {
                         mgmtCount++;
