@@ -187,9 +187,10 @@ export const useInvoiceMerger = () => {
         return invoiceMap;
     };
 
-    const processFiles = useCallback(async (vendorFile: File, orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig, orderPlatformMap?: Map<string, string>, platformConfigs?: PlatformConfigs, businessId?: string) => {
+    const processFiles = useCallback(async (vendorFileOrFiles: File | File[], orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig, orderPlatformMap?: Map<string, string>, platformConfigs?: PlatformConfigs, businessId?: string) => {
         try {
             setStatus('processing'); setError(null);
+            const vendorFiles = Array.isArray(vendorFileOrFiles) ? vendorFileOrFiles : [vendorFileOrFiles];
             const bizShort = getBusinessInfo(businessId ?? '')?.shortName || '';
             const orderWb = XLSX.read(await orderFile.arrayBuffer(), { type: 'array' });
             const orderAoa: any[][] = XLSX.utils.sheet_to_json(orderWb.Sheets[orderWb.SheetNames[0]], { header: 1 });
@@ -217,10 +218,20 @@ export const useInvoiceMerger = () => {
                 if (num) orderNums.add(num);
             }
 
-            // 업체 파일 → invoiceMap 빌드 (orderNums 전달하여 자동 재탐색 활성화)
-            const vendorBuffer = await vendorFile.arrayBuffer();
-            const invoiceMap = await buildInvoiceMap(vendorBuffer, companyName, pricingConfig, orderNums);
-            console.log(`[송장] processFiles - 업체: ${companyName}, 주문서 행수: ${orderAoa.length}, 주문번호 수: ${orderNums.size}`);
+            // 업체 파일(들) → invoiceMap 빌드 (여러 파일이면 합침)
+            const invoiceMap = new Map<string, string[]>();
+            for (const vf of vendorFiles) {
+                const vendorBuffer = await vf.arrayBuffer();
+                const partialMap = await buildInvoiceMap(vendorBuffer, companyName, pricingConfig, orderNums);
+                for (const [key, vals] of partialMap) {
+                    const existing = invoiceMap.get(key) || [];
+                    for (const v of vals) {
+                        if (!existing.includes(v)) existing.push(v);
+                    }
+                    invoiceMap.set(key, existing);
+                }
+            }
+            console.log(`[송장] processFiles - 업체: ${companyName}, 송장파일 ${vendorFiles.length}개, 주문서 행수: ${orderAoa.length}, 주문번호 수: ${orderNums.size}, map크기=${invoiceMap.size}`);
 
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
             const companyConfig = pricingConfig?.[companyName];
@@ -322,30 +333,34 @@ export const useInvoiceMerger = () => {
                         // 비-쿠팡 플랫폼: 해당 플랫폼 양식으로 업로드 행 생성
                         const invMapping = platformConfigs[rowPlatform].invoiceColumns!;
                         const maxCol = Math.max(invMapping.orderNumber, invMapping.trackingNumber, invMapping.courierName ?? 0) + 1;
-                        const pRow = new Array(maxCol).fill('');
-                        pRow[invMapping.orderNumber] = row[targetOrderIdx];
-                        pRow[invMapping.trackingNumber] = invoices[0];
-                        if (invMapping.courierName !== undefined) pRow[invMapping.courierName] = getCourierName(companyName, pricingConfig);
                         if (!platformUploadData[rowPlatform]) platformUploadData[rowPlatform] = [];
-                        platformUploadData[rowPlatform].push(pRow);
+                        invoices.forEach(inv => {
+                            const pRow = new Array(maxCol).fill('');
+                            pRow[invMapping.orderNumber] = row[targetOrderIdx];
+                            pRow[invMapping.trackingNumber] = inv;
+                            if (invMapping.courierName !== undefined) pRow[invMapping.courierName] = getCourierName(companyName, pricingConfig);
+                            platformUploadData[rowPlatform].push(pRow);
+                        });
                     } else {
-                        // 쿠팡 (기본): 기존 로직 그대로
-                        let upRow: any[];
-                        if (useCustomInvoiceHeaders) {
-                            upRow = new Array(invoiceHeader.length).fill('');
-                            for (let oldIdx = 0; oldIdx < row.length; oldIdx++) {
-                                const newIdx = headerMapping[oldIdx];
-                                if (newIdx !== undefined) {
-                                    upRow[newIdx] = row[oldIdx];
+                        // 쿠팡 (기본): 송장번호별로 행 생성
+                        invoices.forEach(inv => {
+                            let upRow: any[];
+                            if (useCustomInvoiceHeaders) {
+                                upRow = new Array(invoiceHeader.length).fill('');
+                                for (let oldIdx = 0; oldIdx < row.length; oldIdx++) {
+                                    const newIdx = headerMapping[oldIdx];
+                                    if (newIdx !== undefined) {
+                                        upRow[newIdx] = row[oldIdx];
+                                    }
                                 }
+                            } else {
+                                upRow = [...row];
                             }
-                        } else {
-                            upRow = [...row];
-                        }
 
-                        if (targetInvIdx !== -1) upRow[targetInvIdx] = invoices[0];
-                        if (targetCourierIdx !== -1) upRow[targetCourierIdx] = getCourierName(companyName, pricingConfig);
-                        uploadRows.push(upRow);
+                            if (targetInvIdx !== -1) upRow[targetInvIdx] = inv;
+                            if (targetCourierIdx !== -1) upRow[targetCourierIdx] = getCourierName(companyName, pricingConfig);
+                            uploadRows.push(upRow);
+                        });
                     }
                 } else {
                     failures.push({ orderNum, recipient: String(row[26] || '알수없음'), reason: '송장 미매칭' });
