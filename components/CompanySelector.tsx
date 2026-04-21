@@ -3108,9 +3108,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
                                         </button>
                                         <div className="flex items-center gap-1.5">
-                                            <label className={`flex-1 flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md ${file ? cs.activeBg : `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}`}`}>
-                                                <ArrowUpTrayIcon className="w-3.5 h-3.5" />
-                                                <span className="truncate flex items-center gap-1">{file ? file.name : (<>{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} 운송장 업로드</>)}</span>
+                                            <label className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md overflow-hidden ${file ? cs.activeBg : `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}`}`}>
+                                                <ArrowUpTrayIcon className="w-3.5 h-3.5 shrink-0" />
+                                                <span className="truncate">{file ? file.name : (<span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} 운송장 업로드</span>)}</span>
                                                 <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); e.target.value = ''; }} />
                                             </label>
                                             {file && (
