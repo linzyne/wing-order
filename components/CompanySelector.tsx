@@ -357,7 +357,7 @@ const CourierTemplateManager: React.FC<{
                     </div>
 
                     <div>
-                        <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">양식 파일 업로드</label>
+                        <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배예약용 양식</label>
                         <label className={`flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${newHeaders.length > 0 ? 'bg-amber-950/30 border-amber-500/30 text-amber-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400'}`}>
                             {newHeaders.length > 0 ? <CheckIcon className="w-4 h-4" /> : <ArrowDownTrayIcon className="w-4 h-4" />}
                             <span>{newHeaders.length > 0 ? `${newHeaders.length}개 열 감지됨` : '엑셀 파일 선택'}</span>
@@ -423,10 +423,10 @@ const CourierTemplateManager: React.FC<{
                         </div>
                     )}
 
-                    {/* 운송장 완료 파일 양식 (택배사에서 돌아오는 파일) */}
+                    {/* 운송장양식 (택배사에서 돌아오는 파일) */}
                     <div className="border-t border-zinc-800 pt-3 mt-3">
                         <div className="flex items-center gap-2 mb-2">
-                            <label className="text-[9px] text-emerald-500 font-black uppercase tracking-widest">운송장 완료 파일 양식</label>
+                            <label className="text-[9px] text-emerald-500 font-black uppercase tracking-widest">운송장양식</label>
                             <span className="text-[8px] text-zinc-600">(택배사에서 송장번호 채워서 보내주는 파일)</span>
                         </div>
                         <label className={`flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${newReturnHeaders.length > 0 ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-emerald-500/40 hover:text-emerald-400'}`}>
