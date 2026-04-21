@@ -330,8 +330,8 @@ const CourierTemplateManager: React.FC<{
 
                     <div>
                         <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">양식 파일 업로드</label>
-                        <label className="flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400">
-                            <ArrowDownTrayIcon className="w-4 h-4" />
+                        <label className={`flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${newHeaders.length > 0 ? 'bg-amber-950/30 border-amber-500/30 text-amber-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400'}`}>
+                            {newHeaders.length > 0 ? <CheckIcon className="w-4 h-4" /> : <ArrowDownTrayIcon className="w-4 h-4" />}
                             <span>{newHeaders.length > 0 ? `${newHeaders.length}개 열 감지됨` : '엑셀 파일 선택'}</span>
                             <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={handleTemplateFileUpload} />
                         </label>
@@ -401,8 +401,8 @@ const CourierTemplateManager: React.FC<{
                             <label className="text-[9px] text-emerald-500 font-black uppercase tracking-widest">운송장 완료 파일 양식</label>
                             <span className="text-[8px] text-zinc-600">(택배사에서 송장번호 채워서 보내주는 파일)</span>
                         </div>
-                        <label className="flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-emerald-500/40 hover:text-emerald-400">
-                            <ArrowUpTrayIcon className="w-4 h-4" />
+                        <label className={`flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${newReturnHeaders.length > 0 ? 'bg-emerald-950/30 border-emerald-500/30 text-emerald-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-emerald-500/40 hover:text-emerald-400'}`}>
+                            {newReturnHeaders.length > 0 ? <CheckIcon className="w-4 h-4" /> : <ArrowUpTrayIcon className="w-4 h-4" />}
                             <span>{newReturnHeaders.length > 0 ? `${newReturnHeaders.length}개 열 감지됨` : '운송장 완료 파일 선택'}</span>
                             <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={handleReturnFileUpload} />
                         </label>
@@ -763,8 +763,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [courierFiles, setCourierFiles] = useState<Record<string, File>>({});
     const [courierResults, setCourierResults] = useState<Record<string, { matched: number; total: number; notFound: string[] }>>({});
     const [courierMatchedRows, setCourierMatchedRows] = useState<Record<string, any[][]>>({});
-    const [courierTrackingMaps, setCourierTrackingMaps] = useState<Record<string, Map<string, string>>>({});
-    const [courierOutputPlatform, setCourierOutputPlatform] = useState<Record<string, string>>({});
     const [showTemplateManager, setShowTemplateManager] = useState(false);
     const [showFakeCourierSettings, setShowFakeCourierSettings] = useState(false);
 
@@ -1696,7 +1694,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setCourierFiles(prev => ({ ...prev, [template.id]: file }));
         setCourierResults(prev => { const n = { ...prev }; delete n[template.id]; return n; });
         setCourierMatchedRows(prev => { const n = { ...prev }; delete n[template.id]; return n; });
-        setCourierTrackingMaps(prev => { const n = { ...prev }; delete n[template.id]; return n; });
         try {
             // 운송장 파일 읽기: returnMapping 우선, 없으면 기존 mapping 사용
             const courierData = await file.arrayBuffer();
@@ -1738,6 +1735,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 allRows.push(...batchRows);
             });
 
+            // 플랫폼 감지 → invoiceColumns로 송장번호/택배사 열 위치 결정
+            const masterPlatformName = uploadedPlatforms.length > 0 ? uploadedPlatforms[0].name : '';
+            const masterPlatformConfig = masterPlatformName && platformConfigs?.[masterPlatformName] ? platformConfigs[masterPlatformName] : null;
+            const invCols = masterPlatformConfig?.invoiceColumns;
+            const outTrackingCol = invCols?.trackingNumber ?? 4;
+            const outCourierCol = invCols?.courierName ?? 3;
+
             const matchedRows: any[][] = [header];
             const notFoundOrders: string[] = [];
             const seenOrderNums = new Set<string>();
@@ -1750,9 +1754,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const tracking = trackingMap.get(orderNum);
                 if (tracking) {
                     const newRow = [...row];
-                    while (newRow.length < 5) newRow.push('');
-                    newRow[3] = template.name;
-                    newRow[4] = tracking;
+                    while (newRow.length <= Math.max(outTrackingCol, outCourierCol)) newRow.push('');
+                    newRow[outCourierCol] = template.name;
+                    newRow[outTrackingCol] = tracking;
                     matchedRows.push(newRow);
                 } else {
                     notFoundOrders.push(String(row[2] || ''));
@@ -1761,10 +1765,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
             const matchedCount = matchedRows.length - 1;
             setCourierResults(prev => ({ ...prev, [template.id]: { matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders } }));
-            if (matchedCount > 0) {
-                setCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
-                setCourierTrackingMaps(prev => ({ ...prev, [template.id]: trackingMap }));
-            }
+            if (matchedCount > 0) setCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
         } catch (err: any) {
             console.error(`${template.name} 운송장 처리 오류:`, err);
             alert(`${template.name} 운송장 파일 처리 중 오류가 발생했습니다: ` + err.message);
@@ -1777,53 +1778,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (!rows) return;
         const tmpl = courierTemplates.find((t: CourierTemplate) => t.id === templateId);
         const tmplDisplayName = tmpl ? (tmpl.label ? `${tmpl.name}_${tmpl.label}` : tmpl.name) : '택배';
-        const selectedPlatform = courierOutputPlatform[templateId];
-        const trackingMap = courierTrackingMaps[templateId];
-
-        // 플랫폼 양식이 선택된 경우: 해당 플랫폼의 송장 업로드 양식으로 변환
-        if (selectedPlatform && platformConfigs?.[selectedPlatform]?.invoiceColumns && trackingMap) {
-            const pc = platformConfigs[selectedPlatform];
-            const invMapping = pc.invoiceColumns!;
-            const courierName = tmpl?.name || '';
-
-            let pHeader: any[];
-            if (pc.sampleHeaders && pc.sampleHeaders.length > 0) {
-                pHeader = [...pc.sampleHeaders];
-            } else {
-                const maxCol = Math.max(invMapping.orderNumber, invMapping.trackingNumber, invMapping.courierName ?? 0) + 1;
-                pHeader = new Array(maxCol).fill('');
-                pHeader[invMapping.orderNumber] = '주문번호';
-                pHeader[invMapping.trackingNumber] = '운송장번호';
-                if (invMapping.courierName !== undefined) pHeader[invMapping.courierName] = '택배사';
-            }
-
-            const pRows: any[][] = [];
-            // rows[0]은 header, rows[1:]은 데이터 (마스터 주문서 행)
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                const orderNum = String(row[2] || '').trim();
-                const normalizedOrderNum = orderNum.replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                const tracking = trackingMap.get(normalizedOrderNum);
-                if (!tracking) continue;
-
-                const pRow = new Array(pHeader.length).fill('');
-                pRow[invMapping.orderNumber] = orderNum;
-                pRow[invMapping.trackingNumber] = tracking;
-                if (invMapping.courierName !== undefined) pRow[invMapping.courierName] = courierName;
-                pRows.push(pRow);
-            }
-
-            const ws = XLSX.utils.aoa_to_sheet([pHeader, ...pRows]);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, '업로드용');
-            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${selectedPlatform}_업로드용_송장.xlsx`);
-        } else {
-            // 기본: 마스터 주문서 형식 그대로 다운로드
-            const ws = XLSX.utils.aoa_to_sheet(rows);
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, '주문서');
-            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
-        }
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '주문서');
+        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
     };
 
     const handleAddManualOrder = (e: React.FormEvent) => {
@@ -3160,7 +3118,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     setCourierFiles(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
                                                     setCourierResults(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
                                                     setCourierMatchedRows(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
-                                                    setCourierTrackingMaps(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
                                                 }} className="p-1.5 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
                                                     <ArrowPathIcon className="w-3 h-3" />
                                                 </button>
@@ -3183,24 +3140,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     </div>
                                                 )}
                                                 {matched && (
-                                                    <div className="space-y-1.5">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <select
-                                                                value={courierOutputPlatform[tmpl.id] || ''}
-                                                                onChange={(e) => setCourierOutputPlatform(prev => ({ ...prev, [tmpl.id]: e.target.value }))}
-                                                                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[9px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
-                                                            >
-                                                                <option value="">마스터 주문서 형식</option>
-                                                                {(Object.entries(platformConfigs || {}) as [string, PlatformConfig][]).filter(([, pc]) => pc.invoiceColumns).map(([key, pc]) => (
-                                                                    <option key={key} value={key}>{pc.name} 송장 양식</option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                        <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
-                                                            <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                                                            {courierOutputPlatform[tmpl.id] ? `${platformConfigs?.[courierOutputPlatform[tmpl.id]]?.name || ''} 업로드용 다운로드` : '운송장완료 다운로드'} ({result.matched}건)
-                                                        </button>
-                                                    </div>
+                                                    <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
+                                                        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                                        운송장완료 다운로드 ({result.matched}건)
+                                                    </button>
                                                 )}
                                             </div>
                                         )}
