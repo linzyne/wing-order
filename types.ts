@@ -79,10 +79,16 @@ export type OrderFormFieldKey = typeof ORDER_FORM_FIELD_TYPES[number]['key'];
 export const VENDOR_INVOICE_FIELD_TYPES = [
   { key: 'orderNumber',    label: '주문번호' },
   { key: 'trackingNumber', label: '송장번호' },
+  { key: 'recipientName',  label: '받는분' },
+  { key: 'recipientPhone', label: '연락처' },
+  { key: 'productName',    label: '상품명' },
   { key: 'empty',          label: '비워둠' },
 ] as const;
 
 export type VendorInvoiceFieldKey = typeof VENDOR_INVOICE_FIELD_TYPES[number]['key'];
+
+// 매칭 키로 사용 가능한 필드 (송장번호, 비워둠 제외)
+export const MATCHABLE_FIELDS = VENDOR_INVOICE_FIELD_TYPES.filter(f => f.key !== 'trackingNumber' && f.key !== 'empty');
 
 export interface CompanyConfig {
   phone?: string;
@@ -97,6 +103,7 @@ export interface CompanyConfig {
   invoiceFilename?: string; // 송장 양식 파일명
   vendorInvoiceHeaders?: string[]; // 업체 송장파일 헤더 (입력 양식)
   vendorInvoiceFieldMap?: string[]; // 업체 송장파일 필드 매핑 (주문번호/송장번호 위치)
+  vendorInvoiceMatchKey?: string; // 업체 송장 매칭 키 (기본: 'orderNumber')
   deadline?: string; // 마감 시간 (예: "09:00")
   keywords?: string[]; // 매칭 키워드 (엑셀 그룹컬럼 매칭용)
   products: {

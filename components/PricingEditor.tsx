@@ -709,6 +709,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    const handleUpdateVendorInvoiceMatchKey = (companyName: string, matchKey: string) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].vendorInvoiceMatchKey = matchKey === 'orderNumber' ? undefined : matchKey;
+        handleUpdate(newConfig);
+    };
+
     const handleAddProduct = (companyName: string) => {
         setDialog({
             type: 'prompt',
@@ -922,6 +928,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateOrderFormFixedValue={(idx, value) => handleUpdateOrderFormFixedValue(companyName, idx, value)}
                             onUpdateVendorInvoiceHeaders={(headers, fieldMap) => handleUpdateVendorInvoiceHeaders(companyName, headers, fieldMap)}
                             onUpdateVendorInvoiceFieldMap={(fieldMap) => handleUpdateVendorInvoiceFieldMap(companyName, fieldMap)}
+                            onUpdateVendorInvoiceMatchKey={(matchKey) => handleUpdateVendorInvoiceMatchKey(companyName, matchKey)}
                             onAddProduct={() => handleAddProduct(companyName)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
                             onOpenProductEditor={(productKey, product) => setDialog({
@@ -979,6 +986,7 @@ const CompanyCard: React.FC<{
     onUpdateOrderFormFixedValue: (idx: number, value: string) => void;
     onUpdateVendorInvoiceHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateVendorInvoiceFieldMap: (fieldMap: string[]) => void;
+    onUpdateVendorInvoiceMatchKey: (matchKey: string) => void;
     onAddProduct: () => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
@@ -1311,6 +1319,47 @@ const CompanyCard: React.FC<{
                                         </div>
                                     );
                                 })}
+                                {(() => {
+                                    const fieldMap = companyConfig.vendorInvoiceFieldMap || companyConfig.vendorInvoiceHeaders!.map(h => inferVendorInvoiceField(h));
+                                    const mappedFields = [...new Set(fieldMap.filter(f => f !== 'trackingNumber' && f !== 'empty'))];
+                                    if (mappedFields.length === 0) return null;
+                                    const currentMatchKeys = (companyConfig.vendorInvoiceMatchKey || 'orderNumber').split('+');
+                                    return (
+                                        <div className="mt-3">
+                                            <span className="text-[11px] font-black text-amber-500/80 uppercase">매칭 기준</span>
+                                            <div className="flex flex-wrap gap-2 mt-1">
+                                                {mappedFields.map(fieldKey => {
+                                                    const label = VENDOR_INVOICE_FIELD_TYPES.find(f => f.key === fieldKey)?.label || fieldKey;
+                                                    const isChecked = currentMatchKeys.includes(fieldKey);
+                                                    return (
+                                                        <label key={fieldKey} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition-all ${isChecked ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : 'border-zinc-700 text-zinc-500 hover:border-zinc-600'}`}>
+                                                            <input
+                                                                type="checkbox"
+                                                                className="sr-only"
+                                                                checked={isChecked}
+                                                                onChange={() => {
+                                                                    let newKeys: string[];
+                                                                    if (isChecked) {
+                                                                        newKeys = currentMatchKeys.filter(k => k !== fieldKey);
+                                                                    } else {
+                                                                        newKeys = [...currentMatchKeys, fieldKey];
+                                                                    }
+                                                                    if (newKeys.length === 0) newKeys = ['orderNumber'];
+                                                                    props.onUpdateVendorInvoiceMatchKey(newKeys.join('+'));
+                                                                }}
+                                                            />
+                                                            <span className={`w-3 h-3 rounded border flex items-center justify-center ${isChecked ? 'border-amber-500 bg-amber-500' : 'border-zinc-600'}`}>
+                                                                {isChecked && <span className="text-black text-[8px] font-black">✓</span>}
+                                                            </span>
+                                                            {label}
+                                                        </label>
+                                                    );
+                                                })}
+                                            </div>
+                                            <p className="text-[10px] text-zinc-600 mt-1">업체 송장파일과 주문서를 어떤 항목으로 매칭할지 선택 (복수 선택 가능)</p>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         )}
                     </div>

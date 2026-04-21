@@ -466,6 +466,10 @@ export function inferVendorInvoiceField(h: string): VendorInvoiceFieldKey {
     const lower = h.toLowerCase().replace(/\s+/g, '');
     if (lower.includes('주문번호') || lower.includes('관리번호') || lower.includes('오더번호') || lower.includes('오더넘버') || lower.includes('접수번호') || lower.includes('고객주문번호') || lower === 'id') return 'orderNumber';
     if (lower.includes('송장') || lower.includes('운송장') || lower.includes('등기') || lower.includes('배송번호') || lower.includes('화물추적') || lower.includes('트래킹') || lower.includes('tracking') || lower.includes('invoice')) return 'trackingNumber';
+    // 받는분 (전화/주소 키워드보다 먼저 체크하여 '받는분전화' 등과 구분)
+    if ((lower.includes('받는') && lower.includes('분') && !lower.includes('전화') && !lower.includes('연락') && !lower.includes('주소')) || lower.includes('수취인') || lower.includes('수령인') || lower.includes('고객명') || lower.includes('수신자')) return 'recipientName';
+    if (lower.includes('전화') || lower.includes('연락처') || lower.includes('핸드폰') || lower.includes('휴대폰') || lower.includes('hp') || lower.includes('phone') || lower.includes('mobile')) return 'recipientPhone';
+    if (lower.includes('상품명') || lower.includes('품목명') || lower.includes('제품명') || lower.includes('품명')) return 'productName';
     return 'empty';
 }
 

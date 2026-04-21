@@ -67,6 +67,12 @@ export interface ProcessedResult {
     platformUploadWorkbooks?: Record<string, PlatformUploadResult>; // 플랫폼별 업로드 파일
 }
 
+/** 매칭 키용 정규화: 공백/특수문자 제거 후 대문자화 */
+const normalizeMatchValue = (val: any): string => {
+    if (val == null) return '';
+    return String(val).replace(/\s+/g, '').trim().toUpperCase();
+};
+
 /** vendorAoa + 특정 열 인덱스로 invoiceMap을 빌드하는 순수 함수 */
 const buildMapFromColumns = (vendorAoa: any[][], vOrderIdx: number, vInvIdx: number): Map<string, string[]> => {
     const invoiceMap = new Map<string, string[]>();
@@ -82,33 +88,122 @@ const buildMapFromColumns = (vendorAoa: any[][], vOrderIdx: number, vInvIdx: num
     return invoiceMap;
 };
 
+/** vendorAoa + 여러 키 열 인덱스로 invoiceMap을 빌드 (복합 키 지원) */
+const buildMapFromMultiColumns = (vendorAoa: any[][], vKeyIndices: number[], vInvIdx: number): Map<string, string[]> => {
+    const invoiceMap = new Map<string, string[]>();
+    for (const row of vendorAoa) {
+        if (!row) continue;
+        const keyParts = vKeyIndices.map(idx => normalizeMatchValue(row[idx]));
+        if (keyParts.some(p => !p)) continue;
+        const key = keyParts.join('|');
+        const val = normalizeValue(row[vInvIdx]);
+        if (key && val.length >= 5) {
+            const existing = invoiceMap.get(key) || [];
+            if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
+        }
+    }
+    return invoiceMap;
+};
+
 export const useInvoiceMerger = () => {
     const [status, setStatus] = useState<ProcessingStatus>('idle');
     const [error, setError] = useState<string | null>(null);
     const [results, setResults] = useState<ProcessedResult | null>(null);
 
+    /** 업체 송장파일에서 헤더 행 인덱스를 찾는 헬퍼 */
+    const findVendorHeaderIdx = (vendorAoa: any[][]): number => {
+        for (let i = 0; i < Math.min(vendorAoa.length, 20); i++) {
+            const rowStr = (vendorAoa[i] || []).join('');
+            if (rowStr.includes('번호') || rowStr.includes('송장') || rowStr.includes('운송장') || rowStr.includes('접수') || rowStr.includes('받는') || rowStr.includes('수취')) return i;
+        }
+        return 0;
+    };
+
+    /** fieldMap에서 특정 필드 타입의 열 인덱스를 찾거나, 헤더에서 키워드로 자동 감지 */
+    const findFieldIdx = (fieldMap: string[] | undefined, fieldKey: string, headers: any[], keywordSets: Record<string, string[]>): number => {
+        if (fieldMap && fieldMap.length > 0) {
+            const idx = fieldMap.indexOf(fieldKey);
+            if (idx !== -1) return idx;
+        }
+        const keywords = keywordSets[fieldKey];
+        if (keywords) return findColIdx(headers, keywords);
+        return -1;
+    };
+
     /**
-     * 업체 송장파일을 파싱하여 주문번호→송장번호 맵 + 원본 데이터를 반환.
-     * orderNums가 주어지면 매칭 0건 시 다른 열로 자동 재시도.
+     * 업체 송장파일을 파싱하여 매칭키→송장번호 맵 + 원본 데이터를 반환.
+     * orderKeys가 주어지면 매칭 0건 시 다른 열로 자동 재시도 (주문번호 매칭 모드일 때만).
      */
     const buildInvoiceMap = async (
         vendorData: ArrayBuffer,
         companyName: string,
         pricingConfig?: PricingConfig,
-        orderNums?: Set<string> // 주문서의 주문번호 집합 (자동 재탐색용)
+        orderKeys?: Set<string> // 주문서의 매칭 키 집합 (자동 재탐색용)
     ) => {
         const vendorWorkbook = XLSX.read(vendorData, { type: 'array' });
         const vendorSheet = vendorWorkbook.Sheets[vendorWorkbook.SheetNames[0]];
         const vendorAoa: any[][] = XLSX.utils.sheet_to_json(vendorSheet, { header: 1 });
         if (!vendorAoa || vendorAoa.length === 0) return new Map<string, string[]>();
 
-        let vOrderIdx = -1, vInvIdx = -1;
+        let vInvIdx = -1;
         const vendorConfig = pricingConfig?.[companyName];
+        const matchKey = vendorConfig?.vendorInvoiceMatchKey || 'orderNumber';
+        const fieldMap = vendorConfig?.vendorInvoiceFieldMap;
 
-        // --- 1단계: 기존 방식으로 열 감지 ---
-        if (vendorConfig?.vendorInvoiceFieldMap && vendorConfig.vendorInvoiceFieldMap.length > 0) {
-            vOrderIdx = vendorConfig.vendorInvoiceFieldMap.indexOf('orderNumber');
-            vInvIdx = vendorConfig.vendorInvoiceFieldMap.indexOf('trackingNumber');
+        // 헤더 기반 키워드 감지용 키워드 셋
+        const keywordSets: Record<string, string[]> = {
+            orderNumber: ['주문번호', '관리번호', 'ID', '오더번호', '오더넘버', '접수번호', '고객주문번호'],
+            trackingNumber: ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice'],
+            recipientName: ['받는분', '수취인', '수령인', '고객명', '수신자'],
+            recipientPhone: ['전화', '연락처', '핸드폰', '휴대폰', 'HP', 'phone', 'mobile'],
+            productName: ['상품명', '품목명', '제품명', '품명'],
+        };
+
+        // --- 매칭 키에 따른 분기 ---
+        const matchFields = matchKey.split('+'); // 예: ['recipientName', 'recipientPhone'] 또는 ['orderNumber']
+        const isOrderNumberMatch = matchFields.length === 1 && matchFields[0] === 'orderNumber';
+
+        // 송장번호 열 감지 (공통)
+        if (fieldMap && fieldMap.length > 0) {
+            vInvIdx = fieldMap.indexOf('trackingNumber');
+        }
+
+        if (!isOrderNumberMatch) {
+            // --- 복합/비주문번호 매칭 모드 ---
+            const vHeaderIdx = findVendorHeaderIdx(vendorAoa);
+            const vHeaders = vendorAoa[vHeaderIdx] || [];
+
+            const vKeyIndices = matchFields.map(f => findFieldIdx(fieldMap, f, vHeaders, keywordSets));
+
+            if (vInvIdx === -1) vInvIdx = findFieldIdx(fieldMap, 'trackingNumber', vHeaders, keywordSets);
+            // 헤더에서 송장번호 못 찾으면 데이터에서 자동 감지
+            if (vInvIdx === -1) {
+                for (let ri = vHeaderIdx + 1; ri < Math.min(vendorAoa.length, vHeaderIdx + 5); ri++) {
+                    const dataRow = vendorAoa[ri];
+                    if (!dataRow) continue;
+                    for (let ci = 0; ci < dataRow.length; ci++) {
+                        if (vKeyIndices.includes(ci)) continue;
+                        const cellVal = String(dataRow[ci] || '').replace(/\s/g, '');
+                        if (/^\d{10,}$/.test(cellVal)) { vInvIdx = ci; break; }
+                    }
+                    if (vInvIdx !== -1) break;
+                }
+            }
+
+            if (vKeyIndices.some(idx => idx === -1)) {
+                console.log(`[송장] ⚠ 업체: ${companyName}, 매칭키(${matchKey}) 중 일부 열을 찾지 못함: ${vKeyIndices}`);
+            }
+
+            const invoiceMap = buildMapFromMultiColumns(vendorAoa, vKeyIndices, vInvIdx);
+            console.log(`[송장] 업체: ${companyName}, 매칭키: ${matchKey}, 키열: ${vKeyIndices}, 송장열: ${vInvIdx}, map크기=${invoiceMap.size}`);
+            return invoiceMap;
+        }
+
+        // --- 기존 주문번호 매칭 모드 ---
+        let vOrderIdx = -1;
+
+        if (fieldMap && fieldMap.length > 0) {
+            vOrderIdx = fieldMap.indexOf('orderNumber');
             if (vOrderIdx === -1) vOrderIdx = 0;
         } else if (companyName === '고랭지김치') { vOrderIdx = 9; vInvIdx = 6; }
         else if (['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치'].includes(companyName)) { vOrderIdx = 9; vInvIdx = 4; }
@@ -117,14 +212,10 @@ export const useInvoiceMerger = () => {
         else if (companyName === '귤_초록') { vOrderIdx = 15; vInvIdx = 6; }
         else if (companyName === '답도' || companyName === '한라봉_답도') { vOrderIdx = 0; vInvIdx = 10; }
         else {
-            let vHeaderIdx = 0;
-            for (let i = 0; i < Math.min(vendorAoa.length, 20); i++) {
-                const rowStr = (vendorAoa[i] || []).join('');
-                if (rowStr.includes('번호') || rowStr.includes('송장') || rowStr.includes('운송장') || rowStr.includes('접수')) { vHeaderIdx = i; break; }
-            }
+            const vHeaderIdx = findVendorHeaderIdx(vendorAoa);
             const vHeaders = vendorAoa[vHeaderIdx] || [];
-            vOrderIdx = findColIdx(vHeaders, ['주문번호', '관리번호', 'ID', '오더번호', '오더넘버', '접수번호', '고객주문번호']);
-            vInvIdx = findColIdx(vHeaders, ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice']);
+            vOrderIdx = findColIdx(vHeaders, keywordSets.orderNumber);
+            if (vInvIdx === -1) vInvIdx = findColIdx(vHeaders, keywordSets.trackingNumber);
             if (vOrderIdx === -1) vOrderIdx = 0;
 
             // 헤더에서 송장번호 컬럼을 못 찾으면 데이터에서 자동 감지 (10자리 이상 숫자)
@@ -146,9 +237,9 @@ export const useInvoiceMerger = () => {
         console.log(`[송장] 업체: ${companyName}, 감지 열: 주문=${vOrderIdx}, 송장=${vInvIdx}, map크기=${invoiceMap.size}`);
 
         // --- 2단계: 실제 주문번호와 매칭 테스트 → 0건이면 자동 재탐색 ---
-        if (orderNums && orderNums.size > 0 && invoiceMap.size > 0) {
+        if (orderKeys && orderKeys.size > 0 && invoiceMap.size > 0) {
             let hitCount = 0;
-            for (const num of orderNums) {
+            for (const num of orderKeys) {
                 if (invoiceMap.has(num)) { hitCount++; if (hitCount >= 3) break; }
             }
 
@@ -166,7 +257,7 @@ export const useInvoiceMerger = () => {
                         const row = vendorAoa[ri];
                         if (!row) continue;
                         const key = normalizeOrderNum(row[ci]);
-                        if (key && orderNums.has(key)) { colHits++; if (colHits >= 5) break; }
+                        if (key && orderKeys.has(key)) { colHits++; if (colHits >= 5) break; }
                     }
                     if (colHits > bestHits) {
                         bestHits = colHits;
@@ -200,29 +291,50 @@ export const useInvoiceMerger = () => {
                 if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { headerIdx = i; break; }
             }
 
-            // 주문서의 주문번호 열 감지
+            // 주문서의 주문번호 열 감��
             const orderHeader = orderAoa[headerIdx];
             const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
             let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
 
-            // 주문서에서 주문번호 샘플 추출 (자동 재탐색용)
+            // 매칭 키 설정 확인
+            const companyMatchKey = pricingConfig?.[companyName]?.vendorInvoiceMatchKey || 'orderNumber';
+            const matchFields = companyMatchKey.split('+');
+            const isOrderNumberMatch = matchFields.length === 1 && matchFields[0] === 'orderNumber';
+
+            // 주문서 측 매칭 키 열 인덱스 감지 (비주문번호 매칭용)
+            const orderMatchKeywordSets: Record<string, string[]> = {
+                recipientName: ['받는분', '수취인', '수령인', '고객명', '수신자'],
+                recipientPhone: ['전화', '연락처', '핸드폰', '휴대폰', 'HP', 'phone', 'mobile'],
+                productName: ['상품명', '품목명', '제품명', '품명'],
+            };
+            const orderMatchIndices: number[] = isOrderNumberMatch
+                ? [targetOrderIdx]
+                : matchFields.map(f => findColIdx(orderHeader, orderMatchKeywordSets[f] || []));
+
+            /** 주문서 행에서 매칭 키를 생성 */
+            const buildOrderMatchKey = (row: any[]): string => {
+                if (isOrderNumberMatch) return normalizeOrderNum(row[targetOrderIdx]);
+                return orderMatchIndices.map(idx => normalizeMatchValue(row[idx])).join('|');
+            };
+
+            // 주문서에서 매칭 키 샘��� 추출 (자동 재탐색용)
             const targetKeywords = getKeywordsForCompany(companyName, pricingConfig);
-            const orderNums = new Set<string>();
+            const orderKeys = new Set<string>();
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
                 if (!skipGroupCheck) {
                     const rowGroupValue = String(row[GROUP_ID_COL_IDX] || '').replace(/\s+/g, '');
                     if (!targetKeywords.some(k => rowGroupValue.includes(k.replace(/\s+/g, '')))) continue;
                 }
-                const num = normalizeOrderNum(row[targetOrderIdx]);
-                if (num) orderNums.add(num);
+                const key = buildOrderMatchKey(row);
+                if (key) orderKeys.add(key);
             }
 
             // 업체 파일(들) → invoiceMap 빌드 (여러 파일이면 합침)
             const invoiceMap = new Map<string, string[]>();
             for (const vf of vendorFiles) {
                 const vendorBuffer = await vf.arrayBuffer();
-                const partialMap = await buildInvoiceMap(vendorBuffer, companyName, pricingConfig, orderNums);
+                const partialMap = await buildInvoiceMap(vendorBuffer, companyName, pricingConfig, orderKeys);
                 for (const [key, vals] of partialMap) {
                     const existing = invoiceMap.get(key) || [];
                     for (const v of vals) {
@@ -231,7 +343,7 @@ export const useInvoiceMerger = () => {
                     invoiceMap.set(key, existing);
                 }
             }
-            console.log(`[송장] processFiles - 업체: ${companyName}, 송장파일 ${vendorFiles.length}개, 주문서 행수: ${orderAoa.length}, 주문번호 수: ${orderNums.size}, map크기=${invoiceMap.size}`);
+            console.log(`[송장] processFiles - 업체: ${companyName}, 송장파일 ${vendorFiles.length}개, 주문서 행수: ${orderAoa.length}, 매칭키: ${companyMatchKey}, 키수: ${orderKeys.size}, map크기=${invoiceMap.size}`);
 
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
             const companyConfig = pricingConfig?.[companyName];
@@ -279,8 +391,12 @@ export const useInvoiceMerger = () => {
                 if (invTrackCol !== -1) targetInvIdx = invTrackCol;
             }
 
-            if (targetOrderIdx === -1) {
+            if (isOrderNumberMatch && targetOrderIdx === -1) {
                 throw new Error("주문서에서 '주문번호' 열을 찾을 수 없습니다.");
+            }
+            if (!isOrderNumberMatch && orderMatchIndices.some(idx => idx === -1)) {
+                const missingFields = matchFields.filter((_, i) => orderMatchIndices[i] === -1);
+                throw new Error(`주문서에서 매칭 키 열을 찾을 수 없습니다: ${missingFields.join(', ')}`);
             }
 
             const mgmtRows: any[][] = [invoiceHeader];
@@ -289,7 +405,7 @@ export const useInvoiceMerger = () => {
             const failures: FailureDetail[] = [];
             // 플랫폼별 업로드 데이터 (플랫폼명 → 데이터 행 배열)
             const platformUploadData: Record<string, any[][]> = {};
-            const processedOrderNums = new Set<string>();
+            const processedKeys = new Set<string>();
 
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
@@ -301,10 +417,11 @@ export const useInvoiceMerger = () => {
                 }
 
                 const orderNum = normalizeOrderNum(row[targetOrderIdx]);
-                if (processedOrderNums.has(orderNum)) continue;
-                const invoices = invoiceMap.get(orderNum);
+                const matchKeyVal = buildOrderMatchKey(row);
+                if (processedKeys.has(matchKeyVal)) continue;
+                const invoices = invoiceMap.get(matchKeyVal);
                 if (invoices && invoices.length > 0) {
-                    processedOrderNums.add(orderNum);
+                    processedKeys.add(matchKeyVal);
                     uploadCount++;
                     invoices.forEach(inv => {
                         mgmtCount++;
