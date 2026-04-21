@@ -54,7 +54,7 @@ interface CompanyWorkstationRowProps {
     isFirstSession: boolean;
     isLastSession: boolean;
     pricingConfig: PricingConfig;
-    vendorFile: File | null;
+    vendorFiles: File[];
     masterFile: File | null;
     batchFile?: File | null;
     isDetected: boolean;
@@ -62,7 +62,7 @@ interface CompanyWorkstationRowProps {
     manualOrders?: ManualOrder[];
     isSelected?: boolean;
     onSelectToggle?: (sessionId: string) => void;
-    onVendorFileChange: (file: File | null) => void;
+    onVendorFileChange: (files: File[]) => void;
     onResultUpdate: (sessionId: string, totalPrice: number, excludedCount?: number, excludedDetails?: ExcludedOrder[]) => void;
     onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]) => void;
     onAddSession: () => void;
@@ -86,7 +86,7 @@ interface CompanyWorkstationRowProps {
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
-    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFile, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
+    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     previousRoundItems = [],
     manualOrdersRejected = false, onManualOrdersApproval,
@@ -403,11 +403,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     }, [workspace, localResult, sessionId]);
 
     useEffect(() => {
-        const activeFile = localFile || (isFirstSession ? masterFile : null);
-        if (vendorFile && activeFile && mergeStatus === 'idle') {
+        const activeFile = localFile || masterFile;
+        if (vendorFiles.length > 0 && activeFile && mergeStatus === 'idle') {
             handleRunMerge();
         }
-    }, [vendorFile, localFile, masterFile, mergeStatus, isFirstSession]);
+    }, [vendorFiles, localFile, masterFile, mergeStatus]);
 
     const handleCopy = (id: string, baseText: string, type: 'kakao' | 'excel' = 'kakao') => {
         let finalText = baseText;
@@ -475,9 +475,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const handleRunMerge = () => {
-        const activeFile = localFile || (isFirstSession ? masterFile : null);
-        if (activeFile && vendorFile) {
-            processFiles(vendorFile, activeFile, companyName, false, pricingConfig, orderPlatformMap, platformConfigs, businessId);
+        const activeFile = localFile || masterFile;
+        if (activeFile && vendorFiles.length > 0) {
+            processFiles(vendorFiles, activeFile, companyName, false, pricingConfig, orderPlatformMap, platformConfigs, businessId);
         }
     };
 
@@ -969,15 +969,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {!mergeResults ? (
                             <div className="flex flex-col items-center gap-2">
-                                <label className={`flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all shadow-md whitespace-nowrap ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFile ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
+                                <label className={`flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all shadow-md whitespace-nowrap ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFiles.length > 0 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
                                     <UploadIcon className="w-4 h-4" />
-                                    <span>{mergeStatus === 'processing' ? '매칭 중...' : mergeStatus === 'error' ? '송장 오류' : vendorFile ? '송장 업로드됨' : '송장 선택'}</span>
-                                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const file = e.target.files?.[0]; if (file) { resetMerge(); onVendorFileChange(file); } }} />
+                                    <span>{mergeStatus === 'processing' ? '매칭 중...' : mergeStatus === 'error' ? '송장 오류' : vendorFiles.length > 1 ? `송장 ${vendorFiles.length}개` : vendorFiles.length === 1 ? '송장 업로드됨' : '송장 선택'}</span>
+                                    <input type="file" className="sr-only" accept=".xlsx,.xls" multiple onChange={(e) => { const files = e.target.files; if (files && files.length > 0) { resetMerge(); onVendorFileChange(Array.from(files)); } }} />
                                 </label>
                                 {mergeStatus === 'error' && mergeError && (
                                     <div className="text-rose-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">{mergeError}</div>
                                 )}
-                                {vendorFile && mergeStatus === 'idle' && !(localFile || (isFirstSession ? masterFile : null)) && (
+                                {vendorFiles.length > 0 && mergeStatus === 'idle' && !(localFile || masterFile) && (
                                     <div className="text-amber-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">발주서를 먼저 업로드해주세요</div>
                                 )}
                             </div>

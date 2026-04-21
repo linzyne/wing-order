@@ -78,6 +78,52 @@ const SortableCompanyRow: React.FC<{
 // 열 인덱스를 알파벳으로 변환 (0→A, 1→B, ...)
 const colIndexToLetter = (idx: number) => String.fromCharCode(65 + idx);
 
+// 가구매 입력에서 주문번호 + 한글 이름 추출 → 마스터 데이터로 이름→주문번호 해석
+const resolveFakeOrderNumbers = (
+    fakeInput: string,
+    masterData: any[][] | null,
+    opts?: { normalize?: boolean }
+): { fakeNums: Set<string>; inputNames: Set<string>; nameMatchedOrders: Map<string, string[]> } => {
+    const fakeNums = new Set<string>();
+    const inputNames = new Set<string>();
+    const nameMatchedOrders = new Map<string, string[]>(); // name → orderNumbers[]
+
+    fakeInput.split('\n').forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        // 기존: 영숫자 5자 이상 → 주문번호 후보
+        const alphaMatches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
+        if (alphaMatches) {
+            alphaMatches.forEach(m => {
+                const val = opts?.normalize ? m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase() : m.trim();
+                fakeNums.add(val);
+            });
+        }
+        // 신규: 한글 이름 2자 이상 추출
+        const nameMatches = trimmed.match(/[\uAC00-\uD7A3]{2,}/g);
+        if (nameMatches) nameMatches.forEach(n => inputNames.add(n));
+    });
+
+    // 이름이 있고 마스터 데이터가 있으면 수취인명(col 26)으로 주문번호 역추적
+    if (inputNames.size > 0 && masterData && masterData.length > 1) {
+        for (let i = 1; i < masterData.length; i++) {
+            const row = masterData[i];
+            if (!row) continue;
+            const recipientName = String(row[26] || '').trim();
+            const orderNum = String(row[2] || '').trim();
+            if (recipientName && orderNum && inputNames.has(recipientName)) {
+                const val = opts?.normalize ? orderNum.replace(/[^A-Z0-9]/gi, '').toUpperCase() : orderNum;
+                fakeNums.add(val);
+                const existing = nameMatchedOrders.get(recipientName) || [];
+                existing.push(orderNum);
+                nameMatchedOrders.set(recipientName, existing);
+            }
+        }
+    }
+
+    return { fakeNums, inputNames, nameMatchedOrders };
+};
+
 // 택배 양식 관리 컴포넌트
 const COURIER_DATA_FIELDS = [
     { key: 'orderNumber', label: '주문번호' },
@@ -453,7 +499,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return initial;
     });
 
-    const [vendorFiles, setVendorFiles] = useState<Record<string, File>>({});
+    const [vendorFiles, setVendorFiles] = useState<Record<string, File[]>>({});
     const [totalsMap, setTotalsMap] = useState<Record<string, number>>({});
     const [excludedCountsMap, setExcludedCountsMap] = useState<Record<string, number>>({});
     const [allExcludedDetails, setAllExcludedDetails] = useState<Record<string, ExcludedOrder[]>>({});
@@ -717,6 +763,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [courierFiles, setCourierFiles] = useState<Record<string, File>>({});
     const [courierResults, setCourierResults] = useState<Record<string, { matched: number; total: number; notFound: string[] }>>({});
     const [courierMatchedRows, setCourierMatchedRows] = useState<Record<string, any[][]>>({});
+    const [courierTrackingMaps, setCourierTrackingMaps] = useState<Record<string, Map<string, string>>>({});
+    const [courierOutputPlatform, setCourierOutputPlatform] = useState<Record<string, string>>({});
     const [showTemplateManager, setShowTemplateManager] = useState(false);
     const [showFakeCourierSettings, setShowFakeCourierSettings] = useState(false);
 
@@ -884,16 +932,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return () => { if (thumbnailDebounceRef.current) clearTimeout(thumbnailDebounceRef.current); };
     }, [thumbnailNotes, updateField]);
 
-    // 가구매 명단 분석 (입력된 번호 vs 실제 발견된 번호)
+    // 가구매 명단 분석 (입력된 번호/이름 vs 실제 발견된 번호)
     const fakeOrderAnalysis = useMemo(() => {
         const inputNumbers = new Set<string>();
         const nameMap: Record<string, string> = {}; // 주문번호 -> 이름
+
+        // 이름 기반 매칭: 한글 이름 → 마스터 주문서 수취인명으로 주문번호 역추적
+        const { fakeNums: resolvedNums, inputNames, nameMatchedOrders } = resolveFakeOrderNumbers(fakeOrderInput, masterOrderData);
+
         fakeOrderInput.split('\n').forEach(line => {
             const trimmed = line.trim();
             if (!trimmed) return;
             const matches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
             if (matches) {
-                // 주문번호가 아닌 부분을 이름으로 추출
                 let namepart = trimmed;
                 matches.forEach(m => { namepart = namepart.replace(m, ''); });
                 const name = namepart.trim();
@@ -903,6 +954,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 });
             }
         });
+
+        // 이름으로 찾은 주문번호도 inputNumbers에 추가
+        for (const [name, orderNums] of nameMatchedOrders.entries()) {
+            orderNums.forEach(num => {
+                inputNumbers.add(num);
+                nameMap[num] = name;
+            });
+        }
 
         // 제외된 주문 정보 수집 (업체별로 제외된 주문들)
         const foundDetails: Record<string, ExcludedOrder> = {};
@@ -924,6 +983,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
         // 디버깅 로그
         console.log('[가구매 디버깅] 입력된 주문번호:', Array.from(inputNumbers));
+        console.log('[가구매 디버깅] 입력된 이름:', Array.from(inputNames));
+        console.log('[가구매 디버깅] 이름→주문번호 매칭:', Object.fromEntries(nameMatchedOrders));
         console.log('[가구매 디버깅] 마스터 주문서 총 주문 수:', masterOrderNumbers.size);
         console.log('[가구매 디버깅] allExcludedDetails 키:', Object.keys(allExcludedDetails));
         console.log('[가구매 디버깅] foundDetails 주문 수:', Object.keys(foundDetails).length);
@@ -936,20 +997,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             !foundDetails[num] && !masterOrderNumbers.has(num)
         );
 
+        // 이름 매칭 결과
+        const matchedNames = Array.from(inputNames).filter(n => nameMatchedOrders.has(n));
+        const missingNames = Array.from(inputNames).filter(n => !nameMatchedOrders.has(n));
+
         console.log('[가구매 디버깅] 매칭된 번호:', matched);
         console.log('[가구매 디버깅] 미발견 번호:', missing);
+        if (matchedNames.length > 0) console.log('[가구매 디버깅] 이름 매칭 성공:', matchedNames);
+        if (missingNames.length > 0) console.log('[가구매 디버깅] 이름 매칭 실패:', missingNames);
 
-        return { inputNumbers, matched, missing, foundDetails, nameMap };
+        return { inputNumbers, matched, missing, foundDetails, nameMap, matchedNames, missingNames };
     }, [fakeOrderInput, allExcludedDetails, masterOrderData]);
 
     // 마스터 주문서 품목별 건수 분석 (가구매 제외 / 가구매 분리)
     const masterProductSummary = useMemo(() => {
         if (!masterOrderData || masterOrderData.length < 2) return null;
-        const fakeNums = new Set<string>();
-        fakeOrderInput.split('\n').forEach(line => {
-            const matches = line.trim().match(/[A-Za-z0-9-]{5,}/g);
-            if (matches) matches.forEach(m => fakeNums.add(m.trim()));
-        });
+        // 이름 + 주문번호 모두 지원하는 가구매 해석
+        const { fakeNums } = resolveFakeOrderNumbers(fakeOrderInput, masterOrderData);
         // 헤더에서 수량 열 동적 탐색 (W열 = index 22가 아닐 수 있음)
         const headers = masterOrderData[0] || [];
         let qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('수량'));
@@ -1001,6 +1065,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         if (pos !== -1 && pos < bestPos) {
                             bestPos = pos;
                             bestCompany = name;
+                        }
+                    }
+                }
+                // col 10/11에서 못 찾으면 전체 행에서 키워드 재탐색 (토스 등 비표준 열 구조)
+                if (!bestCompany) {
+                    const fullRowText = row.map((v: any) => String(v || '')).join(' ').replace(/\s+/g, '').normalize('NFC');
+                    for (const [name, keywords] of companyKeywordsMap.entries()) {
+                        for (const k of keywords) {
+                            const kNorm = k.replace(/\s+/g, '').normalize('NFC');
+                            const pos = fullRowText.indexOf(kNorm);
+                            if (pos !== -1 && pos < bestPos) {
+                                bestPos = pos;
+                                bestCompany = name;
+                            }
                         }
                     }
                 }
@@ -1174,7 +1252,29 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const normalizePlatformRow = (row: any[], mapping: PlatformConfig['orderColumns']): any[] => {
         const normalized: any[] = new Array(31).fill('');
         normalized[2] = row[mapping.orderNumber] ?? '';
-        normalized[10] = mapping.groupName != null ? (row[mapping.groupName] ?? '') : '';
+
+        if (mapping.groupName != null) {
+            normalized[10] = row[mapping.groupName] ?? '';
+        } else {
+            // groupName 미매핑: 상품명~수량 사이의 미매핑 텍스트 열을 결합 (상품 관리 코드 등)
+            const mappedIndices = new Set(
+                [mapping.orderNumber, mapping.productName, mapping.optionName, mapping.quantity,
+                 mapping.recipientName, mapping.recipientPhone, mapping.postalCode,
+                 mapping.address, mapping.deliveryMessage, mapping.orderDate]
+                .filter(v => v != null) as number[]
+            );
+            const rangeStart = Math.max(0, mapping.productName - 2);
+            const rangeEnd = Math.min(row.length - 1, (mapping.quantity ?? mapping.productName) + 2);
+            const extras: string[] = [];
+            for (let c = rangeStart; c <= rangeEnd; c++) {
+                if (mappedIndices.has(c)) continue;
+                const val = String(row[c] || '').trim();
+                if (val && isNaN(Number(val)) && val.length > 1 && val.length < 40) {
+                    extras.push(val);
+                }
+            }
+            normalized[10] = extras.join(' ');
+        }
 
         let productName = String(row[mapping.productName] ?? '').trim();
         if (mapping.optionName != null && row[mapping.optionName]) {
@@ -1272,6 +1372,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         }
                     }
                 }
+                // col 10/11에서 못 찾으면 전체 행에서 키워드 재탐색 (토스 등 비표준 열 구조)
+                if (!bestCompany) {
+                    const fullRowText = json[i].map((v: any) => String(v || '')).join(' ').replace(/\s+/g, '').normalize('NFC');
+                    for (const [name, keywords] of companyKeywordsMap.entries()) {
+                        for (const k of keywords) {
+                            const pos = fullRowText.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
+                            if (pos !== -1 && pos < bestPos) {
+                                bestPos = pos;
+                                bestCompany = name;
+                            }
+                        }
+                    }
+                }
                 if (bestCompany) companiesInFile.add(bestCompany);
             }
             setDetectedCompanies(companiesInFile);
@@ -1363,6 +1476,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         }
                     }
                 }
+                // col 10/11에서 못 찾으면 전체 행에서 키워드 재탐색 (토스 등 비표준 열 구조)
+                if (!bestCompany) {
+                    const fullRowText = json[i].map((v: any) => String(v || '')).join(' ').replace(/\s+/g, '').normalize('NFC');
+                    for (const [name, keywords] of companyKeywordsMap.entries()) {
+                        for (const k of keywords) {
+                            const pos = fullRowText.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
+                            if (pos !== -1 && pos < bestPos) {
+                                bestPos = pos;
+                                bestCompany = name;
+                            }
+                        }
+                    }
+                }
                 if (bestCompany) companyRowCounts[bestCompany] = (companyRowCounts[bestCompany] || 0) + 1;
             }
             const companiesInFile = new Set(Object.keys(companyRowCounts));
@@ -1423,12 +1549,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 범용 택배 양식 다운로드: 템플릿 매핑에 따라 주문 데이터 채워서 다운로드
     const handleCourierDownload = async (template: CourierTemplate) => {
         if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
-        const fakeOrderNums = new Set<string>();
-        fakeOrderInput.split('\n').forEach(line => {
-            const matches = line.match(/[A-Za-z0-9-]{5,}/g);
-            if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
-        });
-        if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
 
         try {
             // 1차 마스터 파일 읽기
@@ -1436,6 +1556,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const masterWb = XLSX.read(masterData, { type: 'array' });
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
+
+            // 이름 + 주문번호 모두 지원하는 가구매 해석
+            const { fakeNums: fakeOrderNums } = resolveFakeOrderNumbers(fakeOrderInput, masterAoa, { normalize: true });
+            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호 또는 이름이 없습니다.'); return; }
 
             // 2차+ 배치 파일 행도 합치기
             const allRows: any[][] = [...masterAoa.slice(1)];
@@ -1499,14 +1623,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setCourierFiles(prev => ({ ...prev, [template.id]: file }));
         setCourierResults(prev => { const n = { ...prev }; delete n[template.id]; return n; });
         setCourierMatchedRows(prev => { const n = { ...prev }; delete n[template.id]; return n; });
+        setCourierTrackingMaps(prev => { const n = { ...prev }; delete n[template.id]; return n; });
         try {
-            const fakeOrderNums = new Set<string>();
-            fakeOrderInput.split('\n').forEach(line => {
-                const matches = line.match(/[A-Za-z0-9-]{5,}/g);
-                if (matches) matches.forEach(m => fakeOrderNums.add(m.trim().replace(/[^A-Z0-9]/gi, '').toUpperCase()));
-            });
-            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
-
             // 운송장 파일 읽기: returnMapping 우선, 없으면 기존 mapping 사용
             const courierData = await file.arrayBuffer();
             const courierWb = XLSX.read(courierData, { type: 'array' });
@@ -1528,13 +1646,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     trackingMap.set(orderNum, trackingNum);
                 }
             }
-            console.log(`[가구매송장] trackingMap: ${trackingMap.size}건, 가구매: ${fakeOrderNums.size}건`);
+            console.log(`[가구매송장] trackingMap: ${trackingMap.size}건`);
 
             // 원본 주문서 + 2차+ 배치 행에서 매칭
             const masterData = await masterOrderFile.arrayBuffer();
             const masterWb = XLSX.read(masterData, { type: 'array' });
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
+
+            // 이름 + 주문번호 모두 지원하는 가구매 해석
+            const { fakeNums: fakeOrderNums } = resolveFakeOrderNumbers(fakeOrderInput, masterAoa, { normalize: true });
+            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호 또는 이름이 없습니다.'); return; }
+            console.log(`[가구매송장] 가구매 주문번호: ${fakeOrderNums.size}건`);
 
             const header = masterAoa[0] || [];
             const allRows: any[][] = [...masterAoa.slice(1)];
@@ -1565,7 +1688,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
             const matchedCount = matchedRows.length - 1;
             setCourierResults(prev => ({ ...prev, [template.id]: { matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders } }));
-            if (matchedCount > 0) setCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
+            if (matchedCount > 0) {
+                setCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
+                setCourierTrackingMaps(prev => ({ ...prev, [template.id]: trackingMap }));
+            }
         } catch (err: any) {
             console.error(`${template.name} 운송장 처리 오류:`, err);
             alert(`${template.name} 운송장 파일 처리 중 오류가 발생했습니다: ` + err.message);
@@ -1577,11 +1703,54 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const rows = courierMatchedRows[templateId];
         if (!rows) return;
         const tmpl = courierTemplates.find((t: CourierTemplate) => t.id === templateId);
-        const ws = XLSX.utils.aoa_to_sheet(rows);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, '주문서');
         const tmplDisplayName = tmpl ? (tmpl.label ? `${tmpl.name}_${tmpl.label}` : tmpl.name) : '택배';
-        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
+        const selectedPlatform = courierOutputPlatform[templateId];
+        const trackingMap = courierTrackingMaps[templateId];
+
+        // 플랫폼 양식이 선택된 경우: 해당 플랫폼의 송장 업로드 양식으로 변환
+        if (selectedPlatform && platformConfigs?.[selectedPlatform]?.invoiceColumns && trackingMap) {
+            const pc = platformConfigs[selectedPlatform];
+            const invMapping = pc.invoiceColumns!;
+            const courierName = tmpl?.name || '';
+
+            let pHeader: any[];
+            if (pc.sampleHeaders && pc.sampleHeaders.length > 0) {
+                pHeader = [...pc.sampleHeaders];
+            } else {
+                const maxCol = Math.max(invMapping.orderNumber, invMapping.trackingNumber, invMapping.courierName ?? 0) + 1;
+                pHeader = new Array(maxCol).fill('');
+                pHeader[invMapping.orderNumber] = '주문번호';
+                pHeader[invMapping.trackingNumber] = '운송장번호';
+                if (invMapping.courierName !== undefined) pHeader[invMapping.courierName] = '택배사';
+            }
+
+            const pRows: any[][] = [];
+            // rows[0]은 header, rows[1:]은 데이터 (마스터 주문서 행)
+            for (let i = 1; i < rows.length; i++) {
+                const row = rows[i];
+                const orderNum = String(row[2] || '').trim();
+                const normalizedOrderNum = orderNum.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                const tracking = trackingMap.get(normalizedOrderNum);
+                if (!tracking) continue;
+
+                const pRow = new Array(pHeader.length).fill('');
+                pRow[invMapping.orderNumber] = orderNum;
+                pRow[invMapping.trackingNumber] = tracking;
+                if (invMapping.courierName !== undefined) pRow[invMapping.courierName] = courierName;
+                pRows.push(pRow);
+            }
+
+            const ws = XLSX.utils.aoa_to_sheet([pHeader, ...pRows]);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '업로드용');
+            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${selectedPlatform}_업로드용_송장.xlsx`);
+        } else {
+            // 기본: 마스터 주문서 형식 그대로 다운로드
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '주문서');
+            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
+        }
     };
 
     const handleAddManualOrder = (e: React.FormEvent) => {
@@ -1662,10 +1831,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setSelectedSessionIds(prev => { const next = new Set(prev); next.delete(sessionId); return next; });
     };
 
-    const handleVendorFileChange = (companyName: string, file: File | null) => {
+    const handleVendorFileChange = (companyName: string, files: File[]) => {
         setVendorFiles(prev => {
             const newState = { ...prev };
-            if (file) newState[companyName] = file; else delete newState[companyName];
+            if (files.length > 0) newState[companyName] = files; else delete newState[companyName];
             return newState;
         });
     };
@@ -2782,13 +2951,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     {showFakeDetail && fakeOrderAnalysis.inputNumbers.size > 0 && (
                         <div className="mb-3 bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in max-h-[250px] overflow-auto custom-scrollbar">
                             <div className="space-y-3">
-                                {fakeOrderAnalysis.missing.length > 0 && (
+                                {(fakeOrderAnalysis.missing.length > 0 || (fakeOrderAnalysis.missingNames && fakeOrderAnalysis.missingNames.length > 0)) && (
                                     <div>
                                         <h4 className="text-rose-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
                                             <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
-                                            미발견 ({fakeOrderAnalysis.missing.length}건)
+                                            미발견 ({fakeOrderAnalysis.missing.length + (fakeOrderAnalysis.missingNames?.length || 0)}건)
                                         </h4>
                                         <div className="space-y-1">
+                                            {fakeOrderAnalysis.missingNames && fakeOrderAnalysis.missingNames.map(name => (
+                                                <div key={`name-${name}`} className="flex items-center gap-2 bg-rose-950/30 border border-rose-500/20 px-2.5 py-1.5 rounded-lg">
+                                                    <span className="text-[11px] font-black text-white">{name}</span>
+                                                    <span className="text-[9px] text-rose-400/60">이름 미발견</span>
+                                                </div>
+                                            ))}
                                             {fakeOrderAnalysis.missing.map(num => {
                                                 const name = fakeOrderAnalysis.nameMap[num];
                                                 return (
@@ -2809,13 +2984,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <div className="space-y-1">
                                         {fakeOrderAnalysis.matched.map(num => {
                                             const detail = fakeOrderAnalysis.foundDetails[num];
+                                            const name = detail?.recipientName || fakeOrderAnalysis.nameMap[num] || '';
+                                            const company = detail?.companyName || '';
                                             return (
                                                 <div key={num} className="flex items-center justify-between bg-zinc-900/50 px-2.5 py-1.5 rounded-lg border border-zinc-800/50">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="text-[11px] font-black text-white">{detail.recipientName}</span>
+                                                        <span className="text-[11px] font-black text-white">{name}</span>
                                                         <span className="text-[9px] font-mono text-zinc-500">{num}</span>
                                                     </div>
-                                                    <span className="text-[9px] bg-zinc-800 text-emerald-500 px-1.5 py-0.5 rounded-full font-black border border-emerald-500/20">{detail.companyName}</span>
+                                                    {company && <span className="text-[9px] bg-zinc-800 text-emerald-500 px-1.5 py-0.5 rounded-full font-black border border-emerald-500/20">{company}</span>}
                                                 </div>
                                             );
                                         })}
@@ -2910,6 +3087,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     setCourierFiles(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
                                                     setCourierResults(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
                                                     setCourierMatchedRows(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
+                                                    setCourierTrackingMaps(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
                                                 }} className="p-1.5 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
                                                     <ArrowPathIcon className="w-3 h-3" />
                                                 </button>
@@ -2932,10 +3110,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     </div>
                                                 )}
                                                 {matched && (
-                                                    <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
-                                                        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                                                        운송장완료 다운로드 ({result.matched}건)
-                                                    </button>
+                                                    <div className="space-y-1.5">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <select
+                                                                value={courierOutputPlatform[tmpl.id] || ''}
+                                                                onChange={(e) => setCourierOutputPlatform(prev => ({ ...prev, [tmpl.id]: e.target.value }))}
+                                                                className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[9px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
+                                                            >
+                                                                <option value="">마스터 주문서 형식</option>
+                                                                {(Object.entries(platformConfigs || {}) as [string, PlatformConfig][]).filter(([, pc]) => pc.invoiceColumns).map(([key, pc]) => (
+                                                                    <option key={key} value={key}>{pc.name} 송장 양식</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                        <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
+                                                            <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                                            {courierOutputPlatform[tmpl.id] ? `${platformConfigs?.[courierOutputPlatform[tmpl.id]]?.name || ''} 업로드용 다운로드` : '운송장완료 다운로드'} ({result.matched}건)
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </div>
                                         )}
@@ -3212,9 +3404,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         return workstationsReady ? (
                                             <CompanyWorkstationRow
                                                 key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
-                                                vendorFile={vendorFiles[company] || null} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
                                                 manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
-                                                onVendorFileChange={(file) => handleVendorFileChange(company, file)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
+                                                onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                 onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
                                                 onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
                                                 onDownloadMergedInvoice={(companySessions[company] || []).length > 1 ? (type: 'mgmt' | 'upload') => handleDownloadMergedInvoice(company, type) : undefined}
