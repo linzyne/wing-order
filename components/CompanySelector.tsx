@@ -2977,10 +2977,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <div className="bg-violet-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-violet-400" /></div>
                             <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-1.5">
                                 가구매 명단 설정
-                                {fakeOrderAnalysis.inputNumbers.size > 0 && (
+                                {(fakeOrderAnalysis.inputNumbers.size > 0 || (fakeOrderAnalysis.missingNames?.length || 0) > 0) && (
                                     <div className="flex gap-1">
                                         <span className="bg-zinc-800 text-zinc-400 text-[11px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700 font-black">
-                                            총 {fakeOrderAnalysis.inputNumbers.size}명
+                                            총 {fakeOrderAnalysis.inputNumbers.size + (fakeOrderAnalysis.missingNames?.length || 0)}명
                                         </span>
                                         <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
                                             매칭 {fakeOrderAnalysis.matched.length}
