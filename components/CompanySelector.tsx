@@ -2990,11 +2990,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 미발견 {fakeOrderAnalysis.missing.length}
                                             </span>
                                         )}
-                                        {(fakeOrderAnalysis.missingNames?.length || 0) > 0 && (
-                                            <span className="bg-amber-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                                이름미발견 {fakeOrderAnalysis.missingNames!.length}
-                                            </span>
-                                        )}
                                     </div>
                                 )}
                             </h3>
@@ -3031,22 +3026,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     </div>
                                                 );
                                             })}
-                                        </div>
-                                    </div>
-                                )}
-                                {(fakeOrderAnalysis.missingNames?.length || 0) > 0 && (
-                                    <div>
-                                        <h4 className="text-amber-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
-                                            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
-                                            이름 미발견 ({fakeOrderAnalysis.missingNames!.length}건)
-                                        </h4>
-                                        <div className="space-y-1">
-                                            {fakeOrderAnalysis.missingNames!.map(name => (
-                                                <div key={`name-${name}`} className="flex items-center gap-2 bg-amber-950/30 border border-amber-500/20 px-2.5 py-1.5 rounded-lg">
-                                                    <span className="text-[11px] font-black text-white">{name}</span>
-                                                    <span className="text-[9px] text-amber-400/60">이름 미발견</span>
-                                                </div>
-                                            ))}
                                         </div>
                                     </div>
                                 )}
