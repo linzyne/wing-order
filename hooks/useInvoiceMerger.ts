@@ -287,10 +287,19 @@ export const useInvoiceMerger = () => {
                 if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { headerIdx = i; break; }
             }
 
-            // 주문서의 주문번호 열 감��
+            // 주문서의 주문번호 열 감지 (묶음배송번호 우선)
             const orderHeader = orderAoa[headerIdx];
             const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
-            let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
+            let targetOrderIdx: number;
+            if (isCustomIdx) {
+                targetOrderIdx = 2;
+            } else {
+                // 묶음배송번호를 먼저 시도, 없으면 주문번호 폴백
+                targetOrderIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
+                if (targetOrderIdx === -1) {
+                    targetOrderIdx = findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
+                }
+            }
 
             // 매칭 키 설정 확인
             const companyMatchKeyRaw = pricingConfig?.[companyName]?.vendorInvoiceMatchKey || '';
@@ -305,7 +314,11 @@ export const useInvoiceMerger = () => {
                 for (const hName of matchHeaderNames) {
                     const lower = hName.toLowerCase().replace(/\s+/g, '');
                     if (lower.includes('주문') || lower.includes('오더') || lower.includes('접수') || lower.includes('관리')) {
-                        headerToKeywords[hName] = ['주문번호', '주문정보', '오더번호', '접수번호', '관리번호'];
+                        // 주문번호 계열: 묶음배송번호 우선 시도
+                        const bundleIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
+                        headerToKeywords[hName] = bundleIdx !== -1
+                            ? ['묶음배송번호', '묶음배송']
+                            : ['주문번호', '주문정보', '오더번호', '접수번호', '관리번호'];
                     } else if (lower.includes('수령') || lower.includes('수취') || lower.includes('받는') || lower.includes('고객명')) {
                         headerToKeywords[hName] = ['받는분', '수취인', '수령인', '고객명', '수신자'];
                     } else if (lower.includes('전화') || lower.includes('연락') || lower.includes('핸드폰') || lower.includes('휴대') || lower.includes('hp')) {
