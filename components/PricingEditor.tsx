@@ -1320,19 +1320,21 @@ const CompanyCard: React.FC<{
                                     );
                                 })}
                                 {(() => {
-                                    const fieldMap = companyConfig.vendorInvoiceFieldMap || companyConfig.vendorInvoiceHeaders!.map(h => inferVendorInvoiceField(h));
-                                    const mappedFields = [...new Set(fieldMap.filter(f => f !== 'trackingNumber' && f !== 'empty'))];
-                                    if (mappedFields.length === 0) return null;
-                                    const currentMatchKeys = (companyConfig.vendorInvoiceMatchKey || 'orderNumber').split('+');
+                                    const headers = companyConfig.vendorInvoiceHeaders!;
+                                    const fieldMap = companyConfig.vendorInvoiceFieldMap || headers.map(h => inferVendorInvoiceField(h));
+                                    // 송장번호로 매핑된 열은 매칭 기준 후보에서 제외
+                                    const candidateHeaders = headers.filter((_, i) => fieldMap[i] !== 'trackingNumber');
+                                    if (candidateHeaders.length === 0) return null;
+                                    const currentMatchHeaders = (companyConfig.vendorInvoiceMatchKey || '').split('|').filter(Boolean);
                                     return (
                                         <div className="mt-3">
                                             <span className="text-[11px] font-black text-amber-500/80 uppercase">매칭 기준</span>
-                                            <div className="flex flex-wrap gap-2 mt-1">
-                                                {mappedFields.map(fieldKey => {
-                                                    const label = VENDOR_INVOICE_FIELD_TYPES.find(f => f.key === fieldKey)?.label || fieldKey;
-                                                    const isChecked = currentMatchKeys.includes(fieldKey);
+                                            <p className="text-[10px] text-zinc-600 mb-1">업체 송장파일의 어떤 열로 주문서와 매칭할지 선택 (복수 선택 가능)</p>
+                                            <div className="flex flex-wrap gap-1.5 mt-1">
+                                                {candidateHeaders.map(header => {
+                                                    const isChecked = currentMatchHeaders.includes(header);
                                                     return (
-                                                        <label key={fieldKey} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition-all ${isChecked ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : 'border-zinc-700 text-zinc-500 hover:border-zinc-600'}`}>
+                                                        <label key={header} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition-all ${isChecked ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : 'border-zinc-700 text-zinc-500 hover:border-zinc-600'}`}>
                                                             <input
                                                                 type="checkbox"
                                                                 className="sr-only"
@@ -1340,23 +1342,21 @@ const CompanyCard: React.FC<{
                                                                 onChange={() => {
                                                                     let newKeys: string[];
                                                                     if (isChecked) {
-                                                                        newKeys = currentMatchKeys.filter(k => k !== fieldKey);
+                                                                        newKeys = currentMatchHeaders.filter(k => k !== header);
                                                                     } else {
-                                                                        newKeys = [...currentMatchKeys, fieldKey];
+                                                                        newKeys = [...currentMatchHeaders, header];
                                                                     }
-                                                                    if (newKeys.length === 0) newKeys = ['orderNumber'];
-                                                                    props.onUpdateVendorInvoiceMatchKey(newKeys.join('+'));
+                                                                    props.onUpdateVendorInvoiceMatchKey(newKeys.length > 0 ? newKeys.join('|') : '');
                                                                 }}
                                                             />
                                                             <span className={`w-3 h-3 rounded border flex items-center justify-center ${isChecked ? 'border-amber-500 bg-amber-500' : 'border-zinc-600'}`}>
                                                                 {isChecked && <span className="text-black text-[8px] font-black">✓</span>}
                                                             </span>
-                                                            {label}
+                                                            {header}
                                                         </label>
                                                     );
                                                 })}
                                             </div>
-                                            <p className="text-[10px] text-zinc-600 mt-1">업체 송장파일과 주문서를 어떤 항목으로 매칭할지 선택 (복수 선택 가능)</p>
                                         </div>
                                     );
                                 })()}

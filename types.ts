@@ -87,9 +87,6 @@ export const VENDOR_INVOICE_FIELD_TYPES = [
 
 export type VendorInvoiceFieldKey = typeof VENDOR_INVOICE_FIELD_TYPES[number]['key'];
 
-// 매칭 키로 사용 가능한 필드 (송장번호, 비워둠 제외)
-export const MATCHABLE_FIELDS = VENDOR_INVOICE_FIELD_TYPES.filter(f => f.key !== 'trackingNumber' && f.key !== 'empty');
-
 export interface CompanyConfig {
   phone?: string;
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)

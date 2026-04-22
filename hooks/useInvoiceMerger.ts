@@ -147,35 +147,31 @@ export const useInvoiceMerger = () => {
 
         let vInvIdx = -1;
         const vendorConfig = pricingConfig?.[companyName];
-        const matchKey = vendorConfig?.vendorInvoiceMatchKey || 'orderNumber';
+        const matchKeyRaw = vendorConfig?.vendorInvoiceMatchKey || '';
         const fieldMap = vendorConfig?.vendorInvoiceFieldMap;
+        const configHeaders = vendorConfig?.vendorInvoiceHeaders;
 
-        // 헤더 기반 키워드 감지용 키워드 셋
-        const keywordSets: Record<string, string[]> = {
-            orderNumber: ['주문번호', '관리번호', 'ID', '오더번호', '오더넘버', '접수번호', '고객주문번호'],
-            trackingNumber: ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice'],
-            recipientName: ['받는분', '수취인', '수령인', '고객명', '수신자'],
-            recipientPhone: ['전화', '연락처', '핸드폰', '휴대폰', 'HP', 'phone', 'mobile'],
-            productName: ['상품명', '품목명', '제품명', '품명'],
-        };
-
-        // --- 매칭 키에 따른 분기 ---
-        const matchFields = matchKey.split('+'); // 예: ['recipientName', 'recipientPhone'] 또는 ['orderNumber']
-        const isOrderNumberMatch = matchFields.length === 1 && matchFields[0] === 'orderNumber';
+        // matchKey 형식: 원본 헤더명을 '|'로 구분 (예: "수령인|수령인연락처1")
+        // 비어있으면 기존 주문번호 매칭 모드
+        const matchHeaderNames = matchKeyRaw.split('|').filter(Boolean);
+        const isHeaderBasedMatch = matchHeaderNames.length > 0 && configHeaders && configHeaders.length > 0;
 
         // 송장번호 열 감지 (공통)
         if (fieldMap && fieldMap.length > 0) {
             vInvIdx = fieldMap.indexOf('trackingNumber');
         }
 
-        if (!isOrderNumberMatch) {
-            // --- 복합/비주문번호 매칭 모드 ---
+        if (isHeaderBasedMatch) {
+            // --- 헤더명 기반 매칭 모드 ---
+            // configHeaders에서 선택된 헤더명의 인덱스를 찾음
+            const vKeyIndices = matchHeaderNames.map(name => configHeaders.indexOf(name));
+
             const vHeaderIdx = findVendorHeaderIdx(vendorAoa);
             const vHeaders = vendorAoa[vHeaderIdx] || [];
 
-            const vKeyIndices = matchFields.map(f => findFieldIdx(fieldMap, f, vHeaders, keywordSets));
-
-            if (vInvIdx === -1) vInvIdx = findFieldIdx(fieldMap, 'trackingNumber', vHeaders, keywordSets);
+            if (vInvIdx === -1) vInvIdx = findFieldIdx(fieldMap, 'trackingNumber', vHeaders, {
+                trackingNumber: ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice'],
+            });
             // 헤더에서 송장번호 못 찾으면 데이터에서 자동 감지
             if (vInvIdx === -1) {
                 for (let ri = vHeaderIdx + 1; ri < Math.min(vendorAoa.length, vHeaderIdx + 5); ri++) {
@@ -191,11 +187,11 @@ export const useInvoiceMerger = () => {
             }
 
             if (vKeyIndices.some(idx => idx === -1)) {
-                console.log(`[송장] ⚠ 업체: ${companyName}, 매칭키(${matchKey}) 중 일부 열을 찾지 못함: ${vKeyIndices}`);
+                console.log(`[송장] ⚠ 업체: ${companyName}, 매칭 헤더(${matchHeaderNames}) 중 일부를 찾지 못함: ${vKeyIndices}`);
             }
 
             const invoiceMap = buildMapFromMultiColumns(vendorAoa, vKeyIndices, vInvIdx);
-            console.log(`[송장] 업체: ${companyName}, 매칭키: ${matchKey}, 키열: ${vKeyIndices}, 송장열: ${vInvIdx}, map크기=${invoiceMap.size}`);
+            console.log(`[송장] 업체: ${companyName}, 매칭 헤더: ${matchHeaderNames.join('+')}, 키열: ${vKeyIndices}, 송장열: ${vInvIdx}, map크기=${invoiceMap.size}`);
             return invoiceMap;
         }
 
@@ -214,8 +210,8 @@ export const useInvoiceMerger = () => {
         else {
             const vHeaderIdx = findVendorHeaderIdx(vendorAoa);
             const vHeaders = vendorAoa[vHeaderIdx] || [];
-            vOrderIdx = findColIdx(vHeaders, keywordSets.orderNumber);
-            if (vInvIdx === -1) vInvIdx = findColIdx(vHeaders, keywordSets.trackingNumber);
+            vOrderIdx = findColIdx(vHeaders, ['주문번호', '관리번호', 'ID', '오더번호', '오더넘버', '접수번호', '고객주문번호']);
+            if (vInvIdx === -1) vInvIdx = findColIdx(vHeaders, ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice']);
             if (vOrderIdx === -1) vOrderIdx = 0;
 
             // 헤더에서 송장번호 컬럼을 못 찾으면 데이터에서 자동 감지 (10자리 이상 숫자)
@@ -297,23 +293,39 @@ export const useInvoiceMerger = () => {
             let targetOrderIdx = isCustomIdx ? 2 : findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
 
             // 매칭 키 설정 확인
-            const companyMatchKey = pricingConfig?.[companyName]?.vendorInvoiceMatchKey || 'orderNumber';
-            const matchFields = companyMatchKey.split('+');
-            const isOrderNumberMatch = matchFields.length === 1 && matchFields[0] === 'orderNumber';
+            const companyMatchKeyRaw = pricingConfig?.[companyName]?.vendorInvoiceMatchKey || '';
+            const matchHeaderNames = companyMatchKeyRaw.split('|').filter(Boolean);
+            const vendorConfigHeaders = pricingConfig?.[companyName]?.vendorInvoiceHeaders;
+            const isHeaderBasedMatch = matchHeaderNames.length > 0 && vendorConfigHeaders && vendorConfigHeaders.length > 0;
 
-            // 주문서 측 매칭 키 열 인덱스 감지 (비주문번호 매칭용)
-            const orderMatchKeywordSets: Record<string, string[]> = {
-                recipientName: ['받는분', '수취인', '수령인', '고객명', '수신자'],
-                recipientPhone: ['전화', '연락처', '핸드폰', '휴대폰', 'HP', 'phone', 'mobile'],
-                productName: ['상품명', '품목명', '제품명', '품명'],
-            };
-            const orderMatchIndices: number[] = isOrderNumberMatch
-                ? [targetOrderIdx]
-                : matchFields.map(f => findColIdx(orderHeader, orderMatchKeywordSets[f] || []));
+            // 주문서 측 매칭 키 열 인덱스 감지
+            // 업체 헤더명 → 주문서에서 같은/유사한 열을 찾는 키워드 맵
+            const headerToKeywords: Record<string, string[]> = {};
+            if (isHeaderBasedMatch) {
+                for (const hName of matchHeaderNames) {
+                    const lower = hName.toLowerCase().replace(/\s+/g, '');
+                    if (lower.includes('주문') || lower.includes('오더') || lower.includes('접수') || lower.includes('관리')) {
+                        headerToKeywords[hName] = ['주문번호', '주문정보', '오더번호', '접수번호', '관리번호'];
+                    } else if (lower.includes('수령') || lower.includes('수취') || lower.includes('받는') || lower.includes('고객명')) {
+                        headerToKeywords[hName] = ['받는분', '수취인', '수령인', '고객명', '수신자'];
+                    } else if (lower.includes('전화') || lower.includes('연락') || lower.includes('핸드폰') || lower.includes('휴대') || lower.includes('hp')) {
+                        headerToKeywords[hName] = ['전화', '연락처', '핸드폰', '휴대폰', 'HP', 'phone', 'mobile'];
+                    } else if (lower.includes('상품') || lower.includes('품목') || lower.includes('제품') || lower.includes('품명')) {
+                        headerToKeywords[hName] = ['상품명', '품목명', '제품명', '품명'];
+                    } else {
+                        // 정확한 매칭 시도: 업체 헤더명 그 자체를 키워드로
+                        headerToKeywords[hName] = [hName];
+                    }
+                }
+            }
+
+            const orderMatchIndices: number[] = isHeaderBasedMatch
+                ? matchHeaderNames.map(hName => findColIdx(orderHeader, headerToKeywords[hName] || [hName]))
+                : [targetOrderIdx];
 
             /** 주문서 행에서 매칭 키를 생성 */
             const buildOrderMatchKey = (row: any[]): string => {
-                if (isOrderNumberMatch) return normalizeOrderNum(row[targetOrderIdx]);
+                if (!isHeaderBasedMatch) return normalizeOrderNum(row[targetOrderIdx]);
                 return orderMatchIndices.map(idx => normalizeMatchValue(row[idx])).join('|');
             };
 
@@ -343,7 +355,7 @@ export const useInvoiceMerger = () => {
                     invoiceMap.set(key, existing);
                 }
             }
-            console.log(`[송장] processFiles - 업체: ${companyName}, 송장파일 ${vendorFiles.length}개, 주문서 행수: ${orderAoa.length}, 매칭키: ${companyMatchKey}, 키수: ${orderKeys.size}, map크기=${invoiceMap.size}`);
+            console.log(`[송장] processFiles - 업체: ${companyName}, 송장파일 ${vendorFiles.length}개, 주문서 행수: ${orderAoa.length}, 매칭기준: ${isHeaderBasedMatch ? matchHeaderNames.join('+') : '주문번호'}, 키수: ${orderKeys.size}, map크기=${invoiceMap.size}`);
 
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
             const companyConfig = pricingConfig?.[companyName];
@@ -391,12 +403,12 @@ export const useInvoiceMerger = () => {
                 if (invTrackCol !== -1) targetInvIdx = invTrackCol;
             }
 
-            if (isOrderNumberMatch && targetOrderIdx === -1) {
+            if (!isHeaderBasedMatch && targetOrderIdx === -1) {
                 throw new Error("주문서에서 '주문번호' 열을 찾을 수 없습니다.");
             }
-            if (!isOrderNumberMatch && orderMatchIndices.some(idx => idx === -1)) {
-                const missingFields = matchFields.filter((_, i) => orderMatchIndices[i] === -1);
-                throw new Error(`주문서에서 매칭 키 열을 찾을 수 없습니다: ${missingFields.join(', ')}`);
+            if (isHeaderBasedMatch && orderMatchIndices.some(idx => idx === -1)) {
+                const missingHeaders = matchHeaderNames.filter((_, i) => orderMatchIndices[i] === -1);
+                throw new Error(`주문서에서 매칭 기준에 해당하는 열을 찾을 수 없습니다: ${missingHeaders.join(', ')}`);
             }
 
             const mgmtRows: any[][] = [invoiceHeader];
