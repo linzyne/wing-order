@@ -1031,7 +1031,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     )}
                                 </div>
-                                <button onClick={() => { onVendorFileChange(null); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => { onVendorFileChange([]); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
                             </div>
                         )}
                     </div>
