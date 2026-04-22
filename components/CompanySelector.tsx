@@ -2985,9 +2985,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
                                             매칭 {fakeOrderAnalysis.matched.length}
                                         </span>
-                                        {fakeOrderAnalysis.missing.length > 0 && (
+                                        {(fakeOrderAnalysis.missing.length + (fakeOrderAnalysis.missingNames?.length || 0)) > 0 && (
                                             <span className="bg-rose-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                                미발견 {fakeOrderAnalysis.missing.length}
+                                                미발견 {fakeOrderAnalysis.missing.length + (fakeOrderAnalysis.missingNames?.length || 0)}
                                             </span>
                                         )}
                                     </div>
