@@ -2977,17 +2977,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <div className="bg-violet-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-violet-400" /></div>
                             <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-1.5">
                                 가구매 명단 설정
-                                {(fakeOrderAnalysis.inputNumbers.size > 0 || (fakeOrderAnalysis.missingNames?.length || 0) > 0) && (
+                                {fakeOrderAnalysis.inputNumbers.size > 0 && (
                                     <div className="flex gap-1">
                                         <span className="bg-zinc-800 text-zinc-400 text-[11px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700 font-black">
-                                            총 {fakeOrderAnalysis.inputNumbers.size + (fakeOrderAnalysis.missingNames?.length || 0)}명
+                                            총 {fakeOrderAnalysis.inputNumbers.size}명
                                         </span>
                                         <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
                                             매칭 {fakeOrderAnalysis.matched.length}
                                         </span>
-                                        {(fakeOrderAnalysis.missing.length + (fakeOrderAnalysis.missingNames?.length || 0)) > 0 && (
+                                        {fakeOrderAnalysis.missing.length > 0 && (
                                             <span className="bg-rose-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                                미발견 {fakeOrderAnalysis.missing.length + (fakeOrderAnalysis.missingNames?.length || 0)}
+                                                미발견 {fakeOrderAnalysis.missing.length}
+                                            </span>
+                                        )}
+                                        {(fakeOrderAnalysis.missingNames?.length || 0) > 0 && (
+                                            <span className="bg-amber-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
+                                                이름미발견 {fakeOrderAnalysis.missingNames!.length}
                                             </span>
                                         )}
                                     </div>
@@ -3010,19 +3015,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     {showFakeDetail && fakeOrderAnalysis.inputNumbers.size > 0 && (
                         <div className="mb-3 bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in max-h-[250px] overflow-auto custom-scrollbar">
                             <div className="space-y-3">
-                                {(fakeOrderAnalysis.missing.length > 0 || (fakeOrderAnalysis.missingNames && fakeOrderAnalysis.missingNames.length > 0)) && (
+                                {fakeOrderAnalysis.missing.length > 0 && (
                                     <div>
                                         <h4 className="text-rose-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
                                             <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
-                                            미발견 ({fakeOrderAnalysis.missing.length + (fakeOrderAnalysis.missingNames?.length || 0)}건)
+                                            미발견 ({fakeOrderAnalysis.missing.length}건)
                                         </h4>
                                         <div className="space-y-1">
-                                            {fakeOrderAnalysis.missingNames && fakeOrderAnalysis.missingNames.map(name => (
-                                                <div key={`name-${name}`} className="flex items-center gap-2 bg-rose-950/30 border border-rose-500/20 px-2.5 py-1.5 rounded-lg">
-                                                    <span className="text-[11px] font-black text-white">{name}</span>
-                                                    <span className="text-[9px] text-rose-400/60">이름 미발견</span>
-                                                </div>
-                                            ))}
                                             {fakeOrderAnalysis.missing.map(num => {
                                                 const name = fakeOrderAnalysis.nameMap[num];
                                                 return (
@@ -3032,6 +3031,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     </div>
                                                 );
                                             })}
+                                        </div>
+                                    </div>
+                                )}
+                                {(fakeOrderAnalysis.missingNames?.length || 0) > 0 && (
+                                    <div>
+                                        <h4 className="text-amber-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
+                                            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                                            이름 미발견 ({fakeOrderAnalysis.missingNames!.length}건)
+                                        </h4>
+                                        <div className="space-y-1">
+                                            {fakeOrderAnalysis.missingNames!.map(name => (
+                                                <div key={`name-${name}`} className="flex items-center gap-2 bg-amber-950/30 border border-amber-500/20 px-2.5 py-1.5 rounded-lg">
+                                                    <span className="text-[11px] font-black text-white">{name}</span>
+                                                    <span className="text-[9px] text-amber-400/60">이름 미발견</span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}
