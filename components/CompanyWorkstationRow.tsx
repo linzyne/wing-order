@@ -322,13 +322,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const fileToReprocess = lastProcessedMasterRef.current || lastProcessedBatchRef.current;
             handleLocalFileChange(fileToReprocess, false);
         } else if (hasManualOrdersChanged) {
-            // 수동주문 변경: 파일 유무와 관계없이 처리
+            // 수동주문 변경: 파일 유무와 관계없이 처리 (체크박스 선택이 곧 의사 표현이므로 팝업 불필요)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             if (lastProcessedMasterRef.current) {
                 handleLocalFileChange(lastProcessedMasterRef.current, false);
             } else if (manualOrders.length > 0) {
-                // 마스터 파일 없이 수동발주만 있는 경우 - 팝업 표시 후 발주서 생성
-                handleLocalFileChange(null, true);
+                handleLocalFileChange(null, false);
             } else {
                 lastManualOrdersRef.current = manualOrdersStr;
             }
