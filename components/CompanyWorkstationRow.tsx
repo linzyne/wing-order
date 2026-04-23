@@ -71,8 +71,8 @@ interface CompanyWorkstationRowProps {
     onDownloadMergedOrder?: () => void;
     onDownloadMergedInvoice?: (type: 'mgmt' | 'upload') => void;
     previousRoundItems?: { round: number; summary: Record<string, { count: number; totalPrice: number }> }[];
-    manualOrdersRejected?: boolean;
-    onManualOrdersApproval?: (companyName: string, approved: boolean) => void;
+    manualOrdersRejected?: boolean; // deprecated: 체크박스 선택으로 대체
+    onManualOrdersApproval?: (companyName: string, approved: boolean) => void; // deprecated
     businessId?: string;
     onConfigChange: (newConfig: PricingConfig) => void;
     masterExpectedCount?: number;
@@ -437,29 +437,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const isProcessingRef = useRef(false);
-    const handleLocalFileChange = async (file: File | null, confirmManualOrders = false, overrideFakeOrders?: string) => {
+    const handleLocalFileChange = async (file: File | null, _confirmManualOrders = false, overrideFakeOrders?: string) => {
         if (isProcessingRef.current) return;
         isProcessingRef.current = true;
         // 처리 시작 시점에 수동주문 ref 갱신 (race condition 방지)
         lastManualOrdersRef.current = JSON.stringify(manualOrders);
         if (file && file !== masterFile) setLocalFile(file);
         setIsLocalProcessing(true);
-        let ordersToInclude = manualOrders;
-        if (manualOrders.length > 0) {
-            if (confirmManualOrders) {
-                // 명시적 트리거 (파일 업로드) - 항상 확인 다이얼로그 표시
-                const orderList = manualOrders.map(o => `  • ${o.recipientName} - ${o.productName} x${o.qty}`).join('\n');
-                if (!confirm(`[${companyName}] 수동발주 ${manualOrders.length}건을 발주서에 포함할까요?\n\n${orderList}`)) {
-                    ordersToInclude = [];
-                    onManualOrdersApproval?.(companyName, false);
-                } else {
-                    onManualOrdersApproval?.(companyName, true);
-                }
-            } else if (manualOrdersRejected) {
-                // 자동 트리거 - 이전에 취소한 경우 수동발주 제외
-                ordersToInclude = [];
-            }
-        }
+        // manualOrders prop은 이미 체크박스로 선택된 항목만 필터링되어 전달됨
+        const ordersToInclude = manualOrders;
         try {
             const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
             const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude);
