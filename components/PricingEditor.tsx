@@ -214,39 +214,19 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                 />
                             </div>
                             <div>
-                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">발주 분할 수</label>
+                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">수량 변환</label>
                                 <input
                                     type="text"
                                     inputMode="numeric"
                                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
                                     placeholder="미설정시 1"
                                     value={dialog.product.orderSplitCount || ''}
-                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, orderSplitCount: Number(e.target.value) || 0 } })}
+                                    onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, orderSplitCount: Number(e.target.value) || 0, splitMode: 'quantity' } })}
                                 />
                             </div>
-                            <div className="col-span-2 -mt-1">
-                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">분할 방식</label>
-                                <div className="flex gap-2">
-                                    <button
-                                        type="button"
-                                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${(!dialog.product.splitMode || dialog.product.splitMode === 'row') ? 'bg-sky-500/20 border-sky-500/50 text-sky-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}
-                                        onClick={() => setDialog({ ...dialog, product: { ...dialog.product, splitMode: 'row' } })}
-                                    >
-                                        행 분할
-                                    </button>
-                                    <button
-                                        type="button"
-                                        className={`flex-1 px-3 py-2 rounded-lg text-xs font-bold border transition-colors ${dialog.product.splitMode === 'quantity' ? 'bg-violet-500/20 border-violet-500/50 text-violet-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}
-                                        onClick={() => setDialog({ ...dialog, product: { ...dialog.product, splitMode: 'quantity' } })}
-                                    >
-                                        수량 변환
-                                    </button>
-                                </div>
-                            </div>
                             <p className="col-span-2 text-[10px] text-zinc-600 -mt-2 leading-relaxed">
-                                {(!dialog.product.splitMode || dialog.product.splitMode === 'row')
-                                    ? '행 분할: 업체의 1회 최대 배송량을 초과하는 품목일 때 사용. 예) 업체 최대 3kg인데 5kg 품목 → 분할 2 설정 → 주문 1건이 2행(2박스)으로 분리되어 배송비도 2회분 반영'
-                                    : '수량 변환: 우리 판매 단위와 업체 단위가 다를 때 사용. 예) 우리는 1세트(2팩)로 파는데 업체는 팩 단위 → 분할 2 설정 → 주문 수량이 x2로 변환'}
+                                업체에 1kg밖에 없을 때, 내 품목 2kg를 1kg x 수량2로 변환<br/>
+                                예) 수량변환 2 → 고객 주문 1건 → 발주서에 수량 2로 표기 (각 주문서 하나당 배송비 부과)
                             </p>
                         </div>
                         <div>
@@ -1425,8 +1405,8 @@ const ProductTable: React.FC<{
                                         <span className="text-[9px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
                                     )}
                                     {product.orderSplitCount && product.orderSplitCount > 1 && (
-                                        <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded border ${product.splitMode === 'quantity' ? 'text-violet-400 bg-violet-500/10 border-violet-500/20' : 'text-sky-400 bg-sky-500/10 border-sky-500/20'}`}>
-                                            {product.splitMode === 'quantity' ? `qty×${product.orderSplitCount}` : `x${product.orderSplitCount}`}
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-violet-400 bg-violet-500/10 border-violet-500/20">
+                                            x{product.orderSplitCount}
                                         </span>
                                     )}
                                     {product.shippingCost && product.shippingCost > 0 && (
