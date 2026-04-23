@@ -1227,26 +1227,35 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
             {/* 수동발주 선택 모달 */}
             {showManualOrderModal && createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60" onClick={handleManualOrderModalCancel}>
-                    <div className="bg-zinc-900 rounded-2xl p-5 max-w-sm w-full mx-4 border border-zinc-700 shadow-2xl" onClick={e => e.stopPropagation()}>
-                        <h3 className="text-white font-bold text-sm mb-1">[{companyName}] 수동발주 포함</h3>
-                        <p className="text-zinc-500 text-[11px] mb-3">발주서에 포함할 수동발주를 선택하세요</p>
-                        <div className="space-y-1.5 max-h-60 overflow-y-auto mb-4">
+                <div
+                    style={{ position:'fixed', top:0, left:0, right:0, bottom:0, zIndex:99999, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.7)' }}
+                    onClick={handleManualOrderModalCancel}
+                >
+                    <div
+                        style={{ background:'#27272a', borderRadius:'16px', padding:'24px', maxWidth:'400px', width:'90%', border:'2px solid #f43f5e', boxShadow:'0 25px 50px rgba(0,0,0,0.5)' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ color:'#fff', fontWeight:700, fontSize:'14px', marginBottom:'4px' }}>[{companyName}] 수동발주 포함</div>
+                        <div style={{ color:'#a1a1aa', fontSize:'11px', marginBottom:'16px' }}>발주서에 포함할 수동발주를 선택하세요</div>
+                        <div style={{ maxHeight:'240px', overflowY:'auto', marginBottom:'16px', display:'flex', flexDirection:'column', gap:'6px' }}>
                             {manualOrders.map(o => (
-                                <label key={o.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all ${modalSelectedIds.has(o.id) ? 'bg-rose-500/10 border border-rose-500/30' : 'bg-zinc-800/50 border border-zinc-800 opacity-60'}`}>
-                                    <input type="checkbox" checked={modalSelectedIds.has(o.id)} onChange={() => setModalSelectedIds(prev => { const next = new Set(prev); if (next.has(o.id)) next.delete(o.id); else next.add(o.id); return next; })} className="w-4 h-4 accent-rose-500 cursor-pointer flex-shrink-0" />
-                                    <div className="flex flex-col min-w-0">
-                                        <span className="text-xs font-bold text-white">{o.recipientName}</span>
-                                        <span className="text-[10px] text-zinc-400 truncate">{o.productName} x{o.qty}</span>
+                                <label
+                                    key={o.id}
+                                    style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'12px', cursor:'pointer', border: modalSelectedIds.has(o.id) ? '1px solid rgba(244,63,94,0.4)' : '1px solid #3f3f46', background: modalSelectedIds.has(o.id) ? 'rgba(244,63,94,0.1)' : 'rgba(63,63,70,0.3)', opacity: modalSelectedIds.has(o.id) ? 1 : 0.6 }}
+                                >
+                                    <input type="checkbox" checked={modalSelectedIds.has(o.id)} onChange={() => setModalSelectedIds(prev => { const next = new Set(prev); if (next.has(o.id)) next.delete(o.id); else next.add(o.id); return next; })} style={{ width:'16px', height:'16px', accentColor:'#f43f5e', cursor:'pointer', flexShrink:0 }} />
+                                    <div style={{ display:'flex', flexDirection:'column', minWidth:0 }}>
+                                        <span style={{ fontSize:'12px', fontWeight:700, color:'#fff' }}>{o.recipientName}</span>
+                                        <span style={{ fontSize:'10px', color:'#a1a1aa' }}>{o.productName} x{o.qty}</span>
                                     </div>
                                 </label>
                             ))}
                         </div>
-                        <div className="flex gap-2">
-                            <button onClick={handleManualOrderModalConfirm} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs py-2.5 rounded-xl transition-colors">
+                        <div style={{ display:'flex', gap:'8px' }}>
+                            <button onClick={handleManualOrderModalConfirm} style={{ flex:1, background:'#f43f5e', color:'#fff', fontWeight:700, fontSize:'12px', padding:'10px', borderRadius:'12px', border:'none', cursor:'pointer' }}>
                                 {modalSelectedIds.size}건 포함
                             </button>
-                            <button onClick={handleManualOrderModalCancel} className="px-4 py-2.5 text-zinc-500 hover:text-zinc-300 text-xs font-bold transition-colors">
+                            <button onClick={handleManualOrderModalCancel} style={{ padding:'10px 16px', color:'#a1a1aa', fontSize:'12px', fontWeight:700, background:'transparent', border:'none', cursor:'pointer' }}>
                                 제외
                             </button>
                         </div>
