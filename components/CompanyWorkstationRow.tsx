@@ -402,11 +402,18 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 
+    // 송장 merge 자동 트리거: vendorFiles가 새로 업로드될 때만 1회 실행
+    const vendorFilesKeyRef = useRef('');
     useEffect(() => {
-        const activeFile = localFile || masterFile;
-        if (vendorFiles.length > 0 && activeFile && mergeStatus === 'idle') {
-            handleRunMerge();
+        const newKey = vendorFiles.map(f => f.name + f.size).join('|');
+        if (newKey && newKey !== vendorFilesKeyRef.current) {
+            vendorFilesKeyRef.current = newKey;
+            const activeFile = localFile || masterFile;
+            if (activeFile && mergeStatus === 'idle') {
+                handleRunMerge();
+            }
         }
+        if (!vendorFiles.length) vendorFilesKeyRef.current = '';
     }, [vendorFiles, localFile, masterFile, mergeStatus]);
 
     const handleCopy = (id: string, baseText: string, type: 'kakao' | 'excel' = 'kakao') => {
@@ -471,11 +478,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
         setIsLocalProcessing(false);
         isProcessingRef.current = false;
-        // 송장 파일이 업로드된 상태에서 성공한 merge 결과가 있으면 리셋하지 않음
-        // (마스터파일 처리 후 재실행되면서 0건으로 덮어쓰는 문제 방지)
-        if (!(vendorFiles.length > 0 && mergeResults)) {
-            resetMerge();
-        }
+        resetMerge();
     };
 
     const handleRunMerge = () => {
