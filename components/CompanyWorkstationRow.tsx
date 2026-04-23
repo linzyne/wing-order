@@ -304,32 +304,35 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // N차 일괄 업로드: 가구매 제외 포함하여 처리
             lastProcessedBatchRef.current = batchFile;
             lastFakeOrdersRef.current = fakeOrderNumbers;
-            handleLocalFileChange(batchFile, false);
+            handleLocalFileChange(batchFile);
         } else if (hasFileChanged) {
             if (masterFile) {
-                // isProcessingRef 가드에 의해 스킵될 수 있으므로, ref는 실제 처리 시작 후 업데이트
                 if (!isProcessingRef.current) {
                     lastProcessedMasterRef.current = masterFile;
                     lastFakeOrdersRef.current = fakeOrderNumbers;
                     lastManualOrdersRef.current = manualOrdersStr;
                 }
-                handleLocalFileChange(masterFile, true);
+                // 수동발주가 있으면 모달로 선택 후 처리, 없으면 바로 처리
+                if (isFirstSession && manualOrders.length > 0) {
+                    pendingFileRef.current = masterFile;
+                    setModalSelectedIds(new Set(manualOrders.map(o => o.id)));
+                    setShowManualOrderModal(true);
+                } else {
+                    handleLocalFileChange(masterFile, []);
+                }
             }
         } else if (hasFakeOrdersChanged && (lastProcessedMasterRef.current || lastProcessedBatchRef.current)) {
             // 가구매 변경: 이미 파일 처리가 된 이후에만 재처리 (1차/N차 모두)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
             const fileToReprocess = lastProcessedMasterRef.current || lastProcessedBatchRef.current;
-            handleLocalFileChange(fileToReprocess, false);
+            handleLocalFileChange(fileToReprocess);
         } else if (hasManualOrdersChanged) {
-            // 수동주문 변경: 파일 유무와 관계없이 처리 (체크박스 선택이 곧 의사 표현이므로 팝업 불필요)
+            // 수동주문 변경: 이미 팝업으로 확인한 경우에만 재처리 (확인 전이면 무시)
             lastFakeOrdersRef.current = fakeOrderNumbers;
-            if (lastProcessedMasterRef.current) {
-                handleLocalFileChange(lastProcessedMasterRef.current, false);
-            } else if (manualOrders.length > 0) {
-                handleLocalFileChange(null, false);
-            } else {
-                lastManualOrdersRef.current = manualOrdersStr;
+            lastManualOrdersRef.current = manualOrdersStr;
+            if (confirmedManualOrderIdsRef.current !== null && lastProcessedMasterRef.current) {
+                handleLocalFileChange(lastProcessedMasterRef.current);
             }
         } else {
             // Firestore 초기 로드 등 - ref만 업데이트 (재처리 안함)
@@ -437,15 +440,38 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const isProcessingRef = useRef(false);
-    const handleLocalFileChange = async (file: File | null, _confirmManualOrders = false, overrideFakeOrders?: string) => {
+    // 수동발주 선택 모달 상태
+    const [showManualOrderModal, setShowManualOrderModal] = useState(false);
+    const [modalSelectedIds, setModalSelectedIds] = useState<Set<string>>(new Set());
+    const pendingFileRef = useRef<File | null>(null);
+    const confirmedManualOrderIdsRef = useRef<Set<string> | null>(null); // null = 아직 확인 안 함
+
+    const handleManualOrderModalConfirm = () => {
+        confirmedManualOrderIdsRef.current = new Set(modalSelectedIds);
+        setShowManualOrderModal(false);
+        const selectedOrders = manualOrders.filter(o => modalSelectedIds.has(o.id));
+        handleLocalFileChange(pendingFileRef.current, selectedOrders);
+    };
+
+    const handleManualOrderModalCancel = () => {
+        confirmedManualOrderIdsRef.current = new Set(); // 전부 제외
+        setShowManualOrderModal(false);
+        handleLocalFileChange(pendingFileRef.current, []);
+    };
+
+    const handleLocalFileChange = async (file: File | null, overrideManualOrders?: ManualOrder[], overrideFakeOrders?: string) => {
         if (isProcessingRef.current) return;
         isProcessingRef.current = true;
         // 처리 시작 시점에 수동주문 ref 갱신 (race condition 방지)
         lastManualOrdersRef.current = JSON.stringify(manualOrders);
         if (file && file !== masterFile) setLocalFile(file);
         setIsLocalProcessing(true);
-        // manualOrders prop은 이미 체크박스로 선택된 항목만 필터링되어 전달됨
-        const ordersToInclude = manualOrders;
+        // overrideManualOrders가 주어지면 사용, 아니면 확인된 선택 기준으로 필터
+        const ordersToInclude = overrideManualOrders !== undefined
+            ? overrideManualOrders
+            : (confirmedManualOrderIdsRef.current !== null
+                ? manualOrders.filter(o => confirmedManualOrderIdsRef.current!.has(o.id))
+                : []);
         try {
             const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
             const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude);
@@ -936,7 +962,18 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <label className="flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border border-zinc-800 bg-zinc-900/30 text-zinc-500 hover:border-indigo-500/40 hover:text-indigo-400 transition-all shadow-inner whitespace-nowrap">
                                         <DocumentArrowUpIcon className="w-4 h-4 text-zinc-700" />
                                         <span>발주서 업로드</span>
-                                        <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => e.target.files?.[0] && handleLocalFileChange(e.target.files[0], true)} />
+                                        <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
+                                            const f = e.target.files?.[0];
+                                            if (!f) return;
+                                            if (isFirstSession && manualOrders.length > 0) {
+                                                pendingFileRef.current = f;
+                                                lastProcessedMasterRef.current = f;
+                                                setModalSelectedIds(new Set(manualOrders.map(o => o.id)));
+                                                setShowManualOrderModal(true);
+                                            } else {
+                                                handleLocalFileChange(f, []);
+                                            }
+                                        }} />
                                     </label>
                                 )}
                                 {(() => {
@@ -1185,6 +1222,37 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         </div>
                     </td>
                 </tr>
+            )}
+
+            {/* 수동발주 선택 모달 */}
+            {showManualOrderModal && (
+                <tr><td colSpan={99}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={handleManualOrderModalCancel}>
+                    <div className="bg-zinc-900 rounded-2xl p-5 max-w-sm w-full mx-4 border border-zinc-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-white font-bold text-sm mb-1">[{companyName}] 수동발주 포함</h3>
+                        <p className="text-zinc-500 text-[11px] mb-3">발주서에 포함할 수동발주를 선택하세요</p>
+                        <div className="space-y-1.5 max-h-60 overflow-y-auto mb-4">
+                            {manualOrders.map(o => (
+                                <label key={o.id} className={`flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all ${modalSelectedIds.has(o.id) ? 'bg-rose-500/10 border border-rose-500/30' : 'bg-zinc-800/50 border border-zinc-800 opacity-60'}`}>
+                                    <input type="checkbox" checked={modalSelectedIds.has(o.id)} onChange={() => setModalSelectedIds(prev => { const next = new Set(prev); if (next.has(o.id)) next.delete(o.id); else next.add(o.id); return next; })} className="w-4 h-4 accent-rose-500 cursor-pointer flex-shrink-0" />
+                                    <div className="flex flex-col min-w-0">
+                                        <span className="text-xs font-bold text-white">{o.recipientName}</span>
+                                        <span className="text-[10px] text-zinc-400 truncate">{o.productName} x{o.qty}</span>
+                                    </div>
+                                </label>
+                            ))}
+                        </div>
+                        <div className="flex gap-2">
+                            <button onClick={handleManualOrderModalConfirm} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs py-2.5 rounded-xl transition-colors">
+                                {modalSelectedIds.size}건 포함
+                            </button>
+                            <button onClick={handleManualOrderModalCancel} className="px-4 py-2.5 text-zinc-500 hover:text-zinc-300 text-xs font-bold transition-colors">
+                                제외
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                </td></tr>
             )}
         </>
     );
