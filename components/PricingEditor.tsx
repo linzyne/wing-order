@@ -243,10 +243,10 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                     </button>
                                 </div>
                             </div>
-                            <p className="col-span-2 text-[10px] text-zinc-600 -mt-2">
+                            <p className="col-span-2 text-[10px] text-zinc-600 -mt-2 leading-relaxed">
                                 {(!dialog.product.splitMode || dialog.product.splitMode === 'row')
-                                    ? '행 분할: 분할 수 2 설정시, 1건 주문이 발주서 2행(각 수량 1)으로 생성됩니다'
-                                    : '수량 변환: 분할 수 2 설정시, 1건 주문이 발주서 1행(수량 2)으로 생성됩니다'}
+                                    ? '행 분할: 업체의 1회 최대 배송량을 초과하는 품목일 때 사용. 예) 업체 최대 3kg인데 5kg 품목 → 분할 2 설정 → 주문 1건이 2행(2박스)으로 분리되어 배송비도 2회분 반영'
+                                    : '수량 변환: 우리 판매 단위와 업체 단위가 다를 때 사용. 예) 우리는 1세트(2팩)로 파는데 업체는 팩 단위 → 분할 2 설정 → 주문 수량이 x2로 변환'}
                             </p>
                         </div>
                         <div>
