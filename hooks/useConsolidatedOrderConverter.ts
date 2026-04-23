@@ -363,29 +363,44 @@ const consolidateMatchedOrders = (
             const before = famOrders.map(o => ({ displayName: o.config.displayName, qty: o.qty }));
             const after: { displayName: string; qty: number }[] = [];
 
-            for (const member of members) {
-                if (remaining <= 0) break;
-                const count = Math.floor(remaining / member.kg);
-                if (count > 0) {
-                    result.push({
-                        ...template,
-                        productKey: member.productKey,
-                        config: member.config,
-                        qty: count,
-                    });
-                    after.push({ displayName: member.config.displayName, qty: count });
-                    remaining -= member.kg * count;
-                }
-            }
-            if (remaining > 0) {
-                const smallest = members[members.length - 1];
+            // 동일 단위로 딱 떨어지는 품목을 우선 선택 (예: 4kg → 2kg x 2 우선)
+            const evenMatch = members.find(m => totalKg % m.kg === 0 && m.kg !== totalKg);
+            if (evenMatch && evenMatch.kg > (members[members.length - 1]?.kg || 0)) {
+                const count = totalKg / evenMatch.kg;
                 result.push({
                     ...template,
-                    productKey: smallest.productKey,
-                    config: smallest.config,
-                    qty: 1,
+                    productKey: evenMatch.productKey,
+                    config: evenMatch.config,
+                    qty: count,
                 });
-                after.push({ displayName: smallest.config.displayName, qty: 1 });
+                after.push({ displayName: evenMatch.config.displayName, qty: count });
+                remaining = 0;
+            } else {
+                // 균등 분할 불가 → 큰 것부터 채우는 그리디
+                for (const member of members) {
+                    if (remaining <= 0) break;
+                    const count = Math.floor(remaining / member.kg);
+                    if (count > 0) {
+                        result.push({
+                            ...template,
+                            productKey: member.productKey,
+                            config: member.config,
+                            qty: count,
+                        });
+                        after.push({ displayName: member.config.displayName, qty: count });
+                        remaining -= member.kg * count;
+                    }
+                }
+                if (remaining > 0) {
+                    const smallest = members[members.length - 1];
+                    result.push({
+                        ...template,
+                        productKey: smallest.productKey,
+                        config: smallest.config,
+                        qty: 1,
+                    });
+                    after.push({ displayName: smallest.config.displayName, qty: 1 });
+                }
             }
 
             // before와 after가 다를 때만 로그 기록
