@@ -587,6 +587,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [bulkText, setBulkText] = useState('');
 
     const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
+    const [selectedManualOrderIds, setSelectedManualOrderIds] = useState<Set<string>>(new Set());
     const lastWrittenManualOrdersRef = useRef('[]');
 
     // 빠른 수령자 Firestore 관리
@@ -715,7 +716,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const unsubscribe = subscribeManualOrders((orders) => {
             const str = JSON.stringify(orders);
             if (str !== lastWrittenManualOrdersRef.current) {
-                setManualOrders(orders as ManualOrder[]);
+                const typedOrders = orders as ManualOrder[];
+                setManualOrders(typedOrders);
+                setSelectedManualOrderIds(prev => {
+                    const next = new Set(prev);
+                    typedOrders.forEach(o => { if (!prev.has(o.id)) next.add(o.id); });
+                    return next;
+                });
                 lastWrittenManualOrdersRef.current = str;
             }
         }, businessId);
@@ -1822,6 +1829,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName, qty: parseInt(manualInput.qty) || 1
         };
         setManualOrders(prev => [...prev, newOrder]);
+        setSelectedManualOrderIds(prev => new Set([...prev, newOrder.id]));
         setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', productName: '', qty: '1' }));
     };
 
@@ -1829,7 +1837,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setManualInput(prev => ({ ...prev, recipientName: person.name, phone: person.phone, address: person.address }));
     };
 
-    const handleRemoveManualOrder = (id: string) => setManualOrders(prev => prev.filter(o => o.id !== id));
+    const handleRemoveManualOrder = (id: string) => {
+        setManualOrders(prev => prev.filter(o => o.id !== id));
+        setSelectedManualOrderIds(prev => { const next = new Set(prev); next.delete(id); return next; });
+    };
+
+    const handleToggleManualOrderSelection = (id: string) => {
+        setSelectedManualOrderIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
 
     const handleAddManualTransfer = (e: React.FormEvent) => {
         e.preventDefault();
@@ -2758,7 +2778,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <div className="bg-rose-500/10 p-1 rounded-lg"><PlusCircleIcon className="w-3.5 h-3.5 text-rose-400" /></div>
                             수동 발주 추가
                             {manualOrders.length > 0 && (
-                                <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black">{manualOrders.length}</span>
+                                <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black">{manualOrders.filter(o => selectedManualOrderIds.has(o.id)).length}/{manualOrders.length}</span>
                             )}
                         </h3>
                         <span className="text-zinc-600 text-[10px] transition-transform group-open/manual:rotate-180">▼</span>
@@ -2817,14 +2837,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     </form>
                     {manualOrders.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1.5">
-                            {manualOrders.map(o => (
-                                <div key={o.id} className="bg-zinc-900 px-2.5 py-1 rounded-lg border border-zinc-800 flex items-center gap-1.5 group animate-pop-in">
+                            {manualOrders.map(o => {
+                                const isSelected = selectedManualOrderIds.has(o.id);
+                                return (
+                                <div key={o.id} className={`px-2.5 py-1 rounded-lg border flex items-center gap-1.5 group animate-pop-in cursor-pointer transition-all ${isSelected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-950 border-zinc-900 opacity-40'}`} onClick={() => handleToggleManualOrderSelection(o.id)}>
+                                    <input type="checkbox" checked={isSelected} onChange={() => handleToggleManualOrderSelection(o.id)} onClick={e => e.stopPropagation()} className="w-3 h-3 accent-rose-500 cursor-pointer" />
                                     <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
                                     <span className="text-[10px] font-bold text-zinc-300">{o.recipientName}</span>
                                     <span className="text-[9px] text-zinc-600 truncate max-w-[60px]">{o.productName}</span>
-                                    <button onClick={() => handleRemoveManualOrder(o.id)} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleRemoveManualOrder(o.id); }} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                     </div>
@@ -3443,7 +3467,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <CompanyWorkstationRow
                                                 key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                 vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
-                                                manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
+                                                manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company && selectedManualOrderIds.has(o.id)) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                 onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                 onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
                                                 onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
