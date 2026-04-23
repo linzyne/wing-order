@@ -225,8 +225,8 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                 />
                             </div>
                             <p className="col-span-2 text-[10px] text-zinc-600 -mt-2 leading-relaxed">
-                                업체에 1kg밖에 없을 때, 내 품목 2kg를 1kg x 수량2로 변환<br/>
-                                예) 수량변환 2 → 고객 주문 1건 → 발주서에 수량 2로 표기 (각 주문서 하나당 배송비 부과)
+                                업체에 1kg밖에 없을 때 사용<br/>
+                                내 품목 2kg → 1kg x 수량2로 변환하여 발주서에 표기 (각 주문서 하나당 배송비 부과)
                             </p>
                         </div>
                         <div>
