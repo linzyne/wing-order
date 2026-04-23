@@ -729,10 +729,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
             onConfirm: (displayName) => {
                 if (!displayName) return;
                 const newConfig = JSON.parse(JSON.stringify(configRef.current));
-                const productKey = displayName;
+                let productKey = displayName;
+                // 같은 이름이 있으면 키에 번호를 붙여서 중복 허용
                 if (newConfig[companyName].products[productKey]) {
-                    setDialog({ type: 'alert', message: '이미 같은 품목이 있어요! ✨', onConfirm: () => setDialog(null) });
-                    return;
+                    let idx = 2;
+                    while (newConfig[companyName].products[`${displayName}_${idx}`]) idx++;
+                    productKey = `${displayName}_${idx}`;
                 }
                 newConfig[companyName].products[productKey] = { displayName, supplyPrice: 0 };
                 onConfigChange(newConfig);
@@ -761,15 +763,18 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         const cleanProduct = stripUndefined(newProduct);
         console.log('[품목 저장] splitMode:', cleanProduct.splitMode, '| orderSplitCount:', cleanProduct.orderSplitCount);
         const newProductKey = cleanProduct.displayName;
-        if (productKey === newProductKey) {
+        if (productKey === newProductKey || productKey.startsWith(newProductKey + '_')) {
+            // 키가 같거나 기존 번호 붙은 키면 그대로 유지
             newConfig[companyName].products[productKey] = cleanProduct;
         } else {
-            if (newConfig[companyName].products[newProductKey]) {
-                setDialog({ type: 'alert', message: '이미 존재하는 품목명입니다. 🥺', onConfirm: () => setDialog(null) });
-                return;
-            }
             delete newConfig[companyName].products[productKey];
-            newConfig[companyName].products[newProductKey] = cleanProduct;
+            let finalKey = newProductKey;
+            if (newConfig[companyName].products[finalKey]) {
+                let idx = 2;
+                while (newConfig[companyName].products[`${newProductKey}_${idx}`]) idx++;
+                finalKey = `${newProductKey}_${idx}`;
+            }
+            newConfig[companyName].products[finalKey] = cleanProduct;
         }
         handleUpdate(newConfig);
         setDialog(null);
