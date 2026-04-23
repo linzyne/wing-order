@@ -165,7 +165,12 @@ export const useInvoiceMerger = () => {
         // matchKey 형식: 원본 헤더명을 '|'로 구분 (예: "수령인|수령인연락처1")
         // 비어있으면 기존 주문번호 매칭 모드
         const matchHeaderNames = matchKeyRaw.split('|').filter(Boolean);
-        const isHeaderBasedMatch = matchHeaderNames.length > 0 && configHeaders && configHeaders.length > 0;
+        // 주문번호 단일 매칭은 표준 경로 사용 (다른 업체와 동일한 normalizeOrderNum 적용)
+        const isSingleOrderKey = matchHeaderNames.length === 1 && (() => {
+            const l = matchHeaderNames[0].toLowerCase().replace(/\s+/g, '');
+            return l.includes('주문') || l.includes('오더') || l.includes('접수') || l.includes('관리');
+        })();
+        const isHeaderBasedMatch = matchHeaderNames.length > 0 && !isSingleOrderKey && configHeaders && configHeaders.length > 0;
 
         // 송장번호 열 감지 (공통)
         if (fieldMap && fieldMap.length > 0) {
@@ -315,7 +320,12 @@ export const useInvoiceMerger = () => {
             const companyMatchKeyRaw = pricingConfig?.[companyName]?.vendorInvoiceMatchKey || '';
             const matchHeaderNames = companyMatchKeyRaw.split('|').filter(Boolean);
             const vendorConfigHeaders = pricingConfig?.[companyName]?.vendorInvoiceHeaders;
-            const isHeaderBasedMatch = matchHeaderNames.length > 0 && vendorConfigHeaders && vendorConfigHeaders.length > 0;
+            // 주문번호 단일 매칭은 표준 경로 사용 (buildInvoiceMap과 동일 조건)
+            const isSingleOrderKey = matchHeaderNames.length === 1 && (() => {
+                const l = matchHeaderNames[0].toLowerCase().replace(/\s+/g, '');
+                return l.includes('주문') || l.includes('오더') || l.includes('접수') || l.includes('관리');
+            })();
+            const isHeaderBasedMatch = matchHeaderNames.length > 0 && !isSingleOrderKey && vendorConfigHeaders && vendorConfigHeaders.length > 0;
 
             // 주문서 측 매칭 키 열 인덱스 감지
             // 업체 헤더명 → 주문서에서 같은/유사한 열을 찾는 키워드 맵
