@@ -979,28 +979,12 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
             }
 
             const fakeOrderNumbers = new Set<string>();
-            const inputNames = new Set<string>();
             fakeOrderNumbersInput.split('\n').forEach(line => {
                 const trimmed = line.trim();
                 if (!trimmed) return;
                 const matches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
                 if (matches) matches.forEach(m => fakeOrderNumbers.add(m.trim()));
-                // 한글 이름 2자 이상 추출
-                const nameMatches = trimmed.match(/[\uAC00-\uD7A3]{2,}/g);
-                if (nameMatches) nameMatches.forEach(n => inputNames.add(n));
             });
-            // 이름으로 주문번호 역추적 (json의 수취인명 col 26)
-            if (inputNames.size > 0 && json.length > 1) {
-                for (let i = 1; i < json.length; i++) {
-                    const row = json[i];
-                    if (!row) continue;
-                    const recipientName = String(row[26] || '').trim();
-                    const orderNum = String(row[2] || '').trim();
-                    if (recipientName && orderNum && inputNames.has(recipientName)) {
-                        fakeOrderNumbers.add(orderNum);
-                    }
-                }
-            }
 
             const localExcluded: ExcludedOrder[] = [];
             const localUnmatched: UnmatchedOrder[] = [];

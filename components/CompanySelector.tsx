@@ -81,17 +81,13 @@ const colIndexToLetter = (idx: number) => String.fromCharCode(65 + idx);
 // 가구매 입력에서 주문번호 + 한글 이름 추출 → 마스터 데이터로 이름→주문번호 해석
 const resolveFakeOrderNumbers = (
     fakeInput: string,
-    masterData: any[][] | null,
     opts?: { normalize?: boolean }
-): { fakeNums: Set<string>; inputNames: Set<string>; nameMatchedOrders: Map<string, string[]> } => {
+): Set<string> => {
     const fakeNums = new Set<string>();
-    const inputNames = new Set<string>();
-    const nameMatchedOrders = new Map<string, string[]>(); // name → orderNumbers[]
 
     fakeInput.split('\n').forEach(line => {
         const trimmed = line.trim();
         if (!trimmed) return;
-        // 기존: 영숫자 5자 이상 → 주문번호 후보
         const alphaMatches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
         if (alphaMatches) {
             alphaMatches.forEach(m => {
@@ -99,29 +95,9 @@ const resolveFakeOrderNumbers = (
                 fakeNums.add(val);
             });
         }
-        // 신규: 한글 이름 2자 이상 추출
-        const nameMatches = trimmed.match(/[\uAC00-\uD7A3]{2,}/g);
-        if (nameMatches) nameMatches.forEach(n => inputNames.add(n));
     });
 
-    // 이름이 있고 마스터 데이터가 있으면 수취인명(col 26)으로 주문번호 역추적
-    if (inputNames.size > 0 && masterData && masterData.length > 1) {
-        for (let i = 1; i < masterData.length; i++) {
-            const row = masterData[i];
-            if (!row) continue;
-            const recipientName = String(row[26] || '').trim();
-            const orderNum = String(row[2] || '').trim();
-            if (recipientName && orderNum && inputNames.has(recipientName)) {
-                const val = opts?.normalize ? orderNum.replace(/[^A-Z0-9]/gi, '').toUpperCase() : orderNum;
-                fakeNums.add(val);
-                const existing = nameMatchedOrders.get(recipientName) || [];
-                existing.push(orderNum);
-                nameMatchedOrders.set(recipientName, existing);
-            }
-        }
-    }
-
-    return { fakeNums, inputNames, nameMatchedOrders };
+    return fakeNums;
 };
 
 // 택배 양식 관리 컴포넌트
@@ -986,41 +962,44 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const fakeOrderAnalysis = useMemo(() => {
         const inputNumbers = new Set<string>();
         const nameMap: Record<string, string> = {}; // 주문번호 -> 이름
-
-        // 이름 기반 매칭: 한글 이름 → 마스터 주문서 수취인명으로 주문번호 역추적
-        const { fakeNums: resolvedNums, inputNames, nameMatchedOrders } = resolveFakeOrderNumbers(fakeOrderInput, masterOrderData);
+        const duplicates: { number: string; names: string[] }[] = [];
+        const numberToNames = new Map<string, string[]>();
+        let inputLineCount = 0;
 
         fakeOrderInput.split('\n').forEach(line => {
             const trimmed = line.trim();
             if (!trimmed) return;
+            inputLineCount++;
             const matches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
             if (matches) {
                 let namepart = trimmed;
                 matches.forEach(m => { namepart = namepart.replace(m, ''); });
                 const name = namepart.trim();
                 matches.forEach(m => {
-                    inputNumbers.add(m.trim());
-                    if (name) nameMap[m.trim()] = name;
+                    const num = m.trim();
+                    inputNumbers.add(num);
+                    if (name) {
+                        nameMap[num] = name;
+                        const existing = numberToNames.get(num) || [];
+                        if (!existing.includes(name)) existing.push(name);
+                        numberToNames.set(num, existing);
+                    }
                 });
             }
         });
 
-        // 이름으로 찾은 주문번호도 inputNumbers에 추가
-        for (const [name, orderNums] of nameMatchedOrders.entries()) {
-            orderNums.forEach(num => {
-                inputNumbers.add(num);
-                nameMap[num] = name;
-            });
+        for (const [num, names] of numberToNames.entries()) {
+            if (names.length > 1) duplicates.push({ number: num, names });
         }
 
-        // 제외된 주문 정보 수집 (업체별로 제외된 주문들)
+        // 제외된 주문 정보 수집
         const foundDetails: Record<string, ExcludedOrder> = {};
         (Object.values(allExcludedDetails).flat() as ExcludedOrder[]).forEach(ex => {
             const cleanNum = ex.orderNumber.replace(' (제외)', '').trim();
             foundDetails[cleanNum] = ex;
         });
 
-        // 마스터 주문서에서 모든 주문번호 추출 (타이밍 이슈 방지)
+        // 마스터 주문서에서 모든 주문번호 추출
         const masterOrderNumbers = new Set<string>();
         if (masterOrderData && masterOrderData.length > 1) {
             for (let i = 1; i < masterOrderData.length; i++) {
@@ -1031,15 +1010,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
         }
 
-        // 디버깅 로그
-        console.log('[가구매 디버깅] 입력된 주문번호:', Array.from(inputNumbers));
-        console.log('[가구매 디버깅] 입력된 이름:', Array.from(inputNames));
-        console.log('[가구매 디버깅] 이름→주문번호 매칭:', Object.fromEntries(nameMatchedOrders));
-        console.log('[가구매 디버깅] 마스터 주문서 총 주문 수:', masterOrderNumbers.size);
-        console.log('[가구매 디버깅] allExcludedDetails 키:', Object.keys(allExcludedDetails));
-        console.log('[가구매 디버깅] foundDetails 주문 수:', Object.keys(foundDetails).length);
-
-        // 매칭: 제외된 주문 OR 마스터 주문서에 있는 주문
+        // 주문번호로만 매칭
         const matched = Array.from(inputNumbers).filter(num =>
             foundDetails[num] || masterOrderNumbers.has(num)
         );
@@ -1047,23 +1018,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             !foundDetails[num] && !masterOrderNumbers.has(num)
         );
 
-        // 이름 매칭 결과
-        const matchedNames = Array.from(inputNames).filter(n => nameMatchedOrders.has(n));
-        const missingNames = Array.from(inputNames).filter(n => !nameMatchedOrders.has(n));
-
-        console.log('[가구매 디버깅] 매칭된 번호:', matched);
-        console.log('[가구매 디버깅] 미발견 번호:', missing);
-        if (matchedNames.length > 0) console.log('[가구매 디버깅] 이름 매칭 성공:', matchedNames);
-        if (missingNames.length > 0) console.log('[가구매 디버깅] 이름 매칭 실패:', missingNames);
-
-        return { inputNumbers, matched, missing, foundDetails, nameMap, matchedNames, missingNames };
+        return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates };
     }, [fakeOrderInput, allExcludedDetails, masterOrderData]);
 
     // 마스터 주문서 품목별 건수 분석 (가구매 제외 / 가구매 분리)
     const masterProductSummary = useMemo(() => {
         if (!masterOrderData || masterOrderData.length < 2) return null;
-        // 이름 + 주문번호 모두 지원하는 가구매 해석
-        const { fakeNums } = resolveFakeOrderNumbers(fakeOrderInput, masterOrderData);
+        const fakeNums = resolveFakeOrderNumbers(fakeOrderInput);
         // 헤더에서 수량 열 동적 탐색 (W열 = index 22가 아닐 수 있음)
         const headers = masterOrderData[0] || [];
         let qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('수량'));
@@ -1680,9 +1641,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
 
-            // 이름 + 주문번호 모두 지원하는 가구매 해석
-            const { fakeNums: fakeOrderNums } = resolveFakeOrderNumbers(fakeOrderInput, masterAoa, { normalize: true });
-            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호 또는 이름이 없습니다.'); return; }
+            const fakeOrderNums = resolveFakeOrderNumbers(fakeOrderInput, { normalize: true });
+            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
 
             // 2차+ 배치 파일 행도 합치기
             const allRows: any[][] = [...masterAoa.slice(1)];
@@ -1776,9 +1736,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
 
-            // 이름 + 주문번호 모두 지원하는 가구매 해석
-            const { fakeNums: fakeOrderNums } = resolveFakeOrderNumbers(fakeOrderInput, masterAoa, { normalize: true });
-            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호 또는 이름이 없습니다.'); return; }
+            const fakeOrderNums = resolveFakeOrderNumbers(fakeOrderInput, { normalize: true });
+            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
             console.log(`[가구매송장] 가구매 주문번호: ${fakeOrderNums.size}건`);
 
             const header = masterAoa[0] || [];
@@ -3043,10 +3002,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <div className="bg-violet-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-violet-400" /></div>
                             <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-1.5">
                                 가구매 명단 설정
-                                {fakeOrderAnalysis.inputNumbers.size > 0 && (
-                                    <div className="flex gap-1">
+                                {fakeOrderAnalysis.inputLineCount > 0 && (
+                                    <div className="flex gap-1 flex-wrap">
                                         <span className="bg-zinc-800 text-zinc-400 text-[11px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700 font-black">
-                                            총 {fakeOrderAnalysis.inputNumbers.size}명
+                                            총 {fakeOrderAnalysis.inputLineCount}명
                                         </span>
                                         <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
                                             매칭 {fakeOrderAnalysis.matched.length}
@@ -3054,6 +3013,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         {fakeOrderAnalysis.missing.length > 0 && (
                                             <span className="bg-rose-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
                                                 미발견 {fakeOrderAnalysis.missing.length}
+                                            </span>
+                                        )}
+                                        {fakeOrderAnalysis.duplicates.length > 0 && (
+                                            <span className="bg-amber-500 text-black text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
+                                                중복번호 {fakeOrderAnalysis.duplicates.length}
                                             </span>
                                         )}
                                     </div>
@@ -3073,9 +3037,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         </div>
                     </div>
 
-                    {showFakeDetail && fakeOrderAnalysis.inputNumbers.size > 0 && (
+                    {showFakeDetail && fakeOrderAnalysis.inputLineCount > 0 && (
                         <div className="mb-3 bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in max-h-[250px] overflow-auto custom-scrollbar">
                             <div className="space-y-3">
+                                {fakeOrderAnalysis.duplicates.length > 0 && (
+                                    <div>
+                                        <h4 className="text-amber-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
+                                            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                                            중복 번호 ({fakeOrderAnalysis.duplicates.length}건)
+                                        </h4>
+                                        <div className="space-y-1">
+                                            {fakeOrderAnalysis.duplicates.map(dup => (
+                                                <div key={dup.number} className="flex items-center gap-2 bg-amber-950/30 border border-amber-500/20 px-2.5 py-1.5 rounded-lg flex-wrap">
+                                                    <span className="text-[11px] font-black text-amber-400">{dup.names.join(', ')}</span>
+                                                    <span className="text-[10px] font-mono text-amber-500/70">{dup.number}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 {fakeOrderAnalysis.missing.length > 0 && (
                                     <div>
                                         <h4 className="text-rose-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
