@@ -287,18 +287,17 @@ export const useInvoiceMerger = () => {
                 if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { headerIdx = i; break; }
             }
 
-            // 주문서의 주문번호 열 감지 (묶음배송번호 우선)
+            // 주문서의 주문번호 열 감지
+            // 발주서 생성 시 sourceOrderNumberIdx=2(주문번호)를 사용하므로
+            // 송장 매칭도 주문번호를 우선 사용 (묶음배송번호는 폴백)
             const orderHeader = orderAoa[headerIdx];
-            const isCustomIdx = ['연두', '총각김치', '포기김치', '배추김치', '총각김치,포기김치', '고랭지김치', '제이제이', '귤_제이', '신선마켓', '귤_신선', '귤_초록', '답도', '한라봉_답도', '팜플로우', '웰그린'].includes(companyName);
             let targetOrderIdx: number;
-            if (isCustomIdx) {
-                targetOrderIdx = 2;
-            } else {
-                // 묶음배송번호를 먼저 시도, 없으면 주문번호 폴백
+            targetOrderIdx = findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
+            if (targetOrderIdx === -1) {
                 targetOrderIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
-                if (targetOrderIdx === -1) {
-                    targetOrderIdx = findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
-                }
+            }
+            if (targetOrderIdx === -1) {
+                targetOrderIdx = 2; // 기본 C열 폴백
             }
 
             // 매칭 키 설정 확인
@@ -398,8 +397,10 @@ export const useInvoiceMerger = () => {
                 }
             }
 
-            let targetInvIdx = isCustomIdx ? 4 : findColIdx(invoiceHeader, ['운송장', '송장번호', '송장']);
-            let targetCourierIdx = isCustomIdx ? 3 : findColIdx(invoiceHeader, ['택배사', '배송사']);
+            let targetInvIdx = findColIdx(invoiceHeader, ['운송장', '송장번호', '송장']);
+            if (targetInvIdx === -1) targetInvIdx = 4; // 기본 E열 폴백
+            let targetCourierIdx = findColIdx(invoiceHeader, ['택배사', '배송사']);
+            if (targetCourierIdx === -1) targetCourierIdx = 3; // 기본 D열 폴백
             let targetQtyIdx = findColIdx(orderHeader, ['수량']);
 
             // 키워드로 못 찾으면 매핑을 통해 역추적: invoiceHeader에서 해당 필드를 찾고, 매핑의 역으로 orderHeader 인덱스를 구함
