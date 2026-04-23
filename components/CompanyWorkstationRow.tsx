@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useRef, useContext } from 'react';
+import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
 import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import {
@@ -1225,9 +1226,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             )}
 
             {/* 수동발주 선택 모달 */}
-            {showManualOrderModal && (
-                <tr><td colSpan={99}>
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={handleManualOrderModalCancel}>
+            {showManualOrderModal && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60" onClick={handleManualOrderModalCancel}>
                     <div className="bg-zinc-900 rounded-2xl p-5 max-w-sm w-full mx-4 border border-zinc-700 shadow-2xl" onClick={e => e.stopPropagation()}>
                         <h3 className="text-white font-bold text-sm mb-1">[{companyName}] 수동발주 포함</h3>
                         <p className="text-zinc-500 text-[11px] mb-3">발주서에 포함할 수동발주를 선택하세요</p>
@@ -1251,8 +1251,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             </button>
                         </div>
                     </div>
-                </div>
-                </td></tr>
+                </div>,
+                document.body
             )}
         </>
     );
