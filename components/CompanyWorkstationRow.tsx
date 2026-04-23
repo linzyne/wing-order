@@ -478,7 +478,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
         setIsLocalProcessing(false);
         isProcessingRef.current = false;
-        resetMerge();
+        // 송장 파일이 있으면 merge 결과 보존 (resetMerge가 results를 null로 밀어버림 방지)
+        if (vendorFiles.length === 0) {
+            resetMerge();
+        }
     };
 
     const handleRunMerge = () => {
