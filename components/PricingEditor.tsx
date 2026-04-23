@@ -651,6 +651,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    const handleUpdateAutoConsolidate = (companyName: string, enabled: boolean) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].autoConsolidate = enabled || undefined;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateDeadline = (companyName: string, deadline: string) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].deadline = deadline || undefined;
@@ -922,6 +928,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
                             onUpdateDeadline={(deadline) => handleUpdateDeadline(companyName, deadline)}
+                            onUpdateAutoConsolidate={(enabled) => handleUpdateAutoConsolidate(companyName, enabled)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
@@ -980,6 +987,7 @@ const CompanyCard: React.FC<{
     onUpdateAccount: (account: string) => void;
     onUpdateCourier: (courier: string) => void;
     onUpdateDeadline: (deadline: string) => void;
+    onUpdateAutoConsolidate: (enabled: boolean) => void;
     onUpdateKeywords: (keywords: string[]) => void;
     onUpdateOrderFormHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
@@ -1060,6 +1068,18 @@ const CompanyCard: React.FC<{
                             placeholder="택배사명 (예: 롯데택배, CJ대한통운, 우체국)"
                             className="text-sm font-bold text-zinc-400 focus:outline-none"
                         />
+                    </div>
+                    <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
+                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={companyConfig.autoConsolidate ?? false}
+                                onChange={(e) => props.onUpdateAutoConsolidate(e.target.checked)}
+                                className="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-rose-500 focus:ring-rose-500/20"
+                            />
+                            <span className="text-sm font-bold text-zinc-400">주문 자동 합산</span>
+                        </label>
+                        <span className="text-[10px] text-zinc-600">(같은 수취인의 소량 주문을 큰 단위로 변환)</span>
                     </div>
                     <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
                         <div className="flex items-center gap-3 mb-2">

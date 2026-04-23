@@ -267,6 +267,119 @@ const findBestMatchForProduct = async (
     return fallbackResult as [string, ProductPricing] | null;
 };
 
+/** 품목 displayName에서 kg 수치를 파싱 (예: "귤 3kg" → 3, "한라봉 10kg" → 10) */
+const parseKgFromName = (name: string): number | null => {
+    const m = name.match(/(\d+)\s*kg/i);
+    return m ? parseInt(m[1], 10) : null;
+};
+
+/** 품목 displayName에서 kg를 제거한 베이스 이름 (예: "귤 3kg" → "귤") */
+const getProductBaseName = (name: string): string => {
+    return name.replace(/\s*\d+\s*kg/i, '').trim();
+};
+
+interface IntermediateOrder {
+    row: any[];
+    productKey: string;
+    config: ProductPricing;
+    qty: number;
+    dateStr: string | null;
+    recipientName: string;
+    recipientPhone: string;
+    groupColValue: string;
+    regOptionValue: string;
+}
+
+/**
+ * 같은 수취인의 소량 주문을 큰 단위로 변환
+ * 예: 1kg x 4 (품목: 1kg, 2kg, 3kg) → 3kg x 1 + 1kg x 1
+ */
+const consolidateMatchedOrders = (
+    orders: IntermediateOrder[],
+    companyProducts: { [productKey: string]: ProductPricing }
+): IntermediateOrder[] => {
+    // 1. kg 기반 품목 패밀리 빌드: baseName → [{productKey, kg, config}] (kg 내림차순)
+    const families = new Map<string, { productKey: string; kg: number; config: ProductPricing }[]>();
+    for (const [pk, p] of Object.entries(companyProducts)) {
+        const kg = parseKgFromName(p.displayName);
+        if (kg === null) continue;
+        const base = getProductBaseName(p.displayName);
+        if (!families.has(base)) families.set(base, []);
+        families.get(base)!.push({ productKey: pk, kg, config: p });
+    }
+    for (const members of families.values()) {
+        members.sort((a, b) => b.kg - a.kg); // 큰 것부터
+    }
+
+    // 2. 수취인별 그룹핑
+    const recipientKey = (o: IntermediateOrder) => `${o.recipientName}|||${o.recipientPhone}`;
+    const groups = new Map<string, IntermediateOrder[]>();
+    for (const o of orders) {
+        const key = recipientKey(o);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(o);
+    }
+
+    const result: IntermediateOrder[] = [];
+
+    for (const groupOrders of groups.values()) {
+        // 같은 수취인 내에서 product family별 그룹핑
+        const familyGroups = new Map<string, { orders: IntermediateOrder[]; totalKg: number }>();
+
+        for (const o of groupOrders) {
+            const kg = parseKgFromName(o.config.displayName);
+            if (kg === null) {
+                // kg가 없는 품목은 합산 대상이 아님 → 그대로
+                result.push(o);
+                continue;
+            }
+            const base = getProductBaseName(o.config.displayName);
+            if (!families.has(base) || families.get(base)!.length <= 1) {
+                // 패밀리에 품목이 1개뿐이면 합산 의미 없음
+                result.push(o);
+                continue;
+            }
+            if (!familyGroups.has(base)) familyGroups.set(base, { orders: [], totalKg: 0 });
+            const fg = familyGroups.get(base)!;
+            fg.orders.push(o);
+            fg.totalKg += kg * o.qty;
+        }
+
+        // 각 패밀리에 대해 그리디 분해
+        for (const [baseName, { orders: famOrders, totalKg }] of familyGroups.entries()) {
+            const members = families.get(baseName)!;
+            let remaining = totalKg;
+            const template = famOrders[0]; // 수취인 정보 등 참조용
+
+            for (const member of members) {
+                if (remaining <= 0) break;
+                const count = Math.floor(remaining / member.kg);
+                if (count > 0) {
+                    result.push({
+                        ...template,
+                        productKey: member.productKey,
+                        config: member.config,
+                        qty: count,
+                    });
+                    remaining -= member.kg * count;
+                }
+            }
+            // remaining > 0이면 정확히 나누어 떨어지지 않는 케이스 → 가장 작은 품목으로 1개 추가
+            if (remaining > 0) {
+                const smallest = members[members.length - 1];
+                result.push({
+                    ...template,
+                    productKey: smallest.productKey,
+                    config: smallest.config,
+                    qty: 1,
+                });
+            }
+        }
+    }
+
+    return result;
+};
+
 const generateWorkbookForCompany = async (
     ai: GoogleGenAI | null,
     cache: Map<string, [string, ProductPricing] | null>,
@@ -325,6 +438,8 @@ const generateWorkbookForCompany = async (
             if (regOptionColIdx === -1) regOptionColIdx = optionColIdx;
             const hasYeolmuProducts = Object.values(companyConfig.products).some(p => p.displayName.startsWith('열무김치'));
 
+            // Phase 1: 매칭 수집
+            const matchedOrders: IntermediateOrder[] = [];
             for (let i = 1; i < json.length; i++) {
                 const row = json[i];
                 if (!row) continue;
@@ -366,39 +481,54 @@ const generateWorkbookForCompany = async (
 
                 if (productConfigTuple) {
                     const [productKey, config] = productConfigTuple;
-                    const splitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
-                    const isQuantityMode = config.splitMode === 'quantity';
-                    const poRowQty = isQuantityMode ? qty : qty * splitCount; // quantity 모드: 행 수 유지, row 모드: 행 분할
-                    const poPerRowQty = isQuantityMode ? splitCount : 1; // quantity 모드: 행당 수량=splitCount, row 모드: 행당 수량=1
-                    const shipping = splitCount > 1 && config.shippingCost ? config.shippingCost : 0;
-
-                    if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
-                    summary[productKey].count += qty;
-                    summary[productKey].totalPrice += qty * config.supplyPrice + shipping;
-
                     const dateStr = parseDateFromRow(row, dateColIdx);
-                    const statsName = config.orderFormName || config.displayName;
-                    if (shipping > 0) {
-                        stats.add(statsName, 1, config.supplyPrice + shipping, dateStr);
-                        if (qty > 1) stats.add(statsName, qty - 1, config.supplyPrice, dateStr);
-                    } else {
-                        stats.add(statsName, qty, config.supplyPrice, dateStr);
-                    }
-
-                    if (!registeredProductNames[config.displayName]) {
-                        registeredProductNames[config.displayName] = String(row[groupColIdx] || '').trim();
-                    }
-                    await pushToOutputRows(companyName, outputRows, row, config, poRowQty, pricingConfig, senderName, senderPhone, senderAddress, poPerRowQty);
-                    orderItems.push({
-                        registeredProductName: String(row[groupColIdx] || '').trim(),
-                        registeredOptionName: String(row[regOptionColIdx] || '').trim(),
-                        matchedProductKey: productKey,
-                        qty,
+                    matchedOrders.push({
+                        row, productKey, config, qty, dateStr, recipientName, recipientPhone: phone,
+                        groupColValue: String(row[groupColIdx] || '').trim(),
+                        regOptionValue: String(row[regOptionColIdx] || '').trim(),
                     });
                 } else {
                     console.error(`[발주서][${companyName}] ❌ 품목 매칭 실패로 주문 누락! 수취인: ${recipientName}, 상품: ${rawProductName}, 주문번호: ${orderNumber}`);
                     unmatchedOrders.push({ companyName, recipientName, productName: rawProductName, phone, orderNumber, qty });
                 }
+            }
+
+            // Phase 2: autoConsolidate가 켜져 있으면 합산 변환
+            const finalOrders = companyConfig.autoConsolidate
+                ? consolidateMatchedOrders(matchedOrders, companyConfig.products)
+                : matchedOrders;
+
+            // Phase 3: 출력 생성 (기존 로직과 동일)
+            for (const order of finalOrders) {
+                const { row, productKey, config, qty, dateStr } = order;
+                const splitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
+                const isQuantityMode = config.splitMode === 'quantity';
+                const poRowQty = isQuantityMode ? qty : qty * splitCount;
+                const poPerRowQty = isQuantityMode ? splitCount : 1;
+                const shipping = splitCount > 1 && config.shippingCost ? config.shippingCost : 0;
+
+                if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
+                summary[productKey].count += qty;
+                summary[productKey].totalPrice += qty * config.supplyPrice + shipping;
+
+                const statsName = config.orderFormName || config.displayName;
+                if (shipping > 0) {
+                    stats.add(statsName, 1, config.supplyPrice + shipping, dateStr);
+                    if (qty > 1) stats.add(statsName, qty - 1, config.supplyPrice, dateStr);
+                } else {
+                    stats.add(statsName, qty, config.supplyPrice, dateStr);
+                }
+
+                if (!registeredProductNames[config.displayName]) {
+                    registeredProductNames[config.displayName] = order.groupColValue;
+                }
+                await pushToOutputRows(companyName, outputRows, row, config, poRowQty, pricingConfig, senderName, senderPhone, senderAddress, poPerRowQty);
+                orderItems.push({
+                    registeredProductName: order.groupColValue,
+                    registeredOptionName: order.regOptionValue,
+                    matchedProductKey: productKey,
+                    qty,
+                });
             }
         }
 
