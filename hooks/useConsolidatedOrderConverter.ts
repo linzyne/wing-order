@@ -25,7 +25,15 @@ export type ProcessedResult = {
     registeredProductNames: Record<string, string>;
     orderItems: OrderItem[];
     originalOrderCount?: number; // 합산 전 원본 주문 수 (autoConsolidate 사용 시)
+    consolidationLog?: ConsolidationLogEntry[]; // 합산 변환 내역
 };
+
+export interface ConsolidationLogEntry {
+    recipientName: string;
+    recipientPhone: string;
+    before: { displayName: string; qty: number }[]; // 변환 전
+    after: { displayName: string; qty: number }[];   // 변환 후
+}
 
 export const getKeywordsForCompany = (companyName: string, pricingConfig?: PricingConfig): string[] => {
     // 하드코딩 폴백 (기존 사용자 localStorage에 keywords 없을 때)
@@ -298,7 +306,7 @@ interface IntermediateOrder {
 const consolidateMatchedOrders = (
     orders: IntermediateOrder[],
     companyProducts: { [productKey: string]: ProductPricing }
-): IntermediateOrder[] => {
+): { orders: IntermediateOrder[]; log: ConsolidationLogEntry[] } => {
     // 1. kg 기반 품목 패밀리 빌드: baseName → [{productKey, kg, config}] (kg 내림차순)
     const families = new Map<string, { productKey: string; kg: number; config: ProductPricing }[]>();
     for (const [pk, p] of Object.entries(companyProducts)) {
@@ -322,6 +330,7 @@ const consolidateMatchedOrders = (
     }
 
     const result: IntermediateOrder[] = [];
+    const log: ConsolidationLogEntry[] = [];
 
     for (const groupOrders of groups.values()) {
         // 같은 수취인 내에서 product family별 그룹핑
@@ -330,13 +339,11 @@ const consolidateMatchedOrders = (
         for (const o of groupOrders) {
             const kg = parseKgFromName(o.config.displayName);
             if (kg === null) {
-                // kg가 없는 품목은 합산 대상이 아님 → 그대로
                 result.push(o);
                 continue;
             }
             const base = getProductBaseName(o.config.displayName);
             if (!families.has(base) || families.get(base)!.length <= 1) {
-                // 패밀리에 품목이 1개뿐이면 합산 의미 없음
                 result.push(o);
                 continue;
             }
@@ -350,7 +357,11 @@ const consolidateMatchedOrders = (
         for (const [baseName, { orders: famOrders, totalKg }] of familyGroups.entries()) {
             const members = families.get(baseName)!;
             let remaining = totalKg;
-            const template = famOrders[0]; // 수취인 정보 등 참조용
+            const template = famOrders[0];
+
+            // before 기록
+            const before = famOrders.map(o => ({ displayName: o.config.displayName, qty: o.qty }));
+            const after: { displayName: string; qty: number }[] = [];
 
             for (const member of members) {
                 if (remaining <= 0) break;
@@ -362,10 +373,10 @@ const consolidateMatchedOrders = (
                         config: member.config,
                         qty: count,
                     });
+                    after.push({ displayName: member.config.displayName, qty: count });
                     remaining -= member.kg * count;
                 }
             }
-            // remaining > 0이면 정확히 나누어 떨어지지 않는 케이스 → 가장 작은 품목으로 1개 추가
             if (remaining > 0) {
                 const smallest = members[members.length - 1];
                 result.push({
@@ -374,11 +385,24 @@ const consolidateMatchedOrders = (
                     config: smallest.config,
                     qty: 1,
                 });
+                after.push({ displayName: smallest.config.displayName, qty: 1 });
+            }
+
+            // before와 after가 다를 때만 로그 기록
+            const beforeStr = before.map(b => `${b.displayName}x${b.qty}`).sort().join(',');
+            const afterStr = after.map(a => `${a.displayName}x${a.qty}`).sort().join(',');
+            if (beforeStr !== afterStr) {
+                log.push({
+                    recipientName: template.recipientName,
+                    recipientPhone: template.recipientPhone,
+                    before,
+                    after,
+                });
             }
         }
     }
 
-    return result;
+    return { orders: result, log };
 };
 
 const generateWorkbookForCompany = async (
@@ -412,6 +436,7 @@ const generateWorkbookForCompany = async (
         const registeredProductNames: Record<string, string> = {};
         const orderItems: OrderItem[] = [];
         let originalOrderCount = 0;
+        let consolidationLog: ConsolidationLogEntry[] = [];
 
         if (json.length > 0) {
             const headers = json[0].map(h => String(h).trim());
@@ -497,9 +522,14 @@ const generateWorkbookForCompany = async (
 
             // Phase 2: autoConsolidate가 켜져 있으면 합산 변환
             originalOrderCount = matchedOrders.reduce((sum, o) => sum + o.qty, 0);
-            const finalOrders = companyConfig.autoConsolidate
-                ? consolidateMatchedOrders(matchedOrders, companyConfig.products)
-                : matchedOrders;
+            let finalOrders: IntermediateOrder[];
+            if (companyConfig.autoConsolidate) {
+                const consolidated = consolidateMatchedOrders(matchedOrders, companyConfig.products);
+                finalOrders = consolidated.orders;
+                consolidationLog = consolidated.log;
+            } else {
+                finalOrders = matchedOrders;
+            }
 
             // Phase 3: 출력 생성 (기존 로직과 동일)
             for (const order of finalOrders) {
@@ -574,7 +604,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, ...(companyConfig.autoConsolidate ? { originalOrderCount } : {}) }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

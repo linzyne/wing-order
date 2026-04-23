@@ -764,6 +764,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="h-6 w-px bg-zinc-800" />
                                     <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
                                 </div>
+                                {(localResult as any).consolidationLog?.length > 0 && (
+                                    <div className="bg-blue-500/10 border border-blue-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-blue-400 text-[10px] font-black flex items-center gap-1">
+                                            🔄 자동 합산 {(localResult as any).consolidationLog.length}건 변환
+                                        </div>
+                                        <div className="mt-1 space-y-0.5">
+                                            {(localResult as any).consolidationLog.map((entry: any, idx: number) => (
+                                                <div key={idx} className="text-[9px] text-blue-300/80 font-mono truncate">
+                                                    {entry.recipientName}: {entry.before.map((b: any) => `${b.displayName} x${b.qty}`).join(' + ')} → {entry.after.map((a: any) => `${a.displayName} x${a.qty}`).join(' + ')}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 {unmatchedList.length > 0 && (
                                     <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
                                         <div className="text-amber-400 text-[10px] font-black flex items-center gap-1">
