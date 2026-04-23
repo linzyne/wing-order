@@ -24,6 +24,7 @@ export type ProcessedResult = {
     rows: any[][];
     registeredProductNames: Record<string, string>;
     orderItems: OrderItem[];
+    originalOrderCount?: number; // 합산 전 원본 주문 수 (autoConsolidate 사용 시)
 };
 
 export const getKeywordsForCompany = (companyName: string, pricingConfig?: PricingConfig): string[] => {
@@ -410,6 +411,7 @@ const generateWorkbookForCompany = async (
         let outputRows: any[][] = [];
         const registeredProductNames: Record<string, string> = {};
         const orderItems: OrderItem[] = [];
+        let originalOrderCount = 0;
 
         if (json.length > 0) {
             const headers = json[0].map(h => String(h).trim());
@@ -494,6 +496,7 @@ const generateWorkbookForCompany = async (
             }
 
             // Phase 2: autoConsolidate가 켜져 있으면 합산 변환
+            originalOrderCount = matchedOrders.reduce((sum, o) => sum + o.qty, 0);
             const finalOrders = companyConfig.autoConsolidate
                 ? consolidateMatchedOrders(matchedOrders, companyConfig.products)
                 : matchedOrders;
@@ -571,7 +574,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, ...(companyConfig.autoConsolidate ? { originalOrderCount } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

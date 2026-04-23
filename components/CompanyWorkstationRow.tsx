@@ -779,7 +779,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
                                 )}
                                 {(() => {
-                                    const processedCount = Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0) as number;
+                                    const processedCount = (localResult as any).originalOrderCount
+                                        || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0) as number;
                                     const excludedQtyTotal = excludedList.reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
                                     const unmatchedQtyTotal = unmatchedList.reduce((sum: number, u: any) => sum + (u.qty || 1), 0);
                                     const workstationTotal = processedCount + excludedQtyTotal + unmatchedQtyTotal;
@@ -858,9 +859,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
                                 )}
                                 {(() => {
-                                    const syncedProcessed = syncedData.itemSummary
-                                        ? Object.values(syncedData.itemSummary).reduce((a: number, b: any) => a + (b.count || 0), 0)
-                                        : syncedData.orderCount || 0;
+                                    const syncedProcessed = syncedData.originalOrderCount
+                                        || (syncedData.itemSummary
+                                            ? Object.values(syncedData.itemSummary).reduce((a: number, b: any) => a + (b.count || 0), 0)
+                                            : syncedData.orderCount || 0);
                                     const excludedQtyTotal = (syncedData.excludedDetails || excludedList).reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
                                     const unmatchedQtyTotal = unmatchedList.reduce((sum: number, u: any) => sum + (u.qty || 1), 0);
                                     const workstationTotal = syncedProcessed + excludedQtyTotal + unmatchedQtyTotal;
