@@ -176,6 +176,16 @@ export interface MarginRecord {
   totalMargin: number;    // 총마진
 }
 
+export interface ReturnRecord {
+  company: string;       // 업체명
+  productKey: string;    // 품목 키
+  productName: string;   // 품목명
+  count: number;         // 반품 수량
+  marginPerUnit: number; // 개당 마진
+  totalMargin: number;   // 총 반품 마진 (음수)
+  memo?: string;         // 반품 사유
+}
+
 export interface ExpenseRecord {
   id: string;
   category: string;    // 임대료, 통신비, 소모품비, 물류비, 마케팅, 식비, 기타, 이자
@@ -252,6 +262,8 @@ export interface DailySales {
   depositTotal?: number;
   marginRecords?: MarginRecord[];
   marginTotal?: number;
+  returnRecords?: ReturnRecord[];
+  returnTotal?: number;
   expenseRecords?: ExpenseRecord[];
 }
 

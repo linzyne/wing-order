@@ -2,12 +2,12 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
 import { usePricingConfig } from '../hooks/useFirestore';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
-import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig } from '../types';
+import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord } from '../types';
 import { getBusinessInfo } from '../types';
 
 declare var XLSX: any;
 
-type ViewMode = 'settlement' | 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits' | 'margin' | 'monthlyAnalysis';
+type ViewMode = 'settlement' | 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits' | 'margin' | 'returns' | 'monthlyAnalysis';
 type DateMode = 'month' | 'range';
 
 const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ isActive, businessId }) => {
@@ -154,6 +154,30 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     });
     return { records, total };
   }, [filteredHistory]);
+
+  // 반품 데이터 합산
+  const allReturnData = useMemo(() => {
+    const records: (ReturnRecord & { date: string })[] = [];
+    let total = 0;
+    filteredHistory.forEach(d => {
+      if (d.returnRecords) {
+        d.returnRecords.forEach(r => records.push({ ...r, date: d.date }));
+      }
+      if (d.returnTotal) total += d.returnTotal;
+    });
+    if (total === 0) total = records.reduce((s, r) => s + r.totalMargin, 0);
+    return { records, total };
+  }, [filteredHistory]);
+
+  const handleDeleteReturn = async (date: string, index: number) => {
+    const existing = salesHistory.find(d => d.date === date);
+    if (!existing || !existing.returnRecords) return;
+    const updatedReturns = existing.returnRecords.filter((_, i) => i !== index);
+    const updatedReturnTotal = updatedReturns.reduce((s, r) => s + r.totalMargin, 0);
+    const { upsertDailySales } = await import('../services/firestoreService');
+    await upsertDailySales({ ...existing, returnRecords: updatedReturns.length > 0 ? updatedReturns : undefined, returnTotal: updatedReturnTotal || undefined }, businessId);
+    await refresh();
+  };
 
   // 월별분석: 선택 연도의 전체 월별 품목별 마진 + 비용 데이터
   const monthlyAnalysisData = useMemo(() => {
@@ -368,6 +392,17 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     const marginRows: any[][] = [['품목', '총수량', '총합계', '총마진']];
     productSummary.forEach(([name, data]) => marginRows.push([name, data.count, data.totalPrice, data.margin]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(marginRows), '마진');
+
+    // 8. 반품 시트 (마진시트와 동일 양식, -금액)
+    if (allReturnData.records.length > 0) {
+      const returnRows: any[][] = [['업체', '품목', '수량', '개당마진', '반품마진']];
+      allReturnData.records.forEach(r => {
+        returnRows.push([r.company, r.productName, r.count, r.marginPerUnit, r.totalMargin]);
+      });
+      returnRows.push([]);
+      returnRows.push(['', '', '', '총 반품 마진', allReturnData.total]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnRows), '반품');
+    }
 
     const label = dateMode === 'range' ? `${rangeStart}~${rangeEnd}` : selectedYearMonth;
     XLSX.writeFile(wb, `${label}_${businessPrefix}_매출현황.xlsx`);
@@ -705,19 +740,25 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
           <span className="text-zinc-400 font-black text-xs">기간 총 마진</span>
           <span className="text-emerald-400 font-black text-lg">{total.toLocaleString()}원</span>
         </div>
+        {allReturnData.total < 0 && (
+          <div className="px-6 py-3 flex items-center justify-between bg-zinc-900/20">
+            <span className="text-zinc-400 font-black text-xs">기간 총 반품</span>
+            <span className="text-violet-400 font-black text-lg">{allReturnData.total.toLocaleString()}원</span>
+          </div>
+        )}
         {allExpenseData.total > 0 && (
-          <>
-            <div className="px-6 py-3 flex items-center justify-between bg-zinc-900/20">
-              <span className="text-zinc-400 font-black text-xs">기간 총 비용</span>
-              <span className="text-orange-400 font-black text-lg">-{allExpenseData.total.toLocaleString()}원</span>
-            </div>
-            <div className="px-6 py-3 flex items-center justify-between bg-zinc-900/40">
-              <span className="text-zinc-400 font-black text-xs">순이익</span>
-              <span className={`font-black text-lg ${total - allExpenseData.total >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {(total - allExpenseData.total).toLocaleString()}원
-              </span>
-            </div>
-          </>
+          <div className="px-6 py-3 flex items-center justify-between bg-zinc-900/20">
+            <span className="text-zinc-400 font-black text-xs">기간 총 비용</span>
+            <span className="text-orange-400 font-black text-lg">-{allExpenseData.total.toLocaleString()}원</span>
+          </div>
+        )}
+        {(allExpenseData.total > 0 || allReturnData.total < 0) && (
+          <div className="px-6 py-3 flex items-center justify-between bg-zinc-900/40">
+            <span className="text-zinc-400 font-black text-xs">순수익</span>
+            <span className={`font-black text-lg ${total + allReturnData.total - allExpenseData.total >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {(total + allReturnData.total - allExpenseData.total).toLocaleString()}원
+            </span>
+          </div>
         )}
 
         {/* 품목별 마진 요약 테이블 */}
@@ -810,6 +851,150 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
             </div>
           );
         })}
+      </div>
+    );
+  };
+
+  /** 반품시트 렌더링 */
+  const renderReturnView = () => {
+    const { records, total } = allReturnData;
+
+    // 날짜별로 그룹핑
+    const byDate = new Map<string, (ReturnRecord & { date: string })[]>();
+    records.forEach(r => {
+      const list = byDate.get(r.date) || [];
+      list.push(r);
+      byDate.set(r.date, list);
+    });
+
+    // 품목별 반품 합산
+    const productReturnMap = new Map<string, { count: number; totalMargin: number; marginPerUnit: number; company: string }>();
+    records.forEach(r => {
+      const key = `${r.company}::${r.productName}`;
+      const existing = productReturnMap.get(key) || { count: 0, totalMargin: 0, marginPerUnit: r.marginPerUnit, company: r.company };
+      existing.count += r.count;
+      existing.totalMargin += r.totalMargin;
+      productReturnMap.set(key, existing);
+    });
+    const productReturnSummary = Array.from(productReturnMap.entries()).sort(([, a], [, b]) => a.totalMargin - b.totalMargin);
+
+    return (
+      <div className="divide-y divide-zinc-900">
+        {/* 총 반품 마진 */}
+        {records.length > 0 && (
+          <div className="px-6 py-4 flex items-center justify-between bg-zinc-900/30">
+            <span className="text-zinc-400 font-black text-xs">기간 총 반품 마진</span>
+            <span className="text-violet-400 font-black text-lg">{total.toLocaleString()}원</span>
+          </div>
+        )}
+
+        {/* 품목별 반품 요약 테이블 */}
+        {productReturnSummary.length > 0 && (
+          <div className="p-6">
+            <h4 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">품목별 반품 요약</h4>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
+                  <th className="pb-3 pr-4">업체</th>
+                  <th className="pb-3 pr-4">품목</th>
+                  <th className="pb-3 pr-4 text-right">수량</th>
+                  <th className="pb-3 pr-4 text-right">개당 마진</th>
+                  <th className="pb-3 text-right">반품 마진</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-900/50">
+                {productReturnSummary.map(([key, d]) => {
+                  const productName = key.split('::')[1];
+                  return (
+                    <tr key={key} className="text-xs hover:bg-zinc-900/30 transition-colors">
+                      <td className="py-3 pr-4 font-bold text-violet-400">{d.company}</td>
+                      <td className="py-3 pr-4 font-bold text-zinc-200">{productName}</td>
+                      <td className="py-3 pr-4 text-right text-zinc-400 font-bold">{d.count}개</td>
+                      <td className="py-3 pr-4 text-right text-zinc-400 font-mono">{d.marginPerUnit.toLocaleString()}원</td>
+                      <td className="py-3 text-right text-violet-400 font-black">{d.totalMargin.toLocaleString()}원</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-zinc-700 text-sm">
+                  <td className="pt-3 font-black text-zinc-400" colSpan={2}>합계</td>
+                  <td className="pt-3 text-right font-black text-zinc-400">{records.reduce((s, r) => s + r.count, 0)}개</td>
+                  <td className="pt-3"></td>
+                  <td className="pt-3 text-right font-black text-violet-500">{total.toLocaleString()}원</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {/* 날짜별 상세 */}
+        {Array.from(byDate.entries()).map(([date, recs]) => {
+          const dayTotal = recs.reduce((s, r) => s + r.totalMargin, 0);
+          return (
+            <div key={`return-${date}`}>
+              <button
+                onClick={() => toggleDate(`return-${date}`)}
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
+              >
+                <div className="flex items-center gap-4">
+                  <span className="text-white font-black text-sm">{formatDate(date)}</span>
+                  <span className="text-[10px] bg-violet-500/10 text-violet-400 px-2.5 py-1 rounded-full font-black border border-violet-500/20">
+                    {recs.length}건 반품
+                  </span>
+                </div>
+                <div className="flex items-center gap-4">
+                  <span className="text-violet-400 font-black text-sm">{dayTotal.toLocaleString()}원</span>
+                  {expandedDates.has(`return-${date}`) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
+                </div>
+              </button>
+              {expandedDates.has(`return-${date}`) && (
+                <div className="px-6 pb-4 animate-fade-in">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest">
+                        <th className="pb-2 pr-4">업체</th>
+                        <th className="pb-2 pr-4">품목</th>
+                        <th className="pb-2 pr-4">사유</th>
+                        <th className="pb-2 pr-4 text-right">수량</th>
+                        <th className="pb-2 pr-4 text-right">개당 마진</th>
+                        <th className="pb-2 pr-4 text-right">반품 마진</th>
+                        <th className="pb-2 text-right">삭제</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-900/50">
+                      {recs.map((r, i) => (
+                        <tr key={i} className="text-xs">
+                          <td className="py-2 pr-4 font-bold text-violet-400">{r.company}</td>
+                          <td className="py-2 pr-4 font-bold text-zinc-300">{r.productName}</td>
+                          <td className="py-2 pr-4 text-zinc-500">{r.memo || ''}</td>
+                          <td className="py-2 pr-4 text-right text-zinc-400 font-bold">{r.count}개</td>
+                          <td className="py-2 pr-4 text-right text-zinc-400 font-mono">{r.marginPerUnit.toLocaleString()}원</td>
+                          <td className="py-2 pr-4 text-right text-violet-400 font-black">{r.totalMargin.toLocaleString()}원</td>
+                          <td className="py-2 text-right">
+                            <button
+                              onClick={() => handleDeleteReturn(date, i)}
+                              className="text-zinc-700 hover:text-violet-400 p-1 transition-colors"
+                            >
+                              <TrashIcon className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {records.length === 0 && (
+          <div className="p-12 text-center">
+            <p className="text-zinc-600 font-bold text-sm">해당 기간의 반품 데이터가 없습니다.</p>
+            <p className="text-zinc-700 text-xs mt-2">발주서/송장 관리 탭의 반품 관리에서 반품을 등록하세요.</p>
+          </div>
+        )}
       </div>
     );
   };
@@ -1078,6 +1263,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     ['invoices', '송장내역'],
     ['deposits', '입금내역'],
     ['margin', '마진시트'],
+    ['returns', '반품'],
     ['monthlyAnalysis', '월별분석'],
   ];
 
@@ -1141,8 +1327,16 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                 </div>
                 <div className="flex gap-3 mt-1">
                   <span className="text-[11px] text-zinc-500 font-bold">총 {monthTotalCount}건</span>
-                  {monthTotalMargin > 0 && (
-                    <span className="text-[11px] text-emerald-500 font-bold">마진 {monthTotalMargin.toLocaleString()}원</span>
+                  {allMarginData.total > 0 && (
+                    <span className="text-[11px] text-emerald-500 font-bold">마진 {allMarginData.total.toLocaleString()}원</span>
+                  )}
+                  {allReturnData.total < 0 && (
+                    <span className="text-[11px] text-violet-400 font-bold">반품 {allReturnData.total.toLocaleString()}원</span>
+                  )}
+                  {allMarginData.total > 0 && allReturnData.total < 0 && (
+                    <span className={`text-[11px] font-black ${allMarginData.total + allReturnData.total >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      순수익 {(allMarginData.total + allReturnData.total).toLocaleString()}원
+                    </span>
                   )}
                   <span className="text-[11px] text-zinc-600 font-bold">{filteredHistory.length}일 기록</span>
                   {allDepositData.total > 0 && (
@@ -1353,6 +1547,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
           {viewMode === 'invoices' && renderInvoicesView()}
           {viewMode === 'deposits' && renderDepositsView()}
           {viewMode === 'margin' && renderMarginView()}
+          {viewMode === 'returns' && renderReturnView()}
           {viewMode === 'monthlyAnalysis' && renderMonthlyAnalysisView()}
         </section>
       )}

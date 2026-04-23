@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
-import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
+import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
@@ -845,6 +845,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const EXPENSE_CATEGORIES = ['임대료', '통신비', '소모품비', '물류비', '마케팅', '식비', '기타', '이자'];
     const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
     const [newExpense, setNewExpense] = useState({ category: '물류비', amount: '', description: '' });
+
+    // 반품 관리
+    const [returns, setReturns] = useState<ReturnRecord[]>([]);
+    const [returnCompany, setReturnCompany] = useState('');
+    const [returnProductKey, setReturnProductKey] = useState('');
+    const [returnCount, setReturnCount] = useState('1');
+    const [returnMemo, setReturnMemo] = useState('');
+    const returnProducts = useMemo(() => {
+        if (!returnCompany || !pricingConfig[returnCompany]) return [];
+        return Object.entries(pricingConfig[returnCompany].products).map(([key, p]: [string, any]) => ({
+            key, name: p.orderFormName || p.displayName, margin: p.margin || 0,
+        }));
+    }, [returnCompany, pricingConfig]);
+    const selectedReturnMargin = useMemo(() => {
+        const p = returnProducts.find(p => p.key === returnProductKey);
+        return p ? p.margin : 0;
+    }, [returnProducts, returnProductKey]);
 
     // Firestore 동기화 - 값 비교로 에코 방지
     const lastWrittenFakeRef = useRef('');
@@ -2233,6 +2250,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(marginSheetData), "마진시트");
         }
 
+        // 반품시트 생성 (마진시트와 동일 양식, -금액)
+        if (returns.length > 0) {
+            const returnSheetData: any[][] = [['업체', '품목명', '수량', '개당마진', '반품마진']];
+            returns.forEach(r => {
+                returnSheetData.push([r.company, r.productName, r.count, r.marginPerUnit, r.totalMargin]);
+            });
+            returnSheetData.push([]);
+            returnSheetData.push(['', '', '', '총 반품 마진', returns.reduce((s, r) => s + r.totalMargin, 0)]);
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnSheetData), "반품시트");
+        }
+
         const todayDate = new Date().toISOString().slice(0, 10);
         XLSX.writeFile(wb, `${todayDate}_${businessPrefix}_업무일지.xlsx`);
     };
@@ -2381,6 +2409,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const sanitizeRows = (rows: any[][]): any[][] =>
             rows.map(row => row.map(cell => cell === undefined ? null : cell));
 
+        // 반품 데이터: 로컬 입력 + 기존 Firestore 저장분 병합
+        let allReturns = [...returns];
+        try {
+            const { loadAllSalesHistory } = await import('../services/firestoreService');
+            const allHistory = await loadAllSalesHistory(businessId);
+            const existing = allHistory.find(d => d.date === recordDate);
+            if (existing?.returnRecords) {
+                allReturns = [...existing.returnRecords, ...returns];
+            }
+        } catch {}
+        const returnTotal = allReturns.reduce((s, r) => s + r.totalMargin, 0);
+
         const dailySales: DailySales = {
             date: recordDate, records, totalAmount, savedAt: new Date().toISOString(),
             orderRows: orderSheetData.length > 0 ? sanitizeRows(orderSheetData) : undefined,
@@ -2390,6 +2430,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             marginRecords: marginRecords.length > 0 ? marginRecords : undefined,
             marginTotal: marginTotal > 0 ? marginTotal : undefined,
             expenseRecords: allExpenses.length > 0 ? allExpenses : undefined,
+            returnRecords: allReturns.length > 0 ? allReturns : undefined,
+            returnTotal: returnTotal !== 0 ? returnTotal : undefined,
         };
 
         setSaveStatus('saving');
@@ -3291,6 +3333,126 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <div className="flex justify-end pt-2 pr-2">
                                 <span className="text-[10px] font-black text-orange-400">
                                     총 비용: {allExpenses.reduce((s, e) => s + e.amount, 0).toLocaleString()}원
+                                </span>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* 5) 반품 관리 */}
+                <div className="glass-light p-4 rounded-2xl mb-3">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="bg-violet-500/10 p-2 rounded-lg"><ArrowPathIcon className="w-4 h-4 text-violet-400" /></div>
+                        <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-2">
+                            반품 관리
+                            {returns.length > 0 && (
+                                <span className="bg-violet-500 text-white text-[9px] px-2 py-0.5 rounded-full animate-pop-in">
+                                    {returns.length}건 · {returns.reduce((s, r) => s + r.totalMargin, 0).toLocaleString()}원
+                                </span>
+                            )}
+                        </h3>
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
+                        <select
+                            value={returnCompany}
+                            onChange={(e) => { setReturnCompany(e.target.value); setReturnProductKey(''); }}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50"
+                        >
+                            <option value="">업체 선택</option>
+                            {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                        <select
+                            value={returnProductKey}
+                            onChange={(e) => setReturnProductKey(e.target.value)}
+                            disabled={!returnCompany}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50 disabled:opacity-40 flex-1"
+                        >
+                            <option value="">품목 선택</option>
+                            {returnProducts.map(p => <option key={p.key} value={p.key}>{p.name} ({p.margin.toLocaleString()}원)</option>)}
+                        </select>
+                        <input
+                            type="text"
+                            value={returnCount}
+                            onChange={(e) => setReturnCount(e.target.value.replace(/[^0-9]/g, ''))}
+                            placeholder="수량"
+                            className="w-16 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50 text-right"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
+                        <input
+                            type="text"
+                            value={returnMemo}
+                            onChange={(e) => setReturnMemo(e.target.value)}
+                            placeholder="반품 사유 (선택)"
+                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' && returnCompany && returnProductKey && returnCount && parseInt(returnCount) > 0) {
+                                    const p = returnProducts.find(p => p.key === returnProductKey);
+                                    if (!p) return;
+                                    const qty = parseInt(returnCount);
+                                    setReturns(prev => [...prev, {
+                                        company: returnCompany, productKey: returnProductKey, productName: p.name,
+                                        count: qty, marginPerUnit: p.margin, totalMargin: -(p.margin * qty), memo: returnMemo || undefined,
+                                    }]);
+                                    setReturnProductKey(''); setReturnCount('1'); setReturnMemo('');
+                                }
+                            }}
+                        />
+                        <button
+                            onClick={() => {
+                                if (!returnCompany || !returnProductKey || !returnCount || parseInt(returnCount) <= 0) return;
+                                const p = returnProducts.find(p => p.key === returnProductKey);
+                                if (!p) return;
+                                const qty = parseInt(returnCount);
+                                setReturns(prev => [...prev, {
+                                    company: returnCompany,
+                                    productKey: returnProductKey,
+                                    productName: p.name,
+                                    count: qty,
+                                    marginPerUnit: p.margin,
+                                    totalMargin: -(p.margin * qty),
+                                    memo: returnMemo || undefined,
+                                }]);
+                                setReturnProductKey('');
+                                setReturnCount('1');
+                                setReturnMemo('');
+                            }}
+                            disabled={!returnCompany || !returnProductKey || !returnCount || parseInt(returnCount) <= 0}
+                            className="bg-violet-600 hover:bg-violet-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                            <PlusCircleIcon className="w-3.5 h-3.5" />추가
+                        </button>
+                    </div>
+                    {returnProductKey && parseInt(returnCount) > 0 && (
+                        <div className="mb-3 text-right">
+                            <span className="text-[10px] font-black text-violet-400">
+                                반품 마진: -{(selectedReturnMargin * (parseInt(returnCount) || 0)).toLocaleString()}원
+                            </span>
+                        </div>
+                    )}
+                    {returns.length > 0 && (
+                        <div className="space-y-1.5">
+                            {returns.map((ret, i) => (
+                                <div key={i} className="flex items-center justify-between px-3 py-2 rounded-xl border bg-zinc-950/50 border-zinc-800/50">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30">
+                                            {ret.company}
+                                        </span>
+                                        <span className="text-[10px] text-zinc-400">{ret.productName}</span>
+                                        <span className="text-[10px] text-zinc-500">{ret.count}개</span>
+                                        {ret.memo && <span className="text-[10px] text-zinc-600">{ret.memo}</span>}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-mono font-bold text-violet-400">{ret.totalMargin.toLocaleString()}원</span>
+                                        <button onClick={() => setReturns(prev => prev.filter((_, idx) => idx !== i))} className="text-zinc-700 hover:text-violet-400 transition-colors">
+                                            <TrashIcon className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                            <div className="flex justify-end pt-2 pr-2">
+                                <span className="text-[10px] font-black text-violet-400">
+                                    총 반품: {returns.reduce((s, r) => s + r.totalMargin, 0).toLocaleString()}원
                                 </span>
                             </div>
                         </div>
