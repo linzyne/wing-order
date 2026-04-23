@@ -471,7 +471,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
         setIsLocalProcessing(false);
         isProcessingRef.current = false;
-        resetMerge();
+        // 송장 파일이 업로드된 상태에서 성공한 merge 결과가 있으면 리셋하지 않음
+        // (마스터파일 처리 후 재실행되면서 0건으로 덮어쓰는 문제 방지)
+        if (!(vendorFiles.length > 0 && mergeResults)) {
+            resetMerge();
+        }
     };
 
     const handleRunMerge = () => {
