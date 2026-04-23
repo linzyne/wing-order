@@ -730,7 +730,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (currentStr === lastWrittenManualOrdersRef.current) return;
         lastWrittenManualOrdersRef.current = currentStr;
         saveManualOrders(manualOrders, businessId).catch(e => console.error('[Firestore] 수동발주 저장 실패:', e));
-    }, [manualOrders]);
+    }, [manualOrders, businessId]);
 
     // 썸네일 + 메모 노트
     interface ThumbnailNote { id: string; imageData: string; memos: [string, string, string]; }

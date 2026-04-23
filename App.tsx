@@ -22,7 +22,9 @@ const HARDCODED_OPTIONS: { id: HardcodedBusinessId; label: string }[] = [
 const HARDCODED_IDS: string[] = HARDCODED_OPTIONS.map(b => b.id);
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('converter');
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem('activeTab') || 'converter';
+  });
   const [currentBusiness, setCurrentBusiness] = useState<BusinessId>(() => {
     const saved = localStorage.getItem('selectedBusiness');
     // 하드코딩 + 동적 사업자 모두 허용 (동적 사업자 존재 여부는 useEffect에서 검증)
@@ -34,6 +36,11 @@ const App: React.FC = () => {
 
   // 동적 사업자인지 판별
   const isDynamicBusiness = !HARDCODED_IDS.includes(currentBusiness);
+
+  const handleTabChange = (tab: string) => {
+    localStorage.setItem('activeTab', tab);
+    setActiveTab(tab);
+  };
 
   const handleBusinessChange = (newBusiness: BusinessId) => {
     if (newBusiness === currentBusiness) return;
@@ -192,7 +199,7 @@ const App: React.FC = () => {
 
           <nav className="flex p-1 glass rounded-2xl">
             <button
-              onClick={() => setActiveTab('converter')}
+              onClick={() => handleTabChange('converter')}
               className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'converter'
                   ? 'btn-accent'
@@ -203,7 +210,7 @@ const App: React.FC = () => {
               <span>발주서/송장</span>
             </button>
             <button
-              onClick={() => setActiveTab('pricing')}
+              onClick={() => handleTabChange('pricing')}
               className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'pricing'
                   ? 'btn-accent'
@@ -214,7 +221,7 @@ const App: React.FC = () => {
               <span>품목/업체</span>
             </button>
             <button
-              onClick={() => setActiveTab('sales')}
+              onClick={() => handleTabChange('sales')}
               className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl whitespace-nowrap transition-all duration-200 ${
                 activeTab === 'sales'
                   ? 'btn-accent'

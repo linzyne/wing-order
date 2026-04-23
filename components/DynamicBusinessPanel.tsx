@@ -34,6 +34,7 @@ const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId,
           businessId={businessId}
           platformConfigs={platformConfigs}
           isActive={activeTab === 'converter' && isCurrentBusiness}
+          isCurrent={isCurrentBusiness}
         />
       </div>
       <div style={{ display: (activeTab === 'pricing' && isCurrentBusiness) ? undefined : 'none' }}>
