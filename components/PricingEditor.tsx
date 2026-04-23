@@ -224,9 +224,10 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, orderSplitCount: Number(e.target.value) || 0, splitMode: 'quantity' } })}
                                 />
                             </div>
-                            <p className="col-span-2 text-[10px] text-zinc-600 -mt-2 leading-relaxed">
+                            <p className="col-span-2 text-[13px] text-zinc-400 -mt-2 leading-relaxed">
                                 업체에 1kg밖에 없을 때 사용<br/>
-                                내 품목 2kg → 1kg x 수량2로 변환하여 발주서에 표기 (각 주문서 하나당 배송비 부과)
+                                내 품목 2kg → 1kg x 수량2로 변환하여 발주서에 표기<br/>
+                                (각 주문서 하나당 배송비 부과)
                             </p>
                         </div>
                         <div>
