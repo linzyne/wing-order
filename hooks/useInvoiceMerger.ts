@@ -7,6 +7,17 @@ import { getKeywordsForCompany } from './useConsolidatedOrderConverter';
 declare var XLSX: any;
 
 const GROUP_ID_COL_IDX = 10; // K열
+const PRODUCT_COL_IDX = 11;  // L열
+
+/** 발주서 생성 로직과 동일한 그룹 매칭: K열 → L열 → 전체 행 검색 */
+const isRowMatchingCompany = (row: any[], keywords: string[]): boolean => {
+    const groupVal = String(row[GROUP_ID_COL_IDX] || '').replace(/\s+/g, '').normalize('NFC');
+    const productVal = groupVal || String(row[PRODUCT_COL_IDX] || '').replace(/\s+/g, '').normalize('NFC');
+    if (productVal && keywords.some(k => productVal.includes(k.replace(/\s+/g, '').normalize('NFC')))) return true;
+    // K열/L열에서 못 찾으면 전체 행에서 키워드 재탐색
+    const fullRowText = row.map((v: any) => String(v || '')).join(' ').replace(/\s+/g, '').normalize('NFC');
+    return keywords.some(k => fullRowText.includes(k.replace(/\s+/g, '').normalize('NFC')));
+};
 
 const normalizeValue = (val: any): string => val == null ? '' : String(val).replace(/\s+/g, '').trim().toUpperCase();
 const normalizeOrderNum = (val: any): string => {
@@ -347,8 +358,7 @@ export const useInvoiceMerger = () => {
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
                 if (!skipGroupCheck) {
-                    const rowGroupValue = String(row[GROUP_ID_COL_IDX] || '').replace(/\s+/g, '');
-                    if (!targetKeywords.some(k => rowGroupValue.includes(k.replace(/\s+/g, '')))) continue;
+                    if (!isRowMatchingCompany(row, targetKeywords)) continue;
                 }
                 const key = buildOrderMatchKey(row);
                 if (key) orderKeys.add(key);
@@ -437,9 +447,7 @@ export const useInvoiceMerger = () => {
                 const row = orderAoa[i]; if (!row) continue;
 
                 if (!skipGroupCheck) {
-                    const rowGroupValue = String(row[GROUP_ID_COL_IDX] || '').replace(/\s+/g, '');
-                    const isGroupMatched = targetKeywords.some(k => rowGroupValue.includes(k.replace(/\s+/g, '')));
-                    if (!isGroupMatched) continue;
+                    if (!isRowMatchingCompany(row, targetKeywords)) continue;
                 }
 
                 const orderNum = normalizeOrderNum(row[targetOrderIdx]);
