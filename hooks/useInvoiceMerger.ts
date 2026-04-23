@@ -324,11 +324,8 @@ export const useInvoiceMerger = () => {
                 for (const hName of matchHeaderNames) {
                     const lower = hName.toLowerCase().replace(/\s+/g, '');
                     if (lower.includes('주문') || lower.includes('오더') || lower.includes('접수') || lower.includes('관리')) {
-                        // 주문번호 계열: 묶음배송번호 우선 시도
-                        const bundleIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
-                        headerToKeywords[hName] = bundleIdx !== -1
-                            ? ['묶음배송번호', '묶음배송']
-                            : ['주문번호', '주문정보', '오더번호', '접수번호', '관리번호'];
+                        // 주문번호 계열: 발주서가 주문번호(C열)로 생성되므로 주문번호 우선
+                        headerToKeywords[hName] = ['주문번호', '주문정보', '오더번호', '접수번호', '관리번호', '묶음배송번호'];
                     } else if (lower.includes('수령') || lower.includes('수취') || lower.includes('받는') || lower.includes('고객명')) {
                         headerToKeywords[hName] = ['받는분', '수취인', '수령인', '고객명', '수신자'];
                     } else if (lower.includes('전화') || lower.includes('연락') || lower.includes('핸드폰') || lower.includes('휴대') || lower.includes('hp')) {
@@ -377,7 +374,17 @@ export const useInvoiceMerger = () => {
                     invoiceMap.set(key, existing);
                 }
             }
+            // 디버그: 매칭 진단 로그
+            const sampleOrderKeys = [...orderKeys].slice(0, 3);
+            const sampleMapKeys = [...invoiceMap.keys()].slice(0, 3);
             console.log(`[송장] processFiles - 업체: ${companyName}, 송장파일 ${vendorFiles.length}개, 주문서 행수: ${orderAoa.length}, 매칭기준: ${isHeaderBasedMatch ? matchHeaderNames.join('+') : '주문번호'}, 키수: ${orderKeys.size}, map크기=${invoiceMap.size}`);
+            console.log(`[송장] 디버그 - targetOrderIdx: ${targetOrderIdx}, 주문서 헤더: [${orderHeader?.slice(0, 5).join(', ')}], 키워드: [${targetKeywords.join(', ')}]`);
+            console.log(`[송장] 디버그 - 주문서 키 샘플: [${sampleOrderKeys.join(', ')}], 송장맵 키 샘플: [${sampleMapKeys.join(', ')}]`);
+            if (orderKeys.size > 0 && invoiceMap.size > 0) {
+                let debugHits = 0;
+                for (const k of orderKeys) { if (invoiceMap.has(k)) { debugHits++; if (debugHits >= 5) break; } }
+                console.log(`[송장] 디버그 - 키 교차 매칭: ${debugHits}건`);
+            }
 
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
             const companyConfig = pricingConfig?.[companyName];
