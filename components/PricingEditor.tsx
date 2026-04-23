@@ -1065,7 +1065,10 @@ const CompanyCard: React.FC<{
                             />
                             <span className="text-sm font-bold text-zinc-400">주문 자동 합산</span>
                         </label>
-                        <span className="text-[10px] text-zinc-600">(같은 수취인의 소량 주문을 큰 단위로 변환)</span>
+                        <p className="text-[13px] text-zinc-400 leading-relaxed mt-1">
+                            고객이 같은 단위를 여러개 샀을 경우 하나로 합산해서 묶음배송<br/>
+                            ex) 1kg 4개 구매 → 4kg 1개로 합산
+                        </p>
                     </div>
                     <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
                         <div className="flex items-center gap-3 mb-2">
