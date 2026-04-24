@@ -1900,6 +1900,29 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllExcludedDetails(prev => ({ ...prev, [sessionId]: excludedDetails }));
     }, []);
 
+    // Toast 알림 시스템
+    type ToastItem = { id: number; companyName: string; orderCount: number; sessionId: string };
+    const [toasts, setToasts] = useState<ToastItem[]>([]);
+    const toastIdRef = useRef(0);
+    const prevOrderRowsRef = useRef<Record<string, number>>({});
+    const toastSuppressUntilRef = useRef(Date.now() + 3000); // 초기 3초간 복원 토스트 억제
+
+    const addToast = useCallback((companyName: string, orderCount: number, sessionId: string) => {
+        const id = ++toastIdRef.current;
+        setToasts(prev => [...prev, { id, companyName, orderCount, sessionId }]);
+        setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+    }, []);
+
+    const handleToastClick = useCallback((sessionId: string) => {
+        const el = document.getElementById(`session-${sessionId}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('ring-2', 'ring-rose-500', 'ring-offset-2', 'ring-offset-zinc-950');
+            setTimeout(() => el.classList.remove('ring-2', 'ring-rose-500', 'ring-offset-2', 'ring-offset-zinc-950'), 2000);
+        }
+        setToasts(prev => prev.filter(t => t.sessionId !== sessionId));
+    }, []);
+
     const [allRegisteredNames, setAllRegisteredNames] = useState<Record<string, Record<string, string>>>({});
     const [allOrderItems, setAllOrderItems] = useState<Record<string, { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]>>({});
 
@@ -1915,6 +1938,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, []);
 
     const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]) => {
+        // 새 발주서 생성 감지 → 토스트 (초기 복원 시 억제)
+        const prevCount = prevOrderRowsRef.current[sessionId] || 0;
+        const newCount = orderRows.length;
+        if (newCount > 0 && prevCount === 0 && Date.now() > toastSuppressUntilRef.current) {
+            const companyName = sessionId.replace(/-\d+$/, '');
+            addToast(companyName, newCount, sessionId);
+        }
+        prevOrderRowsRef.current[sessionId] = newCount;
+
         setAllOrderRows(prev => ({ ...prev, [sessionId]: orderRows }));
         setAllInvoiceRows(prev => ({ ...prev, [sessionId]: invoiceRows }));
         setAllUploadInvoiceRows(prev => ({ ...prev, [sessionId]: uploadInvoiceRows }));
@@ -1923,7 +1955,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (registeredProductNames) setAllRegisteredNames(prev => ({ ...prev, [sessionId]: registeredProductNames }));
         if (itemSummary) setAllItemSummaries(prev => ({ ...prev, [sessionId]: itemSummary }));
         if (orderItems) setAllOrderItems(prev => ({ ...prev, [sessionId]: orderItems }));
-    }, []);
+    }, [addToast]);
 
     const handleToggleSessionSelection = (sessionId: string) => {
         setSelectedSessionIds(prev => {
@@ -3557,6 +3589,44 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <span>워크스테이션 초기화</span>
                     </button>
                 </div>
+                {/* 업체별 발주 현황 요약 대시보드 */}
+                {(() => {
+                    const companies = sortCompanies(Object.keys(pricingConfig));
+                    const completedCompanies = companies.filter(c => {
+                        const sessions = companySessions[c] || [];
+                        return sessions.some(s => (allOrderRows[s.id]?.length || 0) > 0);
+                    });
+                    const pendingCompanies = companies.filter(c => !completedCompanies.includes(c));
+                    if (completedCompanies.length === 0) return null;
+                    return (
+                        <div className="mb-3 px-2">
+                            <div className="flex items-center gap-2 flex-wrap text-[10px]">
+                                <span className="text-zinc-500 font-black shrink-0">{completedCompanies.length}/{companies.length}</span>
+                                {completedCompanies.map(c => {
+                                    const sessions = companySessions[c] || [];
+                                    const firstSessionWithData = sessions.find(s => (allOrderRows[s.id]?.length || 0) > 0);
+                                    return (
+                                        <button key={c} onClick={() => { if (firstSessionWithData) handleToastClick(firstSessionWithData.id); }}
+                                            className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-bold hover:bg-emerald-500/20 transition-all cursor-pointer">
+                                            {c}
+                                        </button>
+                                    );
+                                })}
+                                {pendingCompanies.length > 0 && <span className="text-zinc-700 mx-1">|</span>}
+                                {pendingCompanies.map(c => {
+                                    const sessions = companySessions[c] || [];
+                                    const firstSession = sessions[0];
+                                    return (
+                                        <button key={c} onClick={() => { if (firstSession) handleToastClick(firstSession.id); }}
+                                            className="px-2 py-0.5 rounded-md bg-zinc-800/50 text-zinc-600 font-bold hover:bg-zinc-800 hover:text-zinc-400 transition-all cursor-pointer">
+                                            {c}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })()}
                 <div className="overflow-x-auto">
                     <DndContext
                         sensors={sensors}
@@ -3641,6 +3711,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     </DndContext>
                 </div>
             </section>
+
+            {/* 토스트 알림 */}
+            {toasts.length > 0 && (
+                <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2">
+                    {toasts.map(toast => (
+                        <button key={toast.id} onClick={() => handleToastClick(toast.sessionId)}
+                            className="flex items-center gap-3 px-4 py-3 bg-zinc-900 border border-emerald-500/30 rounded-xl shadow-2xl shadow-emerald-500/10 animate-slide-up cursor-pointer hover:border-emerald-500/60 transition-all group">
+                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+                            <div className="text-left">
+                                <div className="text-[11px] font-black text-white">{toast.companyName}</div>
+                                <div className="text-[10px] text-emerald-400 font-bold">발주서 {toast.orderCount}건 생성</div>
+                            </div>
+                            <span className="text-[9px] text-zinc-600 group-hover:text-zinc-400 ml-2">클릭하여 이동</span>
+                        </button>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
