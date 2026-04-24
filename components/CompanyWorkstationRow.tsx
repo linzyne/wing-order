@@ -308,18 +308,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             handleLocalFileChange(batchFile);
         } else if (hasFileChanged) {
             if (masterFile) {
+                // 항상 ref 업데이트 (정규화된 파일로 재트리거 방지)
+                lastProcessedMasterRef.current = masterFile;
+                lastFakeOrdersRef.current = fakeOrderNumbers;
+                lastManualOrdersRef.current = manualOrdersStr;
+
                 if (!isProcessingRef.current) {
-                    lastProcessedMasterRef.current = masterFile;
-                    lastFakeOrdersRef.current = fakeOrderNumbers;
-                    lastManualOrdersRef.current = manualOrdersStr;
-                }
-                // 수동발주가 있으면 모달로 선택 후 처리, 없으면 바로 처리
-                if (isFirstSession && manualOrders.length > 0) {
-                    pendingFileRef.current = masterFile;
-                    setModalSelectedIds(new Set(manualOrders.map(o => o.id)));
-                    setShowManualOrderModal(true);
-                } else {
-                    handleLocalFileChange(masterFile, []);
+                    // 수동발주가 있고 아직 선택 안 했으면 모달로 선택 후 처리, 아니면 바로 처리
+                    if (isFirstSession && manualOrders.length > 0 && confirmedManualOrderIdsRef.current === null) {
+                        pendingFileRef.current = masterFile;
+                        setModalSelectedIds(new Set(manualOrders.map(o => o.id)));
+                        setShowManualOrderModal(true);
+                    } else if (confirmedManualOrderIdsRef.current === null) {
+                        handleLocalFileChange(masterFile, []);
+                    }
                 }
             }
         } else if (hasFakeOrdersChanged && (lastProcessedMasterRef.current || lastProcessedBatchRef.current)) {
