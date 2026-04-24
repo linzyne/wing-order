@@ -77,7 +77,7 @@ interface CompanyWorkstationRowProps {
     businessId?: string;
     onConfigChange: (newConfig: PricingConfig) => void;
     masterExpectedCount?: number;
-    missingItems?: { groupName: string; diffQty: number }[];
+    missingItems?: { groupName: string; diffQty: number; names?: string[] }[];
     orderPlatformMap?: Map<string, string>;
     platformConfigs?: PlatformConfigs;
     fakeCourierRows?: any[][];
@@ -844,8 +844,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                         <div className="mt-1 space-y-0.5">
                                             {missingItems.map((m, idx) => (
-                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono truncate">
-                                                    {m.groupName}: {m.diffQty}건 부족
+                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono">
+                                                    <div className="truncate">{m.groupName}: {m.diffQty}건 부족</div>
+                                                    {m.names && m.names.length > 0 && (
+                                                        <div className="text-[8px] text-orange-200/60 mt-0.5 flex flex-wrap gap-x-1">
+                                                            {m.names.map((n, ni) => <span key={ni} className="bg-orange-500/10 px-1 rounded">{n}</span>)}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -926,8 +931,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                         <div className="mt-1 space-y-0.5">
                                             {missingItems.map((m, idx) => (
-                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono truncate">
-                                                    {m.groupName}: {m.diffQty}건 부족
+                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono">
+                                                    <div className="truncate">{m.groupName}: {m.diffQty}건 부족</div>
+                                                    {m.names && m.names.length > 0 && (
+                                                        <div className="text-[8px] text-orange-200/60 mt-0.5 flex flex-wrap gap-x-1">
+                                                            {m.names.map((n, ni) => <span key={ni} className="bg-orange-500/10 px-1 rounded">{n}</span>)}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>
@@ -1004,8 +1014,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                         <div className="mt-1 space-y-0.5">
                                             {missingItems.map((m, idx) => (
-                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono truncate">
-                                                    {m.groupName}: {m.diffQty}건 부족
+                                                <div key={idx} className="text-[9px] text-orange-300/80 font-mono">
+                                                    <div className="truncate">{m.groupName}: {m.diffQty}건 부족</div>
+                                                    {m.names && m.names.length > 0 && (
+                                                        <div className="text-[8px] text-orange-200/60 mt-0.5 flex flex-wrap gap-x-1">
+                                                            {m.names.map((n, ni) => <span key={ni} className="bg-orange-500/10 px-1 rounded">{n}</span>)}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             ))}
                                         </div>

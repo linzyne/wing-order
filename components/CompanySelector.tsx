@@ -2489,12 +2489,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
 
         // 4. 비교: 마스터 기준 - 발주서 처리 = 누락
-        const missingGroups: { groupName: string; company: string; masterQty: number; processedQty: number; diffQty: number; reason: string }[] = [];
+        const missingGroups: { groupName: string; company: string; masterQty: number; processedQty: number; diffQty: number; reason: string; names: string[] }[] = [];
 
         Object.entries(masterByGroup).forEach(([groupName, { qty: masterQty, company }]) => {
             if (!company) {
                 // 업체 미매칭
-                missingGroups.push({ groupName, company: '', masterQty, processedQty: 0, diffQty: masterQty, reason: '업체 미매칭 (키워드 없음)' });
+                const names = masterProductSummary.allOrderDetails
+                    .filter((d: any) => d.groupName === groupName && !d.isFake)
+                    .map((d: any) => d.recipientName).filter((n: string) => n);
+                missingGroups.push({ groupName, company: '', masterQty, processedQty: 0, diffQty: masterQty, reason: '업체 미매칭 (키워드 없음)', names });
             } else if (!processedCompanies.has(company)) {
                 // 업체가 아직 미처리 → 건너뜀
                 return;
@@ -2502,9 +2505,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const processedQty = processedByGroup[groupName] || 0;
                 if (processedQty < masterQty) {
                     const diffQty = masterQty - processedQty;
+                    const names = masterProductSummary.allOrderDetails
+                        .filter((d: any) => d.groupName === groupName && d.company === company && !d.isFake)
+                        .map((d: any) => d.recipientName).filter((n: string) => n);
                     missingGroups.push({
                         groupName, company, masterQty, processedQty, diffQty,
                         reason: processedQty === 0 ? `${company} 발주서에 없음` : `${company} 발주서 ${processedQty}건만 처리 (${diffQty}건 부족)`,
+                        names,
                     });
                 }
             }
@@ -2513,15 +2520,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         // 등록상품명 없는 주문 (K열 비어있음)
         if (masterProductSummary.skippedOrders.length > 0) {
             const skippedQty = masterProductSummary.skippedOrders.reduce((s, o) => s + o.qty, 0);
-            missingGroups.push({ groupName: '(등록상품명 없음)', company: '', masterQty: skippedQty, processedQty: 0, diffQty: skippedQty, reason: 'K열 비어있음' });
+            const skippedNames = masterProductSummary.skippedOrders.map((o: any) => o.recipientName).filter((n: string) => n);
+            missingGroups.push({ groupName: '(등록상품명 없음)', company: '', masterQty: skippedQty, processedQty: 0, diffQty: skippedQty, reason: 'K열 비어있음', names: skippedNames });
         }
 
-        // 업체별 누락 집계
-        const missingByCompany: Record<string, { groupName: string; diffQty: number }[]> = {};
+        // 업체별 누락 집계 (누락된 사람 이름 포함)
+        const missingByCompany: Record<string, { groupName: string; diffQty: number; names: string[] }[]> = {};
         missingGroups.forEach(m => {
             if (m.company) {
                 if (!missingByCompany[m.company]) missingByCompany[m.company] = [];
-                missingByCompany[m.company].push({ groupName: m.groupName, diffQty: m.diffQty });
+                // 해당 그룹의 마스터 주문자 이름 추출 (실제 주문만, 가구매 제외)
+                const masterNames = masterProductSummary.allOrderDetails
+                    .filter((d: any) => d.groupName === m.groupName && d.company === m.company && !d.isFake)
+                    .map((d: any) => d.recipientName)
+                    .filter((n: string) => n);
+                missingByCompany[m.company].push({ groupName: m.groupName, diffQty: m.diffQty, names: masterNames });
             }
         });
 
@@ -3524,14 +3537,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </div>
                                 <div className="space-y-1 max-h-[250px] overflow-auto custom-scrollbar">
                                     {missingOrderAnalysis.missingGroups.map((m, idx) => (
-                                        <div key={idx} className="flex items-center gap-2 text-[10px] font-mono bg-red-500/5 rounded px-2 py-1">
-                                            <span className="text-red-400 font-black shrink-0 min-w-[80px]">{m.groupName}</span>
-                                            <span className="text-white font-black shrink-0">마스터 {m.masterQty}건</span>
-                                            <span className="text-zinc-600 shrink-0">→</span>
-                                            <span className="text-zinc-400 shrink-0">발주서 {m.processedQty}건</span>
-                                            <span className="text-red-400 font-black shrink-0">= {m.diffQty}건 누락</span>
-                                            {m.company && <span className="text-zinc-500 text-[9px] shrink-0 ml-auto">[{m.company}]</span>}
-                                            {!m.company && <span className="text-red-300/60 text-[9px] shrink-0 ml-auto">{m.reason}</span>}
+                                        <div key={idx} className="bg-red-500/5 rounded px-2 py-1">
+                                            <div className="flex items-center gap-2 text-[10px] font-mono">
+                                                <span className="text-red-400 font-black shrink-0 min-w-[80px]">{m.groupName}</span>
+                                                <span className="text-white font-black shrink-0">마스터 {m.masterQty}건</span>
+                                                <span className="text-zinc-600 shrink-0">→</span>
+                                                <span className="text-zinc-400 shrink-0">발주서 {m.processedQty}건</span>
+                                                <span className="text-red-400 font-black shrink-0">= {m.diffQty}건 누락</span>
+                                                {m.company && <span className="text-zinc-500 text-[9px] shrink-0 ml-auto">[{m.company}]</span>}
+                                                {!m.company && <span className="text-red-300/60 text-[9px] shrink-0 ml-auto">{m.reason}</span>}
+                                            </div>
+                                            {m.names && m.names.length > 0 && (
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {m.names.map((n, ni) => <span key={ni} className="text-[8px] text-red-300/70 bg-red-500/10 px-1.5 py-0.5 rounded">{n}</span>)}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
