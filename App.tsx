@@ -105,8 +105,9 @@ const App: React.FC = () => {
   }, [currentBusiness, isDynamicBusiness]);
 
   // 저장된 사업자가 삭제되었으면 안군농원으로 복귀
+  // 단, 동적 사업자 목록이 비어있으면 아직 서버 데이터 미도착일 수 있으므로 건너뜀
   useEffect(() => {
-    if (!businessListLoading && isDynamicBusiness) {
+    if (!businessListLoading && isDynamicBusiness && dynamicBusinesses.length > 0) {
       const exists = dynamicBusinesses.some(b => b.id === currentBusiness);
       if (!exists) {
         localStorage.setItem('selectedBusiness', '안군농원');
