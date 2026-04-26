@@ -1398,11 +1398,11 @@ const ProductTable: React.FC<{
         <table className="w-full text-sm text-left table-fixed">
             <thead className="bg-zinc-900/50 text-zinc-600 font-black uppercase tracking-widest text-[11px]">
                 <tr>
-                    <th className="px-5 py-3 w-[35%]">품목</th>
-                    <th className="px-3 py-3 text-right w-[18%] whitespace-nowrap">공급가</th>
-                    <th className="px-3 py-3 text-right w-[18%] whitespace-nowrap">판매가</th>
-                    <th className="px-3 py-3 text-right w-[18%] whitespace-nowrap">마진</th>
-                    <th className="px-3 py-3 text-center w-[11%]"></th>
+                    <th className="px-4 py-2 w-[35%]">품목</th>
+                    <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">공급가</th>
+                    <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">판매가</th>
+                    <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">마진</th>
+                    <th className="px-3 py-2 text-center w-[11%]"></th>
                 </tr>
             </thead>
             <tbody className="divide-y divide-zinc-900/60">
@@ -1411,38 +1411,36 @@ const ProductTable: React.FC<{
                     const margin = product.margin || 0;
                     return (
                         <tr key={productKey} onClick={() => onOpenProductEditor(productKey, product)} className="hover:bg-zinc-900/40 transition-colors cursor-pointer group">
-                            <td className="px-5 py-3">
-                                <div className="flex items-center gap-2 flex-wrap">
+                            <td className="px-4 py-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-black text-zinc-100 text-[13px]">{product.displayName}</span>
                                     {product.orderFormName && (
                                         <span className="text-[9px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
                                     )}
                                     {product.orderSplitCount && product.orderSplitCount > 1 && (
-                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-violet-400 bg-violet-500/10 border-violet-500/20">
-                                            x{product.orderSplitCount}
-                                        </span>
+                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-violet-400 bg-violet-500/10 border-violet-500/20">x{product.orderSplitCount}</span>
                                     )}
                                     {product.shippingCost && product.shippingCost > 0 && (
                                         <span className="text-[9px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>
                                     )}
+                                    {product.siteProductName && (
+                                        <span className="text-[9px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">🔑 {product.siteProductName}</span>
+                                    )}
                                 </div>
-                                {product.siteProductName && (
-                                    <div className="text-[10px] text-emerald-600 truncate max-w-xs mt-0.5">키워드: {product.siteProductName}</div>
-                                )}
                                 {product.aliases && product.aliases.length > 0 && (
-                                    <div className="text-[10px] text-zinc-600 truncate max-w-xs mt-0.5">{product.aliases.join(', ')}</div>
+                                    <div className="text-[10px] text-zinc-600 truncate max-w-xs">{product.aliases.join(', ')}</div>
                                 )}
                             </td>
-                            <td className="px-3 py-3 text-right font-black text-rose-400 text-[13px] whitespace-nowrap">
+                            <td className="px-3 py-1.5 text-right font-black text-rose-400 text-[13px] whitespace-nowrap">
                                 {product.supplyPrice.toLocaleString()}
                             </td>
-                            <td className="px-3 py-3 text-right font-bold text-zinc-400 text-[13px] whitespace-nowrap">
+                            <td className="px-3 py-1.5 text-right font-bold text-zinc-400 text-[13px] whitespace-nowrap">
                                 {(product.sellingPrice || 0).toLocaleString()}
                             </td>
-                            <td className={`px-3 py-3 text-right font-black text-[13px] whitespace-nowrap ${margin > 0 ? 'text-sky-400' : margin < 0 ? 'text-red-400' : 'text-zinc-600'}`}>
+                            <td className={`px-3 py-1.5 text-right font-black text-[13px] whitespace-nowrap ${margin > 0 ? 'text-sky-400' : margin < 0 ? 'text-red-400' : 'text-zinc-600'}`}>
                                 {margin.toLocaleString()}
                             </td>
-                            <td className="px-3 py-3 text-center">
+                            <td className="px-3 py-1.5 text-center">
                                 <button onClick={(e) => { e.stopPropagation(); onDeleteProduct(productKey); }} className="text-zinc-800 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><TrashIcon className="w-4 h-4" /></button>
                             </td>
                         </tr>
@@ -1450,7 +1448,7 @@ const ProductTable: React.FC<{
                 })}
                 <tr>
                     <td colSpan={5} className="p-0">
-                        <button onClick={onAddProduct} className="w-full flex items-center justify-center gap-2 text-zinc-500 hover:text-rose-400 bg-zinc-900/20 hover:bg-zinc-900/50 transition-all font-black py-4 text-sm border-t border-zinc-900/60">
+                        <button onClick={onAddProduct} className="w-full flex items-center justify-center gap-2 text-zinc-500 hover:text-rose-400 bg-zinc-900/20 hover:bg-zinc-900/50 transition-all font-black py-2.5 text-sm border-t border-zinc-900/60">
                             <PlusCircleIcon className="w-5 h-5" />
                             <span>새 품목 추가</span>
                         </button>
