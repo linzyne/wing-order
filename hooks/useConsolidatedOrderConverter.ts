@@ -272,17 +272,27 @@ const findBestMatchForProduct = async (
     const normalize = (s: string) => s.toLowerCase().replace(/[★☆※,.\s]/g, '');
     const normalizedRaw = normalize(rawProductName);
 
-    /** 매칭된 후보들 중 동점이면 품목 키·displayName의 kg가 원본 주문 kg와 일치하는 것 우선 선택 */
+    /** 매칭된 후보들 중 동점이면 ① kg, ② siteProductName↔K열 순으로 타이브레이킹 */
     const pickBestWithKgTiebreak = (candidates: { entry: [string, ProductPricing]; len: number }[]): [string, ProductPricing] | null => {
         if (candidates.length === 0) return null;
         const maxLen = Math.max(...candidates.map(c => c.len));
         let tied = candidates.filter(c => c.len === maxLen);
+        // ① kg 타이브레이킹
         if (tied.length > 1 && kgInRaw.length > 0) {
             const kgFiltered = tied.filter(c => {
                 const kg = [...extractKg(c.entry[1].displayName), ...extractKg(c.entry[0])];
                 return kg.some(k => kgInRaw.includes(k));
             });
             if (kgFiltered.length > 0) tied = kgFiltered;
+        }
+        // ② 여전히 동점이면 siteProductName이 K열(groupColValue)에 포함되는지로 타이브레이킹
+        if (tied.length > 1 && groupColValue) {
+            const lowerGroup = groupColValue.toLowerCase();
+            const siteFiltered = tied.filter(c => {
+                const sitePN = c.entry[1].siteProductName;
+                return sitePN && lowerGroup.includes(sitePN.toLowerCase());
+            });
+            if (siteFiltered.length > 0) tied = siteFiltered;
         }
         return [tied[0].entry[0], tied[0].entry[1]];
     };
