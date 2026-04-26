@@ -401,12 +401,15 @@ const consolidateMatchedOrders = (
     orders: IntermediateOrder[],
     companyProducts: { [productKey: string]: ProductPricing }
 ): { orders: IntermediateOrder[]; log: ConsolidationLogEntry[] } => {
-    // 1. kg 기반 품목 패밀리 빌드: baseName → [{productKey, kg, config}] (kg 내림차순)
+    // 1. kg 기반 품목 패밀리 빌드: familyKey → [{productKey, kg, config}] (kg 내림차순)
+    // familyKey: displayName에서 kg를 뺀 이름. 단, 이름이 kg만인 경우(예: "3kg")엔 baseName이
+    // 비어있으므로 siteProductName(품목키워드)으로 구분 — 같은 키워드를 가진 품목만 같은 패밀리로 묶음
     const families = new Map<string, { productKey: string; kg: number; config: ProductPricing }[]>();
     for (const [pk, p] of Object.entries(companyProducts)) {
         const kg = parseKgFromName(p.displayName);
         if (kg === null) continue;
-        const base = getProductBaseName(p.displayName);
+        const nameBase = getProductBaseName(p.displayName);
+        const base = nameBase || p.siteProductName || pk;
         if (!families.has(base)) families.set(base, []);
         families.get(base)!.push({ productKey: pk, kg, config: p });
     }
@@ -436,7 +439,8 @@ const consolidateMatchedOrders = (
                 result.push(o);
                 continue;
             }
-            const base = getProductBaseName(o.config.displayName);
+            const nameBase = getProductBaseName(o.config.displayName);
+            const base = nameBase || o.config.siteProductName || o.productKey;
             if (!families.has(base) || families.get(base)!.length <= 1) {
                 result.push(o);
                 continue;
