@@ -1429,6 +1429,9 @@ const ProductTable: React.FC<{
                                         <span className="text-[9px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>
                                     )}
                                 </div>
+                                {product.siteProductName && (
+                                    <div className="text-[10px] text-emerald-600 truncate max-w-xs mt-0.5">키워드: {product.siteProductName}</div>
+                                )}
                                 {product.aliases && product.aliases.length > 0 && (
                                     <div className="text-[10px] text-zinc-600 truncate max-w-xs mt-0.5">{product.aliases.join(', ')}</div>
                                 )}
