@@ -208,8 +208,8 @@ const findBestMatchForProduct = async (
                     }
                 }
 
-                // kg 매칭도 실패하면 typeMatched 후보로 범위를 좁혀 기존 매칭 계속 진행
-                availableEntries = typeMatched;
+                // kg 매칭 실패 — typeMatched로 좁히지 않고 기존 매칭으로 fallthrough
+                // (typeMatched에 없는 키워드 미설정 품목이 정답일 수 있음)
             }
             // typeMatched가 0이면 기존 availableEntries 그대로 사용
         }
@@ -285,14 +285,19 @@ const findBestMatchForProduct = async (
             });
             if (kgFiltered.length > 0) tied = kgFiltered;
         }
-        // ② 여전히 동점이면 siteProductName이 K열(groupColValue)에 포함되는지로 타이브레이킹
+        // ② 여전히 동점이면 K열과 키워드가 명백히 불일치하는 후보를 제거
+        //    (키워드가 없으면 제거하지 않음 — 키워드 미설정 품목은 불일치로 보지 않음)
         if (tied.length > 1 && groupColValue) {
             const lowerGroup = groupColValue.toLowerCase();
-            const siteFiltered = tied.filter(c => {
+            const nonConflicting = tied.filter(c => {
                 const sitePN = c.entry[1].siteProductName;
-                return sitePN && lowerGroup.includes(sitePN.toLowerCase());
+                if (!sitePN) return true; // 키워드 없으면 제거하지 않음
+                return lowerGroup.includes(sitePN.toLowerCase()); // 키워드가 K열에 포함되면 유지
             });
-            if (siteFiltered.length > 0) tied = siteFiltered;
+            // 불일치 후보가 실제로 제거됐을 때만 적용
+            if (nonConflicting.length > 0 && nonConflicting.length < tied.length) {
+                tied = nonConflicting;
+            }
         }
         return [tied[0].entry[0], tied[0].entry[1]];
     };
