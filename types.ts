@@ -145,6 +145,7 @@ export interface ManualOrder {
   address: string;
   productName: string;
   qty: number;
+  memo?: string;
 }
 
 export type ProcessingStatus = 'idle' | 'processing' | 'success' | 'error';

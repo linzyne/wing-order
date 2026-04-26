@@ -758,7 +758,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const [manualInput, setManualInput] = useState({
-        companyName: '', recipientName: '', phone: '', address: '', productName: '', qty: '1'
+        companyName: '', recipientName: '', phone: '', address: '', productName: '', qty: '1', memo: ''
     });
 
 
@@ -1802,11 +1802,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         const newOrder: ManualOrder = {
             id: `mo-${Date.now()}`, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
-            phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName, qty: parseInt(manualInput.qty) || 1
+            phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName, qty: parseInt(manualInput.qty) || 1,
+            memo: manualInput.memo
         };
         setManualOrders(prev => [...prev, newOrder]);
         setSelectedManualOrderIds(prev => new Set([...prev, newOrder.id]));
-        setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', productName: '', qty: '1' }));
+        setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', productName: '', qty: '1', memo: '' }));
     };
 
     const handleQuickSelect = (person: { name: string, phone: string, address: string }) => {
@@ -2912,6 +2913,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 <button type="submit" className="flex-1 btn-accent rounded-xl text-xs">추가</button>
                             </div>
                         </div>
+                        <input placeholder="메모 (배송메세지로 입력됨)" value={manualInput.memo} onChange={e => setManualInput({...manualInput, memo: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
                     </form>
                     {manualOrders.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1.5">

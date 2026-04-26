@@ -781,7 +781,7 @@ function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orde
         case 'recipientPhone':   return mo.phone;
         case 'recipientZipcode': return '';
         case 'recipientAddress': return mo.address;
-        case 'deliveryMessage':  return '';
+        case 'deliveryMessage':  return mo.memo || '';
         case 'productName':      return orderName;
         case 'qty':              return 1;
         case 'orderNumber':      return '수동';
@@ -925,19 +925,19 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
     } else if (companyName === '팜플로우') {
         for (let j = 0; j < rowQty; j++) {
             const or = new Array(13).fill('');
-            or[0] = '수동'; or[1] = mo.recipientName; or[2] = mo.phone; or[3] = mo.address; or[5] = orderName; or[6] = perRowQty; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
+            or[0] = '수동'; or[1] = mo.recipientName; or[2] = mo.phone; or[3] = mo.address; or[4] = mo.memo || ''; or[5] = orderName; or[6] = perRowQty; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
             outputRows.push(or);
         }
     } else if (companyName === '웰그린') {
         for (let j = 0; j < rowQty; j++) {
             const or = new Array(19).fill('');
-            or[1] = '수동'; or[2] = '안군농원'; or[4] = orderName; or[5] = perRowQty; or[9] = mo.recipientName; or[10] = mo.recipientName; or[11] = mo.phone; or[12] = mo.phone; or[15] = mo.address; or[17] = '01042626343';
+            or[1] = '수동'; or[2] = '안군농원'; or[4] = orderName; or[5] = perRowQty; or[6] = mo.memo || ''; or[9] = mo.recipientName; or[10] = mo.recipientName; or[11] = mo.phone; or[12] = mo.phone; or[15] = mo.address; or[17] = '01042626343';
             outputRows.push(or);
         }
     } else if (companyName === '답도' || companyName === '한라봉_답도') {
         for (let j = 0; j < rowQty; j++) {
             const or = new Array(11).fill('');
-            or[0] = '수동'; or[2] = '안군농원'; or[3] = '01042626343'; or[4] = mo.recipientName; or[5] = mo.phone; or[6] = mo.address; or[7] = orderName; or[8] = perRowQty;
+            or[0] = '수동'; or[2] = '안군농원'; or[3] = '01042626343'; or[4] = mo.recipientName; or[5] = mo.phone; or[6] = mo.address; or[7] = orderName; or[8] = perRowQty; or[9] = mo.memo || '';
             outputRows.push(or);
         }
     } else if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) {
@@ -951,6 +951,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             or[6] = mo.phone;
             or[7] = orderName;
             or[8] = orderName;
+            or[9] = mo.memo || '';
             or[11] = perRowQty;
             or[12] = perRowQty;
             outputRows.push(or);
@@ -977,6 +978,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             } else {
                 or[13] = perRowQty; // 수량(A타입)
             }
+            or[15] = mo.memo || '';
             outputRows.push(or);
         }
     } else if (companyName === '제이제이' || companyName === '귤_제이') {
@@ -989,12 +991,13 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             or[4] = mo.recipientName;    // 받는분성명
             or[5] = mo.address;          // 받는분주소
             or[6] = mo.phone;            // 받는분연락처
+            or[7] = mo.memo || '';       // 배송메시지
             or[8] = '수동';              // 주문번호
             outputRows.push(or);
         }
     } else {
         for (let j = 0; j < rowQty; j++) {
-            outputRows.push([mo.recipientName, mo.phone, mo.address, orderName, perRowQty, '', '수동']);
+            outputRows.push([mo.recipientName, mo.phone, mo.address, orderName, perRowQty, mo.memo || '', '수동']);
         }
     }
 }
