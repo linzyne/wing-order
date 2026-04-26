@@ -100,9 +100,11 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 w-full max-w-lg shadow-2xl">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
+                <div className="px-8 pt-8">
                 {/* Fix: TypeScript error where message was missing on productEditor type variant */}
                 <p className="text-xl font-black text-white mb-8 text-center">{dialog.message}</p>
+                </div>
 
                 {dialog.type === 'prompt' && (
                     <input
@@ -117,7 +119,7 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                 )}
 
                 {dialog.type === 'productEditor' && (
-                    <div className="space-y-6 mb-8 text-left">
+                    <div className="space-y-6 px-8 py-4 overflow-y-auto flex-1 text-left">
                         <div>
                             <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">품목 명칭</label>
                             <input
@@ -257,7 +259,7 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                     </div>
                 )}
 
-                <div className="flex gap-4">
+                <div className="flex gap-4 px-8 pb-8 pt-4 shrink-0">
                     {(dialog.type === 'confirm' || dialog.type === 'prompt' || dialog.type === 'productEditor') && (
                         <button
                             onClick={() => dialog.onCancel()}
