@@ -183,13 +183,8 @@ const findBestMatchForProduct = async (
                 p.siteProductName && lowerType.includes(p.siteProductName.toLowerCase())
             );
 
-            console.log(`[매칭-1][${companyName}] raw="${rawProductName}" | K열="${groupColValue}" | productType="${productType}"`);
-            console.log(`[매칭-1][${companyName}] 전체후보(${availableEntries.length}):`, availableEntries.map(([k, p]) => `${k}(키워드:${p.siteProductName||'없음'})`));
-            console.log(`[매칭-1][${companyName}] typeMatched(${typeMatched.length}):`, typeMatched.map(([k, p]) => `${k}(${p.displayName})`));
-
             if (typeMatched.length === 1) {
                 // 후보가 하나면 바로 확정
-                console.log(`[매칭-1][${companyName}] → 단일매칭: ${typeMatched[0][1].displayName}`);
                 const result: [string, ProductPricing] = [typeMatched[0][0], typeMatched[0][1]];
                 cache.set(cacheKey, result);
                 return result;
@@ -199,18 +194,14 @@ const findBestMatchForProduct = async (
                 // 후보가 여럿이면 옵션명 + 품목 키로 kg 매칭
                 const optionText = `${regOptionValue || ''} ${rawProductName}`;
                 const kgInOption = (optionText.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []).map((m: string) => m.replace(/\s/g, '').toLowerCase());
-                console.log(`[매칭-1][${companyName}] optionText="${optionText}" | kgInOption:`, kgInOption);
 
                 if (kgInOption.length > 0) {
                     const kgMatched = typeMatched.filter(([key, p]) => {
                         const kg = [...(p.displayName.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []), ...(key.match(/(\d+(?:\.\d+)?)\s*kg/gi) || [])]
                             .map(m => m.replace(/\s/g, '').toLowerCase());
-                        console.log(`[매칭-1][${companyName}]   후보 ${p.displayName}: kg=${kg.join(',')}`);
                         return kg.some(k => kgInOption.includes(k));
                     });
-                    console.log(`[매칭-1][${companyName}] kgMatched(${kgMatched.length}):`, kgMatched.map(([k, p]) => `${k}(${p.displayName})`));
                     if (kgMatched.length > 0) {
-                        console.log(`[매칭-1][${companyName}] → kg매칭 확정: ${kgMatched[0][1].displayName}`);
                         const result: [string, ProductPricing] = [kgMatched[0][0], kgMatched[0][1]];
                         cache.set(cacheKey, result);
                         return result;
@@ -219,12 +210,8 @@ const findBestMatchForProduct = async (
 
                 // kg 매칭 실패 — typeMatched로 좁히지 않고 기존 매칭으로 fallthrough
                 // (typeMatched에 없는 키워드 미설정 품목이 정답일 수 있음)
-                console.log(`[매칭-1][${companyName}] kg매칭 실패 → 일반 매칭으로 fallthrough`);
             }
             // typeMatched가 0이면 기존 availableEntries 그대로 사용
-            if (typeMatched.length === 0) {
-                console.log(`[매칭-1][${companyName}] typeMatched 없음 → 일반 매칭으로 fallthrough`);
-            }
         }
     }
 
@@ -241,8 +228,6 @@ const findBestMatchForProduct = async (
             siteMatches.push({ entry, len: siteName.length });
         }
     }
-    console.log(`[매칭0][${companyName}] raw="${rawProductName}" | lowerRaw="${lowerRaw}" | kgInRaw:`, kgInRaw);
-    console.log(`[매칭0][${companyName}] siteMatches(${siteMatches.length}):`, siteMatches.map(m => `${m.entry[1].displayName}(키워드:${m.entry[1].siteProductName},len:${m.len})`));
     if (siteMatches.length > 0) {
         // 동점(같은 siteProductName 길이)이 여럿이면 displayName의 kg가 원본과 일치하는 것 우선
         if (kgInRaw.length > 0 && siteMatches.length > 1) {
