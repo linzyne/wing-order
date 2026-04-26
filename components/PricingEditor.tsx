@@ -231,6 +231,16 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                             </p>
                         </div>
                         <div>
+                            <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">품목 키워드 <span className="text-zinc-600 normal-case">(K열 그룹아이디 매칭)</span></label>
+                            <input
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base"
+                                placeholder="예: 열무김치"
+                                value={dialog.product.siteProductName || ''}
+                                onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, siteProductName: e.target.value || undefined } })}
+                            />
+                            <p className="text-[10px] text-zinc-600 mt-1.5">마스터발주서 K열(그룹아이디)에 이 키워드가 포함되면 가장 우선으로 이 품목으로 매칭됩니다</p>
+                        </div>
+                        <div>
                             <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">매칭 키워드 (별칭)</label>
                             <textarea
                                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm resize-none"

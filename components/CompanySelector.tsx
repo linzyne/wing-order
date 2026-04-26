@@ -3609,37 +3609,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <span>워크스테이션 초기화</span>
                     </button>
                 </div>
-                {/* 업체별 발주 현황 요약 대시보드 */}
+                {/* 업체별 발주 현황 요약 대시보드 - 발주 생성된 업체만 */}
                 {(() => {
                     const companies = sortCompanies(Object.keys(pricingConfig));
                     const completedCompanies = companies.filter(c => {
                         const sessions = companySessions[c] || [];
                         return sessions.some(s => (allOrderRows[s.id]?.length || 0) > 0);
                     });
-                    const pendingCompanies = companies.filter(c => !completedCompanies.includes(c));
                     if (completedCompanies.length === 0) return null;
                     return (
-                        <div className="mb-3 px-2">
-                            <div className="flex items-center gap-2 flex-wrap text-[10px]">
-                                <span className="text-zinc-500 font-black shrink-0">{completedCompanies.length}/{companies.length}</span>
+                        <div className="mb-4 px-2">
+                            <div className="flex items-center gap-3 flex-wrap">
                                 {completedCompanies.map(c => {
                                     const sessions = companySessions[c] || [];
+                                    const orderCount = sessions.reduce((sum, s) => sum + (allOrderRows[s.id]?.length || 0), 0);
                                     const firstSessionWithData = sessions.find(s => (allOrderRows[s.id]?.length || 0) > 0);
                                     return (
                                         <button key={c} onClick={() => { if (firstSessionWithData) handleToastClick(firstSessionWithData.id); }}
-                                            className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 font-bold hover:bg-emerald-500/20 transition-all cursor-pointer">
-                                            {c}
-                                        </button>
-                                    );
-                                })}
-                                {pendingCompanies.length > 0 && <span className="text-zinc-700 mx-1">|</span>}
-                                {pendingCompanies.map(c => {
-                                    const sessions = companySessions[c] || [];
-                                    const firstSession = sessions[0];
-                                    return (
-                                        <button key={c} onClick={() => { if (firstSession) handleToastClick(firstSession.id); }}
-                                            className="px-2 py-0.5 rounded-md bg-zinc-800/50 text-zinc-600 font-bold hover:bg-zinc-800 hover:text-zinc-400 transition-all cursor-pointer">
-                                            {c}
+                                            className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 font-black text-base hover:bg-emerald-500/30 hover:scale-105 transition-all cursor-pointer border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
+                                            {c} <span className="text-emerald-400 ml-1">{orderCount}</span>
                                         </button>
                                     );
                                 })}
