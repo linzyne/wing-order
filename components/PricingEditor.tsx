@@ -100,17 +100,17 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-            <div className="bg-zinc-900 border border-zinc-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh]">
-                <div className="px-8 pt-8">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[85vh]">
+                <div className="px-6 pt-5 pb-1">
                 {/* Fix: TypeScript error where message was missing on productEditor type variant */}
-                <p className="text-xl font-black text-white mb-8 text-center">{dialog.message}</p>
+                <p className="text-base font-black text-white text-center">{dialog.message}</p>
                 </div>
 
                 {dialog.type === 'prompt' && (
                     <input
                         autoFocus
                         type="text"
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-white mb-8 focus:ring-2 focus:ring-rose-500/20 outline-none text-base"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white mx-6 mb-4 focus:ring-2 focus:ring-rose-500/20 outline-none text-base"
                         placeholder={dialog.placeholder}
                         value={promptValue}
                         onChange={(e) => setPromptValue(e.target.value)}
@@ -119,32 +119,32 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                 )}
 
                 {dialog.type === 'productEditor' && (
-                    <div className="space-y-6 px-8 py-4 overflow-y-auto flex-1 text-left">
+                    <div className="space-y-3 px-6 py-3 overflow-y-auto flex-1 text-left">
                         <div>
-                            <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">품목 명칭</label>
+                            <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">품목 명칭</label>
                             <input
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base"
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm"
                                 value={dialog.product.displayName}
                                 onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, displayName: e.target.value } })}
                             />
                         </div>
                         <div>
-                            <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">발주서생성용 품목명</label>
+                            <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">발주서생성용 품목명</label>
                             <input
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base"
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm"
                                 placeholder={dialog.product.displayName || '비워두면 품목 명칭 사용'}
                                 value={dialog.product.orderFormName || ''}
                                 onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, orderFormName: e.target.value || undefined } })}
                             />
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-3 gap-3">
                             <div>
-                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">공급가</label>
+                                <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">공급가</label>
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm text-right"
                                     value={dialog.product.supplyPrice}
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, supplyPrice: Number(e.target.value) || 0 } })}
                                     onPaste={(e) => {
@@ -161,11 +161,11 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                 />
                             </div>
                             <div>
-                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">판매가</label>
+                                <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">판매가</label>
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm text-right"
                                     value={dialog.product.sellingPrice || 0}
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, sellingPrice: Number(e.target.value) || 0 } })}
                                     onPaste={(e) => {
@@ -182,11 +182,11 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                 />
                             </div>
                             <div>
-                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">마진</label>
+                                <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">마진</label>
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm text-right"
                                     value={dialog.product.margin || 0}
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, margin: Number(e.target.value) || 0 } })}
                                     onPaste={(e) => {
@@ -203,50 +203,48 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                 />
                             </div>
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-2 gap-3">
                             <div>
-                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">배송비</label>
+                                <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">배송비</label>
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm text-right"
                                     placeholder="0"
                                     value={dialog.product.shippingCost || ''}
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, shippingCost: Number(e.target.value.replace(/,/g, '')) || 0 } })}
                                 />
                             </div>
                             <div>
-                                <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">수량 변환</label>
+                                <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">수량 변환</label>
                                 <input
                                     type="text"
                                     inputMode="numeric"
-                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base text-right"
+                                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm text-right"
                                     placeholder="미설정시 1"
                                     value={dialog.product.orderSplitCount || ''}
                                     onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, orderSplitCount: Number(e.target.value) || 0, splitMode: 'quantity' } })}
                                 />
                             </div>
-                            <p className="col-span-2 text-[13px] text-zinc-400 -mt-2 leading-relaxed">
-                                업체에 1kg밖에 없을 때 사용<br/>
-                                내 품목 2kg → 1kg x 수량2로 변환하여 발주서에 표기<br/>
-                                (각 주문서 하나당 배송비 부과)
+                            <p className="col-span-2 text-[11px] text-zinc-500 -mt-1">
+                                업체에 1kg밖에 없을 때 사용 · 내 품목 2kg → 1kg x 수량2로 변환
                             </p>
                         </div>
                         <div>
-                            <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">품목 키워드 <span className="text-zinc-600 normal-case">(K열 그룹아이디 매칭)</span></label>
+                            <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">품목 키워드 <span className="text-zinc-600 normal-case">(K열 그룹아이디 매칭)</span></label>
                             <input
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-base"
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm"
                                 placeholder="예: 열무김치"
                                 value={dialog.product.siteProductName || ''}
                                 onChange={(e) => setDialog({ ...dialog, product: { ...dialog.product, siteProductName: e.target.value || undefined } })}
                             />
-                            <p className="text-[10px] text-zinc-600 mt-1.5">마스터발주서 K열(그룹아이디)에 이 키워드가 포함되면 가장 우선으로 이 품목으로 매칭됩니다</p>
+                            <p className="text-[10px] text-zinc-600 mt-1">K열에 이 키워드가 포함되면 최우선 매칭</p>
                         </div>
                         <div>
-                            <label className="text-[12px] font-black text-zinc-500 uppercase mb-2 block">매칭 키워드 (별칭)</label>
+                            <label className="text-[11px] font-black text-zinc-500 uppercase mb-1 block">매칭 키워드 (별칭)</label>
                             <textarea
-                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-5 py-4 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm resize-none"
-                                rows={3}
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-white focus:ring-2 focus:ring-rose-500/20 outline-none text-sm resize-none"
+                                rows={2}
                                 placeholder="쉼표로 구분하여 입력 (예: 부사사과 2kg, 부사 사과 2kg내외)"
                                 value={(dialog.product.aliases || []).join(', ')}
                                 onChange={(e) => {
@@ -254,23 +252,22 @@ const Dialog: React.FC<{ dialog: DialogType; setDialog: (d: DialogType) => void 
                                     setDialog({ ...dialog, product: { ...dialog.product, aliases: aliases.length > 0 ? aliases : [] } });
                                 }}
                             />
-                            <p className="text-[10px] text-zinc-600 mt-1.5">주문서 상품명에 이 키워드가 포함되면 해당 품목으로 자동 매칭됩니다</p>
                         </div>
                     </div>
                 )}
 
-                <div className="flex gap-4 px-8 pb-8 pt-4 shrink-0">
+                <div className="flex gap-3 px-6 pb-5 pt-3 shrink-0">
                     {(dialog.type === 'confirm' || dialog.type === 'prompt' || dialog.type === 'productEditor') && (
                         <button
                             onClick={() => dialog.onCancel()}
-                            className="flex-1 px-6 py-4 bg-zinc-800 text-zinc-400 font-black rounded-xl hover:bg-zinc-700 transition-all text-base"
+                            className="flex-1 px-4 py-3 bg-zinc-800 text-zinc-400 font-black rounded-xl hover:bg-zinc-700 transition-all text-sm"
                         >
                             취소
                         </button>
                     )}
                     <button
                         onClick={handleConfirm}
-                        className="flex-1 px-6 py-4 bg-rose-500 text-white font-black rounded-xl hover:bg-rose-600 shadow-lg shadow-rose-900/20 transition-all text-base"
+                        className="flex-1 px-4 py-3 bg-rose-500 text-white font-black rounded-xl hover:bg-rose-600 shadow-lg shadow-rose-900/20 transition-all text-sm"
                     >
                         확인
                     </button>
