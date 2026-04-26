@@ -820,7 +820,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 비용(지출내역) 관리
     const EXPENSE_CATEGORIES = ['임대료', '통신비', '소모품비', '물류비', '마케팅', '식비', '기타', '이자'];
     const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
-    const [newExpense, setNewExpense] = useState({ category: '물류비', amount: '', description: '' });
+    const [newExpense, setNewExpense] = useState({ category: '물류비', amount: '', description: '', company: '', productKey: '' });
+    const expenseProducts = useMemo(() => {
+        if (!newExpense.company || !pricingConfig[newExpense.company]) return [];
+        return Object.entries(pricingConfig[newExpense.company].products).map(([key, p]: [string, any]) => ({
+            key, name: p.orderFormName || p.displayName,
+        }));
+    }, [newExpense.company, pricingConfig]);
 
     // 반품 관리
     const [returns, setReturns] = useState<ReturnRecord[]>([]);
@@ -2213,9 +2219,36 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             });
         });
+        // 품목 연동 비용을 marginGroup key로 집계 (company::productKey → expenses)
+        // 같은 품목에 여러 비용이 있으면 첫 번째 비용 금액/내역을 H/I에 입력 (추가 비용은 합산)
+        type LinkedExpense = { amount: number; descriptions: string[] };
+        const linkedExpenseMap = new Map<string, LinkedExpense>();
+        allExpenses.forEach(exp => {
+            if (exp.company && exp.productKey) {
+                const key = `${exp.company}::${exp.productKey}`;
+                const existing = linkedExpenseMap.get(key);
+                if (existing) {
+                    existing.amount += exp.amount;
+                    existing.descriptions.push(exp.description);
+                } else {
+                    linkedExpenseMap.set(key, { amount: exp.amount, descriptions: [exp.description] });
+                }
+            }
+        });
+
+        // 마진시트 행 추가 + H/I 품목 연동 비용 채우기
         for (const g of marginGroups) {
             const d = g.data;
-            marginSheetData.push([d.regName, d.productName, d.count, d.sellingPrice, d.supplyPrice, d.margin, d.margin * d.count, '', '']);
+            // key 마지막 segment가 productKey
+            const productKey = g.key.split('::')[2] ?? '';
+            const linkedKey = `${g.company}::${productKey}`;
+            const linked = linkedExpenseMap.get(linkedKey);
+            marginSheetData.push([
+                d.regName, d.productName, d.count,
+                d.sellingPrice, d.supplyPrice, d.margin, d.margin * d.count,
+                linked ? linked.amount : '',
+                linked ? linked.descriptions.join(' / ') : '',
+            ]);
         }
 
         // 총 마진
@@ -2227,13 +2260,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             marginSheetData.push(['', '', '', '', '', '총 마진', totalMargin, '', '']);
         }
 
-        // 비용 섹션 (allExpenses 통합: 자동 물류비 + 수동 비용)
-        if (allExpenses.length > 0) {
+        // 비용 섹션 — 품목 미연동 비용만 (자동 물류비 + 업체/품목 미지정 비용)
+        const generalExpenses = allExpenses.filter(exp => !(exp.company && exp.productKey));
+        if (generalExpenses.length > 0) {
             marginSheetData.push([]);
             marginSheetData.push(['', '[비용]', '', '', '', '', '', '', '']);
-            allExpenses.forEach(exp => {
+            generalExpenses.forEach(exp => {
                 marginSheetData.push(['', exp.category, '', '', '', '', '', exp.amount, exp.description]);
             });
+            const totalExpense = allExpenses.reduce((sum, e) => sum + e.amount, 0);
+            marginSheetData.push([]);
+            marginSheetData.push(['', '', '', '', '', '총 비용', '', totalExpense, '']);
+            marginSheetData.push(['', '', '', '', '', '순이익', '', totalMargin - totalExpense, '']);
+        } else if (allExpenses.length > 0) {
+            // 모든 비용이 품목 연동인 경우도 순이익 표시
             const totalExpense = allExpenses.reduce((sum, e) => sum + e.amount, 0);
             marginSheetData.push([]);
             marginSheetData.push(['', '', '', '', '', '총 비용', '', totalExpense, '']);
@@ -3314,7 +3354,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             )}
                         </h3>
                     </div>
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                        <select
+                            value={newExpense.company}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, company: e.target.value, productKey: '' }))}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50"
+                        >
+                            <option value="">업체 선택 (선택)</option>
+                            {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                        <select
+                            value={newExpense.productKey}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, productKey: e.target.value }))}
+                            disabled={!newExpense.company}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50 disabled:opacity-40 flex-1"
+                        >
+                            <option value="">품목 선택 (선택)</option>
+                            {expenseProducts.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
+                        </select>
+                    </div>
+                    <div className="flex items-center gap-2 mb-2">
                         <select
                             value={newExpense.category}
                             onChange={(e) => setNewExpense(prev => ({ ...prev, category: e.target.value }))}
@@ -3330,7 +3389,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 setNewExpense(prev => ({ ...prev, amount: v }));
                             }}
                             placeholder="금액"
-                            className="w-28 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-orange-500/50 text-right"
+                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-orange-500/50 text-right"
                         />
                     </div>
                     <div className="flex items-center gap-2 mb-3">
@@ -3342,26 +3401,38 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-orange-500/50"
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && newExpense.amount && parseInt(newExpense.amount) > 0) {
+                                    const selProduct = expenseProducts.find(p => p.key === newExpense.productKey);
                                     setExpenses(prev => [...prev, {
                                         id: `exp-${Date.now()}`,
                                         category: newExpense.category,
                                         amount: parseInt(newExpense.amount),
                                         description: newExpense.description,
+                                        ...(newExpense.company && newExpense.productKey ? {
+                                            company: newExpense.company,
+                                            productKey: newExpense.productKey,
+                                            productName: selProduct?.name,
+                                        } : {}),
                                     }]);
-                                    setNewExpense(prev => ({ ...prev, amount: '', description: '' }));
+                                    setNewExpense(prev => ({ ...prev, amount: '', description: '', company: '', productKey: '' }));
                                 }
                             }}
                         />
                         <button
                             onClick={() => {
                                 if (!newExpense.amount || parseInt(newExpense.amount) <= 0) return;
+                                const selProduct = expenseProducts.find(p => p.key === newExpense.productKey);
                                 setExpenses(prev => [...prev, {
                                     id: `exp-${Date.now()}`,
                                     category: newExpense.category,
                                     amount: parseInt(newExpense.amount),
                                     description: newExpense.description,
+                                    ...(newExpense.company && newExpense.productKey ? {
+                                        company: newExpense.company,
+                                        productKey: newExpense.productKey,
+                                        productName: selProduct?.name,
+                                    } : {}),
                                 }]);
-                                setNewExpense(prev => ({ ...prev, amount: '', description: '' }));
+                                setNewExpense(prev => ({ ...prev, amount: '', description: '', company: '', productKey: '' }));
                             }}
                             className="bg-orange-600 hover:bg-orange-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5"
                         >
@@ -3372,12 +3443,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <div className="space-y-1.5">
                             {allExpenses.map((exp) => (
                                 <div key={exp.id} className={`flex items-center justify-between px-3 py-2 rounded-xl border ${exp.isAuto ? 'bg-teal-950/20 border-teal-500/20' : 'bg-zinc-950/50 border-zinc-800/50'}`}>
-                                    <div className="flex items-center gap-2">
-                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${exp.isAuto ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30' : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'}`}>
+                                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 ${exp.isAuto ? 'bg-teal-500/20 text-teal-400 border border-teal-500/30' : 'bg-orange-500/20 text-orange-400 border border-orange-500/30'}`}>
                                             {exp.category}
                                         </span>
-                                        <span className="text-[10px] text-zinc-400 truncate max-w-[80px]">{exp.description}</span>
-                                        {exp.isAuto && <span className="text-[9px] text-teal-600 font-bold">자동</span>}
+                                        {exp.company && (
+                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-400 border border-sky-500/25 shrink-0">
+                                                {exp.company} · {exp.productName || exp.productKey}
+                                            </span>
+                                        )}
+                                        <span className="text-[10px] text-zinc-400 truncate">{exp.description}</span>
+                                        {exp.isAuto && <span className="text-[9px] text-teal-600 font-bold shrink-0">자동</span>}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className="text-[10px] font-mono font-bold text-zinc-300">{exp.amount.toLocaleString()}원</span>
@@ -3429,15 +3505,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <option value="">품목 선택</option>
                             {returnProducts.map(p => <option key={p.key} value={p.key}>{p.name} ({p.margin.toLocaleString()}원)</option>)}
                         </select>
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
                         <input
                             type="text"
                             value={returnCount}
                             onChange={(e) => setReturnCount(e.target.value.replace(/[^0-9]/g, ''))}
                             placeholder="수량"
-                            className="w-16 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50 text-right"
+                            className="w-16 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50 text-right shrink-0"
                         />
-                    </div>
-                    <div className="flex items-center gap-2 mb-3">
                         <input
                             type="text"
                             value={returnMemo}

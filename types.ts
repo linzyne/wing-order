@@ -193,6 +193,9 @@ export interface ExpenseRecord {
   amount: number;      // 지출 금액
   description: string; // 지출 내역
   isAuto?: boolean;    // 자동 생성 여부
+  company?: string;    // 연동 업체명 (마진시트 H/I열에 입력)
+  productKey?: string; // 연동 품목 키
+  productName?: string; // 연동 품목명
 }
 
 export interface CourierTemplate {
