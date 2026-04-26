@@ -12,6 +12,7 @@ export interface OrderItem {
     registeredOptionName: string;  // 등록옵션명 (원본 엑셀)
     matchedProductKey: string;     // 매칭된 품목키 (summary 키와 동일)
     qty: number;
+    recipientName: string;         // 수취인명 (누락 이름 계산용)
 }
 
 export type ProcessedResult = {
@@ -26,6 +27,7 @@ export type ProcessedResult = {
     orderItems: OrderItem[];
     originalOrderCount?: number; // 합산 전 원본 주문 수 (autoConsolidate 사용 시)
     consolidationLog?: ConsolidationLogEntry[]; // 합산 변환 내역
+    preConsolidationByGroup?: Record<string, number>; // 합산 전 groupName별 수량 (누락 비교용)
 };
 
 export interface ConsolidationLogEntry {
@@ -145,7 +147,9 @@ const findBestMatchForProduct = async (
     rawProductName: string,
     companyProducts: { [productKey: string]: ProductPricing },
     fallbackMatcher: (config: PricingConfig, companyName: string, productName: string) => [string, ProductPricing & { margin: number }] | null,
-    pricingConfig: PricingConfig
+    pricingConfig: PricingConfig,
+    groupColValue?: string,  // K열 등록상품명 (예: "대봉_실비김치")
+    regOptionValue?: string  // 등록옵션명 (예: "2kg 1박스")
 ): Promise<[string, ProductPricing] | null> => {
     const cacheKey = `${companyName}::${rawProductName}`;
     if (cache.has(cacheKey)) return cache.get(cacheKey)!;
@@ -163,21 +167,84 @@ const findBestMatchForProduct = async (
 
     if (availableEntries.length === 1) return [availableEntries[0][0], availableEntries[0][1]];
 
+    // -1. K열 기반 사전 매칭: 등록상품명에서 업체명을 제거한 품목 종류로 후보를 좁히고,
+    //     옵션명의 kg로 정확한 사이즈 선택
+    if (groupColValue) {
+        // "대봉_실비김치" → 첫 "_" 이후가 품목 종류
+        const underscoreIdx = groupColValue.indexOf('_');
+        const productType = underscoreIdx !== -1
+            ? groupColValue.slice(underscoreIdx + 1).trim()
+            : groupColValue.trim();
+
+        if (productType) {
+            const lowerType = productType.toLowerCase();
+            // siteProductName이 품목 종류와 일치하는 후보 필터
+            const typeMatched = availableEntries.filter(([, p]) =>
+                p.siteProductName && lowerType.includes(p.siteProductName.toLowerCase())
+            );
+
+            if (typeMatched.length === 1) {
+                // 후보가 하나면 바로 확정
+                const result: [string, ProductPricing] = [typeMatched[0][0], typeMatched[0][1]];
+                cache.set(cacheKey, result);
+                return result;
+            }
+
+            if (typeMatched.length > 1) {
+                // 후보가 여럿이면 옵션명 + 품목 키로 kg 매칭
+                const optionText = `${regOptionValue || ''} ${rawProductName}`;
+                const kgInOption = (optionText.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []).map((m: string) => m.replace(/\s/g, '').toLowerCase());
+
+                if (kgInOption.length > 0) {
+                    const kgMatched = typeMatched.filter(([key, p]) => {
+                        const kg = [...(p.displayName.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []), ...(key.match(/(\d+(?:\.\d+)?)\s*kg/gi) || [])]
+                            .map(m => m.replace(/\s/g, '').toLowerCase());
+                        return kg.some(k => kgInOption.includes(k));
+                    });
+                    if (kgMatched.length > 0) {
+                        const result: [string, ProductPricing] = [kgMatched[0][0], kgMatched[0][1]];
+                        cache.set(cacheKey, result);
+                        return result;
+                    }
+                }
+
+                // kg 매칭도 실패하면 typeMatched 후보로 범위를 좁혀 기존 매칭 계속 진행
+                availableEntries = typeMatched;
+            }
+            // typeMatched가 0이면 기존 availableEntries 그대로 사용
+        }
+    }
+
     const lowerRaw = rawProductName.toLowerCase();
 
     // 0. 정확한 siteProductName 매칭 (가장 우선)
     // rawProductName에 siteProductName이 포함되어 있는지 확인
-    let bestSiteMatch: { entry: [string, ProductPricing]; len: number } | null = null;
+    const extractKg = (s: string) => (s.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []).map(m => m.replace(/\s/g, '').toLowerCase());
+    const kgInRaw = extractKg(rawProductName);
+    let siteMatches: { entry: [string, ProductPricing]; len: number }[] = [];
     for (const entry of availableEntries) {
         const siteName = entry[1].siteProductName;
         if (siteName && lowerRaw.includes(siteName.toLowerCase())) {
-            if (!bestSiteMatch || siteName.length > bestSiteMatch.len) {
-                bestSiteMatch = { entry, len: siteName.length };
-            }
+            siteMatches.push({ entry, len: siteName.length });
         }
     }
-    if (bestSiteMatch) {
-        const result: [string, ProductPricing] = [bestSiteMatch.entry[0], bestSiteMatch.entry[1]];
+    if (siteMatches.length > 0) {
+        // 동점(같은 siteProductName 길이)이 여럿이면 displayName의 kg가 원본과 일치하는 것 우선
+        if (kgInRaw.length > 0 && siteMatches.length > 1) {
+            const maxLen = Math.max(...siteMatches.map((m: { entry: [string, ProductPricing]; len: number }) => m.len));
+            const tied = siteMatches.filter(m => m.len === maxLen);
+            if (tied.length > 1) {
+                const kgFiltered = tied.filter(m => {
+                    // displayName 또는 품목 키에서 kg 추출해서 원본 주문 kg와 비교
+                    const kgInDisplay = extractKg(m.entry[1].displayName);
+                    const kgInKey = extractKg(m.entry[0]);
+                    return [...kgInDisplay, ...kgInKey].some(k => kgInRaw.includes(k));
+                });
+                if (kgFiltered.length > 0) siteMatches = kgFiltered;
+            }
+        }
+        const best = siteMatches.reduce((a, b) => b.len > a.len ? b : a);
+        const result: [string, ProductPricing] = [best.entry[0], best.entry[1]];
         cache.set(cacheKey, result);
         return result;
     }
@@ -204,19 +271,33 @@ const findBestMatchForProduct = async (
     // 정규화 매칭: 쉼표/마침표/공백/특수문자(★☆※) 차이를 무시하고 displayName으로 매칭
     const normalize = (s: string) => s.toLowerCase().replace(/[★☆※,.\s]/g, '');
     const normalizedRaw = normalize(rawProductName);
-    let bestNormMatch: { entry: [string, ProductPricing]; len: number } | null = null;
+
+    /** 매칭된 후보들 중 동점이면 품목 키·displayName의 kg가 원본 주문 kg와 일치하는 것 우선 선택 */
+    const pickBestWithKgTiebreak = (candidates: { entry: [string, ProductPricing]; len: number }[]): [string, ProductPricing] | null => {
+        if (candidates.length === 0) return null;
+        const maxLen = Math.max(...candidates.map(c => c.len));
+        let tied = candidates.filter(c => c.len === maxLen);
+        if (tied.length > 1 && kgInRaw.length > 0) {
+            const kgFiltered = tied.filter(c => {
+                const kg = [...extractKg(c.entry[1].displayName), ...extractKg(c.entry[0])];
+                return kg.some(k => kgInRaw.includes(k));
+            });
+            if (kgFiltered.length > 0) tied = kgFiltered;
+        }
+        return [tied[0].entry[0], tied[0].entry[1]];
+    };
+
+    const normMatches: { entry: [string, ProductPricing]; len: number }[] = [];
     for (const entry of availableEntries) {
         const normDisplay = normalize(entry[1].displayName);
-        if (normalizedRaw.includes(normDisplay)) {
-            if (!bestNormMatch || normDisplay.length > bestNormMatch.len) {
-                bestNormMatch = { entry, len: normDisplay.length };
-            }
+        if (normDisplay && normalizedRaw.includes(normDisplay)) {
+            normMatches.push({ entry, len: normDisplay.length });
         }
     }
-    if (bestNormMatch) {
-        const result: [string, ProductPricing] = [bestNormMatch.entry[0], bestNormMatch.entry[1]];
-        cache.set(cacheKey, result);
-        return result;
+    const normBest = pickBestWithKgTiebreak(normMatches);
+    if (normBest) {
+        cache.set(cacheKey, normBest);
+        return normBest;
     }
 
     // 타플랫폼 옵션 형식 정리 후 재매칭 (예: "1박스:10kg/15000원/1개" → "10kg")
@@ -228,19 +309,17 @@ const findBestMatchForProduct = async (
         .trim();
     if (cleanedRaw !== rawProductName) {
         const normalizedCleaned = normalize(cleanedRaw);
-        let bestCleanMatch: { entry: [string, ProductPricing]; len: number } | null = null;
+        const cleanMatches: { entry: [string, ProductPricing]; len: number }[] = [];
         for (const entry of availableEntries) {
             const normDisplay = normalize(entry[1].displayName);
-            if (normalizedCleaned.includes(normDisplay)) {
-                if (!bestCleanMatch || normDisplay.length > bestCleanMatch.len) {
-                    bestCleanMatch = { entry, len: normDisplay.length };
-                }
+            if (normDisplay && normalizedCleaned.includes(normDisplay)) {
+                cleanMatches.push({ entry, len: normDisplay.length });
             }
         }
-        if (bestCleanMatch) {
-            const result: [string, ProductPricing] = [bestCleanMatch.entry[0], bestCleanMatch.entry[1]];
-            cache.set(cacheKey, result);
-            return result;
+        const cleanBest = pickBestWithKgTiebreak(cleanMatches);
+        if (cleanBest) {
+            cache.set(cacheKey, cleanBest);
+            return cleanBest;
         }
     }
 
@@ -452,6 +531,7 @@ const generateWorkbookForCompany = async (
         const orderItems: OrderItem[] = [];
         let originalOrderCount = 0;
         let consolidationLog: ConsolidationLogEntry[] = [];
+        let preConsolidationByGroup: Record<string, number> = {};
 
         if (json.length > 0) {
             const headers = json[0].map(h => String(h).trim());
@@ -519,7 +599,7 @@ const generateWorkbookForCompany = async (
                         }
                     }
                 }
-                const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig);
+                const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig, String(row[groupColIdx] || '').trim(), String(regOptionColIdx !== -1 ? row[regOptionColIdx] || '' : '').trim());
 
                 if (productConfigTuple) {
                     const [productKey, config] = productConfigTuple;
@@ -537,6 +617,10 @@ const generateWorkbookForCompany = async (
 
             // Phase 2: autoConsolidate가 켜져 있으면 합산 변환
             originalOrderCount = matchedOrders.reduce((sum, o) => sum + o.qty, 0);
+            // 합산 전 groupName별 수량 캡처 (누락 비교 시 합산으로 인한 오탐 방지)
+            matchedOrders.forEach(o => {
+                preConsolidationByGroup[o.groupColValue] = (preConsolidationByGroup[o.groupColValue] || 0) + o.qty;
+            });
             let finalOrders: IntermediateOrder[];
             if (companyConfig.autoConsolidate) {
                 const consolidated = consolidateMatchedOrders(matchedOrders, companyConfig.products);
@@ -576,6 +660,7 @@ const generateWorkbookForCompany = async (
                     registeredOptionName: order.regOptionValue,
                     matchedProductKey: productKey,
                     qty,
+                    recipientName: order.recipientName,
                 });
             }
         }
@@ -619,7 +704,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, preConsolidationByGroup, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

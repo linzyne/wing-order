@@ -1924,7 +1924,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, []);
 
     const [allRegisteredNames, setAllRegisteredNames] = useState<Record<string, Record<string, string>>>({});
-    const [allOrderItems, setAllOrderItems] = useState<Record<string, { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]>>({});
+    const [allOrderItems, setAllOrderItems] = useState<Record<string, { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string }[]>>({});
+    const [allPreConsolidationByGroup, setAllPreConsolidationByGroup] = useState<Record<string, Record<string, number>>>({});
 
     // 수동발주 취소/승인 상태 (업체별)
     const [manualOrdersRejectedCompanies, setManualOrdersRejectedCompanies] = useState<Set<string>>(new Set());
@@ -1937,7 +1938,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, []);
 
-    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]) => {
+    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string }[], preConsolidationByGroup?: Record<string, number>) => {
         // 새 발주서 생성 감지 → 토스트 (초기 복원 시 억제)
         const prevCount = prevOrderRowsRef.current[sessionId] || 0;
         const newCount = orderRows.length;
@@ -1955,6 +1956,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (registeredProductNames) setAllRegisteredNames(prev => ({ ...prev, [sessionId]: registeredProductNames }));
         if (itemSummary) setAllItemSummaries(prev => ({ ...prev, [sessionId]: itemSummary }));
         if (orderItems) setAllOrderItems(prev => ({ ...prev, [sessionId]: orderItems }));
+        if (preConsolidationByGroup) setAllPreConsolidationByGroup(prev => ({ ...prev, [sessionId]: preConsolidationByGroup }));
     }, [addToast]);
 
     const handleToggleSessionSelection = (sessionId: string) => {
@@ -2475,28 +2477,63 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             masterByGroup[groupName] = { qty: qty as number, company };
         });
 
-        // 3. 발주서에서 처리된 등록상품명별 수량 합산
-        //    allRegisteredNames[sessionId] = { displayName: groupName }
-        //    allItemSummaries[sessionId] = { displayName: { count, totalPrice } }
+        // 3. 발주서에서 처리된 등록상품명별 수량 합산 + 수취인 이름 추적
+        //    preConsolidationByGroup 있으면 합산 전 수량 사용 (자동 합산으로 인한 오탐 방지)
+        //    없으면 allRegisteredNames + allItemSummaries에서 계산
         const processedByGroup: Record<string, number> = {};
+        // groupName → 처리된 수취인 이름 목록 (중복 허용, 동명이인 각각 카운트)
+        const processedNamesByGroup: Record<string, string[]> = {};
         Object.entries(allRegisteredNames).forEach(([sessionId, regNames]: [string, Record<string, string>]) => {
-            const itemSummary = allItemSummaries[sessionId];
-            if (!itemSummary) return;
-            Object.entries(regNames).forEach(([displayName, groupName]: [string, string]) => {
-                const count = itemSummary[displayName]?.count || 0;
-                processedByGroup[groupName] = (processedByGroup[groupName] || 0) + count;
+            const preConsolidation = allPreConsolidationByGroup[sessionId];
+            if (preConsolidation) {
+                // 합산 전 groupName별 수량 직접 사용
+                Object.entries(preConsolidation).forEach(([groupName, count]) => {
+                    processedByGroup[groupName] = (processedByGroup[groupName] || 0) + (count as number);
+                });
+            } else {
+                const itemSummary = allItemSummaries[sessionId];
+                if (!itemSummary) return;
+                Object.entries(regNames).forEach(([displayName, groupName]: [string, string]) => {
+                    const count = itemSummary[displayName]?.count || 0;
+                    processedByGroup[groupName] = (processedByGroup[groupName] || 0) + count;
+                });
+            }
+        });
+        // orderItems에서 수취인 이름을 groupName별로 수집
+        (Object.values(allOrderItems) as { registeredProductName: string; recipientName: string }[][]).forEach(items => {
+            items.forEach(item => {
+                const groupName = item.registeredProductName;
+                if (!processedNamesByGroup[groupName]) processedNamesByGroup[groupName] = [];
+                if (item.recipientName) processedNamesByGroup[groupName].push(item.recipientName);
             });
         });
+
+        /** 마스터 이름 목록에서 처리된 이름을 제거해 누락 이름만 반환 (동명이인 고려) */
+        const computeMissingNames = (masterDetails: any[], groupName: string): string[] => {
+            const processed = [...(processedNamesByGroup[groupName] || [])];
+            const missing: string[] = [];
+            for (const d of masterDetails) {
+                const name = d.recipientName;
+                if (!name) continue;
+                const idx = processed.indexOf(name);
+                if (idx !== -1) {
+                    processed.splice(idx, 1); // 매칭된 이름 하나 소비
+                } else {
+                    missing.push(name);
+                }
+            }
+            return missing;
+        };
 
         // 4. 비교: 마스터 기준 - 발주서 처리 = 누락
         const missingGroups: { groupName: string; company: string; masterQty: number; processedQty: number; diffQty: number; reason: string; names: string[] }[] = [];
 
         Object.entries(masterByGroup).forEach(([groupName, { qty: masterQty, company }]) => {
             if (!company) {
-                // 업체 미매칭
-                const names = masterProductSummary.allOrderDetails
-                    .filter((d: any) => d.groupName === groupName && !d.isFake)
-                    .map((d: any) => d.recipientName).filter((n: string) => n);
+                // 업체 미매칭: 마스터 전체가 누락
+                const masterDetails = masterProductSummary.allOrderDetails
+                    .filter((d: any) => d.groupName === groupName && !d.isFake);
+                const names = masterDetails.map((d: any) => d.recipientName).filter((n: string) => n);
                 missingGroups.push({ groupName, company: '', masterQty, processedQty: 0, diffQty: masterQty, reason: '업체 미매칭 (키워드 없음)', names });
             } else if (!processedCompanies.has(company)) {
                 // 업체가 아직 미처리 → 건너뜀
@@ -2505,9 +2542,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const processedQty = processedByGroup[groupName] || 0;
                 if (processedQty < masterQty) {
                     const diffQty = masterQty - processedQty;
-                    const names = masterProductSummary.allOrderDetails
-                        .filter((d: any) => d.groupName === groupName && d.company === company && !d.isFake)
-                        .map((d: any) => d.recipientName).filter((n: string) => n);
+                    const masterDetails = masterProductSummary.allOrderDetails
+                        .filter((d: any) => d.groupName === groupName && d.company === company && !d.isFake);
+                    const names = computeMissingNames(masterDetails, groupName);
                     missingGroups.push({
                         groupName, company, masterQty, processedQty, diffQty,
                         reason: processedQty === 0 ? `${company} 발주서에 없음` : `${company} 발주서 ${processedQty}건만 처리 (${diffQty}건 부족)`,
@@ -2524,23 +2561,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             missingGroups.push({ groupName: '(등록상품명 없음)', company: '', masterQty: skippedQty, processedQty: 0, diffQty: skippedQty, reason: 'K열 비어있음', names: skippedNames });
         }
 
-        // 업체별 누락 집계 (누락된 사람 이름 포함)
+        // 업체별 누락 집계 (누락된 사람 이름 포함 - 이미 missingGroups.names가 진짜 누락 이름임)
         const missingByCompany: Record<string, { groupName: string; diffQty: number; names: string[] }[]> = {};
         missingGroups.forEach(m => {
             if (m.company) {
                 if (!missingByCompany[m.company]) missingByCompany[m.company] = [];
-                // 해당 그룹의 마스터 주문자 이름 추출 (실제 주문만, 가구매 제외)
-                const masterNames = masterProductSummary.allOrderDetails
-                    .filter((d: any) => d.groupName === m.groupName && d.company === m.company && !d.isFake)
-                    .map((d: any) => d.recipientName)
-                    .filter((n: string) => n);
-                missingByCompany[m.company].push({ groupName: m.groupName, diffQty: m.diffQty, names: masterNames });
+                missingByCompany[m.company].push({ groupName: m.groupName, diffQty: m.diffQty, names: m.names });
             }
         });
 
         const totalMissingQty = missingGroups.reduce((sum, m) => sum + m.diffQty, 0);
         return { missingGroups, totalMissingQty, processedCompanies, missingByCompany };
-    }, [masterProductSummary, companySessions, allOrderRows, allItemSummaries, allRegisteredNames]);
+    }, [masterProductSummary, companySessions, allOrderRows, allItemSummaries, allRegisteredNames, allOrderItems, allPreConsolidationByGroup]);
 
     const isAllSelected = selectedSessionIds.size > 0 && selectedSessionIds.size === (Object.values(companySessions).flat() as SessionData[]).length;
 

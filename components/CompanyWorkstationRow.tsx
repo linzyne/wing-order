@@ -65,7 +65,7 @@ interface CompanyWorkstationRowProps {
     onSelectToggle?: (sessionId: string) => void;
     onVendorFileChange: (files: File[]) => void;
     onResultUpdate: (sessionId: string, totalPrice: number, excludedCount?: number, excludedDetails?: ExcludedOrder[]) => void;
-    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number }[]) => void;
+    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string }[], preConsolidationByGroup?: Record<string, number>) => void;
     onAddSession: () => void;
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
@@ -122,6 +122,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const [workflow, setWorkflow] = useState<WorkflowStatus>({ order: false, deposit: false, invoice: false });
     const [showPrevRoundItems, setShowPrevRoundItems] = useState(false);
+
+    // 사이즈 불일치 감지: 매칭된 품목 키의 kg와 원본 옵션명의 kg가 다른 항목
+    const sizeMismatchItems = (() => {
+        const items = localResult?.orderItems || [];
+        const extractSizes = (s: string) => {
+            const matches = s.match(/(\d+(?:\.\d+)?)\s*kg/gi) || [];
+            return matches.map(m => m.replace(/\s/g, '').toLowerCase());
+        };
+        return items.filter(item => {
+            const matchedSizes = extractSizes(item.matchedProductKey);
+            const rawSizes = extractSizes(`${item.registeredProductName} ${item.registeredOptionName}`);
+            return matchedSizes.length > 0 && rawSizes.length > 0 && !rawSizes.some(rs => matchedSizes.includes(rs));
+        });
+    })();
 
     // 합산 헬퍼: previousRoundItems + 현재 세션 summary를 합산
     const _mergeSummaries = () => {
@@ -355,7 +369,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const orderTotal = Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
         onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
-        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header, localResult.registeredProductNames, localResult.summary, localResult.orderItems);
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], localResult.depositSummaryExcel || '', mergeResults?.header, localResult.registeredProductNames, localResult.summary, localResult.orderItems, localResult.preConsolidationByGroup);
     }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
@@ -403,7 +417,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lastSyncedCallbackRef.current = key;
         onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
         const parseRows = (v: any) => typeof v === 'string' ? JSON.parse(v) : (v || []);
-        onDataUpdate(sessionId, parseRows(syncedData.orderRows), parseRows(syncedData.invoiceRows), parseRows(syncedData.uploadInvoiceRows), syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary, syncedData.orderItems);
+        onDataUpdate(sessionId, parseRows(syncedData.orderRows), parseRows(syncedData.invoiceRows), parseRows(syncedData.uploadInvoiceRows), syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup);
         if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 
@@ -811,6 +825,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             {unmatchedList.map((u, idx) => (
                                                 <div key={idx} className="text-[9px] text-amber-300/80 font-mono truncate">
                                                     {u.recipientName} - {u.productName}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {sizeMismatchItems.length > 0 && (
+                                    <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-red-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 사이즈 불일치 {sizeMismatchItems.length}건 — 발주서 확인 필요
+                                        </div>
+                                        <div className="mt-1 space-y-0.5">
+                                            {sizeMismatchItems.map((item, idx) => (
+                                                <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
+                                                    {item.recipientName}: {item.registeredProductName} {item.registeredOptionName} → {item.matchedProductKey}
                                                 </div>
                                             ))}
                                         </div>
