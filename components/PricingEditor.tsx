@@ -6,7 +6,7 @@ import { inferFieldFromHeader, inferVendorInvoiceField } from '../hooks/useConso
 import {
     TrashIcon, PlusCircleIcon, DocumentArrowUpIcon, BuildingStorefrontIcon,
     PhoneIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon,
-    ChevronDownIcon, ChevronUpIcon
+    ChevronDownIcon, ChevronUpIcon, ClipboardDocumentCheckIcon
 } from './icons';
 
 declare var XLSX: any;
@@ -16,6 +16,68 @@ const stripUndefined = <T extends Record<string, any>>(obj: T): T => {
     return Object.fromEntries(
         Object.entries(obj).filter(([_, v]) => v !== undefined)
     ) as T;
+};
+
+// 표 붙여넣기 파싱 유틸리티
+// 노란 셀: 총합계 → supplyPrice, 판매가 → sellingPrice
+// 빈 품명 행(소계 등)은 자동 스킵
+const parsePastedTable = (text: string): { products: ProductPricing[]; error?: string } => {
+    const lines = text.trim().split(/\r?\n/);
+    if (!lines.length) return { products: [], error: '내용이 없습니다' };
+
+    const rows = lines.map(line => line.split('\t').map(c => c.trim()));
+
+    let nameIdx = 0, supplyIdx = -1, sellingIdx = -1, marginIdx = -1;
+    let dataStartRow = 0;
+
+    const firstRow = rows[0];
+    const normalized = firstRow.map(c => c.replace(/[\s\n\r]/g, ''));
+    const looksLikeHeader = normalized.some(c => /품명|총합계|판매가|공급가|원가율/.test(c));
+
+    if (looksLikeHeader) {
+        normalized.forEach((cell, idx) => {
+            if (/^(품명|상품명|품목명|품목)$/.test(cell) && nameIdx === 0) nameIdx = idx;
+            if (/총합계/.test(cell) && supplyIdx === -1) supplyIdx = idx;
+            if (/판매가/.test(cell) && sellingIdx === -1) sellingIdx = idx;
+            if (/개당판매이익|개당이익|판매이익/.test(cell) && marginIdx === -1) marginIdx = idx;
+        });
+        if (supplyIdx === -1) normalized.forEach((cell, idx) => { if (/공급가/.test(cell) && supplyIdx === -1) supplyIdx = idx; });
+        if (supplyIdx === -1) supplyIdx = 3;
+        if (sellingIdx === -1) sellingIdx = 4;
+        dataStartRow = 1;
+    } else {
+        nameIdx = 0; supplyIdx = 1; sellingIdx = 2;
+    }
+
+    const parseNum = (s: string) => Number((s || '').replace(/[,\s]/g, '')) || 0;
+    const hasPercent = (s: string) => (s || '').includes('%');
+
+    const products: ProductPricing[] = [];
+
+    for (let i = dataStartRow; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length === 0) continue;
+        const name = row[nameIdx] || '';
+        if (!name) continue; // 빈 품명 행 스킵 (소계 행 등)
+
+        const supplyPrice = parseNum(row[supplyIdx] || '');
+        const sellingPrice = parseNum(row[sellingIdx] || '');
+        if (!supplyPrice && !sellingPrice) continue;
+
+        let margin: number | undefined;
+        if (marginIdx >= 0) {
+            const raw = row[marginIdx] || '';
+            if (raw && !hasPercent(raw)) { const m = parseNum(raw); if (m) margin = m; }
+        }
+
+        const product: ProductPricing = { displayName: name, supplyPrice };
+        if (sellingPrice) product.sellingPrice = sellingPrice;
+        if (margin !== undefined) product.margin = margin;
+        products.push(product);
+    }
+
+    if (!products.length) return { products: [], error: '추출된 품목이 없습니다. 스프레드시트에서 직접 복사한 표를 붙여넣어 주세요.' };
+    return { products };
 };
 
 // Updated DialogType to include 'message' in 'productEditor' variant
@@ -711,6 +773,20 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    const handleBulkAddProducts = (companyName: string, newProducts: ProductPricing[]) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newProducts.forEach(product => {
+            let productKey = product.displayName;
+            if (newConfig[companyName].products[productKey]) {
+                let idx = 2;
+                while (newConfig[companyName].products[`${product.displayName}_${idx}`]) idx++;
+                productKey = `${product.displayName}_${idx}`;
+            }
+            newConfig[companyName].products[productKey] = stripUndefined(product);
+        });
+        onConfigChange(newConfig);
+    };
+
     const handleAddProduct = (companyName: string) => {
         setDialog({
             type: 'prompt',
@@ -932,6 +1008,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateVendorInvoiceFieldMap={(fieldMap) => handleUpdateVendorInvoiceFieldMap(companyName, fieldMap)}
                             onUpdateVendorInvoiceMatchKey={(matchKey) => handleUpdateVendorInvoiceMatchKey(companyName, matchKey)}
                             onAddProduct={() => handleAddProduct(companyName)}
+                            onBulkAddProducts={(products) => handleBulkAddProducts(companyName, products)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
                             onOpenProductEditor={(productKey, product) => setDialog({
                                 type: 'productEditor',
@@ -991,6 +1068,7 @@ const CompanyCard: React.FC<{
     onUpdateVendorInvoiceFieldMap: (fieldMap: string[]) => void;
     onUpdateVendorInvoiceMatchKey: (matchKey: string) => void;
     onAddProduct: () => void;
+    onBulkAddProducts: (products: ProductPricing[]) => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
 }> = React.memo(({ companyName, companyConfig, isExpanded, onToggle, ...props }) => {
@@ -1381,7 +1459,7 @@ const CompanyCard: React.FC<{
                             </div>
                         )}
                     </div>
-                    <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} />
+                    <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onBulkAddProducts={props.onBulkAddProducts} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} />
                 </div>
             )}
         </div>
@@ -1391,72 +1469,162 @@ const CompanyCard: React.FC<{
 const ProductTable: React.FC<{
     products: { [key: string]: ProductPricing };
     onAddProduct: () => void;
+    onBulkAddProducts: (products: ProductPricing[]) => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
-}> = React.memo(({ products, onAddProduct, onDeleteProduct, onOpenProductEditor }) => (
-    <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
-        <table className="w-full text-sm text-left table-fixed">
-            <thead className="bg-zinc-900/50 text-zinc-600 font-black uppercase tracking-widest text-[11px]">
-                <tr>
-                    <th className="px-4 py-2 w-[35%]">품목</th>
-                    <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">공급가</th>
-                    <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">판매가</th>
-                    <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">마진</th>
-                    <th className="px-3 py-2 text-center w-[11%]"></th>
-                </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-900/60">
-                {Object.keys(products).sort((a, b) => products[a].displayName.localeCompare(products[b].displayName, 'ko')).map((productKey) => {
-                    const product = products[productKey];
-                    const margin = product.margin || 0;
-                    return (
-                        <tr key={productKey} onClick={() => onOpenProductEditor(productKey, product)} className="hover:bg-zinc-900/40 transition-colors cursor-pointer group">
-                            <td className="px-4 py-1.5">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                    <span className="font-black text-zinc-100 text-[13px]">{product.displayName}</span>
-                                    {product.orderFormName && (
-                                        <span className="text-[9px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
+}> = React.memo(({ products, onAddProduct, onBulkAddProducts, onDeleteProduct, onOpenProductEditor }) => {
+    const [showPaste, setShowPaste] = useState(false);
+    const [pasteText, setPasteText] = useState('');
+    const [preview, setPreview] = useState<ProductPricing[] | null>(null);
+    const [parseError, setParseError] = useState('');
+
+    const handlePasteChange = (text: string) => {
+        setPasteText(text);
+        if (!text.trim()) { setPreview(null); setParseError(''); return; }
+        const { products: parsed, error } = parsePastedTable(text);
+        if (error || !parsed.length) { setParseError(error || '추출된 품목이 없습니다'); setPreview(null); }
+        else { setPreview(parsed); setParseError(''); }
+    };
+
+    const handleConfirm = () => {
+        if (preview?.length) {
+            onBulkAddProducts(preview);
+            setShowPaste(false); setPasteText(''); setPreview(null); setParseError('');
+        }
+    };
+
+    const handleCancel = () => { setShowPaste(false); setPasteText(''); setPreview(null); setParseError(''); };
+
+    return (
+        <div className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl">
+            <table className="w-full text-sm text-left table-fixed">
+                <thead className="bg-zinc-900/50 text-zinc-600 font-black uppercase tracking-widest text-[11px]">
+                    <tr>
+                        <th className="px-4 py-2 w-[35%]">품목</th>
+                        <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">공급가</th>
+                        <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">판매가</th>
+                        <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">마진</th>
+                        <th className="px-3 py-2 text-center w-[11%]"></th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-900/60">
+                    {Object.keys(products).sort((a, b) => products[a].displayName.localeCompare(products[b].displayName, 'ko')).map((productKey) => {
+                        const product = products[productKey];
+                        const margin = product.margin || 0;
+                        return (
+                            <tr key={productKey} onClick={() => onOpenProductEditor(productKey, product)} className="hover:bg-zinc-900/40 transition-colors cursor-pointer group">
+                                <td className="px-4 py-1.5">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-black text-zinc-100 text-[13px]">{product.displayName}</span>
+                                        {product.orderFormName && (
+                                            <span className="text-[9px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>
+                                        )}
+                                        {product.orderSplitCount && product.orderSplitCount > 1 && (
+                                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-violet-400 bg-violet-500/10 border-violet-500/20">x{product.orderSplitCount}</span>
+                                        )}
+                                        {product.shippingCost && product.shippingCost > 0 && (
+                                            <span className="text-[9px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>
+                                        )}
+                                        {product.siteProductName && (
+                                            <span className="text-[9px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">🔑 {product.siteProductName}</span>
+                                        )}
+                                    </div>
+                                    {product.aliases && product.aliases.length > 0 && (
+                                        <div className="text-[10px] text-zinc-600 truncate max-w-xs">{product.aliases.join(', ')}</div>
                                     )}
-                                    {product.orderSplitCount && product.orderSplitCount > 1 && (
-                                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-violet-400 bg-violet-500/10 border-violet-500/20">x{product.orderSplitCount}</span>
-                                    )}
-                                    {product.shippingCost && product.shippingCost > 0 && (
-                                        <span className="text-[9px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>
-                                    )}
-                                    {product.siteProductName && (
-                                        <span className="text-[9px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">🔑 {product.siteProductName}</span>
-                                    )}
-                                </div>
-                                {product.aliases && product.aliases.length > 0 && (
-                                    <div className="text-[10px] text-zinc-600 truncate max-w-xs">{product.aliases.join(', ')}</div>
-                                )}
-                            </td>
-                            <td className="px-3 py-1.5 text-right font-black text-rose-400 text-[13px] whitespace-nowrap">
-                                {product.supplyPrice.toLocaleString()}
-                            </td>
-                            <td className="px-3 py-1.5 text-right font-bold text-zinc-400 text-[13px] whitespace-nowrap">
-                                {(product.sellingPrice || 0).toLocaleString()}
-                            </td>
-                            <td className={`px-3 py-1.5 text-right font-black text-[13px] whitespace-nowrap ${margin > 0 ? 'text-sky-400' : margin < 0 ? 'text-red-400' : 'text-zinc-600'}`}>
-                                {margin.toLocaleString()}
-                            </td>
-                            <td className="px-3 py-1.5 text-center">
-                                <button onClick={(e) => { e.stopPropagation(); onDeleteProduct(productKey); }} className="text-zinc-800 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><TrashIcon className="w-4 h-4" /></button>
-                            </td>
-                        </tr>
-                    )
-                })}
-                <tr>
-                    <td colSpan={5} className="p-0">
-                        <button onClick={onAddProduct} className="w-full flex items-center justify-center gap-2 text-zinc-500 hover:text-rose-400 bg-zinc-900/20 hover:bg-zinc-900/50 transition-all font-black py-2.5 text-sm border-t border-zinc-900/60">
-                            <PlusCircleIcon className="w-5 h-5" />
-                            <span>새 품목 추가</span>
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-black text-rose-400 text-[13px] whitespace-nowrap">
+                                    {product.supplyPrice.toLocaleString()}
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-bold text-zinc-400 text-[13px] whitespace-nowrap">
+                                    {(product.sellingPrice || 0).toLocaleString()}
+                                </td>
+                                <td className={`px-3 py-1.5 text-right font-black text-[13px] whitespace-nowrap ${margin > 0 ? 'text-sky-400' : margin < 0 ? 'text-red-400' : 'text-zinc-600'}`}>
+                                    {margin.toLocaleString()}
+                                </td>
+                                <td className="px-3 py-1.5 text-center">
+                                    <button onClick={(e) => { e.stopPropagation(); onDeleteProduct(productKey); }} className="text-zinc-800 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><TrashIcon className="w-4 h-4" /></button>
+                                </td>
+                            </tr>
+                        )
+                    })}
+                    <tr>
+                        <td colSpan={5} className="p-0">
+                            <div className="flex divide-x divide-zinc-900/60 border-t border-zinc-900/60">
+                                <button onClick={onAddProduct} className="flex-1 flex items-center justify-center gap-2 text-zinc-500 hover:text-rose-400 bg-zinc-900/20 hover:bg-zinc-900/50 transition-all font-black py-2.5 text-sm">
+                                    <PlusCircleIcon className="w-5 h-5" />
+                                    <span>새 품목 추가</span>
+                                </button>
+                                <button
+                                    onClick={() => { setShowPaste(p => !p); if (showPaste) handleCancel(); }}
+                                    className={`flex-1 flex items-center justify-center gap-2 bg-zinc-900/20 hover:bg-zinc-900/50 transition-all font-black py-2.5 text-sm ${showPaste ? 'text-indigo-400' : 'text-zinc-500 hover:text-indigo-400'}`}
+                                >
+                                    <ClipboardDocumentCheckIcon className="w-5 h-5" />
+                                    <span>표 붙여넣기</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            {showPaste && (
+                <div className="border-t border-zinc-800 p-4 space-y-3 animate-fade-in">
+                    <p className="text-[11px] text-zinc-500 font-bold">
+                        스프레드시트에서 표를 복사하여 붙여넣으세요 · <span className="text-indigo-400">품명 / 총합계 / 판매가</span> 열 자동 인식
+                    </p>
+                    <textarea
+                        autoFocus
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-xs text-zinc-300 focus:outline-none focus:border-indigo-500/40 resize-none font-mono"
+                        rows={4}
+                        placeholder="스프레드시트(엑셀/구글시트)에서 복사 후 Ctrl+V / Cmd+V"
+                        value={pasteText}
+                        onChange={(e) => handlePasteChange(e.target.value)}
+                    />
+                    {parseError && <p className="text-[11px] text-red-400">{parseError}</p>}
+                    {preview && preview.length > 0 && (
+                        <div className="space-y-1.5">
+                            <p className="text-[11px] font-black text-indigo-400">{preview.length}개 품목 감지됨</p>
+                            <div className="rounded-xl overflow-hidden border border-zinc-800">
+                                <table className="w-full text-xs">
+                                    <thead>
+                                        <tr className="bg-zinc-900 text-zinc-600 font-black uppercase text-[10px]">
+                                            <th className="px-3 py-1.5 text-left">품명</th>
+                                            <th className="px-3 py-1.5 text-right">공급가</th>
+                                            <th className="px-3 py-1.5 text-right">판매가</th>
+                                            <th className="px-3 py-1.5 text-right">마진</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-900">
+                                        {preview.map((p, i) => (
+                                            <tr key={i} className="bg-zinc-950">
+                                                <td className="px-3 py-1.5 font-bold text-zinc-200">{p.displayName}</td>
+                                                <td className="px-3 py-1.5 text-right text-rose-400 font-bold">{p.supplyPrice.toLocaleString()}</td>
+                                                <td className="px-3 py-1.5 text-right text-zinc-400">{(p.sellingPrice || 0).toLocaleString()}</td>
+                                                <td className="px-3 py-1.5 text-right text-sky-400">{(p.margin || 0).toLocaleString()}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                    <div className="flex gap-2">
+                        <button onClick={handleCancel} className="flex-1 py-2 text-[12px] font-black text-zinc-500 bg-zinc-900 hover:bg-zinc-800 rounded-xl transition-all">
+                            취소
                         </button>
-                    </td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-));
+                        <button
+                            onClick={handleConfirm}
+                            disabled={!preview || !preview.length}
+                            className="flex-1 py-2 text-[12px] font-black text-white bg-indigo-500 hover:bg-indigo-600 rounded-xl transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                            {preview?.length ? `${preview.length}개 품목 추가` : '붙여넣기 대기 중'}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+});
 
 export default PricingEditor;
