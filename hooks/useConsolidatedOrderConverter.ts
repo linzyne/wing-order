@@ -404,14 +404,12 @@ const consolidateMatchedOrders = (
     // 1. kg 기반 품목 패밀리 빌드: familyKey → [{productKey, kg, config}] (kg 내림차순)
     // familyKey: displayName에서 kg를 뺀 이름. 단, 이름이 kg만인 경우(예: "3kg")엔 baseName이
     // 비어있으므로 siteProductName(품목키워드)으로 구분 — 같은 키워드를 가진 품목만 같은 패밀리로 묶음
-    // displayName이 "1kg"처럼 순수 kg만인 경우(nameBase="") siteProductName도 없으면
-    // 해당 업체의 모든 kg 품목을 하나의 패밀리로 자동 묶음
     const families = new Map<string, { productKey: string; kg: number; config: ProductPricing }[]>();
     for (const [pk, p] of Object.entries(companyProducts)) {
         const kg = parseKgFromName(p.displayName);
         if (kg === null) continue;
         const nameBase = getProductBaseName(p.displayName);
-        const base = nameBase || p.siteProductName || '__auto_kg__';
+        const base = nameBase || p.siteProductName || pk;
         if (!families.has(base)) families.set(base, []);
         families.get(base)!.push({ productKey: pk, kg, config: p });
     }
@@ -442,7 +440,7 @@ const consolidateMatchedOrders = (
                 continue;
             }
             const nameBase = getProductBaseName(o.config.displayName);
-            const base = nameBase || o.config.siteProductName || '__auto_kg__';
+            const base = nameBase || o.config.siteProductName || o.productKey;
             if (!families.has(base) || families.get(base)!.length <= 1) {
                 result.push(o);
                 continue;
