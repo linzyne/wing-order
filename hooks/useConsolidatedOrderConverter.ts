@@ -409,7 +409,7 @@ const consolidateMatchedOrders = (
         const kg = parseKgFromName(p.displayName);
         if (kg === null) continue;
         const nameBase = getProductBaseName(p.displayName);
-        const base = nameBase || p.siteProductName || pk;
+        const base = nameBase || p.siteProductName || '__auto_kg__';
         if (!families.has(base)) families.set(base, []);
         families.get(base)!.push({ productKey: pk, kg, config: p });
     }
@@ -440,7 +440,7 @@ const consolidateMatchedOrders = (
                 continue;
             }
             const nameBase = getProductBaseName(o.config.displayName);
-            const base = nameBase || o.config.siteProductName || o.productKey;
+            const base = nameBase || o.config.siteProductName || '__auto_kg__';
             if (!families.has(base) || families.get(base)!.length <= 1) {
                 result.push(o);
                 continue;
