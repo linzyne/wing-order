@@ -679,7 +679,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                 onClick={() => toggleStep(step)}
                                                 className={`px-1.5 py-0.5 rounded text-[9px] font-black transition-all ${
                                                     workflow[step] 
-                                                        ? (step === 'order' ? 'bg-amber-500' : step === 'deposit' ? 'bg-emerald-500' : 'bg-indigo-500') + ' text-white shadow-md'
+                                                        ? (step === 'order' ? 'bg-pink-500' : step === 'deposit' ? 'bg-emerald-500' : 'bg-indigo-500') + ' text-white shadow-md'
                                                         : 'text-zinc-600 hover:text-zinc-400'
                                                 }`}
                                             >
@@ -689,7 +689,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
 
                                     {deadline && (
-                                        <div className="bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-lg border border-amber-500/30 flex items-center gap-1 shrink-0">
+                                        <div className="bg-pink-500/10 text-pink-500 px-2 py-0.5 rounded-lg border border-pink-500/30 flex items-center gap-1 shrink-0">
                                             <span className="text-[9px] font-black uppercase opacity-70 tracking-tight">마감</span>
                                             <span className="text-[11px] font-black">{deadline}</span>
                                         </div>
@@ -712,13 +712,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                 value={adjAmount} 
                                                 onChange={e => setAdjAmount(e.target.value)} 
                                                 onKeyDown={e => e.key === 'Enter' && handleAddAdj()} 
-                                                className="w-20 bg-transparent border-none text-[10px] font-black text-amber-400 placeholder:text-zinc-700 focus:ring-0 p-0 text-right"
+                                                className="w-20 bg-transparent border-none text-[10px] font-black text-pink-400 placeholder:text-zinc-700 focus:ring-0 p-0 text-right"
                                             />
-                                            <button onClick={handleAddAdj} className="text-amber-500 hover:text-white hover:bg-amber-500 rounded p-0.5 transition-all">
+                                            <button onClick={handleAddAdj} className="text-pink-500 hover:text-white hover:bg-pink-500 rounded p-0.5 transition-all">
                                                 <PlusCircleIcon className="w-3 h-3" />
                                             </button>
                                         </div>
-                                        <button onClick={onAddSession} className="p-1 bg-zinc-800 text-zinc-500 rounded-lg hover:bg-amber-500 hover:text-white transition-all border border-zinc-700">
+                                        <button onClick={onAddSession} className="p-1 bg-zinc-800 text-zinc-500 rounded-lg hover:bg-pink-500 hover:text-white transition-all border border-zinc-700">
                                             <PlusCircleIcon className="w-4 h-4" />
                                         </button>
                                     </div>
@@ -752,10 +752,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             onKeyDown={e => { if (e.key === 'Enter') handleAddKeyword(); if (e.key === 'Escape') { newKeywordRef.current = ''; setIsAddingKeyword(false); setNewKeyword(''); } }}
                                             onBlur={() => handleAddKeyword()}
                                             placeholder="키워드 입력"
-                                            className="text-[9px] bg-zinc-950 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-700 font-bold w-20 outline-none focus:border-amber-500/50"
+                                            className="text-[9px] bg-zinc-950 text-zinc-300 px-1.5 py-0.5 rounded border border-zinc-700 font-bold w-20 outline-none focus:border-pink-500/50"
                                         />
                                     ) : (
-                                        <button onClick={() => setIsAddingKeyword(true)} className="text-[9px] bg-zinc-900/50 text-zinc-600 hover:text-amber-400 px-1.5 py-0.5 rounded border border-dashed border-zinc-800 hover:border-amber-500/30 font-bold transition-colors">+</button>
+                                        <button onClick={() => setIsAddingKeyword(true)} className="text-[9px] bg-zinc-900/50 text-zinc-600 hover:text-pink-400 px-1.5 py-0.5 rounded border border-dashed border-zinc-800 hover:border-pink-500/30 font-bold transition-colors">+</button>
                                     )}
                                 </div>
                             </>
@@ -784,7 +784,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="bg-zinc-950/50 px-2.5 py-1.5 rounded-lg border border-emerald-500/20 relative">
                                             <div className="flex justify-between items-center mb-1">
                                                 <div className="text-emerald-400 text-[9px] font-black">1~{roundNumber}차 합산 정산</div>
-                                                <button onClick={handleCopyCombined} className={`text-[9px] font-black px-2 py-0.5 rounded border transition-all ${copiedCombinedId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-amber-400 border-zinc-700 hover:text-white'}`}>{copiedCombinedId ? '복사됨!' : '카톡용'}</button>
+                                                <button onClick={handleCopyCombined} className={`text-[9px] font-black px-2 py-0.5 rounded border transition-all ${copiedCombinedId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-pink-400 border-zinc-700 hover:text-white'}`}>{copiedCombinedId ? '복사됨!' : '카톡용'}</button>
                                             </div>
                                             <pre className="text-[10px] font-mono text-zinc-300 whitespace-pre-wrap leading-tight">{combinedDepositText}</pre>
                                         </div>
@@ -809,14 +809,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 {isFirstSession && (
                                     <div className="flex items-center justify-center gap-4">
                                         <div className="text-center">
-                                            <div className="text-amber-400 font-black text-xl">{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            <div className="text-pink-400 font-black text-xl">{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                             <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                         </div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         {onDownloadMergedOrder ? (
                                             <button onClick={onDownloadMergedOrder} className="bg-zinc-800 text-white border border-zinc-700 px-3 py-1 rounded font-black text-[10px] hover:bg-zinc-700 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>합산</span></button>
                                         ) : (
-                                            <button onClick={handleDownloadOrder} className="bg-amber-500 text-white hover:bg-amber-600 px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
+                                            <button onClick={handleDownloadOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
                                         )}
                                     </div>
                                 )}
@@ -843,8 +843,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
                                 )}
                                 {unmatchedList.length > 0 && (
-                                    <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
-                                        <div className="text-amber-400 text-[10px] font-black flex items-center gap-1">
+                                    <div className="bg-pink-500/10 border border-pink-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-pink-400 text-[10px] font-black flex items-center gap-1">
                                             <span>⚠</span> 매칭 실패 {unmatchedList.length}건 누락
                                         </div>
                                         <div className="mt-1 space-y-0.5">
@@ -911,13 +911,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
                                 )}
                                 <div className="flex items-center gap-2">
-                                    <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-amber-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
+                                    <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                     {excludedList.length > 0 && (
-                                        <button onClick={() => setShowExcluded(!showExcluded)} className="text-amber-500 hover:text-amber-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                        <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
                                             제외({excludedList.length})
                                         </button>
                                     )}
-                                    <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-amber-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                    <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                 </div>
                             </div>
                         ) : isLocalProcessing ? (
@@ -935,7 +935,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="text-center">
                                         {isFirstSession && roundOrderCounts.length > 1 ? (
                                             <>
-                                                <div className="text-amber-400 font-black text-xl">{companyTotalOrders}</div>
+                                                <div className="text-pink-400 font-black text-xl">{companyTotalOrders}</div>
                                                 <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                                 <div className="flex items-center justify-center gap-1.5 mt-0.5">
                                                     {roundOrderCounts.map((r, i) => (
@@ -947,7 +947,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </>
                                         ) : (
                                             <>
-                                                <div className={`font-black ${isFirstSession ? 'text-amber-400 text-xl' : 'text-indigo-400 text-base'}`}>{isFirstSession ? '' : '+'}{syncedData.orderCount}</div>
+                                                <div className={`font-black ${isFirstSession ? 'text-pink-400 text-xl' : 'text-indigo-400 text-base'}`}>{isFirstSession ? '' : '+'}{syncedData.orderCount}</div>
                                                 <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                             </>
                                         )}
@@ -956,8 +956,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
                                 </div>
                                 {unmatchedList.length > 0 && (
-                                    <div className="bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
-                                        <div className="text-amber-400 text-[10px] font-black flex items-center gap-1">
+                                    <div className="bg-pink-500/10 border border-pink-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-pink-400 text-[10px] font-black flex items-center gap-1">
                                             <span>⚠</span> 매칭 실패 {unmatchedList.length}건 누락
                                         </div>
                                     </div>
@@ -1005,13 +1005,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
                                 )}
                                 <div className="flex items-center gap-2">
-                                    <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-amber-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
+                                    <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                     {(syncedData.excludedDetails?.length || 0) > 0 && (
-                                        <button onClick={() => setShowExcluded(!showExcluded)} className="text-amber-500 hover:text-amber-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                        <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
                                             제외({syncedData.excludedDetails.length})
                                         </button>
                                     )}
-                                    <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-amber-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                    <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                 </div>
                             </div>
                         ) : (
@@ -1033,10 +1033,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             return `모두 ${parts.join(' / ')}`;
                                         })()}</div>
                                         <div className="flex items-center gap-2">
-                                            <button onClick={() => setShowExcluded(!showExcluded)} className="text-amber-500 hover:text-amber-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                            <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
                                                 제외({excludedList.length})
                                             </button>
-                                            <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-amber-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                            <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                         </div>
                                     </div>
                                 ) : (
@@ -1112,7 +1112,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="text-rose-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">{mergeError}</div>
                                 )}
                                 {vendorFiles.length > 0 && mergeStatus === 'idle' && !(localFile || masterFile) && (
-                                    <div className="text-amber-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">발주서를 먼저 업로드해주세요</div>
+                                    <div className="text-pink-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">발주서를 먼저 업로드해주세요</div>
                                 )}
                             </div>
                         ) : (
@@ -1165,7 +1165,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     )}
                                 </div>
-                                <button onClick={() => { onVendorFileChange([]); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-amber-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => { onVendorFileChange([]); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
                             </div>
                         )}
                     </div>
@@ -1201,7 +1201,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 <div className="flex justify-between items-center mb-3">
                                     <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest">정산 요약</h5>
                                     <div className="flex gap-1.5">
-                                        <button onClick={() => handleCopy(sessionId, cumulativeDepositText || localResult?.depositSummary || syncedData?.depositSummary || '', 'kakao')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-amber-400 border-zinc-700 hover:text-white'}`}>{copiedId === sessionId ? '복사됨!' : '카톡용'}</button>
+                                        <button onClick={() => handleCopy(sessionId, cumulativeDepositText || localResult?.depositSummary || syncedData?.depositSummary || '', 'kakao')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-pink-400 border-zinc-700 hover:text-white'}`}>{copiedId === sessionId ? '복사됨!' : '카톡용'}</button>
                                         <button onClick={() => handleCopy(sessionId, cumulativeDepositExcelText || localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel || '', 'excel')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedExcelId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-indigo-400 border-zinc-700 hover:text-white'}`}>{copiedExcelId === sessionId ? '복사됨!' : '엑셀용'}</button>
                                     </div>
                                 </div>

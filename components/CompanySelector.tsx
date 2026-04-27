@@ -279,15 +279,15 @@ const CourierTemplateManager: React.FC<{
     const mappedIndices = new Set(Object.values(newMapping));
 
     return (
-        <div className="mb-4 bg-zinc-900/50 p-4 rounded-xl border border-amber-500/20 animate-fade-in space-y-4">
-            <h4 className="text-amber-500 font-black text-[10px] uppercase tracking-widest">택배 양식 관리</h4>
+        <div className="mb-4 bg-zinc-900/50 p-4 rounded-xl border border-pink-500/20 animate-fade-in space-y-4">
+            <h4 className="text-pink-500 font-black text-[10px] uppercase tracking-widest">택배 양식 관리</h4>
 
             {/* 기존 템플릿 목록 */}
             {templates.map((tmpl: CourierTemplate) => (
                 <div key={tmpl.id} className="flex items-center justify-between bg-zinc-950/80 px-4 py-3 rounded-xl border border-zinc-800">
                     <div className="flex items-center gap-3">
                         <span className="text-sm font-black text-white">{tmpl.name}</span>
-                        {tmpl.label && <span className="bg-amber-500/10 text-amber-400 text-[9px] px-2 py-0.5 rounded-full font-bold border border-amber-500/20">{tmpl.label}</span>}
+                        {tmpl.label && <span className="bg-pink-500/10 text-pink-400 text-[9px] px-2 py-0.5 rounded-full font-bold border border-pink-500/20">{tmpl.label}</span>}
                         <span className="text-[9px] text-zinc-500 font-mono">
                             {COURIER_DATA_FIELDS.map(f => `${f.label}:${colIndexToLetter(tmpl.mapping[f.key])}`).join('  ')}
                         </span>
@@ -299,7 +299,7 @@ const CourierTemplateManager: React.FC<{
                         <span className="bg-zinc-800 text-zinc-400 text-[9px] px-2 py-0.5 rounded-full">{tmpl.unitPrice.toLocaleString()}원/건</span>
                     </div>
                     <div className="flex items-center gap-2">
-                        <button onClick={() => handleEditTemplate(tmpl)} className="text-[9px] font-black text-zinc-500 hover:text-amber-400 transition-colors px-2 py-1 border border-zinc-800 hover:border-amber-500/40 rounded-lg">
+                        <button onClick={() => handleEditTemplate(tmpl)} className="text-[9px] font-black text-zinc-500 hover:text-pink-400 transition-colors px-2 py-1 border border-zinc-800 hover:border-pink-500/40 rounded-lg">
                             수정
                         </button>
                         <button onClick={() => handleDeleteTemplate(tmpl.id)} className="text-zinc-700 hover:text-rose-500 transition-colors">
@@ -311,7 +311,7 @@ const CourierTemplateManager: React.FC<{
 
             {/* 새 양식 추가 */}
             {!showAddForm ? (
-                <button onClick={() => { setEditingId(null); setShowAddForm(true); }} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-zinc-700 rounded-xl text-[10px] font-black text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-colors">
+                <button onClick={() => { setEditingId(null); setShowAddForm(true); }} className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border border-dashed border-zinc-700 rounded-xl text-[10px] font-black text-zinc-500 hover:border-pink-500/40 hover:text-pink-400 transition-colors">
                     <PlusCircleIcon className="w-4 h-4" />
                     새 양식 추가
                 </button>
@@ -320,21 +320,21 @@ const CourierTemplateManager: React.FC<{
                     <div className="flex gap-3">
                         <div className="flex-1">
                             <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배사 이름</label>
-                            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: CJ대한통운" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500/50" />
+                            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: CJ대한통운" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
                         </div>
                         <div className="flex-1">
                             <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">명칭 (구분용)</label>
-                            <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 과일용, 3kg박스" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500/50" />
+                            <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 과일용, 3kg박스" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
                         </div>
                         <div className="w-28">
                             <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">건당 단가</label>
-                            <input value={newUnitPrice} onChange={(e) => setNewUnitPrice(e.target.value)} placeholder="2270" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500/50" />
+                            <input value={newUnitPrice} onChange={(e) => setNewUnitPrice(e.target.value)} placeholder="2270" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
                         </div>
                     </div>
 
                     <div>
                         <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배예약용 양식</label>
-                        <label className={`flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${newHeaders.length > 0 ? 'bg-amber-950/30 border-amber-500/30 text-amber-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400'}`}>
+                        <label className={`flex items-center justify-center gap-2 cursor-pointer px-4 py-2.5 rounded-xl text-[10px] font-black border transition-all shadow-md ${newHeaders.length > 0 ? 'bg-amber-950/30 border-pink-500/30 text-pink-400' : 'bg-zinc-900/50 border-zinc-700 text-zinc-500 hover:border-pink-500/40 hover:text-pink-400'}`}>
                             {newHeaders.length > 0 ? <CheckIcon className="w-4 h-4" /> : <ArrowDownTrayIcon className="w-4 h-4" />}
                             <span>{newHeaders.length > 0 ? `${newHeaders.length}개 열 감지됨` : '엑셀 파일 선택'}</span>
                             <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={handleTemplateFileUpload} />
@@ -358,7 +358,7 @@ const CourierTemplateManager: React.FC<{
                                                     setNewMapping(prev => ({ ...prev, [field.key]: Number(e.target.value) }));
                                                 }
                                             }}
-                                            className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-amber-500/50"
+                                            className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-pink-500/50"
                                         >
                                             <option value="">선택...</option>
                                             {newHeaders.map((h, idx) => (
@@ -388,7 +388,7 @@ const CourierTemplateManager: React.FC<{
                                                             return next;
                                                         })}
                                                         placeholder="비워두기"
-                                                        className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-amber-500/50"
+                                                        className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-pink-500/50"
                                                     />
                                                 </div>
                                             );
@@ -458,7 +458,7 @@ const CourierTemplateManager: React.FC<{
                         <button onClick={resetForm} className="px-4 py-2 rounded-xl text-[10px] font-black text-zinc-500 hover:text-white border border-zinc-800 transition-colors">
                             취소
                         </button>
-                        <button onClick={handleSaveTemplate} className="px-4 py-2 rounded-xl text-[10px] font-black bg-amber-600 hover:bg-amber-500 text-white transition-colors shadow-lg">
+                        <button onClick={handleSaveTemplate} className="px-4 py-2 rounded-xl text-[10px] font-black bg-pink-600 hover:bg-pink-500 text-white transition-colors shadow-lg">
                             {editingId ? '수정 저장' : '저장'}
                         </button>
                     </div>
@@ -2798,7 +2798,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </div>
                             </div>
                             <div className="flex-1 min-w-0">
-                                <div className="text-xs font-black text-amber-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, fakeTotalExtras)})</div>
+                                <div className="text-xs font-black text-pink-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, fakeTotalExtras)})</div>
                                 <div>
                                     {(() => {
                                         const grouped: Record<string, [string, number][]> = {};
@@ -2830,7 +2830,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
                                                     <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
                                                         <span className="text-zinc-400">{name}</span>
-                                                        <span className={`font-black ${count > 0 ? 'text-amber-400' : 'text-zinc-700'}`}>{fmtCountFromExtras(count, fakeExtrasFor(name))}</span>
+                                                        <span className={`font-black ${count > 0 ? 'text-pink-400' : 'text-zinc-700'}`}>{fmtCountFromExtras(count, fakeExtrasFor(name))}</span>
                                                                                                             </div>
                                                 ))}
                                             </div>
@@ -2868,12 +2868,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 </div>
                                                 <div className="space-y-0.5 mt-0.5">
                                                     {orders.map((o, idx) => (
-                                                        <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-amber-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
+                                                        <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-pink-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
                                                             <span className="min-w-[50px]">{o.recipientName}</span>
                                                             <span className="text-zinc-600">{o.groupName}</span>
                                                             <span className="truncate">{o.productName}</span>
                                                             {o.qty > 1 && <span className="text-white font-bold">x{o.qty}</span>}
-                                                            {o.isFake && <span className="text-amber-500/50 text-[8px]">가구매</span>}
+                                                            {o.isFake && <span className="text-pink-500/50 text-[8px]">가구매</span>}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -3054,7 +3054,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         onDrop={(e) => { e.preventDefault(); e.stopPropagation(); const f = e.dataTransfer.files?.[0]; if (f) handleMasterUpload(f); }}
                         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
                     >
-                        <div className="bg-amber-500/10 p-1 rounded-lg shrink-0"><DocumentArrowUpIcon className="w-3.5 h-3.5 text-amber-400" /></div>
+                        <div className="bg-pink-500/10 p-1 rounded-lg shrink-0"><DocumentArrowUpIcon className="w-3.5 h-3.5 text-pink-400" /></div>
                         <span className="text-[12px] font-black text-zinc-400">발주서 엑셀 업로드</span>
                         <input id={`file-upload-sidebar-${businessId}`} type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleMasterUpload(f); }} />
                     </label>
@@ -3085,7 +3085,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <span className="text-zinc-600">=</span>
                                         <span className="text-emerald-400">실제 {masterProductSummary.realTotal}</span>
                                         <span className="text-zinc-600">+</span>
-                                        <span className="text-amber-400">가구매 {masterProductSummary.fakeTotal}</span>
+                                        <span className="text-pink-400">가구매 {masterProductSummary.fakeTotal}</span>
                                         {diff > 0 && <span className="text-red-400 ml-1">({diff}건 누락)</span>}
                                     </div>
                                     {diff > 0 && masterProductSummary.skippedOrders.length > 0 && (
@@ -3135,7 +3135,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             </span>
                                         )}
                                         {fakeOrderAnalysis.duplicates.length > 0 && (
-                                            <span className="bg-amber-500 text-black text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
+                                            <span className="bg-pink-500 text-black text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
                                                 중복번호 {fakeOrderAnalysis.duplicates.length}
                                             </span>
                                         )}
@@ -3147,7 +3147,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <button onClick={() => setShowFakeCourierSettings(!showFakeCourierSettings)} className={`p-1 transition-colors ${showFakeCourierSettings ? 'text-cyan-500' : 'text-zinc-600 hover:text-white'}`} title="가구매 택배 설정">
                                 <Cog6ToothIcon className="w-3.5 h-3.5" />
                             </button>
-                            <button onClick={() => setShowTemplateManager(!showTemplateManager)} className={`p-1 transition-colors ${showTemplateManager ? 'text-amber-500' : 'text-zinc-600 hover:text-white'}`} title="택배 양식 관리">
+                            <button onClick={() => setShowTemplateManager(!showTemplateManager)} className={`p-1 transition-colors ${showTemplateManager ? 'text-pink-500' : 'text-zinc-600 hover:text-white'}`} title="택배 양식 관리">
                                 <BoltIcon className="w-3.5 h-3.5" />
                             </button>
                             <button onClick={() => setShowFakeDetail(!showFakeDetail)} className={`p-1 transition-colors ${showFakeDetail ? 'text-rose-500' : 'text-zinc-600 hover:text-white'}`} title="상세 누락 내역">
@@ -3161,15 +3161,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <div className="space-y-3">
                                 {fakeOrderAnalysis.duplicates.length > 0 && (
                                     <div>
-                                        <h4 className="text-amber-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
-                                            <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse" />
+                                        <h4 className="text-pink-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
+                                            <span className="w-2 h-2 bg-pink-500 rounded-full animate-pulse" />
                                             중복 번호 ({fakeOrderAnalysis.duplicates.length}건)
                                         </h4>
                                         <div className="space-y-1">
                                             {fakeOrderAnalysis.duplicates.map(dup => (
-                                                <div key={dup.number} className="flex items-center gap-2 bg-amber-950/30 border border-amber-500/20 px-2.5 py-1.5 rounded-lg flex-wrap">
-                                                    <span className="text-[11px] font-black text-amber-400">{dup.names.join(', ')}</span>
-                                                    <span className="text-[10px] font-mono text-amber-500/70">{dup.number}</span>
+                                                <div key={dup.number} className="flex items-center gap-2 bg-amber-950/30 border border-pink-500/20 px-2.5 py-1.5 rounded-lg flex-wrap">
+                                                    <span className="text-[11px] font-black text-pink-400">{dup.names.join(', ')}</span>
+                                                    <span className="text-[10px] font-mono text-pink-500/70">{dup.number}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -3268,7 +3268,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         />
                         <div className="space-y-2">
                             {courierTemplates.length === 0 && (
-                                <div className="text-center py-2 text-zinc-600 text-[9px] font-black border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-amber-500/30 hover:text-amber-500 transition-colors" onClick={() => setShowTemplateManager(true)}>
+                                <div className="text-center py-2 text-zinc-600 text-[9px] font-black border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-pink-500/30 hover:text-pink-500 transition-colors" onClick={() => setShowTemplateManager(true)}>
                                     택배 양식을 먼저 추가해주세요
                                 </div>
                             )}
@@ -3280,7 +3280,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 const isOffice = fullName.includes('사무실');
                                 const isAgent = fullName.includes('대행');
                                 const cs = isOffice
-                                    ? { border: 'border-amber-500/30', bg: 'bg-amber-950/30', text: 'text-amber-400', hoverBg: 'hover:bg-amber-900/40', hoverBorder: 'hover:border-amber-500/50', activeBg: 'bg-amber-950/30 border-amber-500/30 text-amber-400', inactiveBorder: 'hover:border-amber-500/40 hover:text-amber-400' }
+                                    ? { border: 'border-pink-500/30', bg: 'bg-amber-950/30', text: 'text-pink-400', hoverBg: 'hover:bg-amber-900/40', hoverBorder: 'hover:border-pink-500/50', activeBg: 'bg-amber-950/30 border-pink-500/30 text-pink-400', inactiveBorder: 'hover:border-pink-500/40 hover:text-pink-400' }
                                     : isAgent
                                     ? { border: 'border-cyan-500/30', bg: 'bg-cyan-950/30', text: 'text-cyan-400', hoverBg: 'hover:bg-cyan-900/40', hoverBorder: 'hover:border-cyan-500/50', activeBg: 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400', inactiveBorder: 'hover:border-cyan-500/40 hover:text-cyan-400' }
                                     : { border: 'border-indigo-500/30', bg: 'bg-indigo-950/30', text: 'text-indigo-400', hoverBg: 'hover:bg-indigo-900/40', hoverBorder: 'hover:border-indigo-500/50', activeBg: 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400', inactiveBorder: 'hover:border-indigo-500/40 hover:text-indigo-400' };
@@ -3448,7 +3448,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             {exp.category}
                                         </span>
                                         {exp.company && (
-                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/25 shrink-0">
+                                            <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-pink-500/15 text-pink-400 border border-pink-500/25 shrink-0">
                                                 {exp.company} · {exp.productName || exp.productKey}
                                             </span>
                                         )}
