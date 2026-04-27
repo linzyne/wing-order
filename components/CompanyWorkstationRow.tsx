@@ -804,7 +804,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     onChange={e => setSessionMemo(e.target.value)}
                                     placeholder="메모"
                                     rows={2}
-                                    className="w-full text-[10px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight"
+                                    className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
                                 />
                                 {isFirstSession && (
                                     <div className="flex items-center justify-center gap-4">
@@ -929,7 +929,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     onChange={e => setSessionMemo(e.target.value)}
                                     placeholder="메모"
                                     rows={2}
-                                    className="w-full text-[10px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight"
+                                    className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
                                 />
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="text-center">
@@ -1021,7 +1021,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     onChange={e => setSessionMemo(e.target.value)}
                                     placeholder="메모"
                                     rows={2}
-                                    className="w-full text-[10px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight"
+                                    className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
                                 />
                                 {excludedList.length > 0 ? (
                                     <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
