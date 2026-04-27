@@ -513,6 +513,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allHeaders, setAllHeaders] = useState<Record<string, any[]>>({});
     const [allSummaries, setAllSummaries] = useState<Record<string, string>>({});
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
+    const [checkedCompanies, setCheckedCompanies] = useState<Set<string>>(new Set());
 
     // 워크스테이션 수동 초기화 함수
     const handleResetWorkstations = useCallback(() => {
@@ -3734,10 +3735,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     const sessions = companySessions[c] || [];
                                     const orderCount = sessions.reduce((sum, s) => sum + (allOrderRows[s.id]?.length || 0), 0);
                                     const firstSessionWithData = sessions.find(s => (allOrderRows[s.id]?.length || 0) > 0);
+                                    const isChecked = checkedCompanies.has(c);
                                     return (
-                                        <button key={c} onClick={() => { if (firstSessionWithData) handleToastClick(firstSessionWithData.id); }}
-                                            className="px-4 py-2 rounded-xl bg-emerald-500/20 text-emerald-300 font-black text-base hover:bg-emerald-500/30 hover:scale-105 transition-all cursor-pointer border border-emerald-500/30 shadow-lg shadow-emerald-500/10">
-                                            {c} <span className="text-emerald-400 ml-1">{orderCount}</span>
+                                        <button key={c}
+                                            onClick={() => {
+                                                setCheckedCompanies(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(c)) { next.delete(c); } else { next.add(c); }
+                                                    return next;
+                                                });
+                                            }}
+                                            onDoubleClick={() => { if (firstSessionWithData) handleToastClick(firstSessionWithData.id); }}
+                                            title={isChecked ? '클릭해서 켜기 / 더블클릭해서 이동' : '클릭해서 끄기 / 더블클릭해서 이동'}
+                                            className={`px-4 py-2 rounded-xl font-black text-base transition-all cursor-pointer border shadow-lg select-none ${isChecked ? 'bg-zinc-800/60 text-zinc-600 border-zinc-700/40 shadow-none line-through' : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 hover:scale-105 border-emerald-500/30 shadow-emerald-500/10'}`}>
+                                            {c} <span className={`ml-1 ${isChecked ? 'text-zinc-600' : 'text-emerald-400'}`}>{orderCount}</span>
                                         </button>
                                     );
                                 })}
