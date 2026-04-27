@@ -137,6 +137,7 @@ export interface DailyWorkspaceData {
   expenses?: any[];
   sessionWorkflows: Record<string, { order: boolean; deposit: boolean; invoice: boolean }>;
   sessionAdjustments: Record<string, any[]>;
+  sessionMemos?: Record<string, string>;
   sessionResults?: Record<string, SessionResultData>;
   thumbnailNotes?: { id: string; imageData: string; memos: [string, string, string] }[];
   updatedAt?: any;

@@ -122,6 +122,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const [workflow, setWorkflow] = useState<WorkflowStatus>({ order: false, deposit: false, invoice: false });
     const [showPrevRoundItems, setShowPrevRoundItems] = useState(false);
+    const [sessionMemo, setSessionMemo] = useState('');
 
     // 사이즈 불일치 감지: 매칭된 품목 키의 kg와 원본 옵션명의 kg가 다른 항목
     const sizeMismatchItems = (() => {
@@ -269,6 +270,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // Firestore 동기화 - 값 비교로 에코 방지
     const lastFirestoreWorkflowRef = useRef('');
     const lastFirestoreAdjRef = useRef('');
+    const lastFirestoreMemoRef = useRef('');
 
     useEffect(() => {
         if (!workspace) return;
@@ -284,6 +286,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             if (wsStr !== lastFirestoreAdjRef.current) {
                 setSessionAdjustments(workspace.sessionAdjustments[sessionId]);
                 lastFirestoreAdjRef.current = wsStr;
+            }
+        }
+        if (typeof workspace.sessionMemos?.[sessionId] === 'string') {
+            const memoStr = workspace.sessionMemos[sessionId];
+            if (memoStr !== lastFirestoreMemoRef.current) {
+                setSessionMemo(memoStr);
+                lastFirestoreMemoRef.current = memoStr;
             }
         }
     }, [workspace, sessionId]);
@@ -307,6 +316,16 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const currentAdjs = workspace?.sessionAdjustments || {};
         updateField('sessionAdjustments', { ...currentAdjs, [sessionId]: sessionAdjustments });
     }, [sessionAdjustments, sessionId, updateField]);
+
+    // sessionMemo 변경 → Firestore에 저장
+    const isInitialMemoLoad = useRef(true);
+    useEffect(() => {
+        if (isInitialMemoLoad.current) { isInitialMemoLoad.current = false; return; }
+        if (sessionMemo === lastFirestoreMemoRef.current) return;
+        lastFirestoreMemoRef.current = sessionMemo;
+        const currentMemos = workspace?.sessionMemos || {};
+        updateField('sessionMemos', { ...currentMemos, [sessionId]: sessionMemo });
+    }, [sessionMemo, sessionId, updateField]);
 
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);
@@ -780,6 +799,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {localResult ? (
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
+                                <textarea
+                                    value={sessionMemo}
+                                    onChange={e => setSessionMemo(e.target.value)}
+                                    placeholder="메모"
+                                    rows={2}
+                                    className="w-full text-[10px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight"
+                                />
                                 {isFirstSession && (
                                     <div className="flex items-center justify-center gap-4">
                                         <div className="text-center">
@@ -898,6 +924,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             <div className="flex flex-col items-center gap-1 text-indigo-400 font-black animate-pulse"><div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /><span className="text-[9px] uppercase tracking-widest">Analysing...</span></div>
                         ) : syncedData ? (
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
+                                <textarea
+                                    value={sessionMemo}
+                                    onChange={e => setSessionMemo(e.target.value)}
+                                    placeholder="메모"
+                                    rows={2}
+                                    className="w-full text-[10px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight"
+                                />
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="text-center">
                                         {isFirstSession && roundOrderCounts.length > 1 ? (
@@ -982,7 +1015,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex flex-col items-center gap-2">
+                            <div className="flex flex-col items-center gap-2 w-full">
+                                <textarea
+                                    value={sessionMemo}
+                                    onChange={e => setSessionMemo(e.target.value)}
+                                    placeholder="메모"
+                                    rows={2}
+                                    className="w-full text-[10px] bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-zinc-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight"
+                                />
                                 {excludedList.length > 0 ? (
                                     <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
                                         <div className="text-zinc-500 font-black text-[10px]">{(() => {
