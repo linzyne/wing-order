@@ -3772,7 +3772,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
             </div>
 
-            <section className="glass rounded-[1.8rem] overflow-hidden shadow-xl">
+            <div className="flex gap-3 items-start">
+            <section className="glass rounded-[1.8rem] overflow-hidden shadow-xl flex-1 min-w-0">
                 <div className="p-6 border-b border-zinc-900 bg-zinc-900/40 flex items-center justify-between">
                     <div className="flex items-center gap-3">
                         <div className="bg-zinc-800 p-2 rounded-xl border border-zinc-700"><BuildingStorefrontIcon className="w-5 h-5 text-rose-500" /></div>
@@ -3939,6 +3940,42 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     </DndContext>
                 </div>
             </section>
+
+            {/* 완료 업체 세로 사이드바 */}
+            {(() => {
+                const allCompanies = sortCompanies(Object.keys(pricingConfig));
+                const completed = allCompanies.filter(c => {
+                    const sessions = companySessions[c] || [];
+                    return sessions.some(s => (allOrderRows[s.id]?.length || 0) > 0);
+                });
+                const pending = allCompanies.filter(c => !completed.includes(c));
+                if (completed.length === 0) return null;
+                return (
+                    <div className="sticky top-4 flex flex-col gap-0.5 w-20 shrink-0 pt-1">
+                        <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-1 px-1">{completed.length}/{allCompanies.length}</span>
+                        {completed.map(c => {
+                            const firstSession = (companySessions[c] || []).find(s => (allOrderRows[s.id]?.length || 0) > 0);
+                            return (
+                                <button key={c} onClick={() => firstSession && handleToastClick(firstSession.id)}
+                                    className="text-left text-[10px] font-black text-emerald-400 hover:text-white px-2 py-1 rounded-lg bg-emerald-950/20 hover:bg-emerald-950/50 border border-emerald-900/40 hover:border-emerald-500/30 transition-all truncate">
+                                    {c}
+                                </button>
+                            );
+                        })}
+                        {pending.length > 0 && <div className="h-px bg-zinc-800/50 my-1" />}
+                        {pending.map(c => {
+                            const firstSession = (companySessions[c] || [])[0];
+                            return (
+                                <button key={c} onClick={() => firstSession && handleToastClick(firstSession.id)}
+                                    className="text-left text-[10px] font-bold text-zinc-700 hover:text-zinc-500 px-2 py-1 rounded-lg hover:bg-zinc-800/30 transition-all truncate">
+                                    {c}
+                                </button>
+                            );
+                        })}
+                    </div>
+                );
+            })()}
+            </div>
 
             {/* 토스트 알림 */}
             {toasts.length > 0 && (
