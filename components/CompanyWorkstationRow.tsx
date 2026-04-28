@@ -55,6 +55,7 @@ interface CompanyWorkstationRowProps {
     isFirstSession: boolean;
     isLastSession: boolean;
     pricingConfig: PricingConfig;
+    companySummaryBar?: React.ReactNode;
     vendorFiles: File[];
     masterFile: File | null;
     batchFile?: File | null;
@@ -89,6 +90,7 @@ interface CompanyWorkstationRowProps {
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
+    companySummaryBar,
     previousRoundItems = [],
     manualOrdersRejected = false, onManualOrdersApproval,
     businessId, onConfigChange, masterExpectedCount = 0,
@@ -663,6 +665,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     <div className="flex flex-col gap-2">
                         {isFirstSession ? (
                             <>
+                                {companySummaryBar}
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <div
                                         className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${isAllDone ? 'text-emerald-400' : 'text-white'}`}
@@ -816,9 +819,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         {onDownloadMergedOrder ? (
-                                            <button onClick={onDownloadMergedOrder} className="bg-zinc-800 text-white border border-zinc-700 px-3 py-1 rounded font-black text-[10px] hover:bg-zinc-700 shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>합산</span></button>
+                                            <button onClick={onDownloadMergedOrder} className="bg-zinc-800 text-white border border-zinc-700 px-2.5 py-0.5 rounded font-black text-[9px] hover:bg-zinc-700 shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산</span></button>
                                         ) : (
-                                            <button onClick={handleDownloadOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
+                                            <button onClick={handleDownloadOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
                                         )}
                                     </div>
                                 )}
@@ -828,7 +831,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                     </div>
                                     <div className="h-6 w-px bg-zinc-800" />
-                                    <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-3 py-1 rounded font-black text-[10px] shadow-md flex items-center gap-1.5 transition-all"><ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>받기</span></button>
+                                    <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
                                 </div>
                                 {(localResult as any).consolidationLog?.length > 0 && (
                                     <div className="bg-blue-500/10 border border-blue-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
