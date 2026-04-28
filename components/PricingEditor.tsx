@@ -65,6 +65,16 @@ const parsePastedTable = (text: string): { products: ProductPricing[]; error?: s
         }
     }
 
+    // 헤더 다중줄 셀 등으로 marginIdx 미감지 시 첫 데이터 행 기준 보완
+    if (marginIdx === -1 && dataStartRow < rows.length) {
+        const dataRow = rows[dataStartRow];
+        const afterSell = sellingIdx >= 0 ? sellingIdx : 0;
+        for (let i = dataRow.length - 1; i > afterSell; i--) {
+            const v = parseNum(dataRow[i] || '');
+            if (v > 0 && !hasPercent(dataRow[i] || '')) { marginIdx = i; break; }
+        }
+    }
+
     const products: ProductPricing[] = [];
 
     for (let i = dataStartRow; i < rows.length; i++) {
