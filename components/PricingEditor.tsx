@@ -1510,7 +1510,8 @@ const ProductRow: React.FC<{
     onToggleSelect: (e: React.MouseEvent) => void;
     onUpdate: (key: string, updated: ProductPricing) => void;
     onDelete: () => void;
-}> = React.memo(({ productKey, product, isSelected, onToggleSelect, onUpdate, onDelete }) => {
+    onOpenEditor: () => void;
+}> = React.memo(({ productKey, product, isSelected, onToggleSelect, onUpdate, onDelete, onOpenEditor }) => {
     const [editField, setEditField] = useState<string | null>(null);
     const [editVal, setEditVal] = useState('');
     const [expanded, setExpanded] = useState(false);
@@ -1579,26 +1580,16 @@ const ProductRow: React.FC<{
                     />
                 </td>
                 <td className="px-2 py-1.5">
-                    {editField === 'displayName' ? (
-                        <input autoFocus type="text" value={editVal}
-                            onChange={e => setEditVal(e.target.value)}
-                            onBlur={() => commit('displayName')}
-                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditField(null); }}
-                            className={`${inputClass} font-black`}
-                            onClick={e => e.stopPropagation()}
-                        />
-                    ) : (
-                        <div className="cursor-text" onClick={(e) => startEdit('displayName', product.displayName, e)}>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-black text-zinc-100 text-[13px] hover:opacity-70 transition-opacity">{product.displayName}</span>
-                                {product.orderFormName && <span className="text-[9px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>}
-                                {product.orderSplitCount && product.orderSplitCount > 1 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-violet-400 bg-violet-500/10 border-violet-500/20">x{product.orderSplitCount}</span>}
-                                {product.shippingCost && product.shippingCost > 0 && <span className="text-[9px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>}
-                                {product.siteProductName && <span className="text-[9px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">🔑 {product.siteProductName}</span>}
-                            </div>
-                            {product.aliases && product.aliases.length > 0 && <div className="text-[10px] text-zinc-600 truncate max-w-xs mt-0.5">{product.aliases.join(', ')}</div>}
+                    <div className="cursor-pointer" onClick={(e) => { e.stopPropagation(); onOpenEditor(); }}>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-black text-zinc-100 text-[13px] hover:opacity-70 transition-opacity">{product.displayName}</span>
+                            {product.orderFormName && <span className="text-[9px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">{product.orderFormName}</span>}
+                            {product.orderSplitCount && product.orderSplitCount > 1 && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded border text-violet-400 bg-violet-500/10 border-violet-500/20">x{product.orderSplitCount}</span>}
+                            {product.shippingCost && product.shippingCost > 0 && <span className="text-[9px] text-teal-400 font-bold bg-teal-500/10 px-1.5 py-0.5 rounded border border-teal-500/20">+{product.shippingCost.toLocaleString()}</span>}
+                            {product.siteProductName && <span className="text-[9px] text-emerald-500 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">🔑 {product.siteProductName}</span>}
                         </div>
-                    )}
+                        {product.aliases && product.aliases.length > 0 && <div className="text-[10px] text-zinc-600 truncate max-w-xs mt-0.5">{product.aliases.join(', ')}</div>}
+                    </div>
                 </td>
                 <td className="px-3 py-1.5 text-right font-black text-rose-400 text-[13px] whitespace-nowrap">
                     {numCell('supplyPrice', product.supplyPrice, 'font-black text-rose-400 text-[13px]')}
@@ -1660,7 +1651,7 @@ const ProductTable: React.FC<{
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
     onBulkUpdateKeyword: (productKeys: string[], keyword: string) => void;
     onUpdateProduct: (productKey: string, product: ProductPricing) => void;
-}> = React.memo(({ products, onAddProduct, onBulkAddProducts, onDeleteProduct, onOpenProductEditor: _onOpenProductEditor, onBulkUpdateKeyword, onUpdateProduct }) => {
+}> = React.memo(({ products, onAddProduct, onBulkAddProducts, onDeleteProduct, onOpenProductEditor, onBulkUpdateKeyword, onUpdateProduct }) => {
     const [showPaste, setShowPaste] = useState(false);
     const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
     const [bulkKeyword, setBulkKeyword] = useState('');
@@ -1718,6 +1709,7 @@ const ProductTable: React.FC<{
                             }}
                             onUpdate={onUpdateProduct}
                             onDelete={() => onDeleteProduct(productKey)}
+                            onOpenEditor={() => onOpenProductEditor(productKey, products[productKey])}
                         />
                     ))}
                     {selectedKeys.size > 0 && (
