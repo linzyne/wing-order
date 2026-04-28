@@ -1567,7 +1567,6 @@ const ProductRow: React.FC<{
         { field: 'siteProductName', label: '품목 키워드', value: product.siteProductName || '' },
         { field: 'shippingCost', label: '배송비', value: product.shippingCost ? String(product.shippingCost) : '' },
         { field: 'orderSplitCount', label: '수량 변환', value: product.orderSplitCount ? String(product.orderSplitCount) : '' },
-        { field: 'aliases', label: '매칭 키워드', value: (product.aliases || []).join(', '), wide: true },
     ];
 
     return (
@@ -1626,9 +1625,9 @@ const ProductRow: React.FC<{
             {expanded && (
                 <tr className="bg-zinc-900/30">
                     <td colSpan={6} className="px-3 pb-3 pt-1.5">
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-2 pl-7">
-                            {extraFields.map(({ field, label, value, wide }) => (
-                                <div key={field} className={wide ? 'col-span-2' : ''}>
+                        <div className="grid grid-cols-4 gap-x-4 pl-7">
+                            {extraFields.map(({ field, label, value }) => (
+                                <div key={field}>
                                     <label className="text-[9px] font-black text-zinc-600 uppercase tracking-wider block mb-0.5">{label}</label>
                                     {editField === field ? (
                                         <input autoFocus type="text" value={editVal}
