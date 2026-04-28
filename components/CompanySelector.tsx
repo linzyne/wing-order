@@ -762,7 +762,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const [manualInput, setManualInput] = useState({
-        companyName: '', recipientName: '', phone: '', address: '', productName: '', qty: '1', memo: ''
+        companyName: '', recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: ''
     });
 
 
@@ -1817,7 +1817,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         };
         setManualOrders(prev => [...prev, newOrder]);
         setSelectedManualOrderIds(prev => new Set([...prev, newOrder.id]));
-        setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', productName: '', qty: '1', memo: '' }));
+        setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: '' }));
     };
 
     const handleQuickSelect = (person: { name: string, phone: string, address: string }) => {
@@ -2989,7 +2989,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     </div>
                     <form onSubmit={handleAddManualOrder} className="flex flex-col gap-2">
                         <div className="grid grid-cols-2 gap-2">
-                            <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value, productName: ''})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
+                            <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value, productName: '', productKey: ''})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
                                 <option value="">업체 선택</option>
                                 {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
                             </select>
@@ -3000,11 +3000,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <input placeholder="주소" value={manualInput.address} onChange={e => setManualInput({...manualInput, address: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
                         </div>
                         <div className="grid grid-cols-2 gap-2">
-                            <select value={manualInput.productName} onChange={e => setManualInput({...manualInput, productName: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
+                            <select value={manualInput.productKey} onChange={e => {
+                                const selectedKey = e.target.value;
+                                const p = pricingConfig[manualInput.companyName]?.products?.[selectedKey] as any;
+                                const resolvedName = p ? (p.orderFormName || p.displayName || selectedKey) : selectedKey;
+                                setManualInput({...manualInput, productKey: selectedKey, productName: resolvedName});
+                            }} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
                                 <option value="">품목 선택</option>
                                 {manualInput.companyName && pricingConfig[manualInput.companyName]?.products &&
                                     Object.entries(pricingConfig[manualInput.companyName].products).map(([key, p]: [string, any]) => (
-                                        <option key={key} value={p.displayName || key}>{p.displayName || key} ({(Number(p.supplyPrice) || 0).toLocaleString()}원)</option>
+                                        <option key={key} value={key}>{p.displayName || key}{p.orderFormName && p.orderFormName !== p.displayName ? ` → ${p.orderFormName}` : ''} ({(Number(p.supplyPrice) || 0).toLocaleString()}원)</option>
                                     ))
                                 }
                             </select>
