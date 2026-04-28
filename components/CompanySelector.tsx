@@ -3106,6 +3106,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     </div>
                 </details>
 
+                {/* 워크스테이션 초기화 */}
+                <div className="flex justify-end mb-2">
+                    <button onClick={handleResetWorkstations} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-zinc-500 hover:text-rose-400 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-rose-500/30 rounded-lg transition-all" title="워크스테이션 초기화">
+                        <ArrowPathIcon className="w-3.5 h-3.5" />
+                        <span>워크스테이션 초기화</span>
+                    </button>
+                </div>
+
                 {/* 2) 발주서 엑셀 파일 업로드 */}
                 <div className="mb-3 flex flex-col gap-2">
                     <label
@@ -3772,12 +3780,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </div>
                         ) : null;
                     })()}
-                </div>
-                <div className="flex justify-end mb-2">
-                    <button onClick={handleResetWorkstations} className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-zinc-500 hover:text-rose-400 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 hover:border-rose-500/30 rounded-lg transition-all" title="워크스테이션 초기화">
-                        <ArrowPathIcon className="w-3.5 h-3.5" />
-                        <span>워크스테이션 초기화</span>
-                    </button>
                 </div>
                 {/* 업체별 발주 현황 요약 대시보드 */}
                 {companySummaryData.length > 0 && (
