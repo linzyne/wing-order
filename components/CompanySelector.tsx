@@ -3676,6 +3676,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     <button onClick={handleDownloadWorkLog} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95">
                         <ClipboardDocumentCheckIcon className="w-3.5 h-3.5" /><span>업무일지</span>
                     </button>
+                    {companySummaryData.length > 0 && <>
+                        <button onClick={() => handleCopyOrderSummary(companySummaryData)} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95" title="업체별 현황 엑셀용 복사">
+                            <DocumentCheckIcon className="w-3.5 h-3.5" /><span>복사</span>
+                        </button>
+                        <button onClick={() => handleDownloadOrderSummary(companySummaryData)} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95" title="업체별 현황 엑셀 다운로드">
+                            <ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>요약</span>
+                        </button>
+                    </>}
                     <div className="flex flex-col items-end gap-1">
                         <button
                             onClick={handleSaveToSalesHistory}
@@ -3781,145 +3789,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         ) : null;
                     })()}
                 </div>
-                {/* 업체별 발주 현황 요약 대시보드 */}
-                {companySummaryData.length > 0 && (
-                    <div className="mb-4 px-3">
-                        <div className="bg-zinc-900/60 rounded-xl border border-zinc-800/60 overflow-hidden">
-                            {/* 헤더 */}
-                            <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/60">
-                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">업체별 현황</span>
-                                <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => handleCopyOrderSummary(companySummaryData)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black text-zinc-400 hover:text-white bg-zinc-800/60 hover:bg-zinc-700/60 border border-zinc-700/30 hover:border-zinc-600 transition-all active:scale-95"
-                                        title="엑셀용으로 복사"
-                                    >
-                                        <DocumentCheckIcon className="w-3 h-3" />
-                                        <span>복사</span>
-                                    </button>
-                                    <button
-                                        onClick={() => handleDownloadOrderSummary(companySummaryData)}
-                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black text-zinc-400 hover:text-white bg-zinc-800/60 hover:bg-zinc-700/60 border border-zinc-700/30 hover:border-zinc-600 transition-all active:scale-95"
-                                        title="엑셀 다운로드"
-                                    >
-                                        <ArrowDownTrayIcon className="w-3 h-3" />
-                                        <span>엑셀</span>
-                                    </button>
-                                </div>
-                            </div>
-                            {/* 컬럼 헤더 */}
-                            <div className="grid items-center gap-2 px-3 py-1.5 border-b border-zinc-800/40" style={{ gridTemplateColumns: '20px 1fr 44px 110px 90px' }}>
-                                <div />
-                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">업체</span>
-                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest text-right">건수</span>
-                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest text-right">입금액</span>
-                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest text-right">마진</span>
-                            </div>
-                            {/* 업체별 행 */}
-                            <div className="divide-y divide-zinc-800/30">
-                                {companySummaryData.map(r => {
-                                    const isChecked = checkedCompanies.has(r.company);
-                                    const firstSession = (companySessions[r.company] || []).find(s => (allOrderRows[s.id]?.length || 0) > 0);
-                                    const isEditingDeposit = editingCell?.company === r.company && editingCell?.field === 'deposit';
-                                    const isEditingMargin = editingCell?.company === r.company && editingCell?.field === 'margin';
-                                    const hasDepositOverride = companyOverrides[r.company]?.deposit !== undefined;
-                                    const hasMarginOverride = companyOverrides[r.company]?.margin !== undefined;
-                                    return (
-                                        <div key={r.company} className={`grid items-center gap-2 px-3 py-2 transition-all ${isChecked ? 'bg-indigo-950/40 border-l-2 border-indigo-500/50' : 'hover:bg-zinc-800/20 border-l-2 border-transparent'}`} style={{ gridTemplateColumns: '20px 1fr 44px 110px 90px' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={isChecked}
-                                                onChange={() => setCheckedCompanies(prev => {
-                                                    const next = new Set(prev);
-                                                    if (next.has(r.company)) next.delete(r.company); else next.add(r.company);
-                                                    return next;
-                                                })}
-                                                className="w-3.5 h-3.5 accent-indigo-500 cursor-pointer"
-                                            />
-                                            <button
-                                                onClick={() => firstSession && handleToastClick(firstSession.id)}
-                                                className={`text-left text-[12px] font-black truncate transition-colors ${isChecked ? 'line-through text-indigo-300/70' : 'text-zinc-200 hover:text-white'}`}
-                                                title="클릭하여 이동"
-                                            >
-                                                {r.company}
-                                            </button>
-                                            <span className={`text-right text-[10px] font-bold ${isChecked ? 'text-indigo-400/60' : 'text-zinc-500'}`}>{r.orderCount}</span>
-                                            {/* 입금액 */}
-                                            {isEditingDeposit ? (
-                                                <input
-                                                    type="number"
-                                                    value={editingValue}
-                                                    onChange={e => setEditingValue(e.target.value)}
-                                                    onBlur={() => {
-                                                        const val = parseInt(editingValue);
-                                                        setCompanyOverrides(prev => ({ ...prev, [r.company]: { ...prev[r.company], deposit: isNaN(val) ? r.calculatedDeposit : val } }));
-                                                        setEditingCell(null);
-                                                    }}
-                                                    onKeyDown={e => {
-                                                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                                        if (e.key === 'Escape') setEditingCell(null);
-                                                    }}
-                                                    className="w-full text-right text-[11px] font-black text-white bg-zinc-800 border border-rose-500/50 rounded px-1 py-0.5 focus:outline-none"
-                                                    autoFocus
-                                                />
-                                            ) : (
-                                                <button
-                                                    onClick={() => { setEditingCell({ company: r.company, field: 'deposit' }); setEditingValue(String(r.deposit)); }}
-                                                    title="클릭하여 수정"
-                                                    className={`text-right text-[11px] font-black w-full transition-colors hover:text-rose-400 ${isChecked ? 'text-indigo-300/60' : 'text-white'} ${hasDepositOverride ? 'underline decoration-dotted decoration-rose-400/60' : ''}`}
-                                                >
-                                                    {r.deposit.toLocaleString()}
-                                                </button>
-                                            )}
-                                            {/* 마진 */}
-                                            {isEditingMargin ? (
-                                                <input
-                                                    type="number"
-                                                    value={editingValue}
-                                                    onChange={e => setEditingValue(e.target.value)}
-                                                    onBlur={() => {
-                                                        const val = parseInt(editingValue);
-                                                        setCompanyOverrides(prev => ({ ...prev, [r.company]: { ...prev[r.company], margin: isNaN(val) ? r.calculatedMargin : val } }));
-                                                        setEditingCell(null);
-                                                    }}
-                                                    onKeyDown={e => {
-                                                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                                                        if (e.key === 'Escape') setEditingCell(null);
-                                                    }}
-                                                    className="w-full text-right text-[11px] font-black text-emerald-400 bg-zinc-800 border border-emerald-500/50 rounded px-1 py-0.5 focus:outline-none"
-                                                    autoFocus
-                                                />
-                                            ) : (
-                                                <button
-                                                    onClick={() => { setEditingCell({ company: r.company, field: 'margin' }); setEditingValue(String(r.margin)); }}
-                                                    title="클릭하여 수정"
-                                                    className={`text-right text-[11px] font-black w-full transition-colors ${isChecked ? 'text-indigo-300/60 hover:text-indigo-200' : r.margin > 0 ? 'text-emerald-400 hover:text-emerald-300' : 'text-zinc-700 hover:text-zinc-500'} ${hasMarginOverride ? 'underline decoration-dotted decoration-emerald-400/60' : ''}`}
-                                                >
-                                                    {r.margin > 0 ? `+${r.margin.toLocaleString()}` : '—'}
-                                                </button>
-                                            )}
-                                        </div>
-                                    );
-                                })}
-                                {/* 합계 행 */}
-                                {companySummaryData.length > 1 && (() => {
-                                    const totalOrders = companySummaryData.reduce((s, r) => s + r.orderCount, 0);
-                                    const totalDeposit = companySummaryData.reduce((s, r) => s + r.deposit, 0);
-                                    const totalMargin = companySummaryData.reduce((s, r) => s + r.margin, 0);
-                                    return (
-                                        <div className="grid items-center gap-2 px-3 py-2 bg-zinc-800/40 border-t border-zinc-700/40" style={{ gridTemplateColumns: '20px 1fr 44px 110px 90px' }}>
-                                            <div />
-                                            <span className="text-[11px] font-black text-zinc-300">합계</span>
-                                            <span className="text-right text-[10px] font-bold text-zinc-400">{totalOrders}</span>
-                                            <span className="text-right text-[11px] font-black text-white">{totalDeposit.toLocaleString()}</span>
-                                            <span className="text-right text-[11px] font-black text-emerald-400">{totalMargin > 0 ? `+${totalMargin.toLocaleString()}` : '—'}</span>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-                        </div>
-                    </div>
-                )}
                 <div className="overflow-x-auto">
                     <DndContext
                         sensors={sensors}
@@ -3962,38 +3831,104 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             return { round: s.round, count, platform };
                                         });
                                         const companyTotal = roundOrderCountsForCompany.reduce((s, r) => s + r.count, 0);
+                                        // 업체별 입금·마진 계산 (첫 세션 렌더 시 1회)
+                                        const companyCalcDeposit = sessions.reduce((sum, s) => sum + (totalsMap[s.id] || 0), 0);
+                                        const companyCalcMargin = sessions.reduce((sum, s) => {
+                                            const items = allOrderItems[s.id] || [];
+                                            return sum + items.reduce((acc, item) => {
+                                                const product = (pricingConfig[company]?.products as any)?.[item.matchedProductKey];
+                                                return acc + ((product?.margin || 0) * item.qty);
+                                            }, 0);
+                                        }, 0);
+                                        const companyOverride = companyOverrides[company] || {};
+                                        const companyDeposit = companyOverride.deposit !== undefined ? companyOverride.deposit : companyCalcDeposit;
+                                        const companyMargin = companyOverride.margin !== undefined ? companyOverride.margin : companyCalcMargin;
+                                        const showStats = companyCalcDeposit > 0 || companyCalcMargin > 0;
+
                                         return sessions.map((session, sIdx) => {
                                         const prevItems = sessions
                                             .slice(0, sIdx)
                                             .map(ps => ({ round: ps.round, summary: allItemSummaries[ps.id] || {} }))
                                             .filter(item => Object.keys(item.summary).length > 0);
                                         const sessionPlatform = session.round <= 1 ? masterPlatformName : (batchPlatforms[session.id] || '쿠팡');
+                                        const isChecked = checkedCompanies.has(company);
+                                        const isEditingDeposit = editingCell?.company === company && editingCell?.field === 'deposit';
+                                        const isEditingMargin = editingCell?.company === company && editingCell?.field === 'margin';
                                         return workstationsReady ? (
-                                            <CompanyWorkstationRow
-                                                key={session.id} sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
-                                                vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
-                                                manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
-                                                onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
-                                                onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
-                                                onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
-                                                onDownloadMergedInvoice={(companySessions[company] || []).length > 1 ? (type: 'mgmt' | 'upload') => handleDownloadMergedInvoice(company, type) : undefined}
-                                                previousRoundItems={prevItems}
-                                                manualOrdersRejected={manualOrdersRejectedCompanies.has(company)}
-                                                onManualOrdersApproval={handleManualOrdersApproval}
-                                                businessId={businessId}
-                                                onConfigChange={onConfigChange}
-                                                masterExpectedCount={sIdx === 0
-                                                    ? (masterProductSummary?.companyOrderCounts?.[company] || 0)
-                                                    : (batchExpectedCounts[session.id] || 0)
-                                                }
-                                                missingItems={sIdx === 0 ? (missingOrderAnalysis?.missingByCompany?.[company] || []) : []}
-                                                fakeCourierRows={getCourierRowsForCompany(company)}
-                                                orderPlatformMap={orderPlatformMap}
-                                                platformConfigs={platformConfigs}
-                                                roundPlatform={sessionPlatform}
-                                                companyTotalOrders={companyTotal}
-                                                roundOrderCounts={roundOrderCountsForCompany}
-                                            />
+                                            <React.Fragment key={session.id}>
+                                                {sIdx === 0 && showStats && (
+                                                    <tr className={`${isChecked ? 'bg-indigo-950/40 border-l-[3px] border-indigo-500/60' : 'border-l-[3px] border-transparent'} transition-all`}>
+                                                        <td colSpan={3} className="px-5 py-1.5">
+                                                            <div className="flex items-center gap-3">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isChecked}
+                                                                    onChange={() => setCheckedCompanies(prev => {
+                                                                        const next = new Set(prev);
+                                                                        if (next.has(company)) next.delete(company); else next.add(company);
+                                                                        return next;
+                                                                    })}
+                                                                    className="w-3.5 h-3.5 accent-indigo-500 cursor-pointer shrink-0"
+                                                                />
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className={`text-[9px] font-black uppercase tracking-wider ${isChecked ? 'text-indigo-400/50' : 'text-zinc-600'}`}>입금</span>
+                                                                    {isEditingDeposit ? (
+                                                                        <input type="number" value={editingValue} onChange={e => setEditingValue(e.target.value)}
+                                                                            onBlur={() => { const v = parseInt(editingValue); setCompanyOverrides(prev => ({ ...prev, [company]: { ...prev[company], deposit: isNaN(v) ? companyCalcDeposit : v } })); setEditingCell(null); }}
+                                                                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
+                                                                            className="w-28 text-[11px] font-black text-white bg-zinc-800 border border-rose-500/50 rounded px-2 py-0.5 focus:outline-none" autoFocus />
+                                                                    ) : (
+                                                                        <button onClick={() => { setEditingCell({ company, field: 'deposit' }); setEditingValue(String(companyDeposit)); }} title="클릭하여 수정"
+                                                                            className={`text-[12px] font-black transition-colors hover:text-rose-400 ${isChecked ? 'text-indigo-300/60' : 'text-white'} ${companyOverride.deposit !== undefined ? 'underline decoration-dotted decoration-rose-400/60' : ''}`}>
+                                                                            {companyDeposit.toLocaleString()}원
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                                <span className="text-zinc-700 text-[10px]">·</span>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className={`text-[9px] font-black uppercase tracking-wider ${isChecked ? 'text-indigo-400/50' : 'text-zinc-600'}`}>마진</span>
+                                                                    {isEditingMargin ? (
+                                                                        <input type="number" value={editingValue} onChange={e => setEditingValue(e.target.value)}
+                                                                            onBlur={() => { const v = parseInt(editingValue); setCompanyOverrides(prev => ({ ...prev, [company]: { ...prev[company], margin: isNaN(v) ? companyCalcMargin : v } })); setEditingCell(null); }}
+                                                                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
+                                                                            className="w-24 text-[11px] font-black text-emerald-400 bg-zinc-800 border border-emerald-500/50 rounded px-2 py-0.5 focus:outline-none" autoFocus />
+                                                                    ) : (
+                                                                        <button onClick={() => { setEditingCell({ company, field: 'margin' }); setEditingValue(String(companyMargin)); }} title="클릭하여 수정"
+                                                                            className={`text-[12px] font-black transition-colors ${isChecked ? 'text-indigo-300/60 hover:text-indigo-200' : companyMargin > 0 ? 'text-emerald-400 hover:text-emerald-300' : 'text-zinc-600 hover:text-zinc-400'} ${companyOverride.margin !== undefined ? 'underline decoration-dotted decoration-emerald-400/60' : ''}`}>
+                                                                            {companyMargin > 0 ? `+${companyMargin.toLocaleString()}원` : '—'}
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                <CompanyWorkstationRow
+                                                    sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
+                                                    vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                    manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
+                                                    onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
+                                                    onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
+                                                    onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
+                                                    onDownloadMergedInvoice={(companySessions[company] || []).length > 1 ? (type: 'mgmt' | 'upload') => handleDownloadMergedInvoice(company, type) : undefined}
+                                                    previousRoundItems={prevItems}
+                                                    manualOrdersRejected={manualOrdersRejectedCompanies.has(company)}
+                                                    onManualOrdersApproval={handleManualOrdersApproval}
+                                                    businessId={businessId}
+                                                    onConfigChange={onConfigChange}
+                                                    masterExpectedCount={sIdx === 0
+                                                        ? (masterProductSummary?.companyOrderCounts?.[company] || 0)
+                                                        : (batchExpectedCounts[session.id] || 0)
+                                                    }
+                                                    missingItems={sIdx === 0 ? (missingOrderAnalysis?.missingByCompany?.[company] || []) : []}
+                                                    fakeCourierRows={getCourierRowsForCompany(company)}
+                                                    orderPlatformMap={orderPlatformMap}
+                                                    platformConfigs={platformConfigs}
+                                                    roundPlatform={sessionPlatform}
+                                                    companyTotalOrders={companyTotal}
+                                                    roundOrderCounts={roundOrderCountsForCompany}
+                                                />
+                                            </React.Fragment>
                                         ) : null;
                                     });
                                     })()}
