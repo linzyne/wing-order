@@ -27,6 +27,9 @@ const parsePastedTable = (text: string): { products: ProductPricing[]; error?: s
 
     const rows = lines.map(line => line.split('\t').map(c => c.trim()));
 
+    const parseNum = (s: string) => Number((s || '').replace(/[,\s]/g, '')) || 0;
+    const hasPercent = (s: string) => (s || '').includes('%');
+
     let nameIdx = 0, supplyIdx = -1, sellingIdx = -1, marginIdx = -1;
     let dataStartRow = 0;
 
@@ -46,11 +49,21 @@ const parsePastedTable = (text: string): { products: ProductPricing[]; error?: s
         if (sellingIdx === -1) sellingIdx = 4;
         dataStartRow = 1;
     } else {
-        nameIdx = 0; supplyIdx = 1; sellingIdx = 2;
+        nameIdx = 0;
+        supplyIdx = 1;
+        // 첫 번째 % 컬럼 바로 앞을 판매가로 감지 (부가세/총합계 포함 표 대응)
+        const percentColIdx = firstRow.findIndex((c, i) => i > 0 && hasPercent(c));
+        if (percentColIdx >= 2) {
+            sellingIdx = percentColIdx - 1;
+            // 마진: % 컬럼 이후 마지막 양수 비-% 컬럼
+            for (let i = firstRow.length - 1; i > percentColIdx; i--) {
+                const v = parseNum(firstRow[i] || '');
+                if (v > 0 && !hasPercent(firstRow[i] || '')) { marginIdx = i; break; }
+            }
+        } else {
+            sellingIdx = 2;
+        }
     }
-
-    const parseNum = (s: string) => Number((s || '').replace(/[,\s]/g, '')) || 0;
-    const hasPercent = (s: string) => (s || '').includes('%');
 
     const products: ProductPricing[] = [];
 
