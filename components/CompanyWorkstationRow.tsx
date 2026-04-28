@@ -799,13 +799,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {localResult ? (
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
-                                <textarea
-                                    value={sessionMemo}
-                                    onChange={e => setSessionMemo(e.target.value)}
-                                    placeholder="메모"
-                                    rows={2}
-                                    className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
-                                />
+                                {isFirstSession && (
+                                    <textarea
+                                        value={sessionMemo}
+                                        onChange={e => setSessionMemo(e.target.value)}
+                                        placeholder="메모"
+                                        rows={2}
+                                        className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
+                                    />
+                                )}
                                 {isFirstSession && (
                                     <div className="flex items-center justify-center gap-4">
                                         <div className="text-center">
@@ -924,13 +926,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             <div className="flex flex-col items-center gap-1 text-indigo-400 font-black animate-pulse"><div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /><span className="text-[9px] uppercase tracking-widest">Analysing...</span></div>
                         ) : syncedData ? (
                             <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
-                                <textarea
-                                    value={sessionMemo}
-                                    onChange={e => setSessionMemo(e.target.value)}
-                                    placeholder="메모"
-                                    rows={2}
-                                    className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
-                                />
+                                {isFirstSession && (
+                                    <textarea
+                                        value={sessionMemo}
+                                        onChange={e => setSessionMemo(e.target.value)}
+                                        placeholder="메모"
+                                        rows={2}
+                                        className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
+                                    />
+                                )}
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="text-center">
                                         {isFirstSession && roundOrderCounts.length > 1 ? (
@@ -1016,13 +1020,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             </div>
                         ) : (
                             <div className="flex flex-col items-center gap-2 w-full">
-                                <textarea
-                                    value={sessionMemo}
-                                    onChange={e => setSessionMemo(e.target.value)}
-                                    placeholder="메모"
-                                    rows={2}
-                                    className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
-                                />
+                                {isFirstSession && (
+                                    <textarea
+                                        value={sessionMemo}
+                                        onChange={e => setSessionMemo(e.target.value)}
+                                        placeholder="메모"
+                                        rows={2}
+                                        className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
+                                    />
+                                )}
                                 {excludedList.length > 0 ? (
                                     <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
                                         <div className="text-zinc-500 font-black text-[10px]">{(() => {
