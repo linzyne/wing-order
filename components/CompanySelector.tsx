@@ -514,6 +514,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allSummaries, setAllSummaries] = useState<Record<string, string>>({});
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
     const [checkedCompanies, setCheckedCompanies] = useState<Set<string>>(new Set());
+    const [companyOverrides, setCompanyOverrides] = useState<Record<string, { deposit?: number; margin?: number }>>({});
+    const [editingCell, setEditingCell] = useState<{ company: string; field: 'deposit' | 'margin' } | null>(null);
+    const [editingValue, setEditingValue] = useState('');
 
     // 워크스테이션 수동 초기화 함수
     const handleResetWorkstations = useCallback(() => {
@@ -2300,6 +2303,35 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.writeFile(wb, `${todayDate}_${businessPrefix}_업무일지.xlsx`);
     };
 
+    const handleDownloadOrderSummary = (data: { company: string; orderCount: number; deposit: number; margin: number }[]) => {
+        if (data.length === 0) return;
+        const header = ['업체', '주문', '입금액', '마진'];
+        const rows = data.map(r => [r.company, r.orderCount, r.deposit, r.margin]);
+        const totalOrders = data.reduce((s, r) => s + r.orderCount, 0);
+        const totalDeposit = data.reduce((s, r) => s + r.deposit, 0);
+        const totalMargin = data.reduce((s, r) => s + r.margin, 0);
+        rows.push(['합계', totalOrders, totalDeposit, totalMargin]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        ws['!cols'] = [{ wch: 15 }, { wch: 8 }, { wch: 15 }, { wch: 15 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '업체별요약');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        XLSX.writeFile(wb, `${dateStr}_${businessPrefix}_업체별요약.xlsx`);
+    };
+
+    const handleCopyOrderSummary = (data: { company: string; orderCount: number; deposit: number; margin: number }[]) => {
+        if (data.length === 0) return;
+        const totalOrders = data.reduce((s, r) => s + r.orderCount, 0);
+        const totalDeposit = data.reduce((s, r) => s + r.deposit, 0);
+        const totalMargin = data.reduce((s, r) => s + r.margin, 0);
+        const lines = [
+            ['업체', '주문', '입금액', '마진'].join('\t'),
+            ...data.map(r => [r.company, r.orderCount, r.deposit, r.margin].join('\t')),
+            ['합계', totalOrders, totalDeposit, totalMargin].join('\t'),
+        ];
+        navigator.clipboard.writeText(lines.join('\n'));
+    };
+
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
     const [saveError, setSaveError] = useState<string>('');
 
@@ -2615,6 +2647,33 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const totalMissingQty = missingGroups.reduce((sum, m) => sum + m.diffQty, 0);
         return { missingGroups, totalMissingQty, processedCompanies, missingByCompany };
     }, [masterProductSummary, companySessions, allOrderRows, allItemSummaries, allRegisteredNames, allOrderItems, allPreConsolidationByGroup]);
+
+    const companySummaryData = useMemo(() => {
+        const companies = sortCompanies(Object.keys(pricingConfig));
+        return companies
+            .map(c => {
+                const sessions = companySessions[c] || [];
+                const orderCount = sessions.reduce((sum, s) => sum + (allOrderRows[s.id]?.length || 0), 0);
+                const calculatedDeposit = sessions.reduce((sum, s) => sum + (totalsMap[s.id] || 0), 0);
+                const calculatedMargin = sessions.reduce((sum, s) => {
+                    const items = allOrderItems[s.id] || [];
+                    return sum + items.reduce((itemSum, item) => {
+                        const product = (pricingConfig[c]?.products as any)?.[item.matchedProductKey];
+                        return itemSum + ((product?.margin || 0) * item.qty);
+                    }, 0);
+                }, 0);
+                const override = companyOverrides[c] || {};
+                return {
+                    company: c,
+                    orderCount,
+                    deposit: override.deposit !== undefined ? override.deposit : calculatedDeposit,
+                    margin: override.margin !== undefined ? override.margin : calculatedMargin,
+                    calculatedDeposit,
+                    calculatedMargin,
+                };
+            })
+            .filter(r => r.orderCount > 0);
+    }, [pricingConfig, companySessions, allOrderRows, totalsMap, allOrderItems, companyOverrides, sortCompanies]);
 
     const isAllSelected = selectedSessionIds.size > 0 && selectedSessionIds.size === (Object.values(companySessions).flat() as SessionData[]).length;
 
@@ -3720,42 +3779,145 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <span>워크스테이션 초기화</span>
                     </button>
                 </div>
-                {/* 업체별 발주 현황 요약 대시보드 - 발주 생성된 업체만 */}
-                {(() => {
-                    const companies = sortCompanies(Object.keys(pricingConfig));
-                    const completedCompanies = companies.filter(c => {
-                        const sessions = companySessions[c] || [];
-                        return sessions.some(s => (allOrderRows[s.id]?.length || 0) > 0);
-                    });
-                    if (completedCompanies.length === 0) return null;
-                    return (
-                        <div className="mb-4 px-2">
-                            <div className="flex items-center gap-3 flex-wrap">
-                                {completedCompanies.map(c => {
-                                    const sessions = companySessions[c] || [];
-                                    const orderCount = sessions.reduce((sum, s) => sum + (allOrderRows[s.id]?.length || 0), 0);
-                                    const firstSessionWithData = sessions.find(s => (allOrderRows[s.id]?.length || 0) > 0);
-                                    const isChecked = checkedCompanies.has(c);
+                {/* 업체별 발주 현황 요약 대시보드 */}
+                {companySummaryData.length > 0 && (
+                    <div className="mb-4 px-3">
+                        <div className="bg-zinc-900/60 rounded-xl border border-zinc-800/60 overflow-hidden">
+                            {/* 헤더 */}
+                            <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/60">
+                                <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">업체별 현황</span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => handleCopyOrderSummary(companySummaryData)}
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black text-zinc-400 hover:text-white bg-zinc-800/60 hover:bg-zinc-700/60 border border-zinc-700/30 hover:border-zinc-600 transition-all active:scale-95"
+                                        title="엑셀용으로 복사"
+                                    >
+                                        <DocumentCheckIcon className="w-3 h-3" />
+                                        <span>복사</span>
+                                    </button>
+                                    <button
+                                        onClick={() => handleDownloadOrderSummary(companySummaryData)}
+                                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-black text-zinc-400 hover:text-white bg-zinc-800/60 hover:bg-zinc-700/60 border border-zinc-700/30 hover:border-zinc-600 transition-all active:scale-95"
+                                        title="엑셀 다운로드"
+                                    >
+                                        <ArrowDownTrayIcon className="w-3 h-3" />
+                                        <span>엑셀</span>
+                                    </button>
+                                </div>
+                            </div>
+                            {/* 컬럼 헤더 */}
+                            <div className="grid items-center gap-2 px-3 py-1.5 border-b border-zinc-800/40" style={{ gridTemplateColumns: '20px 1fr 44px 110px 90px' }}>
+                                <div />
+                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest">업체</span>
+                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest text-right">건수</span>
+                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest text-right">입금액</span>
+                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-widest text-right">마진</span>
+                            </div>
+                            {/* 업체별 행 */}
+                            <div className="divide-y divide-zinc-800/30">
+                                {companySummaryData.map(r => {
+                                    const isChecked = checkedCompanies.has(r.company);
+                                    const firstSession = (companySessions[r.company] || []).find(s => (allOrderRows[s.id]?.length || 0) > 0);
+                                    const isEditingDeposit = editingCell?.company === r.company && editingCell?.field === 'deposit';
+                                    const isEditingMargin = editingCell?.company === r.company && editingCell?.field === 'margin';
+                                    const hasDepositOverride = companyOverrides[r.company]?.deposit !== undefined;
+                                    const hasMarginOverride = companyOverrides[r.company]?.margin !== undefined;
                                     return (
-                                        <button key={c}
-                                            onClick={() => {
-                                                setCheckedCompanies(prev => {
+                                        <div key={r.company} className={`grid items-center gap-2 px-3 py-2 transition-all ${isChecked ? 'opacity-40' : 'hover:bg-zinc-800/20'}`} style={{ gridTemplateColumns: '20px 1fr 44px 110px 90px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={() => setCheckedCompanies(prev => {
                                                     const next = new Set(prev);
-                                                    if (next.has(c)) { next.delete(c); } else { next.add(c); }
+                                                    if (next.has(r.company)) next.delete(r.company); else next.add(r.company);
                                                     return next;
-                                                });
-                                            }}
-                                            onDoubleClick={() => { if (firstSessionWithData) handleToastClick(firstSessionWithData.id); }}
-                                            title={isChecked ? '클릭해서 켜기 / 더블클릭해서 이동' : '클릭해서 끄기 / 더블클릭해서 이동'}
-                                            className={`px-4 py-2 rounded-xl font-black text-base transition-all cursor-pointer border shadow-lg select-none ${isChecked ? 'bg-zinc-800/60 text-zinc-600 border-zinc-700/40 shadow-none line-through' : 'bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 hover:scale-105 border-emerald-500/30 shadow-emerald-500/10'}`}>
-                                            {c} <span className={`ml-1 ${isChecked ? 'text-zinc-600' : 'text-emerald-400'}`}>{orderCount}</span>
-                                        </button>
+                                                })}
+                                                className="w-3.5 h-3.5 accent-rose-500 cursor-pointer"
+                                            />
+                                            <button
+                                                onClick={() => firstSession && handleToastClick(firstSession.id)}
+                                                className={`text-left text-[12px] font-black truncate transition-colors ${isChecked ? 'line-through text-zinc-600' : 'text-zinc-200 hover:text-white'}`}
+                                                title="클릭하여 이동"
+                                            >
+                                                {r.company}
+                                            </button>
+                                            <span className={`text-right text-[10px] font-bold ${isChecked ? 'text-zinc-700' : 'text-zinc-500'}`}>{r.orderCount}</span>
+                                            {/* 입금액 */}
+                                            {isEditingDeposit ? (
+                                                <input
+                                                    type="number"
+                                                    value={editingValue}
+                                                    onChange={e => setEditingValue(e.target.value)}
+                                                    onBlur={() => {
+                                                        const val = parseInt(editingValue);
+                                                        setCompanyOverrides(prev => ({ ...prev, [r.company]: { ...prev[r.company], deposit: isNaN(val) ? r.calculatedDeposit : val } }));
+                                                        setEditingCell(null);
+                                                    }}
+                                                    onKeyDown={e => {
+                                                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                                        if (e.key === 'Escape') setEditingCell(null);
+                                                    }}
+                                                    className="w-full text-right text-[11px] font-black text-white bg-zinc-800 border border-rose-500/50 rounded px-1 py-0.5 focus:outline-none"
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <button
+                                                    onClick={() => { setEditingCell({ company: r.company, field: 'deposit' }); setEditingValue(String(r.deposit)); }}
+                                                    title="클릭하여 수정"
+                                                    className={`text-right text-[11px] font-black w-full transition-colors hover:text-rose-400 ${isChecked ? 'text-zinc-700' : 'text-white'} ${hasDepositOverride ? 'underline decoration-dotted decoration-rose-400/60' : ''}`}
+                                                >
+                                                    {r.deposit.toLocaleString()}
+                                                </button>
+                                            )}
+                                            {/* 마진 */}
+                                            {isEditingMargin ? (
+                                                <input
+                                                    type="number"
+                                                    value={editingValue}
+                                                    onChange={e => setEditingValue(e.target.value)}
+                                                    onBlur={() => {
+                                                        const val = parseInt(editingValue);
+                                                        setCompanyOverrides(prev => ({ ...prev, [r.company]: { ...prev[r.company], margin: isNaN(val) ? r.calculatedMargin : val } }));
+                                                        setEditingCell(null);
+                                                    }}
+                                                    onKeyDown={e => {
+                                                        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                                        if (e.key === 'Escape') setEditingCell(null);
+                                                    }}
+                                                    className="w-full text-right text-[11px] font-black text-emerald-400 bg-zinc-800 border border-emerald-500/50 rounded px-1 py-0.5 focus:outline-none"
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <button
+                                                    onClick={() => { setEditingCell({ company: r.company, field: 'margin' }); setEditingValue(String(r.margin)); }}
+                                                    title="클릭하여 수정"
+                                                    className={`text-right text-[11px] font-black w-full transition-colors ${isChecked ? 'text-zinc-700' : r.margin > 0 ? 'text-emerald-400 hover:text-emerald-300' : 'text-zinc-700 hover:text-zinc-500'} ${hasMarginOverride ? 'underline decoration-dotted decoration-emerald-400/60' : ''}`}
+                                                >
+                                                    {r.margin > 0 ? `+${r.margin.toLocaleString()}` : '—'}
+                                                </button>
+                                            )}
+                                        </div>
                                     );
                                 })}
+                                {/* 합계 행 */}
+                                {companySummaryData.length > 1 && (() => {
+                                    const totalOrders = companySummaryData.reduce((s, r) => s + r.orderCount, 0);
+                                    const totalDeposit = companySummaryData.reduce((s, r) => s + r.deposit, 0);
+                                    const totalMargin = companySummaryData.reduce((s, r) => s + r.margin, 0);
+                                    return (
+                                        <div className="grid items-center gap-2 px-3 py-2 bg-zinc-800/40 border-t border-zinc-700/40" style={{ gridTemplateColumns: '20px 1fr 44px 110px 90px' }}>
+                                            <div />
+                                            <span className="text-[11px] font-black text-zinc-300">합계</span>
+                                            <span className="text-right text-[10px] font-bold text-zinc-400">{totalOrders}</span>
+                                            <span className="text-right text-[11px] font-black text-white">{totalDeposit.toLocaleString()}</span>
+                                            <span className="text-right text-[11px] font-black text-emerald-400">{totalMargin > 0 ? `+${totalMargin.toLocaleString()}` : '—'}</span>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </div>
-                    );
-                })()}
+                    </div>
+                )}
                 <div className="overflow-x-auto">
                     <DndContext
                         sensors={sensors}
