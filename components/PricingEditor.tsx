@@ -80,7 +80,7 @@ const parsePastedTable = (text: string): { products: ProductPricing[]; error?: s
         let margin: number | undefined;
         if (marginIdx >= 0) {
             const raw = row[marginIdx] || '';
-            if (raw && !hasPercent(raw)) { const m = parseNum(raw); if (m) margin = m; }
+            if (raw && !hasPercent(raw)) { const m = parseNum(raw); if (m) margin = Math.floor(m / 100) * 100; }
         }
 
         const product: ProductPricing = { displayName: name, supplyPrice };
