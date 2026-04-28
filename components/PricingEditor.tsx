@@ -847,6 +847,16 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         });
     };
 
+    const handleBulkUpdateKeyword = (companyName: string, productKeys: string[], keyword: string) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        productKeys.forEach(key => {
+            if (!newConfig[companyName].products[key]) return;
+            if (keyword) newConfig[companyName].products[key].siteProductName = keyword;
+            else delete newConfig[companyName].products[key].siteProductName;
+        });
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateProduct = (companyName: string, productKey: string, newProduct: ProductPricing) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         const cleanProduct = stripUndefined(newProduct);
@@ -1044,6 +1054,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                                 },
                                 onCancel: () => setDialog(null)
                             })}
+                            onBulkUpdateKeyword={(productKeys, keyword) => handleBulkUpdateKeyword(companyName, productKeys, keyword)}
                         />
                     ))}
                 </div>
@@ -1094,6 +1105,7 @@ const CompanyCard: React.FC<{
     onBulkAddProducts: (products: ProductPricing[]) => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
+    onBulkUpdateKeyword: (productKeys: string[], keyword: string) => void;
 }> = React.memo(({ companyName, companyConfig, isExpanded, onToggle, ...props }) => {
     return (
         <div id={`company-card-${companyName}`} className="bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-zinc-800 overflow-hidden group scroll-mt-4">
@@ -1482,7 +1494,7 @@ const CompanyCard: React.FC<{
                             </div>
                         )}
                     </div>
-                    <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onBulkAddProducts={props.onBulkAddProducts} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} />
+                    <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onBulkAddProducts={props.onBulkAddProducts} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} onBulkUpdateKeyword={props.onBulkUpdateKeyword} />
                 </div>
             )}
         </div>
@@ -1495,8 +1507,11 @@ const ProductTable: React.FC<{
     onBulkAddProducts: (products: ProductPricing[]) => void;
     onDeleteProduct: (productKey: string) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
-}> = React.memo(({ products, onAddProduct, onBulkAddProducts, onDeleteProduct, onOpenProductEditor }) => {
+    onBulkUpdateKeyword: (productKeys: string[], keyword: string) => void;
+}> = React.memo(({ products, onAddProduct, onBulkAddProducts, onDeleteProduct, onOpenProductEditor, onBulkUpdateKeyword }) => {
     const [showPaste, setShowPaste] = useState(false);
+    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+    const [bulkKeyword, setBulkKeyword] = useState('');
     const [pasteText, setPasteText] = useState('');
     const [preview, setPreview] = useState<ProductPricing[] | null>(null);
     const [parseError, setParseError] = useState('');
@@ -1523,11 +1538,18 @@ const ProductTable: React.FC<{
             <table className="w-full text-sm text-left table-fixed">
                 <thead className="bg-zinc-900/50 text-zinc-600 font-black uppercase tracking-widest text-[11px]">
                     <tr>
-                        <th className="px-4 py-2 w-[35%]">품목</th>
-                        <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">공급가</th>
-                        <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">판매가</th>
-                        <th className="px-3 py-2 text-right w-[18%] whitespace-nowrap">마진</th>
-                        <th className="px-3 py-2 text-center w-[11%]"></th>
+                        <th className="pl-3 pr-1 py-2 w-8" onClick={(e) => e.stopPropagation()}>
+                            <input type="checkbox"
+                                className="accent-indigo-500 cursor-pointer"
+                                checked={Object.keys(products).length > 0 && Object.keys(products).every(k => selectedKeys.has(k))}
+                                onChange={(e) => setSelectedKeys(e.target.checked ? new Set(Object.keys(products)) : new Set())}
+                            />
+                        </th>
+                        <th className="px-2 py-2 w-[33%]">품목</th>
+                        <th className="px-3 py-2 text-right w-[17%] whitespace-nowrap">공급가</th>
+                        <th className="px-3 py-2 text-right w-[17%] whitespace-nowrap">판매가</th>
+                        <th className="px-3 py-2 text-right w-[17%] whitespace-nowrap">마진</th>
+                        <th className="px-3 py-2 text-center w-[10%]"></th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-900/60">
@@ -1536,7 +1558,18 @@ const ProductTable: React.FC<{
                         const margin = product.margin || 0;
                         return (
                             <tr key={productKey} onClick={() => onOpenProductEditor(productKey, product)} className="hover:bg-zinc-900/40 transition-colors cursor-pointer group">
-                                <td className="px-4 py-1.5">
+                                <td className="pl-3 pr-1 py-1.5" onClick={(e) => e.stopPropagation()}>
+                                    <input type="checkbox"
+                                        className="accent-indigo-500 cursor-pointer"
+                                        checked={selectedKeys.has(productKey)}
+                                        onChange={(e) => {
+                                            const next = new Set(selectedKeys);
+                                            if (e.target.checked) next.add(productKey); else next.delete(productKey);
+                                            setSelectedKeys(next);
+                                        }}
+                                    />
+                                </td>
+                                <td className="px-2 py-1.5">
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                         <span className="font-black text-zinc-100 text-[13px]">{product.displayName}</span>
                                         {product.orderFormName && (
@@ -1571,8 +1604,34 @@ const ProductTable: React.FC<{
                             </tr>
                         )
                     })}
+                    {selectedKeys.size > 0 && (
+                        <tr>
+                            <td colSpan={6} className="p-0">
+                                <div className="flex items-center gap-2 px-3 py-2 bg-indigo-950/40 border-t border-indigo-500/20">
+                                    <span className="text-[11px] font-black text-indigo-400 shrink-0">{selectedKeys.size}개 선택</span>
+                                    <input
+                                        type="text"
+                                        value={bulkKeyword}
+                                        onChange={(e) => setBulkKeyword(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter' && bulkKeyword.trim()) { onBulkUpdateKeyword([...selectedKeys], bulkKeyword.trim()); setSelectedKeys(new Set()); setBulkKeyword(''); } }}
+                                        placeholder="품목 키워드 입력 (K열 매칭)"
+                                        className="flex-1 bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-indigo-500/60 min-w-0"
+                                    />
+                                    <button
+                                        onClick={() => { onBulkUpdateKeyword([...selectedKeys], bulkKeyword.trim()); setSelectedKeys(new Set()); setBulkKeyword(''); }}
+                                        disabled={!bulkKeyword.trim()}
+                                        className="px-3 py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-black rounded-lg disabled:opacity-30 transition-all shrink-0"
+                                    >적용</button>
+                                    <button
+                                        onClick={() => { setSelectedKeys(new Set()); setBulkKeyword(''); }}
+                                        className="px-3 py-1.5 bg-zinc-800 text-zinc-400 text-xs font-black rounded-lg hover:bg-zinc-700 transition-all shrink-0"
+                                    >취소</button>
+                                </div>
+                            </td>
+                        </tr>
+                    )}
                     <tr>
-                        <td colSpan={5} className="p-0">
+                        <td colSpan={6} className="p-0">
                             <div className="flex divide-x divide-zinc-900/60 border-t border-zinc-900/60">
                                 <button onClick={onAddProduct} className="flex-1 flex items-center justify-center gap-2 text-zinc-500 hover:text-rose-400 bg-zinc-900/20 hover:bg-zinc-900/50 transition-all font-black py-2.5 text-sm">
                                     <PlusCircleIcon className="w-5 h-5" />
