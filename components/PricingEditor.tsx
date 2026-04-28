@@ -1696,7 +1696,7 @@ const ProductTable: React.FC<{
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-900/60">
-                    {Object.keys(products).sort((a, b) => products[a].displayName.localeCompare(products[b].displayName, 'ko')).map((productKey) => (
+                    {Object.keys(products).sort((a, b) => (products[a].orderFormName || products[a].displayName).localeCompare(products[b].orderFormName || products[b].displayName, 'ko')).map((productKey) => (
                         <ProductRow
                             key={productKey}
                             productKey={productKey}
