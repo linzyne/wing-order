@@ -50,18 +50,18 @@ const parsePastedTable = (text: string): { products: ProductPricing[]; error?: s
         dataStartRow = 1;
     } else {
         nameIdx = 0;
-        supplyIdx = 1;
-        // 첫 번째 % 컬럼 바로 앞을 판매가로 감지 (부가세/총합계 포함 표 대응)
+        // 첫 번째 % 컬럼 기준으로 총합계(바로 2칸 앞) / 판매가(바로 1칸 앞) 감지
         const percentColIdx = firstRow.findIndex((c, i) => i > 0 && hasPercent(c));
-        if (percentColIdx >= 2) {
-            sellingIdx = percentColIdx - 1;
+        if (percentColIdx >= 3) {
+            supplyIdx = percentColIdx - 2; // 총합계
+            sellingIdx = percentColIdx - 1; // 판매가
             // 마진: % 컬럼 이후 마지막 양수 비-% 컬럼
             for (let i = firstRow.length - 1; i > percentColIdx; i--) {
                 const v = parseNum(firstRow[i] || '');
                 if (v > 0 && !hasPercent(firstRow[i] || '')) { marginIdx = i; break; }
             }
         } else {
-            sellingIdx = 2;
+            supplyIdx = 1; sellingIdx = 2;
         }
     }
 
