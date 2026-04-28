@@ -3825,7 +3825,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     const hasDepositOverride = companyOverrides[r.company]?.deposit !== undefined;
                                     const hasMarginOverride = companyOverrides[r.company]?.margin !== undefined;
                                     return (
-                                        <div key={r.company} className={`grid items-center gap-2 px-3 py-2 transition-all ${isChecked ? 'opacity-40' : 'hover:bg-zinc-800/20'}`} style={{ gridTemplateColumns: '20px 1fr 44px 110px 90px' }}>
+                                        <div key={r.company} className={`grid items-center gap-2 px-3 py-2 transition-all ${isChecked ? 'bg-indigo-950/40 border-l-2 border-indigo-500/50' : 'hover:bg-zinc-800/20 border-l-2 border-transparent'}`} style={{ gridTemplateColumns: '20px 1fr 44px 110px 90px' }}>
                                             <input
                                                 type="checkbox"
                                                 checked={isChecked}
@@ -3834,16 +3834,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     if (next.has(r.company)) next.delete(r.company); else next.add(r.company);
                                                     return next;
                                                 })}
-                                                className="w-3.5 h-3.5 accent-rose-500 cursor-pointer"
+                                                className="w-3.5 h-3.5 accent-indigo-500 cursor-pointer"
                                             />
                                             <button
                                                 onClick={() => firstSession && handleToastClick(firstSession.id)}
-                                                className={`text-left text-[12px] font-black truncate transition-colors ${isChecked ? 'line-through text-zinc-600' : 'text-zinc-200 hover:text-white'}`}
+                                                className={`text-left text-[12px] font-black truncate transition-colors ${isChecked ? 'line-through text-indigo-300/70' : 'text-zinc-200 hover:text-white'}`}
                                                 title="클릭하여 이동"
                                             >
                                                 {r.company}
                                             </button>
-                                            <span className={`text-right text-[10px] font-bold ${isChecked ? 'text-zinc-700' : 'text-zinc-500'}`}>{r.orderCount}</span>
+                                            <span className={`text-right text-[10px] font-bold ${isChecked ? 'text-indigo-400/60' : 'text-zinc-500'}`}>{r.orderCount}</span>
                                             {/* 입금액 */}
                                             {isEditingDeposit ? (
                                                 <input
@@ -3866,7 +3866,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 <button
                                                     onClick={() => { setEditingCell({ company: r.company, field: 'deposit' }); setEditingValue(String(r.deposit)); }}
                                                     title="클릭하여 수정"
-                                                    className={`text-right text-[11px] font-black w-full transition-colors hover:text-rose-400 ${isChecked ? 'text-zinc-700' : 'text-white'} ${hasDepositOverride ? 'underline decoration-dotted decoration-rose-400/60' : ''}`}
+                                                    className={`text-right text-[11px] font-black w-full transition-colors hover:text-rose-400 ${isChecked ? 'text-indigo-300/60' : 'text-white'} ${hasDepositOverride ? 'underline decoration-dotted decoration-rose-400/60' : ''}`}
                                                 >
                                                     {r.deposit.toLocaleString()}
                                                 </button>
@@ -3893,7 +3893,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 <button
                                                     onClick={() => { setEditingCell({ company: r.company, field: 'margin' }); setEditingValue(String(r.margin)); }}
                                                     title="클릭하여 수정"
-                                                    className={`text-right text-[11px] font-black w-full transition-colors ${isChecked ? 'text-zinc-700' : r.margin > 0 ? 'text-emerald-400 hover:text-emerald-300' : 'text-zinc-700 hover:text-zinc-500'} ${hasMarginOverride ? 'underline decoration-dotted decoration-emerald-400/60' : ''}`}
+                                                    className={`text-right text-[11px] font-black w-full transition-colors ${isChecked ? 'text-indigo-300/60 hover:text-indigo-200' : r.margin > 0 ? 'text-emerald-400 hover:text-emerald-300' : 'text-zinc-700 hover:text-zinc-500'} ${hasMarginOverride ? 'underline decoration-dotted decoration-emerald-400/60' : ''}`}
                                                 >
                                                     {r.margin > 0 ? `+${r.margin.toLocaleString()}` : '—'}
                                                 </button>
