@@ -1108,12 +1108,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className={`px-6 ${isFirstSession ? 'py-2' : 'py-1'}`}>
+                <td className={`px-3 ${isFirstSession ? 'py-2' : 'py-1'}`}>
                     <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {!mergeResults ? (
                             <div className="flex flex-col items-center gap-2">
-                                <label className={`flex items-center gap-2 cursor-pointer px-4 py-1.5 rounded-lg text-[10px] font-black border transition-all shadow-md whitespace-nowrap ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFiles.length > 0 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
-                                    <UploadIcon className="w-4 h-4" />
+                                <label className={`flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded-lg text-[9px] font-black border transition-all shadow-md whitespace-nowrap ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFiles.length > 0 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
+                                    <UploadIcon className="w-3 h-3" />
                                     <span>{mergeStatus === 'processing' ? '매칭 중...' : mergeStatus === 'error' ? '송장 오류' : vendorFiles.length > 1 ? `송장 ${vendorFiles.length}개` : vendorFiles.length === 1 ? '송장 업로드됨' : '송장 선택'}</span>
                                     <input type="file" className="sr-only" accept=".xlsx,.xls" multiple onChange={(e) => { const files = e.target.files; if (files && files.length > 0) { resetMerge(); onVendorFileChange(Array.from(files)); } }} />
                                 </label>
@@ -1125,11 +1125,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                             </div>
                         ) : (
-                            <div className="flex items-center gap-2 animate-fade-in">
-                                <div className="relative" ref={platformDropdownRef}>
+                            <div className="flex items-center gap-1.5 animate-fade-in flex-nowrap">
+                                <div className="relative shrink-0" ref={platformDropdownRef}>
                                     <button onClick={() => setShowPlatformDropdown(!showPlatformDropdown)}
-                                        className="bg-zinc-700 text-white px-3 py-1 rounded font-black text-[10px] hover:bg-zinc-600 shadow-md flex items-center gap-1.5">
-                                        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                        className="bg-zinc-700 text-white px-2 py-0.5 rounded font-black text-[9px] hover:bg-zinc-600 shadow-md flex items-center gap-1 whitespace-nowrap">
+                                        <ArrowDownTrayIcon className="w-3 h-3" />
                                         <span>{currentStat?.mgmt || 0}건</span>
                                         <ChevronDownIcon className={`w-3 h-3 transition-transform ${showPlatformDropdown ? 'rotate-180' : ''}`} />
                                     </button>
@@ -1174,7 +1174,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     )}
                                 </div>
-                                <button onClick={() => { onVendorFileChange([]); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors shadow-sm"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => { onVendorFileChange([]); resetMerge(); }} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors shadow-sm shrink-0"><ArrowPathIcon className="w-3 h-3" /></button>
                             </div>
                         )}
                     </div>

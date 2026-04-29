@@ -3862,55 +3862,51 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         const isEditingMargin = editingCell?.company === company && editingCell?.field === 'margin';
                                         return workstationsReady ? (
                                             <React.Fragment key={session.id}>
-                                                {sIdx === 0 && showStats && (
-                                                    <tr className={`${isChecked ? 'bg-indigo-950/40 border-l-[3px] border-indigo-500/60' : 'border-l-[3px] border-transparent'} transition-all`}>
-                                                        <td colSpan={3} className="px-5 py-1.5">
-                                                            <div className="flex items-center gap-3">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={isChecked}
-                                                                    onChange={() => setCheckedCompanies(prev => {
-                                                                        const next = new Set(prev);
-                                                                        if (next.has(company)) next.delete(company); else next.add(company);
-                                                                        return next;
-                                                                    })}
-                                                                    className="w-3.5 h-3.5 accent-indigo-500 cursor-pointer shrink-0"
-                                                                />
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <span className={`text-[9px] font-black uppercase tracking-wider ${isChecked ? 'text-indigo-400/50' : 'text-zinc-600'}`}>입금</span>
-                                                                    {isEditingDeposit ? (
-                                                                        <input type="number" value={editingValue} onChange={e => setEditingValue(e.target.value)}
-                                                                            onBlur={() => { const v = parseInt(editingValue); setCompanyOverrides(prev => ({ ...prev, [company]: { ...prev[company], deposit: isNaN(v) ? companyCalcDeposit : v } })); setEditingCell(null); }}
-                                                                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
-                                                                            className="w-28 text-[11px] font-black text-white bg-zinc-800 border border-rose-500/50 rounded px-2 py-0.5 focus:outline-none" autoFocus />
-                                                                    ) : (
-                                                                        <button onClick={() => { setEditingCell({ company, field: 'deposit' }); setEditingValue(String(companyDeposit)); }} title="클릭하여 수정"
-                                                                            className={`text-[12px] font-black transition-colors hover:text-rose-400 ${isChecked ? 'text-indigo-300/60' : 'text-white'} ${companyOverride.deposit !== undefined ? 'underline decoration-dotted decoration-rose-400/60' : ''}`}>
-                                                                            {companyDeposit.toLocaleString()}원
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                                <span className="text-zinc-700 text-[10px]">·</span>
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <span className={`text-[9px] font-black uppercase tracking-wider ${isChecked ? 'text-indigo-400/50' : 'text-zinc-600'}`}>마진</span>
-                                                                    {isEditingMargin ? (
-                                                                        <input type="number" value={editingValue} onChange={e => setEditingValue(e.target.value)}
-                                                                            onBlur={() => { const v = parseInt(editingValue); setCompanyOverrides(prev => ({ ...prev, [company]: { ...prev[company], margin: isNaN(v) ? companyCalcMargin : v } })); setEditingCell(null); }}
-                                                                            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
-                                                                            className="w-24 text-[11px] font-black text-emerald-400 bg-zinc-800 border border-emerald-500/50 rounded px-2 py-0.5 focus:outline-none" autoFocus />
-                                                                    ) : (
-                                                                        <button onClick={() => { setEditingCell({ company, field: 'margin' }); setEditingValue(String(companyMargin)); }} title="클릭하여 수정"
-                                                                            className={`text-[12px] font-black transition-colors ${isChecked ? 'text-indigo-300/60 hover:text-indigo-200' : companyMargin > 0 ? 'text-emerald-400 hover:text-emerald-300' : 'text-zinc-600 hover:text-zinc-400'} ${companyOverride.margin !== undefined ? 'underline decoration-dotted decoration-emerald-400/60' : ''}`}>
-                                                                            {companyMargin > 0 ? `+${companyMargin.toLocaleString()}원` : '—'}
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                )}
                                                 <CompanyWorkstationRow
                                                     sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
+                                                    companySummaryBar={sIdx === 0 && showStats ? (
+                                                        <div className="flex items-center gap-3">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isChecked}
+                                                                onChange={() => setCheckedCompanies(prev => {
+                                                                    const next = new Set(prev);
+                                                                    if (next.has(company)) next.delete(company); else next.add(company);
+                                                                    return next;
+                                                                })}
+                                                                className="w-3.5 h-3.5 accent-indigo-500 cursor-pointer shrink-0"
+                                                            />
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className={`text-[9px] font-black uppercase tracking-wider ${isChecked ? 'text-indigo-400/50' : 'text-zinc-600'}`}>입금</span>
+                                                                {isEditingDeposit ? (
+                                                                    <input type="number" value={editingValue} onChange={e => setEditingValue(e.target.value)}
+                                                                        onBlur={() => { const v = parseInt(editingValue); setCompanyOverrides(prev => ({ ...prev, [company]: { ...prev[company], deposit: isNaN(v) ? companyCalcDeposit : v } })); setEditingCell(null); }}
+                                                                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
+                                                                        className="w-28 text-[11px] font-black text-white bg-zinc-800 border border-rose-500/50 rounded px-2 py-0.5 focus:outline-none" autoFocus />
+                                                                ) : (
+                                                                    <button onClick={() => { setEditingCell({ company, field: 'deposit' }); setEditingValue(String(companyDeposit)); }} title="클릭하여 수정"
+                                                                        className={`text-[12px] font-black transition-colors hover:text-rose-400 ${isChecked ? 'text-indigo-300/60' : 'text-white'} ${companyOverride.deposit !== undefined ? 'underline decoration-dotted decoration-rose-400/60' : ''}`}>
+                                                                        {companyDeposit.toLocaleString()}원
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                            <span className="text-zinc-700 text-[10px]">·</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                <span className={`text-[9px] font-black uppercase tracking-wider ${isChecked ? 'text-indigo-400/50' : 'text-zinc-600'}`}>마진</span>
+                                                                {isEditingMargin ? (
+                                                                    <input type="number" value={editingValue} onChange={e => setEditingValue(e.target.value)}
+                                                                        onBlur={() => { const v = parseInt(editingValue); setCompanyOverrides(prev => ({ ...prev, [company]: { ...prev[company], margin: isNaN(v) ? companyCalcMargin : v } })); setEditingCell(null); }}
+                                                                        onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setEditingCell(null); }}
+                                                                        className="w-24 text-[11px] font-black text-emerald-400 bg-zinc-800 border border-emerald-500/50 rounded px-2 py-0.5 focus:outline-none" autoFocus />
+                                                                ) : (
+                                                                    <button onClick={() => { setEditingCell({ company, field: 'margin' }); setEditingValue(String(companyMargin)); }} title="클릭하여 수정"
+                                                                        className={`text-[12px] font-black transition-colors ${isChecked ? 'text-indigo-300/60 hover:text-indigo-200' : companyMargin > 0 ? 'text-emerald-400 hover:text-emerald-300' : 'text-zinc-600 hover:text-zinc-400'} ${companyOverride.margin !== undefined ? 'underline decoration-dotted decoration-emerald-400/60' : ''}`}>
+                                                                        {companyMargin > 0 ? `+${companyMargin.toLocaleString()}원` : '—'}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ) : undefined}
                                                     vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
