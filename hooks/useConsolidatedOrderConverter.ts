@@ -25,6 +25,7 @@ export type ProcessedResult = {
     rows: any[][];
     registeredProductNames: Record<string, string>;
     orderItems: OrderItem[];
+    includedOrderNumbers: string[];
     originalOrderCount?: number; // 합산 전 원본 주문 수 (autoConsolidate 사용 시)
     consolidationLog?: ConsolidationLogEntry[]; // 합산 변환 내역
     preConsolidationByGroup?: Record<string, number>; // 합산 전 groupName별 수량 (누락 비교용)
@@ -548,6 +549,7 @@ const generateWorkbookForCompany = async (
         let outputRows: any[][] = [];
         const registeredProductNames: Record<string, string> = {};
         const orderItems: OrderItem[] = [];
+        const includedOrderNumbers: string[] = [];
         let originalOrderCount = 0;
         let consolidationLog: ConsolidationLogEntry[] = [];
         let preConsolidationByGroup: Record<string, number> = {};
@@ -628,6 +630,7 @@ const generateWorkbookForCompany = async (
                         groupColValue: String(row[groupColIdx] || '').trim(),
                         regOptionValue: String(row[regOptionColIdx] || '').trim(),
                     });
+                    includedOrderNumbers.push(orderNumber);
                 } else {
                     console.error(`[발주서][${companyName}] ❌ 품목 매칭 실패로 주문 누락! 수취인: ${recipientName}, 상품: ${rawProductName}, 주문번호: ${orderNumber}`);
                     unmatchedOrders.push({ companyName, recipientName, productName: rawProductName, phone, orderNumber, qty });
@@ -723,7 +726,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, preConsolidationByGroup, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

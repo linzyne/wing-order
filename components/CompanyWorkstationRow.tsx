@@ -140,6 +140,22 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         });
     })();
 
+    // 가구매 주문번호가 발주서에 포함된 경우 경고
+    const fakeOrderWarnings = (() => {
+        const fakeNums = new Set<string>();
+        fakeOrderNumbers.split('\n').forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+            const matches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
+            if (matches) matches.forEach(m => fakeNums.add(m.trim()));
+        });
+        if (fakeNums.size === 0) return [];
+        const included = localResult?.includedOrderNumbers
+            || (syncedData as any)?.includedOrderNumbers as string[] | undefined
+            || [];
+        return included.filter(n => fakeNums.has(n));
+    })();
+
     // 합산 헬퍼: previousRoundItems + 현재 세션 summary를 합산
     const _mergeSummaries = () => {
         const merged: Record<string, { count: number; totalPrice: number }> = {};
@@ -417,6 +433,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 itemSummary: localResult.summary as any,
                 registeredProductNames: localResult.registeredProductNames || {},
                 orderItems: localResult.orderItems || [],
+                includedOrderNumbers: localResult.includedOrderNumbers || [],
                 unmatchedOrders: unmatchedList.length > 0 ? unmatchedList : [],
             };
             const resultStr = JSON.stringify(resultData);
@@ -847,6 +864,18 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     </div>
                                 )}
+                                {fakeOrderWarnings.length > 0 && (
+                                    <div className="bg-yellow-500/10 border border-yellow-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-yellow-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 가구매 주문번호 {fakeOrderWarnings.length}건이 발주서에 포함됨
+                                        </div>
+                                        <div className="mt-1 space-y-0.5">
+                                            {fakeOrderWarnings.map((n, idx) => (
+                                                <div key={idx} className="text-[9px] text-yellow-300/80 font-mono truncate">{n}</div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 {unmatchedList.length > 0 && (
                                     <div className="bg-pink-500/10 border border-pink-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
                                         <div className="text-pink-400 text-[10px] font-black flex items-center gap-1">
@@ -962,6 +991,18 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="h-6 w-px bg-zinc-800" />
                                     <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
                                 </div>
+                                {fakeOrderWarnings.length > 0 && (
+                                    <div className="bg-yellow-500/10 border border-yellow-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
+                                        <div className="text-yellow-400 text-[10px] font-black flex items-center gap-1">
+                                            <span>⚠</span> 가구매 주문번호 {fakeOrderWarnings.length}건이 발주서에 포함됨
+                                        </div>
+                                        <div className="mt-1 space-y-0.5">
+                                            {fakeOrderWarnings.map((n, idx) => (
+                                                <div key={idx} className="text-[9px] text-yellow-300/80 font-mono truncate">{n}</div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
                                 {unmatchedList.length > 0 && (
                                     <div className="bg-pink-500/10 border border-pink-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
                                         <div className="text-pink-400 text-[10px] font-black flex items-center gap-1">
