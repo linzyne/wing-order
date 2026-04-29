@@ -141,21 +141,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     })();
 
     // 가구매 주문번호가 발주서에 포함된 경우 경고
-    const fakeOrderWarnings = (() => {
-        const fakeNums = new Set<string>();
-        fakeOrderNumbers.split('\n').forEach(line => {
-            const trimmed = line.trim();
-            if (!trimmed) return;
-            const matches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
-            if (matches) matches.forEach(m => fakeNums.add(m.trim()));
-        });
-        if (fakeNums.size === 0) return [];
-        const included = localResult?.includedOrderNumbers
-            || (syncedData as any)?.includedOrderNumbers as string[] | undefined
-            || [];
-        return included.filter(n => fakeNums.has(n));
-    })();
-
     // 합산 헬퍼: previousRoundItems + 현재 세션 summary를 합산
     const _mergeSummaries = () => {
         const merged: Record<string, { count: number; totalPrice: number }> = {};
@@ -281,6 +266,22 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     // Synced data (디바이스 2 - 로컬 처리 없을 때만)
     const syncedData = (!localResult && !isLocalProcessing && !suppressSyncRef.current) ? workspace?.sessionResults?.[sessionId] : undefined;
+
+    // 가구매 주문번호가 발주서에 포함된 경우 경고
+    const fakeOrderWarnings = (() => {
+        const fakeNums = new Set<string>();
+        fakeOrderNumbers.split('\n').forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+            const matches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
+            if (matches) matches.forEach(m => fakeNums.add(m.trim()));
+        });
+        if (fakeNums.size === 0) return [];
+        const included = localResult?.includedOrderNumbers
+            || syncedData?.includedOrderNumbers
+            || [];
+        return included.filter(n => fakeNums.has(n));
+    })();
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig, businessId);
