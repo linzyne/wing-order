@@ -3837,13 +3837,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             return { round: s.round, count, platform };
                                         });
                                         const companyTotal = roundOrderCountsForCompany.reduce((s, r) => s + r.count, 0);
-                                        // 업체별 입금·마진 계산 (첫 세션 렌더 시 1회)
+                                        // 업체별 입금·공급가·마진 계산 (첫 세션 렌더 시 1회)
                                         const companyCalcDeposit = sessions.reduce((sum, s) => sum + (totalsMap[s.id] || 0), 0);
                                         const companyCalcMargin = sessions.reduce((sum, s) => {
                                             const items = allOrderItems[s.id] || [];
                                             return sum + items.reduce((acc, item) => {
                                                 const product = (pricingConfig[company]?.products as any)?.[item.matchedProductKey];
                                                 return acc + ((product?.margin || 0) * item.qty);
+                                            }, 0);
+                                        }, 0);
+                                        const companyCalcSupplyPrice = sessions.reduce((sum, s) => {
+                                            const items = allOrderItems[s.id] || [];
+                                            return sum + items.reduce((acc, item) => {
+                                                const product = (pricingConfig[company]?.products as any)?.[item.matchedProductKey];
+                                                return acc + ((product?.supplyPrice || 0) * item.qty);
                                             }, 0);
                                         }, 0);
                                         const companyOverride = companyOverrides[company] || {};
@@ -3865,7 +3872,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 <CompanyWorkstationRow
                                                     sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                     companySummaryBar={sIdx === 0 && showStats ? (
-                                                        <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-3 flex-wrap">
                                                             <input
                                                                 type="checkbox"
                                                                 checked={isChecked}
@@ -3890,6 +3897,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                                     </button>
                                                                 )}
                                                             </div>
+                                                            {companyCalcSupplyPrice > 0 && (
+                                                                <>
+                                                                    <span className="text-zinc-700 text-[10px]">·</span>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className={`text-[9px] font-black uppercase tracking-wider ${isChecked ? 'text-indigo-400/50' : 'text-zinc-600'}`}>공급가</span>
+                                                                        <span className={`text-[12px] font-black ${isChecked ? 'text-indigo-300/60' : 'text-zinc-300'}`}>
+                                                                            {companyCalcSupplyPrice.toLocaleString()}원
+                                                                        </span>
+                                                                    </div>
+                                                                </>
+                                                            )}
                                                             <span className="text-zinc-700 text-[10px]">·</span>
                                                             <div className="flex items-center gap-1.5">
                                                                 <span className={`text-[9px] font-black uppercase tracking-wider ${isChecked ? 'text-indigo-400/50' : 'text-zinc-600'}`}>마진</span>
