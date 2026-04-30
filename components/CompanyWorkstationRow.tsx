@@ -757,7 +757,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     )}
                                 </div>
 
-                                <div className="flex flex-wrap gap-1 items-center mb-3">
+                                <div className="flex flex-wrap gap-1 items-center mt-2">
                                     {keywords.map(kw => (
                                         <span key={kw} className="text-[9px] bg-zinc-900/80 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-800 font-bold tracking-tight group/kw flex items-center gap-1">
                                             {kw}
