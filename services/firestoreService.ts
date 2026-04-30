@@ -140,6 +140,7 @@ export interface DailyWorkspaceData {
   sessionAdjustments: Record<string, any[]>;
   sessionMemos?: Record<string, string>;
   sessionResults?: Record<string, SessionResultData>;
+  summaryOverrides?: Record<string, Record<string, { count: number; totalPrice: number }>>;
   thumbnailNotes?: { id: string; imageData: string; memos: [string, string, string] }[];
   updatedAt?: any;
 }
