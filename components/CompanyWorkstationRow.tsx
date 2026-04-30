@@ -85,6 +85,7 @@ interface CompanyWorkstationRowProps {
     roundPlatform?: string;          // 이 세션의 플랫폼명
     companyTotalOrders?: number;     // 업체 전체 합계 (1차+2차+...)
     roundOrderCounts?: { round: number; count: number; platform: string }[]; // 라운드별 수량+플랫폼
+    fakeMismatch?: boolean;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -97,7 +98,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     missingItems = [],
     orderPlatformMap, platformConfigs,
     fakeCourierRows,
-    roundPlatform = '쿠팡', companyTotalOrders = 0, roundOrderCounts = []
+    roundPlatform = '쿠팡', companyTotalOrders = 0, roundOrderCounts = [],
+    fakeMismatch = false
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -585,7 +587,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);
     };
 
-    const handleDownloadOrder = () => localResult && XLSX.writeFile(localResult.workbook, localResult.fileName);
+    const handleDownloadOrder = () => {
+        if (fakeMismatch) alert('미매칭(수량)을 확인하세요.');
+        if (localResult) XLSX.writeFile(localResult.workbook, localResult.fileName);
+    };
     const handleDownloadInvoice = (type: 'mgmt' | 'upload') => {
         if (!mergeResults) return;
         if (fakeCourierRows && fakeCourierRows.length > 0) {

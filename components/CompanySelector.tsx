@@ -1031,6 +1031,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates };
     }, [fakeOrderInput, allExcludedDetails, masterOrderData]);
 
+    // 가구매 수량 미매칭 여부: 명단 주문번호 수 vs 실제 제외된 주문번호 수
+    const fakeMismatch = useMemo(() => {
+        const fakeCount = fakeOrderAnalysis.inputNumbers.size;
+        if (fakeCount === 0) return false;
+        const excludedFakeNums = new Set<string>();
+        (Object.values(allExcludedDetails).flat() as ExcludedOrder[]).forEach(ex => {
+            if (String(ex.orderNumber).includes('(제외)')) {
+                excludedFakeNums.add(String(ex.orderNumber).replace(/\s*\(제외\)\s*/g, '').trim());
+            }
+        });
+        return fakeCount !== excludedFakeNums.size;
+    }, [fakeOrderAnalysis, allExcludedDetails]);
+
     // 마스터 주문서 품목별 건수 분석 (가구매 제외 / 가구매 분리)
     const masterProductSummary = useMemo(() => {
         if (!masterOrderData || masterOrderData.length < 2) return null;
@@ -1389,6 +1402,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleMasterUpload = async (file: File) => {
         console.log('🚀 [파일 업로드] 시작:', file.name);
         console.log('🚀 [platformConfigs]:', platformConfigs);
+        if (fakeMismatch) alert('미매칭(수량)을 확인해주세요.');
         setMasterOrderFile(file);
         try {
             const data = await file.arrayBuffer();
@@ -1500,6 +1514,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const handleBatchUpload = async (file: File) => {
         console.log('🚀 [배치 업로드] 시작:', file.name);
+        if (fakeMismatch) alert('미매칭(수량)을 확인해주세요.');
         try {
             const data = await file.arrayBuffer();
             const wb = XLSX.read(data, { type: 'array' });
@@ -3947,6 +3962,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     roundPlatform={sessionPlatform}
                                                     companyTotalOrders={companyTotal}
                                                     roundOrderCounts={roundOrderCountsForCompany}
+                                                    fakeMismatch={fakeMismatch}
                                                 />
                                             </React.Fragment>
                                         ) : null;
