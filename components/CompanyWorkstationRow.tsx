@@ -253,23 +253,34 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         return lines.join('\n');
     })();
 
-    // override 적용된 최종 정산 텍스트 (카톡용/엑셀용)
-    const effectiveDisplayText = (() => {
-        if (cumulativeDepositText !== null) return cumulativeDepositText;
-        if (summaryOverride) {
-            const origText = localResult?.depositSummary || syncedData?.depositSummary;
-            return buildDepositTextFromSummary(summaryOverride, origText);
-        }
-        return localResult?.depositSummary || syncedData?.depositSummary || '';
-    })();
-    const effectiveDisplayExcelText = (() => {
-        if (cumulativeDepositExcelText !== null) return cumulativeDepositExcelText;
-        if (summaryOverride) {
-            const origExcel = localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel;
-            return buildDepositExcelFromSummary(summaryOverride, origExcel);
-        }
-        return localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel || '';
-    })();
+    const buildDepositTextFromSummary = (summary: Record<string, { count: number; totalPrice: number }>, originalText: string | null | undefined): string => {
+        const senderName = getBusinessInfo(businessId ?? '')?.senderName || '안군농원';
+        const firstLine = originalText?.split('\n')[0] || '';
+        const totalCount = Object.values(summary).reduce((a, b) => a + b.count, 0);
+        let grandTotal = 0;
+        const lines = [firstLine, `총주문수\t${totalCount}개`, ''];
+        Object.entries(summary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })).forEach(([name, stat]) => {
+            lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+            grandTotal += stat.totalPrice;
+        });
+        lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${senderName})`);
+        return lines.join('\n');
+    };
+
+    const buildDepositExcelFromSummary = (summary: Record<string, { count: number; totalPrice: number }>, originalExcel: string | null | undefined): string => {
+        const entries = Object.entries(summary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
+        const totalCount = entries.reduce((a, [, s]) => a + s.count, 0);
+        const grandTotal = entries.reduce((a, [, s]) => a + s.totalPrice, 0);
+        const firstLineTitle = originalExcel?.split('\t')[0] || '';
+        const lines: string[] = [];
+        entries.forEach(([name, stat], idx) => {
+            let col1 = idx === 0 ? firstLineTitle : idx === 1 ? `총 ${totalCount}개` : '';
+            let line = `${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
+            if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
+            lines.push(line);
+        });
+        return lines.join('\n');
+    };
 
     const [copiedCombinedId, setCopiedCombinedId] = useState<string | null>(null);
     const handleCopyCombined = () => {
@@ -306,6 +317,24 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             || syncedData?.includedOrderNumbers
             || [];
         return included.filter(n => fakeNums.has(n));
+    })();
+
+    // override 적용된 최종 정산 텍스트 (카톡용/엑셀용)
+    const effectiveDisplayText = (() => {
+        if (cumulativeDepositText !== null) return cumulativeDepositText;
+        if (summaryOverride) {
+            const origText = localResult?.depositSummary || syncedData?.depositSummary;
+            return buildDepositTextFromSummary(summaryOverride, origText);
+        }
+        return localResult?.depositSummary || syncedData?.depositSummary || '';
+    })();
+    const effectiveDisplayExcelText = (() => {
+        if (cumulativeDepositExcelText !== null) return cumulativeDepositExcelText;
+        if (summaryOverride) {
+            const origExcel = localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel;
+            return buildDepositExcelFromSummary(summaryOverride, origExcel);
+        }
+        return localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel || '';
     })();
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
@@ -444,35 +473,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             lastManualOrdersRef.current = manualOrdersStr;
         }
     }, [masterFile, batchFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, isLocalProcessing]);
-
-    const buildDepositTextFromSummary = (summary: Record<string, { count: number; totalPrice: number }>, originalText: string | null | undefined): string => {
-        const senderName = getBusinessInfo(businessId ?? '')?.senderName || '안군농원';
-        const firstLine = originalText?.split('\n')[0] || '';
-        const totalCount = Object.values(summary).reduce((a, b) => a + b.count, 0);
-        let grandTotal = 0;
-        const lines = [firstLine, `총주문수\t${totalCount}개`, ''];
-        Object.entries(summary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })).forEach(([name, stat]) => {
-            lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-            grandTotal += stat.totalPrice;
-        });
-        lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${senderName})`);
-        return lines.join('\n');
-    };
-
-    const buildDepositExcelFromSummary = (summary: Record<string, { count: number; totalPrice: number }>, originalExcel: string | null | undefined): string => {
-        const entries = Object.entries(summary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
-        const totalCount = entries.reduce((a, [, s]) => a + s.count, 0);
-        const grandTotal = entries.reduce((a, [, s]) => a + s.totalPrice, 0);
-        const firstLineTitle = originalExcel?.split('\t')[0] || '';
-        const lines: string[] = [];
-        entries.forEach(([name, stat], idx) => {
-            let col1 = idx === 0 ? firstLineTitle : idx === 1 ? `총 ${totalCount}개` : '';
-            let line = `${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
-            if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
-            lines.push(line);
-        });
-        return lines.join('\n');
-    };
 
     useEffect(() => {
         if (!localResult) {
