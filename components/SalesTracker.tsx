@@ -293,9 +293,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
   };
 
   const trendDates = useMemo(() => {
-    const dates = Array.from(new Set(salesHistory.map(d => d.date))).sort();
-    return dates.slice(-trendDays);
-  }, [salesHistory, trendDays]);
+    return Array.from(new Set(filteredHistory.map(d => d.date))).sort();
+  }, [filteredHistory]);
 
   const trendCompanies = useMemo(() => {
     const set = new Set<string>();
@@ -307,8 +306,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
 
   const trendData = useMemo(() => {
     const map = new Map<string, Map<string, number>>();
-    salesHistory.forEach(d => {
-      if (!trendDates.includes(d.date)) return;
+    filteredHistory.forEach(d => {
       d.records.forEach(r => {
         if (r.company !== trendActiveCompany) return;
         const name = getOrderFormName(r.company, r.product);
@@ -322,7 +320,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
       });
     });
     return map;
-  }, [salesHistory, trendDates, trendActiveCompany, trendMetric, pricingConfig]);
+  }, [filteredHistory, trendActiveCompany, trendMetric, pricingConfig]);
 
   const groupByCompany = (records: SalesRecord[]) => {
     const map = new Map<string, SalesRecord[]>();
@@ -1153,31 +1151,19 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
   };
 
   const renderTrendView = () => {
-    const metricLabel = trendMetric === 'count' ? '개' : '원';
-    const formatVal = (v: number) => trendMetric === 'count' ? `${v}개` : `${v.toLocaleString()}원`;
-    const latestDate = trendDates[trendDates.length - 1] || '';
-    const prevDate = trendDates[trendDates.length - 2] || '';
+    const formatVal = (v: number) => {
+      if (v === 0) return '';
+      return trendMetric === 'count' ? `${v}` : `${v.toLocaleString()}`;
+    };
 
-    const productRows = Array.from(trendData.entries()).map(([name, dateMap]) => {
-      const values = trendDates.map(d => dateMap.get(d) || 0);
-      const latest = dateMap.get(latestDate) || 0;
-      const prev = dateMap.get(prevDate) || 0;
-      const avg7 = trendDates.slice(-7).reduce((s, d) => s + (dateMap.get(d) || 0), 0) / 7;
-      return { name, values, latest, prev, avg7 };
-    }).sort((a, b) => b.latest - a.latest);
+    const productRows = Array.from(trendData.entries())
+      .map(([name, dateMap]) => ({ name, dateMap }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
 
     return (
       <div className="space-y-4">
         {/* 컨트롤 */}
         <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex gap-1 bg-zinc-900 rounded-xl p-1">
-            {([14, 30] as const).map(d => (
-              <button key={d} onClick={() => setTrendDays(d)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendDays === d ? 'bg-rose-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
-                {d}일
-              </button>
-            ))}
-          </div>
           <div className="flex gap-1 bg-zinc-900 rounded-xl p-1">
             {([['count', '수량'], ['totalPrice', '매출'], ['margin', '마진']] as const).map(([key, label]) => (
               <button key={key} onClick={() => setTrendMetric(key as typeof trendMetric)}
@@ -1203,44 +1189,31 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
           <p className="text-zinc-600 text-sm py-8 text-center">데이터 없음</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="text-sm border-collapse">
               <thead>
-                <tr className="text-zinc-600 text-xs border-b border-zinc-800">
-                  <th className="text-left py-2 pr-4 font-medium">품목</th>
-                  <th className="py-2 pr-6 font-medium text-left">추이 ({trendDays}일)</th>
-                  <th className="py-2 pr-4 font-medium text-right">{latestDate.slice(5).replace('-', '/')} ({metricLabel})</th>
-                  <th className="py-2 pr-4 font-medium text-right">{prevDate ? prevDate.slice(5).replace('-', '/') : '-'} ({metricLabel})</th>
-                  <th className="py-2 font-medium text-right">7일평균</th>
+                <tr className="text-zinc-500 text-xs border-b border-zinc-700">
+                  <th className="text-left py-2 px-3 font-bold whitespace-nowrap sticky left-0 bg-zinc-950 z-10 border-r border-zinc-700">품목명</th>
+                  {trendDates.map(date => (
+                    <th key={date} className="py-2 px-3 font-bold text-center whitespace-nowrap min-w-[40px]">
+                      {parseInt(date.slice(8))}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {productRows.map(({ name, values, latest, prev, avg7 }) => {
-                  const trend = latest > prev ? 'up' : latest < prev ? 'down' : 'flat';
-                  const max = Math.max(...values, 1);
-                  const w = 80, h = 24, pad = 2;
-                  const step = values.length > 1 ? (w - pad * 2) / (values.length - 1) : 0;
-                  const points = values.map((v, i) => `${pad + i * step},${h - pad - ((v / max) * (h - pad * 2))}`).join(' ');
-                  const color = trend === 'up' ? '#34d399' : trend === 'down' ? '#f87171' : '#71717a';
-                  const lastIdx = values.length - 1;
-                  const cx = pad + lastIdx * step;
-                  const cy = h - pad - ((values[lastIdx] / max) * (h - pad * 2));
-                  return (
-                    <tr key={name} className="border-b border-zinc-800/50 hover:bg-zinc-800/20">
-                      <td className="py-3 pr-4 font-bold text-zinc-200 whitespace-nowrap">{name}</td>
-                      <td className="py-3 pr-6">
-                        <svg width={w} height={h} className="overflow-visible">
-                          <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
-                          <circle cx={cx} cy={cy} r="2.5" fill={color} />
-                        </svg>
-                      </td>
-                      <td className={`py-3 pr-4 text-right font-bold ${trend === 'up' ? 'text-emerald-400' : trend === 'down' ? 'text-rose-400' : 'text-zinc-300'}`}>
-                        {formatVal(latest)}
-                      </td>
-                      <td className="py-3 pr-4 text-right text-zinc-400">{formatVal(prev)}</td>
-                      <td className="py-3 text-right text-zinc-500">{formatVal(Math.round(avg7 * 10) / 10)}</td>
-                    </tr>
-                  );
-                })}
+                {productRows.map(({ name, dateMap }) => (
+                  <tr key={name} className="border-b border-zinc-800/50 hover:bg-zinc-800/20">
+                    <td className="py-2 px-3 font-bold text-zinc-200 whitespace-nowrap sticky left-0 bg-zinc-950 border-r border-zinc-800">{name}</td>
+                    {trendDates.map(date => {
+                      const val = dateMap.get(date) || 0;
+                      return (
+                        <td key={date} className="py-2 px-3 text-center text-zinc-300 tabular-nums">
+                          {formatVal(val)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
