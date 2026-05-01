@@ -1175,9 +1175,27 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
       return trendMetric === 'count' ? `${v}` : `${v.toLocaleString()}`;
     };
 
+    // 단위(숫자+단위)를 제거해 기본 품목명 추출
+    const getBaseName = (name: string): string => {
+      const match = name.match(/^(.+?)\s+\d+(?:kg|g|L|ml|개|팩|봉|박스|묶음|세트|인분)\s*$/i);
+      return match ? match[1].trim() : name;
+    };
+
     const productRows = Array.from(trendData.entries())
       .map(([name, dateMap]) => ({ name, dateMap }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+
+    // 기본 품목명으로 그룹핑 (순서 유지)
+    const groups: { base: string; rows: typeof productRows }[] = [];
+    productRows.forEach(row => {
+      const base = getBaseName(row.name);
+      const last = groups[groups.length - 1];
+      if (last && last.base === base) {
+        last.rows.push(row);
+      } else {
+        groups.push({ base, rows: [row] });
+      }
+    });
 
     const totalByDate = new Map<string, number>();
     trendDates.forEach(date => {
@@ -1223,17 +1241,34 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                 </tr>
               </thead>
               <tbody>
-                {productRows.map(({ name, dateMap }) => (
-                  <tr key={name} className="border-b border-zinc-800/40 hover:bg-zinc-800/20">
-                    <td className="py-1.5 px-3 text-zinc-300 whitespace-nowrap sticky left-0 bg-zinc-950 border-r border-zinc-800">{name}</td>
-                    {trendDates.map(date => (
-                      <td key={date} className="py-1.5 px-2 text-center text-zinc-400 tabular-nums">
-                        {formatVal(dateMap.get(date) || 0)}
-                      </td>
+                {groups.map(({ base, rows }) => (
+                  <React.Fragment key={base}>
+                    {rows.map(({ name, dateMap }) => (
+                      <tr key={name} className="border-b border-zinc-800/40 hover:bg-zinc-800/20">
+                        <td className="py-1.5 px-3 text-zinc-300 whitespace-nowrap sticky left-0 bg-zinc-950 border-r border-zinc-800">{name}</td>
+                        {trendDates.map(date => (
+                          <td key={date} className="py-1.5 px-2 text-center text-zinc-400 tabular-nums">
+                            {formatVal(dateMap.get(date) || 0)}
+                          </td>
+                        ))}
+                      </tr>
                     ))}
-                  </tr>
+                    {rows.length > 1 && (
+                      <tr className="border-t border-zinc-700 border-b-2 border-b-zinc-700">
+                        <td className="py-1.5 px-3 font-bold text-zinc-400 whitespace-nowrap sticky left-0 bg-zinc-900 border-r border-zinc-700 text-xs">{base} 합계</td>
+                        {trendDates.map(date => {
+                          const sub = rows.reduce((s, { dateMap }) => s + (dateMap.get(date) || 0), 0);
+                          return (
+                            <td key={date} className="py-1.5 px-2 text-center font-bold text-zinc-300 tabular-nums bg-zinc-900 text-xs">
+                              {formatVal(sub)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ))}
-                <tr className="border-t-2 border-zinc-700">
+                <tr className="border-t-2 border-zinc-600">
                   <td className="py-2 px-3 font-black text-zinc-100 whitespace-nowrap sticky left-0 bg-zinc-900 border-r border-zinc-700">총계</td>
                   {trendDates.map(date => (
                     <td key={date} className="py-2 px-2 text-center font-black text-zinc-100 tabular-nums bg-zinc-900">
