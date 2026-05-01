@@ -322,6 +322,25 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     return map;
   }, [filteredHistory, trendActiveCompany, trendMetric, pricingConfig]);
 
+  const trendDataByCompany = useMemo<Map<string, Map<string, Map<string, number>>>>(() => {
+    const companyMap = new Map<string, Map<string, Map<string, number>>>();
+    filteredHistory.forEach(d => {
+      d.records.forEach(r => {
+        const name = getOrderFormName(r.company, r.product);
+        if (!companyMap.has(r.company)) companyMap.set(r.company, new Map());
+        const productMap = companyMap.get(r.company)!;
+        if (!productMap.has(name)) productMap.set(name, new Map());
+        const dateMap = productMap.get(name)!;
+        const prev = dateMap.get(d.date) || 0;
+        const val = trendMetric === 'count' ? r.count
+          : trendMetric === 'totalPrice' ? r.totalPrice
+          : (r.margin || 0) * r.count;
+        dateMap.set(d.date, prev + val);
+      });
+    });
+    return companyMap;
+  }, [filteredHistory, trendMetric, pricingConfig]);
+
   const groupByCompany = (records: SalesRecord[]) => {
     const map = new Map<string, SalesRecord[]>();
     records.forEach(r => {
@@ -1156,64 +1175,73 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
       return trendMetric === 'count' ? `${v}` : `${v.toLocaleString()}`;
     };
 
-    const productRows = Array.from(trendData.entries())
-      .map(([name, dateMap]) => ({ name, dateMap }))
-      .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+    const companies = (Array.from(trendDataByCompany.keys()) as string[]).sort((a, b) => a.localeCompare(b, 'ko'));
 
     return (
       <div className="space-y-4">
         {/* 컨트롤 */}
-        <div className="flex flex-wrap gap-3 items-center">
-          <div className="flex gap-1 bg-zinc-900 rounded-xl p-1">
-            {([['count', '수량'], ['totalPrice', '매출'], ['margin', '마진']] as const).map(([key, label]) => (
-              <button key={key} onClick={() => setTrendMetric(key as typeof trendMetric)}
-                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendMetric === key ? 'bg-rose-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 업체 탭 */}
-        <div className="flex flex-wrap gap-2">
-          {trendCompanies.map(c => (
-            <button key={c} onClick={() => setTrendCompany(c)}
-              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${trendActiveCompany === c ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}>
-              {c}
+        <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 w-fit">
+          {([['count', '수량'], ['totalPrice', '매출'], ['margin', '마진']] as const).map(([key, label]) => (
+            <button key={key} onClick={() => setTrendMetric(key as typeof trendMetric)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendMetric === key ? 'bg-rose-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
+              {label}
             </button>
           ))}
         </div>
 
         {/* 트렌드 테이블 */}
-        {productRows.length === 0 ? (
+        {companies.length === 0 ? (
           <p className="text-zinc-600 text-sm py-8 text-center">데이터 없음</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="text-sm border-collapse">
               <thead>
-                <tr className="text-zinc-500 text-xs border-b border-zinc-700">
+                <tr className="text-zinc-500 text-xs border-b-2 border-zinc-700">
                   <th className="text-left py-2 px-3 font-bold whitespace-nowrap sticky left-0 bg-zinc-950 z-10 border-r border-zinc-700">품목명</th>
                   {trendDates.map(date => (
-                    <th key={date} className="py-2 px-3 font-bold text-center whitespace-nowrap min-w-[40px]">
+                    <th key={date} className="py-2 px-2 font-bold text-center whitespace-nowrap min-w-[36px]">
                       {parseInt(date.slice(8))}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {productRows.map(({ name, dateMap }) => (
-                  <tr key={name} className="border-b border-zinc-800/50 hover:bg-zinc-800/20">
-                    <td className="py-2 px-3 font-bold text-zinc-200 whitespace-nowrap sticky left-0 bg-zinc-950 border-r border-zinc-800">{name}</td>
-                    {trendDates.map(date => {
-                      const val = dateMap.get(date) || 0;
-                      return (
-                        <td key={date} className="py-2 px-3 text-center text-zinc-300 tabular-nums">
-                          {formatVal(val)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
+                {companies.map((company, companyIdx) => {
+                  const productMap = trendDataByCompany.get(company) as Map<string, Map<string, number>>;
+                  const products = (Array.from(productMap.keys()) as string[]).sort((a, b) => a.localeCompare(b, 'ko'));
+                  const totalByDate = new Map<string, number>();
+                  trendDates.forEach(date => {
+                    totalByDate.set(date, products.reduce((s, p) => s + ((productMap.get(p)?.get(date) as number) || 0), 0));
+                  });
+                  return (
+                    <React.Fragment key={company}>
+                      {companyIdx > 0 && (
+                        <tr><td colSpan={trendDates.length + 1} className="py-2" /></tr>
+                      )}
+                      {products.map(name => {
+                        const dateMap = productMap.get(name)!;
+                        return (
+                          <tr key={name} className="border-b border-zinc-800/40 hover:bg-zinc-800/20">
+                            <td className="py-1.5 px-3 text-zinc-300 whitespace-nowrap sticky left-0 bg-zinc-950 border-r border-zinc-800">{name}</td>
+                            {trendDates.map(date => (
+                              <td key={date} className="py-1.5 px-2 text-center text-zinc-400 tabular-nums">
+                                {formatVal(dateMap.get(date) || 0)}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                      <tr className="border-t-2 border-zinc-700">
+                        <td className="py-2 px-3 font-black text-zinc-100 whitespace-nowrap sticky left-0 bg-zinc-900 border-r border-zinc-700">총계</td>
+                        {trendDates.map(date => (
+                          <td key={date} className="py-2 px-2 text-center font-black text-zinc-100 tabular-nums bg-zinc-900">
+                            {formatVal(totalByDate.get(date) || 0)}
+                          </td>
+                        ))}
+                      </tr>
+                    </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
