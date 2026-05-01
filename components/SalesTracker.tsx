@@ -503,7 +503,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         <tbody className="divide-y divide-zinc-900/50">
           {data.map(([name, d]) => (
             <tr key={name} className="text-xs hover:bg-zinc-900/30 transition-colors">
-              <td className={`py-3 pr-4 font-bold ${isCompany ? 'text-rose-400' : 'text-zinc-200'}`}>{name}</td>
+              <td className={`py-3 pr-4 font-bold ${isCompany ? 'text-violet-400' : 'text-zinc-200'}`}>{name}</td>
               <td className="py-3 pr-4 text-right text-zinc-400 font-bold">{d.count}개</td>
               <td className="py-3 pr-4 text-right text-white font-black">{d.totalPrice.toLocaleString()}원</td>
               {monthTotalMargin > 0 && (
@@ -514,7 +514,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
               <td className="py-3 text-right">
                 <div className="flex items-center justify-end gap-2">
                   <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                    <div className="h-full bg-rose-500 rounded-full" style={{ width: `${monthTotal > 0 ? (d.totalPrice / monthTotal) * 100 : 0}%` }} />
+                    <div className="h-full bg-violet-500 rounded-full" style={{ width: `${monthTotal > 0 ? (d.totalPrice / monthTotal) * 100 : 0}%` }} />
                   </div>
                   <span className="text-zinc-500 font-mono text-[10px] w-10 text-right">
                     {monthTotal > 0 ? ((d.totalPrice / monthTotal) * 100).toFixed(1) : 0}%
@@ -528,7 +528,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
           <tr className="border-t border-zinc-700 text-sm">
             <td className="pt-3 font-black text-zinc-400">합계</td>
             <td className="pt-3 text-right font-black text-zinc-400">{monthTotalCount}개</td>
-            <td className="pt-3 text-right font-black text-rose-500">{monthTotal.toLocaleString()}원</td>
+            <td className="pt-3 text-right font-black text-violet-500">{monthTotal.toLocaleString()}원</td>
             {monthTotalMargin > 0 && <td className="pt-3 text-right font-black text-emerald-500">{monthTotalMargin.toLocaleString()}원</td>}
             <td className="pt-3 text-right font-mono text-zinc-500 text-[10px]">100%</td>
           </tr>
@@ -754,7 +754,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                         <tr key={i} className="text-xs">
                           <td className="py-2 pr-4 font-bold text-zinc-300">{r.bankName}</td>
                           <td className="py-2 pr-4 text-zinc-400 font-mono">{r.accountNumber}</td>
-                          <td className="py-2 pr-4 text-rose-400 font-bold">{accountToCompanyMap.get(r.accountNumber) || ''}</td>
+                          <td className="py-2 pr-4 text-violet-400 font-bold">{accountToCompanyMap.get(r.accountNumber) || ''}</td>
                           <td className="py-2 pr-4 text-right text-emerald-400 font-black">{r.amount.toLocaleString()}원</td>
                           <td className="py-2 text-zinc-500">{r.label || ''}</td>
                         </tr>
@@ -821,7 +821,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         {(allExpenseData.total > 0 || allReturnData.total < 0) && (
           <div className="px-6 py-3 flex items-center justify-between bg-zinc-900/40">
             <span className="text-zinc-400 font-black text-xs">순수익</span>
-            <span className={`font-black text-lg ${total + allReturnData.total - allExpenseData.total >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+            <span className={`font-black text-lg ${total + allReturnData.total - allExpenseData.total >= 0 ? 'text-emerald-400' : 'text-violet-400'}`}>
               {(total + allReturnData.total - allExpenseData.total).toLocaleString()}원
             </span>
           </div>
@@ -901,7 +901,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                     <tbody className="divide-y divide-zinc-900/50">
                       {recs.map((r, i) => (
                         <tr key={i} className="text-xs">
-                          <td className="py-2 pr-4 font-bold text-rose-400">{r.registeredName}</td>
+                          <td className="py-2 pr-4 font-bold text-violet-400">{r.registeredName}</td>
                           <td className="py-2 pr-4 font-bold text-zinc-300">{r.productName}</td>
                           <td className="py-2 pr-4 text-right text-zinc-400 font-bold">{r.count}개</td>
                           <td className="py-2 pr-4 text-right text-zinc-400 font-mono">{r.sellingPrice.toLocaleString()}</td>
@@ -1190,7 +1190,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 w-fit">
           {([['count', '수량'], ['totalPrice', '매출'], ['margin', '마진']] as const).map(([key, label]) => (
             <button key={key} onClick={() => setTrendMetric(key as typeof trendMetric)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendMetric === key ? 'bg-rose-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendMetric === key ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
               {label}
             </button>
           ))}
@@ -1200,7 +1200,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         <div className="flex flex-wrap gap-2">
           {trendCompanies.map(c => (
             <button key={c} onClick={() => setTrendCompany(c)}
-              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${trendActiveCompany === c ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}>
+              className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${trendActiveCompany === c ? 'bg-violet-500 text-white shadow-lg shadow-violet-900/20' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}>
               {c}
             </button>
           ))}
@@ -1318,13 +1318,13 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                       const val = productMonthMargin.get(p.name)?.get(m) || 0;
                       return (
                         <td key={m} className="py-2.5 px-2 text-right font-mono tabular-nums" style={{ background: getHeatColor(val, maxMargin) }}>
-                          <span className={val > 0 ? 'text-emerald-400 font-bold' : val < 0 ? 'text-rose-400 font-bold' : 'text-zinc-700'}>
+                          <span className={val > 0 ? 'text-emerald-400 font-bold' : val < 0 ? 'text-violet-400 font-bold' : 'text-zinc-700'}>
                             {val === 0 ? '-' : val.toLocaleString()}
                           </span>
                         </td>
                       );
                     })}
-                    <td className={`py-2.5 pl-3 text-right font-black border-l border-zinc-800 ${p.annualTotal > 0 ? 'text-emerald-400' : p.annualTotal < 0 ? 'text-rose-400' : 'text-zinc-600'}`}>
+                    <td className={`py-2.5 pl-3 text-right font-black border-l border-zinc-800 ${p.annualTotal > 0 ? 'text-emerald-400' : p.annualTotal < 0 ? 'text-violet-400' : 'text-zinc-600'}`}>
                       {p.annualTotal.toLocaleString()}
                     </td>
                   </tr>
@@ -1334,11 +1334,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                 <tr className="border-t-2 border-zinc-700 text-xs font-black">
                   <td className="py-3 pr-3 text-zinc-400 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">월합계</td>
                   {monthMarginTotals.map((total, i) => (
-                    <td key={months[i]} className={`py-3 px-2 text-right ${total > 0 ? 'text-emerald-400' : total < 0 ? 'text-rose-400' : 'text-zinc-600'}`}>
+                    <td key={months[i]} className={`py-3 px-2 text-right ${total > 0 ? 'text-emerald-400' : total < 0 ? 'text-violet-400' : 'text-zinc-600'}`}>
                       {total.toLocaleString()}
                     </td>
                   ))}
-                  <td className={`py-3 pl-3 text-right border-l border-zinc-800 text-base ${annualMarginTotal > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  <td className={`py-3 pl-3 text-right border-l border-zinc-800 text-base ${annualMarginTotal > 0 ? 'text-emerald-400' : 'text-violet-400'}`}>
                     {annualMarginTotal.toLocaleString()}원
                   </td>
                 </tr>
@@ -1350,9 +1350,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         {/* 테이블 2: 실질 순수익 (마진 - 비용) */}
         <div className="p-6">
           <div className="flex items-center gap-3 mb-4">
-            <span className="text-rose-400 text-lg">💰</span>
+            <span className="text-violet-400 text-lg">💰</span>
             <h3 className="text-white font-black text-sm uppercase tracking-widest">{selectedYear}년 실질 순수익</h3>
-            <span className={`text-[10px] px-2.5 py-1 rounded-full font-black border ${annualNetTotal >= 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+            <span className={`text-[10px] px-2.5 py-1 rounded-full font-black border ${annualNetTotal >= 0 ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-violet-500/10 text-violet-400 border-violet-500/20'}`}>
               연간 {annualNetTotal.toLocaleString()}원
             </span>
           </div>
@@ -1381,29 +1381,29 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                 {/* 비용 카테고리별 */}
                 {expenseCategories.map(cat => (
                   <tr key={cat} className="text-xs group">
-                    <td className="py-2.5 pr-3 font-bold text-rose-400/70 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10 group-hover:text-rose-400 transition-colors">- {cat}</td>
+                    <td className="py-2.5 pr-3 font-bold text-violet-400/70 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10 group-hover:text-violet-400 transition-colors">- {cat}</td>
                     {months.map(m => {
                       const val = monthExpenses.get(m)?.byCategory.get(cat) || 0;
                       return (
-                        <td key={m} className="py-2.5 px-2 text-right font-mono tabular-nums text-rose-400/70">
+                        <td key={m} className="py-2.5 px-2 text-right font-mono tabular-nums text-violet-400/70">
                           {val === 0 ? '-' : `-${val.toLocaleString()}`}
                         </td>
                       );
                     })}
-                    <td className="py-2.5 pl-3 text-right font-bold text-rose-400/70 border-l border-zinc-800">
+                    <td className="py-2.5 pl-3 text-right font-bold text-violet-400/70 border-l border-zinc-800">
                       -{months.reduce((s, m) => s + (monthExpenses.get(m)?.byCategory.get(cat) || 0), 0).toLocaleString()}
                     </td>
                   </tr>
                 ))}
                 {/* 비용 소계 */}
                 <tr className="text-xs border-t border-zinc-800">
-                  <td className="py-2.5 pr-3 font-bold text-rose-400 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">비용 합계</td>
+                  <td className="py-2.5 pr-3 font-bold text-violet-400 sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">비용 합계</td>
                   {monthExpenseTotals.map((v, i) => (
-                    <td key={months[i]} className="py-2.5 px-2 text-right font-mono tabular-nums text-rose-400 font-bold">
+                    <td key={months[i]} className="py-2.5 px-2 text-right font-mono tabular-nums text-violet-400 font-bold">
                       {v === 0 ? '-' : `-${v.toLocaleString()}`}
                     </td>
                   ))}
-                  <td className="py-2.5 pl-3 text-right font-black text-rose-400 border-l border-zinc-800">-{annualExpenseTotal.toLocaleString()}</td>
+                  <td className="py-2.5 pl-3 text-right font-black text-violet-400 border-l border-zinc-800">-{annualExpenseTotal.toLocaleString()}</td>
                 </tr>
               </tbody>
               <tfoot>
@@ -1411,12 +1411,12 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                   <td className="py-3 pr-3 text-white sticky left-0 bg-zinc-900/90 backdrop-blur-sm z-10">실질 순수익</td>
                   {monthNetTotals.map((v, i) => (
                     <td key={months[i]} className="py-3 px-2 text-right" style={{ background: getHeatColor(v, maxNet) }}>
-                      <span className={v > 0 ? 'text-emerald-400' : v < 0 ? 'text-rose-400' : 'text-zinc-600'}>
+                      <span className={v > 0 ? 'text-emerald-400' : v < 0 ? 'text-violet-400' : 'text-zinc-600'}>
                         {v.toLocaleString()}
                       </span>
                     </td>
                   ))}
-                  <td className={`py-3 pl-3 text-right text-base border-l border-zinc-800 ${annualNetTotal >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  <td className={`py-3 pl-3 text-right text-base border-l border-zinc-800 ${annualNetTotal >= 0 ? 'text-emerald-400' : 'text-violet-400'}`}>
                     {annualNetTotal.toLocaleString()}원
                   </td>
                 </tr>
@@ -1453,7 +1453,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         <div className="flex flex-col md:flex-row items-center gap-4">
           <div className="flex-1 w-full">
             <div
-              className="border-2 border-dashed border-zinc-700 hover:border-rose-500/50 rounded-2xl p-6 text-center cursor-pointer transition-all"
+              className="border-2 border-dashed border-zinc-700 hover:border-violet-500/50 rounded-2xl p-6 text-center cursor-pointer transition-all"
               onClick={() => fileInputRef.current?.click()}
             >
               <UploadIcon className="w-8 h-8 text-zinc-600 mx-auto mb-2" />
@@ -1471,7 +1471,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
             />
           </div>
           {importStatus && (
-            <div className={`px-4 py-2 rounded-xl text-xs font-bold animate-pop-in ${importStatus.includes('완료') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+            <div className={`px-4 py-2 rounded-xl text-xs font-bold animate-pop-in ${importStatus.includes('완료') ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-violet-500/10 text-violet-400 border border-violet-500/20'
               }`}>
               {importStatus}
             </div>
@@ -1489,7 +1489,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         <div className="flex flex-col gap-4">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
-              <div className="bg-rose-500/10 p-4 rounded-[1.5rem] border border-rose-500/20 shadow-inner">
+              <div className="bg-violet-500/10 p-4 rounded-[1.5rem] border border-violet-500/20 shadow-inner">
                 <span className="text-3xl">📊</span>
               </div>
               <div>
@@ -1498,7 +1498,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                 </h2>
                 <div className="flex items-baseline gap-2">
                   <span className="text-4xl font-black text-white">{monthTotal.toLocaleString()}</span>
-                  <span className="text-xl font-black text-rose-500">원</span>
+                  <span className="text-xl font-black text-violet-500">원</span>
                 </div>
                 <div className="flex gap-3 mt-1">
                   <span className="text-[11px] text-zinc-500 font-bold">총 {monthTotalCount}건</span>
@@ -1509,7 +1509,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                     <span className="text-[11px] text-violet-400 font-bold">반품 {allReturnData.total.toLocaleString()}원</span>
                   )}
                   {allMarginData.total > 0 && allReturnData.total < 0 && (
-                    <span className={`text-[11px] font-black ${allMarginData.total + allReturnData.total >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span className={`text-[11px] font-black ${allMarginData.total + allReturnData.total >= 0 ? 'text-emerald-400' : 'text-violet-400'}`}>
                       순수익 {(allMarginData.total + allReturnData.total).toLocaleString()}원
                     </span>
                   )}
@@ -1526,14 +1526,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
               <div className="flex p-1 bg-zinc-950 rounded-xl border border-zinc-800">
                 <button
                   onClick={() => setDateMode('month')}
-                  className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${dateMode === 'month' ? 'bg-rose-500 text-white' : 'text-zinc-500 hover:text-white'
+                  className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${dateMode === 'month' ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'
                     }`}
                 >
                   월별
                 </button>
                 <button
                   onClick={() => setDateMode('range')}
-                  className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${dateMode === 'range' ? 'bg-rose-500 text-white' : 'text-zinc-500 hover:text-white'
+                  className={`px-3 py-1.5 text-[11px] font-black rounded-lg transition-all ${dateMode === 'range' ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'
                     }`}
                 >
                   기간
@@ -1563,7 +1563,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                     .map(d => parseInt(d.date.slice(5, 7)));
                   if (monthsInYear.length > 0) setSelectedMonth(Math.max(...monthsInYear));
                 }}
-                className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm font-black text-white focus:ring-1 focus:ring-rose-500/30 outline-none"
+                className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm font-black text-white focus:ring-1 focus:ring-violet-500/30 outline-none"
               >
                 {availableYears.map(y => (
                   <option key={y} value={y}>{y}년</option>
@@ -1578,7 +1578,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                       key={m}
                       onClick={() => setSelectedMonth(m)}
                       className={`w-9 h-9 rounded-lg text-[11px] font-black transition-all ${isSelected
-                          ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/30'
+                          ? 'bg-violet-500 text-white shadow-lg shadow-violet-900/30'
                           : hasData
                             ? 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-700'
                             : 'bg-zinc-900/50 text-zinc-700 border border-zinc-800/50'
@@ -1597,14 +1597,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                   type="date"
                   value={rangeStart}
                   onChange={e => setRangeStart(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm font-black text-white focus:ring-1 focus:ring-rose-500/30 outline-none"
+                  className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm font-black text-white focus:ring-1 focus:ring-violet-500/30 outline-none"
                 />
                 <span className="text-zinc-500 font-black text-sm">~</span>
                 <input
                   type="date"
                   value={rangeEnd}
                   onChange={e => setRangeEnd(e.target.value)}
-                  className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm font-black text-white focus:ring-1 focus:ring-rose-500/30 outline-none"
+                  className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-sm font-black text-white focus:ring-1 focus:ring-violet-500/30 outline-none"
                 />
               </div>
               {/* 빠른 선택 버튼 */}
@@ -1641,7 +1641,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
             <button
               key={mode}
               onClick={() => setViewMode(mode)}
-              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === mode ? 'bg-rose-500 text-white shadow-lg shadow-rose-900/20' : 'text-zinc-500 hover:text-white'
+              className={`px-4 py-2.5 text-xs font-black rounded-xl transition-all ${viewMode === mode ? 'bg-violet-500 text-white shadow-lg shadow-violet-900/20' : 'text-zinc-500 hover:text-white'
                 }`}
             >
               {label}
@@ -1672,11 +1672,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                       </span>
                     </div>
                     <div className="flex items-center gap-4">
-                      <span className="text-rose-500 font-black text-sm">{day.totalAmount.toLocaleString()}원</span>
+                      <span className="text-violet-500 font-black text-sm">{day.totalAmount.toLocaleString()}원</span>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={e => { e.stopPropagation(); if (confirm(`${day.date} 매출 기록을 삭제할까요?`)) remove(day.date); }}
-                          className="text-zinc-700 hover:text-rose-500 p-1 transition-colors"
+                          className="text-zinc-700 hover:text-violet-500 p-1 transition-colors"
                         >
                           <TrashIcon className="w-3.5 h-3.5" />
                         </button>
@@ -1699,7 +1699,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                         <tbody className="divide-y divide-zinc-900/50">
                           {day.records.map((r, i) => (
                             <tr key={i} className="text-xs">
-                              <td className="py-2 pr-4 font-bold text-rose-400">{r.company}</td>
+                              <td className="py-2 pr-4 font-bold text-violet-400">{r.company}</td>
                               <td className="py-2 pr-4 font-bold text-zinc-300">{r.product}</td>
                               <td className="py-2 pr-4 text-right text-zinc-400 font-bold">{r.count}개</td>
                               <td className="py-2 pr-4 text-right text-zinc-500 font-mono">{r.supplyPrice.toLocaleString()}</td>
