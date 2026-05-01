@@ -34,6 +34,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
   const [trendMetric, setTrendMetric] = useState<'count' | 'totalPrice' | 'margin'>('count');
   const [trendCompany, setTrendCompany] = useState<string>('');
 
+  // 업체별정산 선택 업체
+  const [settlementCompany, setSettlementCompany] = useState<string>('');
+
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -1054,69 +1057,97 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         </div>
       );
     }
+
+    // 이 기간에 등장한 업체 목록
+    const companies = Array.from(
+      new Set(filteredHistory.flatMap(d => d.records.map(r => r.company)))
+    ).sort();
+    const activeCompany = settlementCompany && companies.includes(settlementCompany)
+      ? settlementCompany
+      : companies[0] || '';
+
+    // 선택 업체의 날짜별 데이터
+    const daysForCompany = filteredHistory
+      .map(day => ({
+        date: day.date,
+        records: day.records.filter(r => r.company === activeCompany),
+      }))
+      .filter(d => d.records.length > 0);
+
+    const periodTotal = daysForCompany.reduce(
+      (s, d) => s + d.records.reduce((ss, r) => ss + r.totalPrice, 0), 0
+    );
+    const periodCount = daysForCompany.reduce(
+      (s, d) => s + d.records.reduce((ss, r) => ss + r.count, 0), 0
+    );
+
+    const handleCopySettlement = () => {
+      const lines: string[] = ['날짜\t품목\t수량\t단가\t합계'];
+      daysForCompany.forEach(({ date, records }) => {
+        records.forEach((r, i) => {
+          lines.push([i === 0 ? date : '', r.product, r.count, r.supplyPrice, r.totalPrice].join('\t'));
+        });
+      });
+      lines.push(['합계', '', periodCount, '', periodTotal].join('\t'));
+      navigator.clipboard.writeText(lines.join('\n'));
+    };
+
     return (
-      <div className="divide-y divide-zinc-900">
-        {filteredHistory.map(day => {
-          const companyGroups = groupByCompany(day.records);
-          const isExpanded = expandedDates.has(`stl-${day.date}`);
-          return (
-            <div key={`stl-${day.date}`}>
-              <button
-                onClick={() => toggleDate(`stl-${day.date}`)}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
-              >
-                <div className="flex items-center gap-4">
-                  <span className="text-white font-black text-sm">{formatDate(day.date)}</span>
-                  <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2.5 py-1 rounded-full font-black border border-zinc-700">
-                    {companyGroups.length}개 업체
-                  </span>
-                  <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2.5 py-1 rounded-full font-black border border-zinc-700">
-                    {day.records.length}개 품목
-                  </span>
-                </div>
-                <div className="flex items-center gap-4">
-                  <span className="text-rose-500 font-black text-sm">{day.totalAmount.toLocaleString()}원</span>
-                  {isExpanded ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
-                </div>
-              </button>
-              {isExpanded && (
-                <div className="px-6 pb-5 animate-fade-in space-y-4">
-                  {companyGroups.map(([company, records]) => {
-                    const companyTotal = records.reduce((s, r) => s + r.totalPrice, 0);
-                    const companyCount = records.reduce((s, r) => s + r.count, 0);
-                    return (
-                      <div key={company} className="bg-zinc-900/60 rounded-2xl border border-zinc-800 overflow-hidden">
-                        <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-800">
-                          <span className="text-rose-400 font-black text-sm">[{company}]</span>
-                          <div className="flex items-center gap-3">
-                            <span className="text-zinc-500 text-[11px] font-bold">{companyCount}개</span>
-                            <span className="text-white font-black text-sm">{companyTotal.toLocaleString()}원</span>
-                          </div>
-                        </div>
-                        <table className="w-full text-left">
-                          <tbody className="divide-y divide-zinc-800/50">
-                            {records.map((r, i) => (
-                              <tr key={i} className="text-xs hover:bg-zinc-800/30 transition-colors">
-                                <td className="py-2.5 pl-4 pr-4 font-bold text-zinc-300">{r.product}</td>
-                                <td className="py-2.5 pr-4 text-right text-zinc-400 font-bold">{r.count}개</td>
-                                <td className="py-2.5 pr-4 text-right text-zinc-500 font-mono">{r.supplyPrice.toLocaleString()}원</td>
-                                <td className="py-2.5 pr-4 text-right text-white font-black">{r.totalPrice.toLocaleString()}원</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  })}
-                  <div className="flex items-center justify-between px-1 pt-1">
-                    <span className="text-zinc-500 font-black text-xs">일일 합계</span>
-                    <span className="text-rose-500 font-black text-base">{day.totalAmount.toLocaleString()}원</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })}
+      <div className="space-y-3">
+        {/* 업체 탭 + 복사 버튼 */}
+        <div className="flex flex-wrap gap-1.5 items-center">
+          {companies.map(c => (
+            <button key={c} onClick={() => setSettlementCompany(c)}
+              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${activeCompany === c ? 'bg-zinc-100 text-zinc-900' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'}`}>
+              {c}
+            </button>
+          ))}
+          <button onClick={handleCopySettlement}
+            className="ml-auto px-3 py-1.5 text-xs font-bold rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 transition-all">
+            복사
+          </button>
+        </div>
+
+        {/* 엑셀형 테이블 */}
+        <div className="overflow-x-auto rounded-xl border border-zinc-700">
+          <table className="w-full text-xs border-collapse">
+            <thead>
+              <tr className="bg-zinc-800 text-zinc-400">
+                <th className="py-1.5 px-3 text-left font-semibold border-b border-r border-zinc-700 w-24">날짜</th>
+                <th className="py-1.5 px-3 text-left font-semibold border-b border-r border-zinc-700">품목</th>
+                <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-14">수량</th>
+                <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-24">단가</th>
+                <th className="py-1.5 px-3 text-right font-semibold border-b border-zinc-700 w-24">합계</th>
+              </tr>
+            </thead>
+            <tbody>
+              {daysForCompany.map(({ date, records }, dayIdx) => {
+                const isEven = dayIdx % 2 === 0;
+                const rowBg = isEven ? 'bg-zinc-900' : 'bg-zinc-900/40';
+                return records.map((r, i) => (
+                  <tr key={`${date}-${i}`} className={`${rowBg} hover:brightness-125 transition-all ${i === 0 && dayIdx !== 0 ? 'border-t-2 border-zinc-600' : 'border-t border-zinc-800/60'}`}>
+                    {i === 0 ? (
+                      <td rowSpan={records.length} className="py-1.5 px-3 font-bold text-zinc-200 border-r border-zinc-700 align-middle whitespace-nowrap">
+                        {formatDate(date)}
+                      </td>
+                    ) : null}
+                    <td className="py-1 px-3 text-zinc-300 border-r border-zinc-800">{r.product}</td>
+                    <td className="py-1 px-3 text-right text-zinc-400 border-r border-zinc-800 tabular-nums">{r.count}</td>
+                    <td className="py-1 px-3 text-right text-zinc-500 border-r border-zinc-800 tabular-nums">{r.supplyPrice.toLocaleString()}</td>
+                    <td className="py-1 px-3 text-right text-zinc-200 font-semibold tabular-nums">{r.totalPrice.toLocaleString()}</td>
+                  </tr>
+                ));
+              })}
+              {/* 합계 행 */}
+              <tr className="bg-zinc-800 border-t-2 border-zinc-600">
+                <td colSpan={2} className="py-1.5 px-3 text-zinc-300 font-bold border-r border-zinc-700">합계</td>
+                <td className="py-1.5 px-3 text-right text-zinc-200 font-bold border-r border-zinc-700 tabular-nums">{periodCount}</td>
+                <td className="py-1.5 px-3 border-r border-zinc-700" />
+                <td className="py-1.5 px-3 text-right text-white font-black tabular-nums">{periodTotal.toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     );
   };
