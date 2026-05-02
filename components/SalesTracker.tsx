@@ -1181,6 +1181,20 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
       return match ? match[1].trim() : name;
     };
 
+    // 품목명에서 kg 단위 추출 (g → kg 변환 포함)
+    const getWeightKg = (name: string): number | null => {
+      const kg = name.match(/(\d+(?:\.\d+)?)\s*kg\s*$/i);
+      if (kg) return parseFloat(kg[1]);
+      const g = name.match(/(\d+(?:\.\d+)?)\s*g\s*$/i);
+      if (g) return parseFloat(g[1]) / 1000;
+      return null;
+    };
+
+    const formatKg = (kg: number): string => {
+      const rounded = Math.round(kg * 10) / 10;
+      return Number.isInteger(rounded) ? `${rounded}kg` : `${rounded}kg`;
+    };
+
     const productRows = Array.from(trendData.entries())
       .map(([name, dateMap]) => ({ name, dateMap }))
       .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
@@ -1198,6 +1212,15 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     });
 
     const totalByDate = new Map<string, number>();
+    const kgByDate = new Map<string, number>();
+    trendDates.forEach(date => {
+      let totalKg = 0;
+      productRows.forEach(({ name, dateMap }) => {
+        const w = getWeightKg(name);
+        if (w !== null) totalKg += (dateMap.get(date) || 0) * w;
+      });
+      kgByDate.set(date, totalKg);
+    });
     trendDates.forEach(date => {
       totalByDate.set(date, productRows.reduce((s, { dateMap }) => s + (dateMap.get(date) || 0), 0));
     });
@@ -1270,11 +1293,18 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                 ))}
                 <tr className="border-t-2 border-zinc-600">
                   <td className="py-2 px-3 font-black text-zinc-100 whitespace-nowrap sticky left-0 bg-zinc-900 border-r border-zinc-700">총계</td>
-                  {trendDates.map(date => (
-                    <td key={date} className="py-2 px-2 text-center font-black text-zinc-100 tabular-nums bg-zinc-900">
-                      {formatVal(totalByDate.get(date) || 0)}
-                    </td>
-                  ))}
+                  {trendDates.map(date => {
+                    const total = totalByDate.get(date) || 0;
+                    const kg = kgByDate.get(date) || 0;
+                    return (
+                      <td key={date} className="py-2 px-2 text-center font-black text-zinc-100 tabular-nums bg-zinc-900 whitespace-nowrap">
+                        {formatVal(total)}
+                        {trendMetric === 'count' && total > 0 && kg > 0 && (
+                          <span className="text-zinc-500 font-medium text-[10px] ml-0.5">({formatKg(kg)})</span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               </tbody>
             </table>
