@@ -210,21 +210,25 @@ export const deleteDailySales = async (date: string, businessId?: string) => {
 
 export const useSalesTracker = (businessId?: string) => {
   const [salesHistory, setSalesHistory] = useState<DailySales[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    if (loaded) return;
+    const history = await loadAllSalesHistory(businessId);
+    setSalesHistory(history);
+    setLoaded(true);
+  }, [businessId, loaded]);
 
   const refresh = useCallback(async () => {
     const history = await loadAllSalesHistory(businessId);
     setSalesHistory(history);
+    setLoaded(true);
   }, [businessId]);
 
   const remove = useCallback(async (date: string) => {
     await deleteDailySalesFromFirestore(date, businessId);
-    const history = await loadAllSalesHistory(businessId);
-    setSalesHistory(history);
+    setSalesHistory(prev => prev.filter(d => d.date !== date));
   }, [businessId]);
 
-  useEffect(() => {
-    loadAllSalesHistory(businessId).then(setSalesHistory);
-  }, [businessId]);
-
-  return { salesHistory, refresh, remove };
+  return { salesHistory, load, refresh, remove };
 };

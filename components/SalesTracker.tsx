@@ -7,19 +7,19 @@ import { getBusinessInfo } from '../types';
 
 declare var XLSX: any;
 
-type ViewMode = 'settlement' | 'byDate' | 'byProduct' | 'byCompany' | 'orders' | 'invoices' | 'deposits' | 'margin' | 'returns' | 'monthlyAnalysis' | 'trend';
+type ViewMode = 'settlement' | 'invoices' | 'margin' | 'returns' | 'trend';
 type DateMode = 'month' | 'range';
 
 const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ isActive, businessId }) => {
   const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
-  const { salesHistory, refresh, remove } = useSalesTracker(businessId);
+  const { salesHistory, load, refresh, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
 
-  // 탭 활성화 시 데이터 새로고침
+  // 탭 최초 활성화 시에만 로드
   useEffect(() => {
-    if (isActive) refresh();
-  }, [isActive, refresh]);
-  const [viewMode, setViewMode] = useState<ViewMode>('byDate');
+    if (isActive) load();
+  }, [isActive, load]);
+  const [viewMode, setViewMode] = useState<ViewMode>('settlement');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [isImporting, setIsImporting] = useState(false);
@@ -1495,16 +1495,10 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
 
   const tabs: [ViewMode, string][] = [
     ['settlement', '업체별정산'],
-    ['byDate', '날짜별'],
-    ['byProduct', '품목별'],
-    ['byCompany', '업체별'],
     ['trend', '판매추이'],
-    ['orders', '발주내역'],
     ['invoices', '송장내역'],
-    ['deposits', '입금내역'],
     ['margin', '마진시트'],
     ['returns', '반품'],
-    ['monthlyAnalysis', '월별분석'],
   ];
 
   return (
@@ -1722,74 +1716,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
         </div>
       ) : (
         <section className="bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
-          {viewMode === 'byDate' && (
-            <div className="divide-y divide-zinc-900">
-              {filteredHistory.map(day => (
-                <div key={day.date}>
-                  <button
-                    onClick={() => toggleDate(day.date)}
-                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
-                  >
-                    <div className="flex items-center gap-4">
-                      <span className="text-white font-black text-sm">{formatDate(day.date)}</span>
-                      <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2.5 py-1 rounded-full font-black border border-zinc-700">
-                        {day.records.length}개 품목
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <span className="text-violet-500 font-black text-sm">{day.totalAmount.toLocaleString()}원</span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={e => { e.stopPropagation(); if (confirm(`${day.date} 매출 기록을 삭제할까요?`)) remove(day.date); }}
-                          className="text-zinc-700 hover:text-violet-500 p-1 transition-colors"
-                        >
-                          <TrashIcon className="w-3.5 h-3.5" />
-                        </button>
-                        {expandedDates.has(day.date) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
-                      </div>
-                    </div>
-                  </button>
-                  {expandedDates.has(day.date) && (
-                    <div className="px-6 pb-4 animate-fade-in">
-                      <table className="w-full text-left">
-                        <thead>
-                          <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest">
-                            <th className="pb-2 pr-4">업체</th>
-                            <th className="pb-2 pr-4">품목</th>
-                            <th className="pb-2 pr-4 text-right">수량</th>
-                            <th className="pb-2 pr-4 text-right">단가</th>
-                            <th className="pb-2 text-right">합계</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-zinc-900/50">
-                          {day.records.map((r, i) => (
-                            <tr key={i} className="text-xs">
-                              <td className="py-2 pr-4 font-bold text-violet-400">{r.company}</td>
-                              <td className="py-2 pr-4 font-bold text-zinc-300">{r.product}</td>
-                              <td className="py-2 pr-4 text-right text-zinc-400 font-bold">{r.count}개</td>
-                              <td className="py-2 pr-4 text-right text-zinc-500 font-mono">{r.supplyPrice.toLocaleString()}</td>
-                              <td className="py-2 text-right text-white font-black">{r.totalPrice.toLocaleString()}원</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
           {viewMode === 'settlement' && renderSettlementView()}
-          {viewMode === 'byProduct' && renderSummaryTable(productSummary, '품목', false)}
-          {viewMode === 'byCompany' && renderSummaryTable(companySummary, '업체', true)}
-          {viewMode === 'orders' && renderOrdersView()}
           {viewMode === 'invoices' && renderInvoicesView()}
-          {viewMode === 'deposits' && renderDepositsView()}
           {viewMode === 'margin' && renderMarginView()}
           {viewMode === 'returns' && renderReturnView()}
           {viewMode === 'trend' && renderTrendView()}
-          {viewMode === 'monthlyAnalysis' && renderMonthlyAnalysisView()}
         </section>
       )}
     </div>

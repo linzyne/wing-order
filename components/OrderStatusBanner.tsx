@@ -16,16 +16,16 @@ interface OrderStatusBannerProps {
 function getBusinessStatus(workspace: DailyWorkspaceData | null) {
   if (!workspace) return { orderCount: 0, totalSessions: 0, completedOrders: 0, hasActivity: false };
 
-  const results = workspace.sessionResults || {};
+  const summary = workspace.sessionSummary || {};
   const workflows = workspace.sessionWorkflows || {};
-  // sessionResults에서 실제 주문이 있는 세션만 카운트 (orderCount > 0)
-  const activeSessionIds = Object.keys(results).filter(sid => results[sid]?.orderCount > 0);
+  // sessionSummary에서 실제 주문이 있는 세션만 카운트 (orderCount > 0)
+  const activeSessionIds = Object.keys(summary).filter(sid => (summary[sid]?.orderCount ?? 0) > 0);
 
   let orderCount = 0;
   let completedOrders = 0;
 
   for (const sid of activeSessionIds) {
-    orderCount += results[sid].orderCount;
+    orderCount += summary[sid].orderCount;
     if (workflows[sid]?.order) completedOrders++;
   }
 

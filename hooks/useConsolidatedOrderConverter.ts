@@ -7,6 +7,9 @@ import { findProductConfig } from '../pricing';
 
 declare var XLSX: any;
 
+// 모듈 수준 Gemini 캐시 — 동일 세션 내 재처리 시 동일 품목명 재질의 방지
+const geminiProductCache: Map<string, [string, ProductPricing] | null> = new Map();
+
 export interface OrderItem {
     registeredProductName: string; // 등록상품명 (원본 엑셀)
     registeredOptionName: string;  // 등록옵션명 (원본 엑셀)
@@ -1098,7 +1101,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
 
             const localExcluded: ExcludedOrder[] = [];
             const localUnmatched: UnmatchedOrder[] = [];
-            const [, result] = await generateWorkbookForCompany(ai, new Map(), pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId);
+            const [, result] = await generateWorkbookForCompany(ai, geminiProductCache, pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId);
 
             return { result, excluded: localExcluded, unmatched: localUnmatched };
         } catch (err) {

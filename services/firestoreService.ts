@@ -2,7 +2,7 @@ import { db } from '../firebase';
 import {
   doc, setDoc, getDoc, deleteDoc,
   collection, query, orderBy, getDocs,
-  onSnapshot, Timestamp,
+  onSnapshot, Timestamp, deleteField,
   type Unsubscribe
 } from 'firebase/firestore';
 import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate } from '../types';
@@ -53,6 +53,19 @@ export const subscribePricingConfig = (
     console.error('[Firestore] PricingConfig 구독 오류:', error);
     callback(null, false); // 에러 - 덮어쓰기 금지
   });
+};
+
+export const loadPricingConfig = async (
+  businessId?: string
+): Promise<{ config: PricingConfig | null; exists: boolean }> => {
+  try {
+    const docRef = doc(db, 'config', getConfigDocId(businessId));
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) return { config: snapshot.data().data as PricingConfig, exists: true };
+    return { config: null, exists: false };
+  } catch {
+    return { config: null, exists: false };
+  }
 };
 
 export const savePricingConfigToFirestore = async (
@@ -139,13 +152,52 @@ export interface DailyWorkspaceData {
   sessionWorkflows: Record<string, { order: boolean; deposit: boolean; invoice: boolean }>;
   sessionAdjustments: Record<string, any[]>;
   sessionMemos?: Record<string, string>;
-  sessionResults?: Record<string, SessionResultData>;
+  sessionSummary?: Record<string, { orderCount: number }>;
   summaryOverrides?: Record<string, Record<string, { count: number; totalPrice: number }>>;
-  thumbnailNotes?: { id: string; imageData: string; memos: [string, string, string] }[];
   updatedAt?: any;
 }
 
 const getTodayDocId = () => new Date().toISOString().slice(0, 10);
+
+// ===== Session Results (별도 문서 — 대용량 데이터 분리) =====
+
+const getSessionsCollectionName = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'dailyWorkspaceSessions' : `dailyWorkspaceSessions_${businessId}`;
+
+export const subscribeSessionResults = (
+  callback: (results: Record<string, SessionResultData> | null) => void,
+  businessId?: string
+): Unsubscribe => {
+  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data() as Record<string, SessionResultData>) : null);
+  }, (error) => {
+    console.error('[Firestore] SessionResults 구독 오류:', error);
+    callback(null);
+  });
+};
+
+export const saveSessionResult = async (
+  sessionId: string,
+  data: SessionResultData,
+  businessId?: string
+): Promise<void> => {
+  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
+  await setDoc(docRef, { [sessionId]: data }, { merge: true });
+};
+
+export const deleteSessionResult = async (
+  sessionId: string,
+  businessId?: string
+): Promise<void> => {
+  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
+  await setDoc(docRef, { [sessionId]: deleteField() }, { merge: true });
+};
+
+export const clearSessionResults = async (businessId?: string): Promise<void> => {
+  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
+  await deleteDoc(docRef);
+};
 
 export const subscribeDailyWorkspace = (
   callback: (workspace: DailyWorkspaceData | null) => void,
@@ -186,17 +238,14 @@ export interface QuickRecipientData {
   address: string;
 }
 
-export const subscribeQuickRecipients = (
-  callback: (recipients: QuickRecipientData[]) => void,
-  businessId?: string
-): Unsubscribe => {
-  const docRef = doc(db, 'config', getQuickRecipientsDocId(businessId));
-  return onSnapshot(docRef, (snapshot) => {
-    callback(snapshot.exists() ? (snapshot.data().recipients || []) : []);
-  }, (error) => {
-    console.error('[Firestore] QuickRecipients 구독 오류:', error);
-    callback([]);
-  });
+export const loadQuickRecipients = async (businessId?: string): Promise<QuickRecipientData[]> => {
+  try {
+    const docRef = doc(db, 'config', getQuickRecipientsDocId(businessId));
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists() ? (snapshot.data().recipients || []) : [];
+  } catch {
+    return [];
+  }
 };
 
 export const saveQuickRecipients = async (recipients: QuickRecipientData[], businessId?: string): Promise<void> => {
@@ -226,17 +275,14 @@ export const saveManualOrders = async (orders: any[], businessId?: string): Prom
 
 // ===== Company Order (업체 순서) =====
 
-export const subscribeCompanyOrder = (
-  callback: (order: string[]) => void,
-  businessId?: string
-): Unsubscribe => {
-  const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
-  return onSnapshot(docRef, (snapshot) => {
-    callback(snapshot.exists() ? (snapshot.data().order || []) : []);
-  }, (error) => {
-    console.error('[Firestore] CompanyOrder 구독 오류:', error);
-    callback([]);
-  });
+export const loadCompanyOrder = async (businessId?: string): Promise<string[]> => {
+  try {
+    const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists() ? (snapshot.data().order || []) : [];
+  } catch {
+    return [];
+  }
 };
 
 export const saveCompanyOrder = async (order: string[], businessId?: string): Promise<void> => {
@@ -260,25 +306,23 @@ export const DEFAULT_FAKE_COURIER_SETTINGS: FakeCourierSettings = {
   accountNumber: '3333-18-8744855',
 };
 
-export const subscribeCourierTemplates = (
-  callback: (templates: CourierTemplate[], fakeCourierSettings: FakeCourierSettings) => void,
+export const loadCourierTemplates = async (
   businessId?: string
-): Unsubscribe => {
-  const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
-  return onSnapshot(docRef, (snapshot) => {
+): Promise<{ templates: CourierTemplate[]; fakeCourierSettings: FakeCourierSettings }> => {
+  try {
+    const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
+    const snapshot = await getDoc(docRef);
     if (snapshot.exists()) {
       const data = snapshot.data();
-      callback(
-        data.templates || [],
-        data.fakeCourierSettings ? { ...DEFAULT_FAKE_COURIER_SETTINGS, ...data.fakeCourierSettings } : DEFAULT_FAKE_COURIER_SETTINGS
-      );
-    } else {
-      callback([], DEFAULT_FAKE_COURIER_SETTINGS);
+      return {
+        templates: data.templates || [],
+        fakeCourierSettings: data.fakeCourierSettings
+          ? { ...DEFAULT_FAKE_COURIER_SETTINGS, ...data.fakeCourierSettings }
+          : DEFAULT_FAKE_COURIER_SETTINGS,
+      };
     }
-  }, (error) => {
-    console.error('[Firestore] CourierTemplates 구독 오류:', error);
-    callback([], DEFAULT_FAKE_COURIER_SETTINGS);
-  });
+  } catch {}
+  return { templates: [], fakeCourierSettings: DEFAULT_FAKE_COURIER_SETTINGS };
 };
 
 export const saveCourierTemplates = async (templates: CourierTemplate[], businessId?: string): Promise<void> => {
@@ -296,6 +340,18 @@ export const saveFakeCourierSettings = async (settings: FakeCourierSettings, bus
 };
 
 // ===== Platform Configs (멀티 플랫폼 설정) =====
+
+export const loadPlatformConfigs = async (
+  businessId?: string
+): Promise<PlatformConfigs | null> => {
+  try {
+    const docRef = doc(db, 'config', getPlatformConfigsDocId(businessId));
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists() ? (snapshot.data().data as PlatformConfigs) : null;
+  } catch {
+    return null;
+  }
+};
 
 export const subscribePlatformConfigs = (
   callback: (configs: PlatformConfigs | null) => void,
@@ -321,35 +377,6 @@ export const savePlatformConfigs = async (
   });
 };
 
-// ===== Quests (상단 게임 타임라인) =====
-// 사업자 공통, 단일 문서 — 삭제 방지를 위해 항상 merge 저장
-const QUESTS_DOC_ID = 'questTimeline';
-
-export const subscribeQuests = (
-  callback: (quests: any[] | null) => void
-): Unsubscribe => {
-  const docRef = doc(db, 'config', QUESTS_DOC_ID);
-  return onSnapshot(docRef, (snapshot) => {
-    if (snapshot.exists()) {
-      const data = snapshot.data();
-      callback(Array.isArray(data.quests) ? data.quests : []);
-    } else {
-      callback(null);
-    }
-  }, (error) => {
-    console.error('[Firestore] Quests 구독 오류:', error);
-    callback(null);
-  });
-};
-
-export const saveQuests = async (quests: any[]): Promise<void> => {
-  const docRef = doc(db, 'config', QUESTS_DOC_ID);
-  // merge:true — 기존 필드 보존, 실수로 문서 비우지 않기 위해
-  await setDoc(docRef, {
-    quests,
-    updatedAt: Timestamp.now(),
-  }, { merge: true });
-};
 
 // ===== Todos =====
 

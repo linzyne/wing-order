@@ -11,7 +11,8 @@ import {
 import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder, PlatformConfigs } from '../types';
 import { DragHandleContext } from './DragHandleContext';
 import { getBusinessInfo } from '../types';
-import { useDailyWorkspace } from '../hooks/useFirestore';
+import { useDailyWorkspace, useSessionResults } from '../hooks/useFirestore';
+import { saveSessionResult, deleteSessionResult } from '../services/firestoreService';
 import type { SessionResultData } from '../services/firestoreService';
 
 declare var XLSX: any;
@@ -118,6 +119,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     pricingConfigRef.current = pricingConfig;
     
     const { workspace, updateField } = useDailyWorkspace(businessId);
+    const sessionResults = useSessionResults(businessId);
 
     // 수동 차감/추가 내역 상태
     const [adjAmount, setAdjAmount] = useState('');
@@ -159,7 +161,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
         const sessionSummary = summaryOverride
             || localResult?.summary
-            || ((!localResult && !isLocalProcessing) ? workspace?.sessionResults?.[sessionId]?.itemSummary : undefined)
+            || ((!localResult && !isLocalProcessing) ? sessionResults?.[sessionId]?.itemSummary : undefined)
             || null;
         if (sessionSummary) {
             for (const [key, stat] of Object.entries(sessionSummary) as [string, { count: number; totalPrice: number }][]) {
@@ -296,12 +298,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     // 리셋 직후 Firestore 구독 업데이트 전까지 syncedData 억제
     const suppressSyncRef = useRef(false);
-    if (suppressSyncRef.current && !workspace?.sessionResults?.[sessionId]) {
+    if (suppressSyncRef.current && !sessionResults?.[sessionId]) {
         suppressSyncRef.current = false;
     }
 
     // Synced data (디바이스 2 - 로컬 처리 없을 때만)
-    const syncedData = (!localResult && !isLocalProcessing && !suppressSyncRef.current) ? workspace?.sessionResults?.[sessionId] : undefined;
+    const syncedData = (!localResult && !isLocalProcessing && !suppressSyncRef.current) ? sessionResults?.[sessionId] : undefined;
 
     // 가구매 주문번호가 발주서에 포함된 경우 경고
     const fakeOrderWarnings = (() => {
@@ -398,14 +400,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         updateField('sessionAdjustments', { ...currentAdjs, [sessionId]: sessionAdjustments });
     }, [sessionAdjustments, sessionId, updateField]);
 
-    // sessionMemo 변경 → Firestore에 저장
+    // sessionMemo 변경 → Firestore에 디바운스 저장 (타이핑 중 write 폭증 방지)
     const isInitialMemoLoad = useRef(true);
+    const memoDebounceRef = useRef<ReturnType<typeof setTimeout>>();
     useEffect(() => {
         if (isInitialMemoLoad.current) { isInitialMemoLoad.current = false; return; }
         if (sessionMemo === lastFirestoreMemoRef.current) return;
-        lastFirestoreMemoRef.current = sessionMemo;
-        const currentMemos = workspace?.sessionMemos || {};
-        updateField('sessionMemos', { ...currentMemos, [sessionId]: sessionMemo });
+        if (memoDebounceRef.current) clearTimeout(memoDebounceRef.current);
+        memoDebounceRef.current = setTimeout(() => {
+            if (sessionMemo === lastFirestoreMemoRef.current) return;
+            lastFirestoreMemoRef.current = sessionMemo;
+            const currentMemos = workspace?.sessionMemos || {};
+            updateField('sessionMemos', { ...currentMemos, [sessionId]: sessionMemo });
+        }, 1000);
+        return () => { if (memoDebounceRef.current) clearTimeout(memoDebounceRef.current); };
     }, [sessionMemo, sessionId, updateField]);
 
     // summaryOverride 변경 → Firestore에 저장
@@ -523,8 +531,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const resultStr = JSON.stringify(resultData);
             if (resultStr === lastSavedResultRef.current) return;
             lastSavedResultRef.current = resultStr;
-            const currentResults = workspace?.sessionResults || {};
-            updateField('sessionResults', { ...currentResults, [sessionId]: resultData });
+            saveSessionResult(sessionId, resultData, businessId);
+            updateField('sessionSummary', { ...(workspace?.sessionSummary || {}), [sessionId]: { orderCount: resultData.orderCount } });
         }, 500);
         return () => { if (saveResultDebounceRef.current) clearTimeout(saveResultDebounceRef.current); };
     }, [localResult, mergeResults, excludedList, unmatchedList, sessionAdjustments, summaryOverride, sessionId]);
@@ -652,17 +660,19 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // Firestore 구독 업데이트 전까지 syncedData 억제
         suppressSyncRef.current = true;
         // Firestore 세션 결과도 함께 제거
-        const currentResults = { ...(workspace?.sessionResults || {}) };
-        if (currentResults[sessionId]) {
-            delete currentResults[sessionId];
-            updateField('sessionResults', currentResults);
+        deleteSessionResult(sessionId, businessId);
+        const currentSummary = { ...(workspace?.sessionSummary || {}) };
+        if (currentSummary[sessionId]) {
+            delete currentSummary[sessionId];
+            updateField('sessionSummary', currentSummary);
         }
     };
 
     const resetSyncedData = () => {
-        const currentResults = { ...(workspace?.sessionResults || {}) };
-        delete currentResults[sessionId];
-        updateField('sessionResults', currentResults);
+        deleteSessionResult(sessionId, businessId);
+        const currentSummary = { ...(workspace?.sessionSummary || {}) };
+        delete currentSummary[sessionId];
+        updateField('sessionSummary', currentSummary);
         setUnmatchedList([]);
         onResultUpdate(sessionId, 0, 0, []);
         onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);

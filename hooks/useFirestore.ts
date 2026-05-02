@@ -1,18 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { PricingConfig, PlatformConfigs, TodoItem, CourierTemplate } from '../types';
 import {
-  subscribePricingConfig,
+  loadPricingConfig,
   savePricingConfigToFirestore,
   subscribeDailyWorkspace,
   updateDailyWorkspaceField,
-  subscribePlatformConfigs,
+  loadPlatformConfigs,
   savePlatformConfigs,
   subscribeTodos,
   saveTodos as saveTodosToFirestore,
-  subscribeCourierTemplates,
+  loadCourierTemplates,
   saveCourierTemplates as saveCourierTemplatesToFirestore,
   saveFakeCourierSettings as saveFakeCourierSettingsToFirestore,
+  subscribeSessionResults,
   type DailyWorkspaceData,
+  type SessionResultData,
   type FakeCourierSettings,
   DEFAULT_FAKE_COURIER_SETTINGS,
 } from '../services/firestoreService';
@@ -24,77 +26,37 @@ export const usePricingConfig = (businessId?: string) => {
     ? DEFAULT_PRICING_CONFIG
     : businessId === '조에'
       ? DEFAULT_PRICING_CONFIG_조에
-      : {}; // 동적 사업자는 빈 config로 시작
+      : {};
   const [config, setConfig] = useState<PricingConfig>(defaultConfig);
   const [isLoading, setIsLoading] = useState(true);
   const [configSource, setConfigSource] = useState<'loading' | 'firestore' | 'default'>('loading');
-  // 저장 진행 중 카운터 + 저장 완료 후 유예 타이머 (구독 덮어쓰기 방지)
-  const pendingSaves = useRef(0);
-  const saveGraceUntil = useRef(0);
-  // Firestore에서 한 번이라도 데이터를 로드했는지 추적 → 이후 절대 기본값으로 되돌리지 않음
-  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
-    hasLoadedRef.current = false;
     setIsLoading(true);
-    const unsubscribe = subscribePricingConfig((firestoreConfig, connected) => {
+    loadPricingConfig(businessId).then(({ config: firestoreConfig, exists }) => {
       if (firestoreConfig) {
-        // 저장 중이거나 유예 기간이면 구독 업데이트 무시 (로컬 변경이 덮어쓰이는 것 방지)
-        if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) {
-          return;
-        }
-        hasLoadedRef.current = true;
-        console.log('[Config] Firestore에서 로드 완료, 업체 수:', Object.keys(firestoreConfig).length);
         setConfig(firestoreConfig);
         setConfigSource('firestore');
-      } else if (connected) {
-        // 저장 중이면 기본값 초기화도 차단 (저장 직후 snapshot 지연 시 안전)
-        if (pendingSaves.current > 0) return;
-        // 이미 데이터를 로드한 적 있으면 절대 기본값으로 되돌리지 않음
-        if (hasLoadedRef.current) {
-          console.warn('[Config] Firestore 문서 일시 소실 → 현재 상태 유지 (기본값 덮어쓰기 차단)');
-          setIsLoading(false);
-          return;
-        }
-        // 최초 로드 시에만 기본값으로 초기화
-        console.warn('[Config] Firestore 문서 없음 → 기본값으로 최초 초기화');
-        hasLoadedRef.current = true;
+      } else if (!exists) {
         savePricingConfigToFirestore(defaultConfig, businessId).catch(e =>
           console.error('[Config] 기본값 저장 실패:', e)
         );
         setConfig(defaultConfig);
         setConfigSource('default');
       } else {
-        // 연결 오류 → 절대 기본값으로 되돌리지 않고 현재 상태 유지
-        if (pendingSaves.current > 0) return;
-        if (hasLoadedRef.current) {
-          console.error('[Config] Firestore 연결 오류 → 현재 상태 유지 (기본값 덮어쓰기 차단)');
-          setIsLoading(false);
-          return;
-        }
-        console.error('[Config] Firestore 최초 연결 실패 → 기본값 표시 (Firestore에는 저장 안함)');
         setConfig(defaultConfig);
         setConfigSource('default');
       }
       setIsLoading(false);
-    }, businessId);
-    return unsubscribe;
+    });
   }, [businessId]);
 
   const saveConfig = useCallback(async (newConfig: PricingConfig) => {
-    pendingSaves.current++;
     setConfig(newConfig);
     try {
       await savePricingConfigToFirestore(newConfig, businessId);
-      hasLoadedRef.current = true;
-      // 저장 완료 후 3초간 유예 (서버 확인 snapshot이 도착할 때까지)
-      saveGraceUntil.current = Date.now() + 3000;
     } catch (e) {
       console.error('[Config] Firestore 저장 실패:', e);
-      // 저장 실패 시에도 10초간 유예하여 이전 데이터로 되돌아가는 것을 방지
-      saveGraceUntil.current = Date.now() + 10000;
-    } finally {
-      pendingSaves.current--;
     }
   }, [businessId]);
 
@@ -104,27 +66,19 @@ export const usePricingConfig = (businessId?: string) => {
 // ===== Platform Configs Hook =====
 export const usePlatformConfigs = (businessId?: string) => {
   const [platformConfigs, setPlatformConfigs] = useState<PlatformConfigs>({});
-  const pendingSaves = useRef(0);
-  const saveGraceUntil = useRef(0);
 
   useEffect(() => {
-    const unsubscribe = subscribePlatformConfigs((configs) => {
-      if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) return;
+    loadPlatformConfigs(businessId).then(configs => {
       setPlatformConfigs(configs || {});
-    }, businessId);
-    return unsubscribe;
+    });
   }, [businessId]);
 
   const savePlatformConfig = useCallback(async (newConfigs: PlatformConfigs) => {
-    pendingSaves.current++;
     setPlatformConfigs(newConfigs);
     try {
       await savePlatformConfigs(newConfigs, businessId);
-      saveGraceUntil.current = Date.now() + 1000;
     } catch (e) {
       console.error('[Config] PlatformConfigs 저장 실패:', e);
-    } finally {
-      pendingSaves.current--;
     }
   }, [businessId]);
 
@@ -135,50 +89,31 @@ export const usePlatformConfigs = (businessId?: string) => {
 export const useCourierTemplates = (businessId?: string) => {
   const [courierTemplates, setCourierTemplates] = useState<CourierTemplate[]>([]);
   const [fakeCourierSettings, setFakeCourierSettings] = useState<FakeCourierSettings>(DEFAULT_FAKE_COURIER_SETTINGS);
-  const pendingSaves = useRef(0);
-  const saveGraceUntil = useRef(0);
-  const currentBusinessIdRef = useRef(businessId);
 
   useEffect(() => {
-    currentBusinessIdRef.current = businessId;
     setCourierTemplates([]);
     setFakeCourierSettings(DEFAULT_FAKE_COURIER_SETTINGS);
-    pendingSaves.current = 0;
-    saveGraceUntil.current = 0;
-    const unsubscribe = subscribeCourierTemplates((templates, settings) => {
-      if (currentBusinessIdRef.current !== businessId) return;
-      if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) return;
+    loadCourierTemplates(businessId).then(({ templates, fakeCourierSettings: settings }) => {
       setCourierTemplates(templates);
       setFakeCourierSettings(settings);
-    }, businessId);
-    return unsubscribe;
+    });
   }, [businessId]);
 
   const saveTemplates = useCallback(async (newTemplates: CourierTemplate[]) => {
-    if (currentBusinessIdRef.current !== businessId) return;
-    pendingSaves.current++;
     setCourierTemplates(newTemplates);
     try {
       await saveCourierTemplatesToFirestore(newTemplates, businessId);
-      saveGraceUntil.current = Date.now() + 1000;
     } catch (e) {
       console.error('[Config] CourierTemplates 저장 실패:', e);
-    } finally {
-      pendingSaves.current--;
     }
   }, [businessId]);
 
   const saveFakeCourierSettings = useCallback(async (newSettings: FakeCourierSettings) => {
-    if (currentBusinessIdRef.current !== businessId) return;
-    pendingSaves.current++;
     setFakeCourierSettings(newSettings);
     try {
       await saveFakeCourierSettingsToFirestore(newSettings, businessId);
-      saveGraceUntil.current = Date.now() + 1000;
     } catch (e) {
       console.error('[Config] FakeCourierSettings 저장 실패:', e);
-    } finally {
-      pendingSaves.current--;
     }
   }, [businessId]);
 
@@ -211,6 +146,20 @@ export const useDailyWorkspace = (businessId?: string) => {
   }, [businessId]);
 
   return { workspace, updateField, isReady };
+};
+
+// ===== Session Results Hook (별도 문서 구독) =====
+export const useSessionResults = (businessId?: string) => {
+  const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeSessionResults((results) => {
+      setSessionResults(results);
+    }, businessId);
+    return unsubscribe;
+  }, [businessId]);
+
+  return sessionResults;
 };
 
 // ===== Todos Hook =====

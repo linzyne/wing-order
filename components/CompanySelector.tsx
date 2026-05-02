@@ -8,7 +8,7 @@ import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
-import { subscribeManualOrders, saveManualOrders, upsertDailySales, subscribeCompanyOrder, saveCompanyOrder, subscribeQuickRecipients, saveQuickRecipients, type QuickRecipientData } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadQuickRecipients, saveQuickRecipients, clearSessionResults, type QuickRecipientData } from '../services/firestoreService';
 import {
     DndContext,
     closestCenter,
@@ -479,9 +479,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     useEffect(() => {
         if (!isReady || workstationsReady) return;
         const writes: Promise<void>[] = [];
-        if (!workspace?.sessionResults || Object.keys(workspace.sessionResults).length === 0) {
-            writes.push(updateField('sessionResults', {}));
-        }
         if (!workspace?.sessionWorkflows || Object.keys(workspace.sessionWorkflows).length === 0) {
             writes.push(updateField('sessionWorkflows', {}));
         }
@@ -522,7 +519,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleResetWorkstations = useCallback(() => {
         if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
         Promise.all([
-            updateField('sessionResults', {}),
+            clearSessionResults(businessId),
+            updateField('sessionSummary', {}),
             updateField('sessionWorkflows', {}),
             updateField('sessionAdjustments', {}),
         ]);
@@ -575,10 +573,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [showAddRecipient, setShowAddRecipient] = useState(false);
     const [newRecipient, setNewRecipient] = useState({ name: '', phone: '', address: '' });
     useEffect(() => {
-        const unsubscribe = subscribeQuickRecipients((recipients) => {
-            setQuickRecipients(recipients);
-        }, businessId);
-        return unsubscribe;
+        loadQuickRecipients(businessId).then(setQuickRecipients);
     }, [businessId]);
 
     // 업체 순서 관리
@@ -586,19 +581,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const lastWrittenCompanyOrderRef = useRef('[]');
     const [firestoreOrderLoaded, setFirestoreOrderLoaded] = useState(false);
 
-    // 업체 순서 Firestore 구독
+    // 업체 순서 Firestore 로드 (최초 1회)
     useEffect(() => {
         setFirestoreOrderLoaded(false);
-        const unsubscribe = subscribeCompanyOrder((order) => {
+        loadCompanyOrder(businessId).then((order) => {
             setFirestoreOrderLoaded(true);
             const str = JSON.stringify(order);
             if (str !== lastWrittenCompanyOrderRef.current) {
-                console.log(`[CompanyOrder:${businessId}] Firestore → 로컬 동기화:`, order.slice(0, 5), `(ref was: ${lastWrittenCompanyOrderRef.current.slice(0, 50)})`);
                 setCompanyOrder(order);
                 lastWrittenCompanyOrderRef.current = str;
             }
-        }, businessId);
-        return unsubscribe;
+        });
     }, [businessId]);
 
     // 업체 순서 변경 → Firestore에 저장 (Firestore 로드 완료 후에만)
@@ -719,47 +712,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         saveManualOrders(manualOrders, businessId).catch(e => console.error('[Firestore] 수동발주 저장 실패:', e));
     }, [manualOrders, businessId]);
 
-    // 썸네일 + 메모 노트
-    interface ThumbnailNote { id: string; imageData: string; memos: [string, string, string]; }
-    const [thumbnailNotes, setThumbnailNotes] = useState<ThumbnailNote[]>([]);
-    const lastWrittenThumbnailNotesRef = useRef('[]');
-    const thumbnailSyncedRef = useRef(false); // workspace에서 첫 동기화 전 빈 배열 저장 방지
-
-    const handleAddThumbnailNote = () => {
-        setThumbnailNotes(prev => [...prev, { id: `tn-${Date.now()}`, imageData: '', memos: ['', '', ''] }]);
-    };
-    const handleRemoveThumbnailNote = (id: string) => {
-        const target = thumbnailNotes.find((n: ThumbnailNote) => n.id === id);
-        const label = target?.memos[0]?.trim() || '이 메모';
-        if (!window.confirm(`"${label}" 썸네일/메모를 삭제하시겠습니까?\n(이 동작은 되돌릴 수 없습니다)`)) return;
-        setThumbnailNotes(prev => prev.filter(n => n.id !== id));
-    };
-    const handleThumbnailImage = (id: string, file: File) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.createElement('canvas');
-                const maxSize = 200;
-                let w = img.width, h = img.height;
-                if (w > h) { h = (h / w) * maxSize; w = maxSize; } else { w = (w / h) * maxSize; h = maxSize; }
-                canvas.width = w; canvas.height = h;
-                canvas.getContext('2d')!.drawImage(img, 0, 0, w, h);
-                const compressed = canvas.toDataURL('image/jpeg', 0.7);
-                setThumbnailNotes(prev => prev.map(n => n.id === id ? { ...n, imageData: compressed } : n));
-            };
-            img.src = e.target?.result as string;
-        };
-        reader.readAsDataURL(file);
-    };
-    const handleThumbnailMemo = (id: string, idx: number, value: string) => {
-        setThumbnailNotes(prev => prev.map(n => {
-            if (n.id !== id) return n;
-            const memos = [...n.memos] as [string, string, string];
-            memos[idx] = value;
-            return { ...n, memos };
-        }));
-    };
 
     const [manualInput, setManualInput] = useState({
         companyName: '', recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: ''
@@ -886,29 +838,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             }
         }
-        if (workspace.thumbnailNotes !== undefined) {
-            thumbnailSyncedRef.current = true;
-            if (now >= (savingFieldsUntil.current['thumbnailNotes'] || 0)) {
-                const serverNotes = workspace.thumbnailNotes as ThumbnailNote[];
-                const wsStr = JSON.stringify(serverNotes);
-                if (wsStr !== lastWrittenThumbnailNotesRef.current) {
-                    // 안전 가드: 서버가 빈 배열을 돌려줬는데 로컬에 노트가 있으면
-                    // 덮어쓰지 않고 로컬 데이터를 서버로 복구 업로드 → 내가 삭제하기 전엔 안 지워짐
-                    if (Array.isArray(serverNotes) && serverNotes.length === 0 && thumbnailNotes.length > 0) {
-                        console.warn('[썸네일] 서버 빈 상태 감지 → 로컬 데이터 복구 업로드');
-                        savingFieldsUntil.current['thumbnailNotes'] = Date.now() + 30000;
-                        updateField('thumbnailNotes', thumbnailNotes)
-                            .then(() => { setTimeout(() => { savingFieldsUntil.current['thumbnailNotes'] = 0; }, 1500); })
-                            .catch((e: unknown) => { savingFieldsUntil.current['thumbnailNotes'] = 0; console.error('[썸네일] 복구 업로드 실패:', e); });
-                    } else {
-                        setThumbnailNotes(serverNotes);
-                        lastWrittenThumbnailNotesRef.current = wsStr;
-                    }
-                }
-            }
-        } else if (!thumbnailSyncedRef.current) {
-            thumbnailSyncedRef.current = true; // workspace에 thumbnailNotes 필드 자체가 없는 경우
-        }
     }, [workspace]);
 
     // fakeOrderInput 변경 → Firestore에 debounce로 저장
@@ -951,22 +880,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             .catch(e => { savingFieldsUntil.current['expenses'] = 0; console.error('[Firestore] expenses 저장 실패:', e); });
     }, [expenses, updateField]);
 
-    // thumbnailNotes 변경 → Firestore에 디바운스 저장
-    const thumbnailDebounceRef = useRef<ReturnType<typeof setTimeout>>();
-    useEffect(() => {
-        if (!isReadyRef.current || !thumbnailSyncedRef.current) return;
-        const currentStr = JSON.stringify(thumbnailNotes);
-        if (currentStr === lastWrittenThumbnailNotesRef.current) return;
-        if (thumbnailDebounceRef.current) clearTimeout(thumbnailDebounceRef.current);
-        thumbnailDebounceRef.current = setTimeout(() => {
-            savingFieldsUntil.current['thumbnailNotes'] = Date.now() + 30000;
-            lastWrittenThumbnailNotesRef.current = currentStr;
-            updateField('thumbnailNotes', thumbnailNotes)
-                .then(() => { setTimeout(() => { savingFieldsUntil.current['thumbnailNotes'] = 0; }, 1500); })
-                .catch(e => { savingFieldsUntil.current['thumbnailNotes'] = 0; console.error('[Firestore] 썸네일 노트 저장 실패:', e); });
-        }, 500);
-        return () => { if (thumbnailDebounceRef.current) clearTimeout(thumbnailDebounceRef.current); };
-    }, [thumbnailNotes, updateField]);
 
     // 가구매 명단 분석 (입력된 번호/이름 vs 실제 발견된 번호)
     const fakeOrderAnalysis = useMemo(() => {
@@ -2697,52 +2610,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             <div>
                 <section className="glass rounded-[1.8rem] p-6 shadow-xl">
                     <div className="flex flex-col gap-6">
-                        {/* 썸네일 + 메모 노트 */}
-                        <div className="bg-zinc-950/40 p-5 rounded-2xl border border-zinc-800/50">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest flex items-center gap-2">
-                                        <PlusCircleIcon className="w-4 h-4 text-cyan-500" />
-                                        메모 / 썸네일
-                                    </h3>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                    {thumbnailNotes.map(note => (
-                                        <div key={note.id} className="relative bg-zinc-900/80 rounded-lg border border-zinc-800 p-2 flex flex-col gap-1 group animate-pop-in" style={{ width: 'calc(100% / 6 - 7px)', minWidth: '140px' }}>
-                                            <button onClick={() => handleRemoveThumbnailNote(note.id)} className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-zinc-800 hover:bg-rose-500 text-zinc-500 hover:text-white rounded-full text-[9px] font-black flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all border border-zinc-700 z-10">×</button>
-                                            <input
-                                                type="text"
-                                                value={note.memos[0]}
-                                                onChange={(e) => handleThumbnailMemo(note.id, 0, e.target.value)}
-                                                placeholder="제목"
-                                                className="w-full bg-transparent border-none px-0 py-0 text-[13px] font-black text-zinc-200 placeholder:text-zinc-700 focus:ring-0 outline-none truncate"
-                                            />
-                                            <label className="w-full aspect-square rounded-md border border-dashed border-zinc-700 hover:border-cyan-500/50 cursor-pointer flex items-center justify-center overflow-hidden transition-colors bg-zinc-950/50">
-                                                {note.imageData ? (
-                                                    <img src={note.imageData} alt="" className="w-full h-full object-cover rounded-md" />
-                                                ) : (
-                                                    <span className="text-zinc-700 text-[20px]">+</span>
-                                                )}
-                                                <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleThumbnailImage(note.id, f); }} />
-                                            </label>
-                                            <div className="flex flex-col gap-0.5">
-                                                {[1, 2].map(idx => (
-                                                    <input
-                                                        key={idx}
-                                                        type="text"
-                                                        value={note.memos[idx]}
-                                                        onChange={(e) => handleThumbnailMemo(note.id, idx, e.target.value)}
-                                                        placeholder={`메모 ${idx}`}
-                                                        className="w-full bg-zinc-950/60 border border-zinc-800 rounded px-1.5 py-0.5 text-[12px] font-bold text-zinc-300 placeholder:text-zinc-700 focus:ring-1 focus:ring-cyan-500/30 outline-none leading-[20px]"
-                                                    />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    ))}
-                                    <button onClick={handleAddThumbnailNote} className="flex items-center justify-center rounded-lg border border-dashed border-zinc-700 hover:border-cyan-500/50 hover:text-cyan-400 text-zinc-600 transition-all aspect-square" style={{ width: 'calc(100% / 6 - 7px)', minWidth: '140px' }}>
-                                        <PlusCircleIcon className="w-5 h-5" />
-                                    </button>
-                                </div>
-                        </div>
                     </div>
                 </section>
             </div>

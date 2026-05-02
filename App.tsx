@@ -4,12 +4,10 @@ import CompanySelector from './components/CompanySelector';
 import PricingEditor from './components/PricingEditor';
 import SalesTracker from './components/SalesTracker';
 import TodoList from './components/TodoList';
-import QuestTimeline from './components/QuestTimeline';
-import OrderStatusBanner from './components/OrderStatusBanner';
 import DynamicBusinessPanel from './components/DynamicBusinessPanel';
 import AddBusinessModal from './components/AddBusinessModal';
 import { ChartBarIcon, WrenchScrewdriverIcon, Cog6ToothIcon, PlusCircleIcon } from './components/icons';
-import { usePricingConfig, usePlatformConfigs, useAllBusinessWorkspaces } from './hooks/useFirestore';
+import { usePricingConfig, usePlatformConfigs } from './hooks/useFirestore';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore, syncPricingFields } from './services/migration';
 import type { BusinessId, HardcodedBusinessId } from './types';
@@ -73,7 +71,6 @@ const App: React.FC = () => {
   const platform안군 = usePlatformConfigs('안군농원');
   const platform조에 = usePlatformConfigs('조에');
   const dynamicIds = dynamicBusinesses.map((b: { id: string }) => b.id);
-  const { workspaces, isReady: workspacesReady } = useAllBusinessWorkspaces(dynamicIds);
 
   const configMap: Record<HardcodedBusinessId, { pricing: typeof pricing안군; platform: typeof platform안군 }> = {
     '안군농원': { pricing: pricing안군, platform: platform안군 },
@@ -234,10 +231,6 @@ const App: React.FC = () => {
             </button>
           </nav>
         </header>
-
-        {/* 게임형 퀘스트 타임라인 */}
-        <QuestTimeline />
-
 
         {!isDynamicBusiness && configSource === 'default' && (
           <div className="mb-4 px-4 py-3 bg-amber-900/30 border border-amber-500/30 rounded-xl text-amber-400 text-xs font-bold text-center">
