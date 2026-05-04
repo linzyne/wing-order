@@ -3568,19 +3568,30 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <div className="flex flex-wrap gap-2 mb-3">
                                 <select
                                     value={returnCompany}
-                                    onChange={(e) => setReturnCompany(e.target.value)}
+                                    onChange={(e) => { setReturnCompany(e.target.value); setReturnRegisteredName(''); setReturnProductKey(''); }}
                                     className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50"
                                 >
                                     <option value="">업체 선택</option>
                                     {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
                                 </select>
-                                <input
-                                    type="text"
-                                    value={returnDirectName}
-                                    onChange={(e) => setReturnDirectName(e.target.value)}
-                                    placeholder={`${itemType} 항목명 (선택)`}
-                                    className="flex-1 min-w-[120px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
-                                />
+                                <select
+                                    value={returnRegisteredName}
+                                    onChange={(e) => { setReturnRegisteredName(e.target.value); setReturnProductKey(''); }}
+                                    disabled={!returnCompany}
+                                    className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50 disabled:opacity-40"
+                                >
+                                    <option value="">등록상품명 선택</option>
+                                    {returnRegisteredNames.map((name: string) => <option key={name} value={name}>{name}</option>)}
+                                </select>
+                                <select
+                                    value={returnProductKey}
+                                    onChange={(e) => setReturnProductKey(e.target.value)}
+                                    disabled={!returnRegisteredName}
+                                    className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50 disabled:opacity-40"
+                                >
+                                    <option value="">품목 선택</option>
+                                    {returnProducts.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
+                                </select>
                             </div>
                             <div className="flex flex-wrap items-center gap-2 mb-3">
                                 <input
@@ -3597,35 +3608,39 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     placeholder="메모 (선택)"
                                     className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
                                     onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && returnCompany && returnDirectAmount && parseInt(returnDirectAmount) > 0) {
+                                        if (e.key === 'Enter' && returnCompany && returnProductKey && returnDirectAmount && parseInt(returnDirectAmount) > 0) {
+                                            const p = returnProducts.find(p => p.key === returnProductKey);
                                             const amount = parseInt(returnDirectAmount);
                                             setReturns(prev => [...prev, {
-                                                company: returnCompany, productKey: '', productName: returnDirectName || itemType,
+                                                company: returnCompany, productKey: returnProductKey, productName: p?.name || itemType,
+                                                registeredName: returnRegisteredName || undefined,
                                                 count: 1, marginPerUnit: amount, totalMargin: -amount,
                                                 memo: returnMemo || undefined, orderDate: returnOrderDate || undefined, type: itemType,
                                             }]);
-                                            setReturnDirectAmount(''); setReturnDirectName(''); setReturnMemo('');
+                                            setReturnProductKey(''); setReturnDirectAmount(''); setReturnMemo('');
                                         }
                                     }}
                                 />
                                 <button
                                     onClick={() => {
-                                        if (!returnCompany || !returnDirectAmount || parseInt(returnDirectAmount) <= 0) return;
+                                        if (!returnCompany || !returnProductKey || !returnDirectAmount || parseInt(returnDirectAmount) <= 0) return;
+                                        const p = returnProducts.find(p => p.key === returnProductKey);
                                         const amount = parseInt(returnDirectAmount);
                                         setReturns(prev => [...prev, {
-                                            company: returnCompany, productKey: '', productName: returnDirectName || itemType,
+                                            company: returnCompany, productKey: returnProductKey, productName: p?.name || itemType,
+                                            registeredName: returnRegisteredName || undefined,
                                             count: 1, marginPerUnit: amount, totalMargin: -amount,
                                             memo: returnMemo || undefined, orderDate: returnOrderDate || undefined, type: itemType,
                                         }]);
-                                        setReturnDirectAmount(''); setReturnDirectName(''); setReturnMemo('');
+                                        setReturnProductKey(''); setReturnDirectAmount(''); setReturnMemo('');
                                     }}
-                                    disabled={!returnCompany || !returnDirectAmount || parseInt(returnDirectAmount) <= 0}
+                                    disabled={!returnCompany || !returnProductKey || !returnDirectAmount || parseInt(returnDirectAmount) <= 0}
                                     className="bg-violet-600 hover:bg-violet-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <PlusCircleIcon className="w-3.5 h-3.5" />추가
                                 </button>
                             </div>
-                            {returnDirectAmount && parseInt(returnDirectAmount) > 0 && (
+                            {returnProductKey && returnDirectAmount && parseInt(returnDirectAmount) > 0 && (
                                 <div className="mb-3 text-right">
                                     <span className="text-[10px] font-black text-violet-400">
                                         {itemType} 금액: -{parseInt(returnDirectAmount).toLocaleString()}원
