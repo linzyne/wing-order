@@ -790,6 +790,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [returnProductKey, setReturnProductKey] = useState('');
     const [returnCount, setReturnCount] = useState('1');
     const [returnMemo, setReturnMemo] = useState('');
+    const [returnOrderDate, setReturnOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
     const returnProducts = useMemo(() => {
         if (!returnCompany || !pricingConfig[returnCompany]) return [];
         return Object.entries(pricingConfig[returnCompany].products).map(([key, p]: [string, any]) => ({
@@ -2218,12 +2219,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
         // 반품시트 생성 (마진시트와 동일 양식, -금액)
         if (returns.length > 0) {
-            const returnSheetData: any[][] = [['업체', '품목명', '수량', '개당마진', '반품마진']];
+            const returnSheetData: any[][] = [['날짜', '사유', '업체', '품목명', '수량', '개당마진', '반품마진']];
             returns.forEach(r => {
-                returnSheetData.push([r.company, r.productName, r.count, r.marginPerUnit, r.totalMargin]);
+                returnSheetData.push([r.orderDate || '', r.memo || '', r.company, r.productName, r.count, r.marginPerUnit, r.totalMargin]);
             });
             returnSheetData.push([]);
-            returnSheetData.push(['', '', '', '총 반품 마진', returns.reduce((s, r) => s + r.totalMargin, 0)]);
+            returnSheetData.push(['', '', '', '', '', '총 반품 마진', returns.reduce((s, r) => s + r.totalMargin, 0)]);
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnSheetData), "반품시트");
         }
 
@@ -3443,6 +3444,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         </h3>
                     </div>
                     <div className="flex items-center gap-2 mb-3">
+                        <input
+                            type="date"
+                            value={returnOrderDate}
+                            onChange={(e) => setReturnOrderDate(e.target.value)}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50 shrink-0"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
                         <select
                             value={returnCompany}
                             onChange={(e) => { setReturnCompany(e.target.value); setReturnProductKey(''); }}
@@ -3483,6 +3492,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     setReturns(prev => [...prev, {
                                         company: returnCompany, productKey: returnProductKey, productName: p.name,
                                         count: qty, marginPerUnit: p.margin, totalMargin: -(p.margin * qty), memo: returnMemo || undefined,
+                                        orderDate: returnOrderDate || undefined,
                                     }]);
                                     setReturnProductKey(''); setReturnCount('1'); setReturnMemo('');
                                 }
@@ -3502,6 +3512,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     marginPerUnit: p.margin,
                                     totalMargin: -(p.margin * qty),
                                     memo: returnMemo || undefined,
+                                    orderDate: returnOrderDate || undefined,
                                 }]);
                                 setReturnProductKey('');
                                 setReturnCount('1');
@@ -3525,6 +3536,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             {returns.map((ret, i) => (
                                 <div key={i} className="flex items-center justify-between px-3 py-2 rounded-xl border bg-zinc-950/50 border-zinc-800/50">
                                     <div className="flex items-center gap-2">
+                                        {ret.orderDate && <span className="text-[9px] font-mono text-zinc-500">{ret.orderDate}</span>}
                                         <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-violet-500/20 text-violet-400 border border-violet-500/30">
                                             {ret.company}
                                         </span>

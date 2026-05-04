@@ -185,6 +185,7 @@ export interface ReturnRecord {
   marginPerUnit: number; // 개당 마진
   totalMargin: number;   // 총 반품 마진 (음수)
   memo?: string;         // 반품 사유
+  orderDate?: string;    // 주문 날짜 (YYYY-MM-DD)
 }
 
 export interface ExpenseRecord {
