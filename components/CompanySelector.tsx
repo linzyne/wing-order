@@ -3456,7 +3456,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50 shrink-0"
                         />
                     </div>
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex flex-wrap gap-2 mb-3">
                         <select
                             value={returnCompany}
                             onChange={(e) => { setReturnCompany(e.target.value); setReturnRegisteredName(''); setReturnProductKey(''); }}
@@ -3478,13 +3478,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             value={returnProductKey}
                             onChange={(e) => setReturnProductKey(e.target.value)}
                             disabled={!returnRegisteredName}
-                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50 disabled:opacity-40 flex-1"
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50 disabled:opacity-40"
                         >
                             <option value="">품목 선택</option>
                             {returnProducts.map(p => <option key={p.key} value={p.key}>{p.name} ({p.margin.toLocaleString()}원)</option>)}
                         </select>
                     </div>
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex flex-wrap items-center gap-2 mb-3">
                         <input
                             type="text"
                             value={returnCount}
