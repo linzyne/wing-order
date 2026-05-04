@@ -781,25 +781,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
       );
     }
 
-    // 날짜 × 제품키 → 총마진 (마진 없거나 등록상품명 없는 항목 제외)
+    // 날짜 × 등록상품명 → 총마진 (마진 없거나 등록상품명 없는 항목 제외)
     const dateProductMargin = new Map<string, Map<string, number>>();
     records.forEach(r => {
       if (!r.registeredName || r.totalMargin <= 0) return;
-      const key = `${r.registeredName}::${r.productName}`;
       if (!dateProductMargin.has(r.date)) dateProductMargin.set(r.date, new Map());
       const m = dateProductMargin.get(r.date)!;
-      m.set(key, (m.get(key) || 0) + r.totalMargin);
+      m.set(r.registeredName, (m.get(r.registeredName) || 0) + r.totalMargin);
     });
-
-    // 유니크 제품 목록 (총마진 내림차순)
-    const productTotalMap = new Map<string, { registeredName: string; productName: string; totalMargin: number }>();
-    records.forEach(r => {
-      const key = `${r.registeredName}::${r.productName}`;
-      const e = productTotalMap.get(key) || { registeredName: r.registeredName, productName: r.productName, totalMargin: 0 };
-      e.totalMargin += r.totalMargin;
-      productTotalMap.set(key, e);
-    });
-    const allProducts = Array.from(productTotalMap.entries()).sort(([, a], [, b]) => b.totalMargin - a.totalMargin);
 
     const allDates = Array.from(dateProductMargin.keys()).sort();
     const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -839,20 +828,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                   <span className="text-zinc-200 font-black text-xs">{fmtDate(date)}</span>
                   <span className="text-emerald-400 font-black text-xs tabular-nums">{dayTotal.toLocaleString()}원</span>
                 </div>
-                {/* 품목 목록 */}
+                {/* 등록상품명별 마진 */}
                 <div className="divide-y divide-zinc-800/50">
-                  {rows.map(([key, margin]) => {
-                    const [registeredName, productName] = key.split('::');
-                    return (
-                      <div key={key} className="px-3 py-1.5">
-                        <div className="text-violet-400 font-bold text-[11px] leading-tight">{registeredName}</div>
-                        <div className="flex items-center justify-between gap-2 mt-0.5">
-                          <span className="text-zinc-400 text-[11px] truncate">{productName}</span>
-                          <span className="text-emerald-400 font-bold text-[11px] tabular-nums whitespace-nowrap">{margin.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {rows.map(([registeredName, margin]) => (
+                    <div key={registeredName} className="px-3 py-1.5 flex items-center justify-between gap-2">
+                      <span className="text-violet-400 font-bold text-[11px] truncate">{registeredName}</span>
+                      <span className="text-emerald-400 font-bold text-[11px] tabular-nums whitespace-nowrap">{margin.toLocaleString()}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             );
