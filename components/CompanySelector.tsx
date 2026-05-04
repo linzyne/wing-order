@@ -786,29 +786,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     // 반품 관리
     const [returns, setReturns] = useState<ReturnRecord[]>([]);
+    const [returnCompany, setReturnCompany] = useState('');
     const [returnRegisteredName, setReturnRegisteredName] = useState('');
-    const [returnProductKey, setReturnProductKey] = useState(''); // "업체명::productKey" 형식
+    const [returnProductKey, setReturnProductKey] = useState('');
     const [returnCount, setReturnCount] = useState('1');
     const [returnMemo, setReturnMemo] = useState('');
     const [returnOrderDate, setReturnOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
     const returnRegisteredNames = useMemo(() => {
-        const names = new Set<string>();
-        Object.values(pricingConfig).forEach((config: any) => {
-            (config.keywords || []).forEach((k: string) => { if (k) names.add(k); });
-        });
-        return Array.from(names).sort((a, b) => a.localeCompare(b, 'ko'));
-    }, [pricingConfig]);
+        if (!returnCompany || !pricingConfig[returnCompany]) return [];
+        return (pricingConfig[returnCompany] as any).keywords || [];
+    }, [returnCompany, pricingConfig]);
     const returnProducts = useMemo(() => {
-        if (!returnRegisteredName) return [];
-        const result: { key: string; name: string; margin: number; company: string }[] = [];
-        Object.entries(pricingConfig).forEach(([companyName, config]: [string, any]) => {
-            if (!(config.keywords || []).includes(returnRegisteredName)) return;
-            Object.entries(config.products || {}).forEach(([productKey, p]: [string, any]) => {
-                result.push({ key: `${companyName}::${productKey}`, name: p.orderFormName || p.displayName, margin: p.margin || 0, company: companyName });
-            });
-        });
-        return result;
-    }, [returnRegisteredName, pricingConfig]);
+        if (!returnCompany || !returnRegisteredName || !pricingConfig[returnCompany]) return [];
+        return Object.entries((pricingConfig[returnCompany] as any).products || {}).map(([key, p]: [string, any]) => ({
+            key, name: p.orderFormName || p.displayName, margin: p.margin || 0,
+        }));
+    }, [returnCompany, returnRegisteredName, pricingConfig]);
     const selectedReturnMargin = useMemo(() => {
         const p = returnProducts.find(p => p.key === returnProductKey);
         return p ? p.margin : 0;
@@ -3465,12 +3458,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     </div>
                     <div className="flex items-center gap-2 mb-3">
                         <select
-                            value={returnRegisteredName}
-                            onChange={(e) => { setReturnRegisteredName(e.target.value); setReturnProductKey(''); }}
+                            value={returnCompany}
+                            onChange={(e) => { setReturnCompany(e.target.value); setReturnRegisteredName(''); setReturnProductKey(''); }}
                             className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50"
                         >
+                            <option value="">업체 선택</option>
+                            {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
+                        </select>
+                        <select
+                            value={returnRegisteredName}
+                            onChange={(e) => { setReturnRegisteredName(e.target.value); setReturnProductKey(''); }}
+                            disabled={!returnCompany}
+                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50 disabled:opacity-40"
+                        >
                             <option value="">등록상품명 선택</option>
-                            {returnRegisteredNames.map(name => <option key={name} value={name}>{name}</option>)}
+                            {returnRegisteredNames.map((name: string) => <option key={name} value={name}>{name}</option>)}
                         </select>
                         <select
                             value={returnProductKey}
@@ -3497,14 +3499,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             placeholder="반품 사유 (선택)"
                             className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter' && returnRegisteredName && returnProductKey && returnCount && parseInt(returnCount) > 0) {
+                                if (e.key === 'Enter' && returnCompany && returnProductKey && returnCount && parseInt(returnCount) > 0) {
                                     const p = returnProducts.find(p => p.key === returnProductKey);
                                     if (!p) return;
                                     const qty = parseInt(returnCount);
-                                    const colonIdx = returnProductKey.indexOf('::');
-                                    const actualProductKey = returnProductKey.slice(colonIdx + 2);
                                     setReturns(prev => [...prev, {
-                                        company: p.company, productKey: actualProductKey, productName: p.name,
+                                        company: returnCompany, productKey: returnProductKey, productName: p.name,
                                         count: qty, marginPerUnit: p.margin, totalMargin: -(p.margin * qty), memo: returnMemo || undefined,
                                         orderDate: returnOrderDate || undefined,
                                     }]);
@@ -3514,15 +3514,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         />
                         <button
                             onClick={() => {
-                                if (!returnRegisteredName || !returnProductKey || !returnCount || parseInt(returnCount) <= 0) return;
+                                if (!returnCompany || !returnProductKey || !returnCount || parseInt(returnCount) <= 0) return;
                                 const p = returnProducts.find(p => p.key === returnProductKey);
                                 if (!p) return;
                                 const qty = parseInt(returnCount);
-                                const colonIdx = returnProductKey.indexOf('::');
-                                const actualProductKey = returnProductKey.slice(colonIdx + 2);
                                 setReturns(prev => [...prev, {
-                                    company: p.company,
-                                    productKey: actualProductKey,
+                                    company: returnCompany,
+                                    productKey: returnProductKey,
                                     productName: p.name,
                                     count: qty,
                                     marginPerUnit: p.margin,
@@ -3534,7 +3532,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 setReturnCount('1');
                                 setReturnMemo('');
                             }}
-                            disabled={!returnRegisteredName || !returnProductKey || !returnCount || parseInt(returnCount) <= 0}
+                            disabled={!returnCompany || !returnProductKey || !returnCount || parseInt(returnCount) <= 0}
                             className="bg-violet-600 hover:bg-violet-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
                         >
                             <PlusCircleIcon className="w-3.5 h-3.5" />추가
