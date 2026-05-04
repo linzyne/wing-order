@@ -1149,7 +1149,7 @@ const CompanyCard: React.FC<{
                 </div>
             </div>
             {isExpanded && (
-                <div className="p-8 pt-0 space-y-8 animate-fade-in bg-gradient-to-b from-transparent to-rose-950/5">
+                <div className="px-6 pb-4 pt-0 space-y-2 animate-fade-in bg-gradient-to-b from-transparent to-rose-950/5">
                     <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                         <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">
                             <PhoneIcon className="w-4 h-4 text-zinc-600 shrink-0" />
@@ -1188,7 +1188,7 @@ const CompanyCard: React.FC<{
                             />
                         </div>
                     </div>
-                    <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
+                    <div className="flex items-center gap-4 bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">
                         <span className="text-lg">📦</span>
                         <EditableField
                             value={companyConfig.courierName || ''}
@@ -1197,7 +1197,7 @@ const CompanyCard: React.FC<{
                             className="text-sm font-bold text-zinc-400 focus:outline-none"
                         />
                     </div>
-                    <div className="flex items-center gap-4 bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
+                    <div className="flex items-center gap-4 bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">
                         <label className="flex items-center gap-3 cursor-pointer select-none">
                             <input
                                 type="checkbox"
@@ -1207,13 +1207,13 @@ const CompanyCard: React.FC<{
                             />
                             <span className="text-sm font-bold text-zinc-400">주문 자동 합산</span>
                         </label>
-                        <p className="text-[13px] text-zinc-400 leading-relaxed mt-1">
-                            고객이 같은 단위를 여러개 샀을 경우 하나로 합산해서 묶음배송<br/>
-                            ex) 1kg 4개 구매 → 4kg 1개로 합산
+                        <p className="text-[13px] text-zinc-400 leading-relaxed">
+                            고객이 같은 단위를 여러개 샀을 경우 하나로 합산해서 묶음배송
+                            · ex) 1kg 4개 구매 → 4kg 1개로 합산
                         </p>
                     </div>
-                    <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
-                        <div className="flex items-center gap-3 mb-2">
+                    <div className="bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">
+                        <div className="flex items-center gap-3">
                             <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">등록상품명</span>
                             <span className="text-[10px] text-zinc-700">(엑셀 그룹컬럼 매칭용, 쉼표로 구분)</span>
                         </div>
