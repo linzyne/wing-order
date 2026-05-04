@@ -1438,7 +1438,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     ['settlement', '업체별정산'],
     ['trend', '판매추이'],
     ['invoices', '송장내역'],
-    ['margin', '마진시트'],
+    ['margin', '합계표(마진)'],
     ['returns', '반품'],
   ];
 
