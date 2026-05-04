@@ -3315,11 +3315,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             )}
                         </h3>
                     </div>
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex flex-col gap-2 mb-2">
                         <select
                             value={newExpense.company}
                             onChange={(e) => setNewExpense(prev => ({ ...prev, company: e.target.value, productKey: '' }))}
-                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50"
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50"
                         >
                             <option value="">업체 선택 (선택)</option>
                             {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
@@ -3328,7 +3328,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             value={newExpense.productKey}
                             onChange={(e) => setNewExpense(prev => ({ ...prev, productKey: e.target.value }))}
                             disabled={!newExpense.company}
-                            className="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50 disabled:opacity-40 flex-1"
+                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50 disabled:opacity-40"
                         >
                             <option value="">품목 선택 (선택)</option>
                             {expenseProducts.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
