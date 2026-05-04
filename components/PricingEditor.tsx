@@ -1125,6 +1125,8 @@ const CompanyCard: React.FC<{
     onBulkUpdateKeyword: (productKeys: string[], keyword: string) => void;
     onUpdateProduct: (productKey: string, product: ProductPricing) => void;
 }> = React.memo(({ companyName, companyConfig, isExpanded, onToggle, ...props }) => {
+    const [orderFormOpen, setOrderFormOpen] = useState(false);
+    const [invoiceFormOpen, setInvoiceFormOpen] = useState(false);
     return (
         <div id={`company-card-${companyName}`} className="bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-zinc-800 overflow-hidden group scroll-mt-4">
             <div className="flex items-center p-8 cursor-pointer hover:bg-zinc-800/40 transition-all" onClick={onToggle}>
@@ -1225,11 +1227,11 @@ const CompanyCard: React.FC<{
                             className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                         />
                     </div>
-                    <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
-                        <div className="flex items-center gap-3 mb-3">
+                    <div className="bg-zinc-950 rounded-xl border border-zinc-800 shadow-inner overflow-hidden">
+                        <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-zinc-900/40 transition-all" onClick={() => setOrderFormOpen(o => !o)}>
                             <span className="text-lg">📋</span>
                             <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">발주서 양식</span>
-                            <div className="ml-auto flex items-center gap-2">
+                            <div className="ml-auto flex items-center gap-2" onClick={e => e.stopPropagation()}>
                                 {companyConfig.orderFormHeaders && companyConfig.orderFormHeaders.length > 0 && (
                                     <button
                                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black border border-zinc-700 text-zinc-500 hover:border-red-500/40 hover:text-red-400 transition-all"
@@ -1287,228 +1289,216 @@ const CompanyCard: React.FC<{
                                     }} />
                                 </label>
                             </div>
+                            {orderFormOpen ? <ChevronUpIcon className="w-4 h-4 text-zinc-600 shrink-0" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600 shrink-0" />}
                         </div>
-                        {companyConfig.orderFormHeaders && companyConfig.orderFormHeaders.length > 0 ? (
-                            <div className="space-y-1.5">
-                                {companyConfig.orderFormHeaders.map((header, idx) => {
-                                    const currentField = companyConfig.orderFormFieldMap?.[idx] || inferFieldFromHeader(header);
-                                    const fixedValue = companyConfig.orderFormFixedValues?.[String(idx)] || '';
-                                    const hasFixed = fixedValue !== '';
-                                    return (
-                                        <div key={idx} className="flex items-center gap-2">
-                                            <span className="text-[10px] font-bold text-zinc-600 w-5 text-right shrink-0">{idx + 1}</span>
-                                            <select
-                                                className={`w-32 shrink-0 bg-zinc-900 border rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-amber-500/40 transition-colors ${hasFixed ? 'border-zinc-800 text-zinc-600 line-through' : 'border-zinc-700 text-white'}`}
-                                                value={currentField}
-                                                disabled={hasFixed}
-                                                title={hasFixed ? '고정값이 설정되어 있어 필드 매핑이 무시됩니다' : ''}
-                                                onChange={(e) => {
-                                                    const newFieldMap = [...(companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h)))];
-                                                    newFieldMap[idx] = e.target.value;
-                                                    // 필드 변경 시 헤더명이 기본값이면 같이 변경 (단일 호출로 처리)
-                                                    const selectedType = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === e.target.value);
-                                                    const oldType = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === currentField);
-                                                    if (selectedType && oldType && header === oldType.label) {
-                                                        const newHeaders = [...companyConfig.orderFormHeaders!];
-                                                        newHeaders[idx] = selectedType.label;
-                                                        props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
-                                                    } else {
-                                                        props.onUpdateOrderFormFieldMap(newFieldMap);
-                                                    }
-                                                }}
-                                            >
-                                                {ORDER_FORM_FIELD_TYPES.map(ft => (
-                                                    <option key={ft.key} value={ft.key}>{ft.label}</option>
-                                                ))}
-                                            </select>
-                                            <span className="text-zinc-600 text-[10px]">&rarr;</span>
-                                            <input
-                                                type="text"
-                                                className="flex-1 min-w-0 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-300 outline-none focus:border-amber-500/40 transition-colors"
-                                                value={header}
-                                                placeholder="헤더명"
-                                                onChange={(e) => {
-                                                    const newHeaders = [...companyConfig.orderFormHeaders!];
-                                                    newHeaders[idx] = e.target.value;
-                                                    props.onUpdateOrderFormHeaders(newHeaders);
-                                                }}
-                                            />
-                                            <input
-                                                type="text"
-                                                className={`w-28 shrink-0 bg-zinc-900 border rounded-lg px-2 py-1.5 text-[11px] outline-none transition-colors ${hasFixed ? 'border-amber-500/60 text-amber-300 focus:border-amber-400' : 'border-zinc-800 text-zinc-400 focus:border-amber-500/40'}`}
-                                                value={fixedValue}
-                                                placeholder="고정값"
-                                                title="값을 입력하면 필드 매핑을 무시하고 이 값이 항상 출력됩니다"
-                                                onChange={(e) => props.onUpdateOrderFormFixedValue(idx, e.target.value)}
-                                            />
-                                            <button
-                                                className="p-1 text-zinc-600 hover:text-red-400 transition-colors shrink-0"
-                                                onClick={() => {
-                                                    const newHeaders = companyConfig.orderFormHeaders!.filter((_, i) => i !== idx);
-                                                    const newFieldMap = (companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h))).filter((_, i) => i !== idx);
-                                                    props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
-                                                }}
-                                            >
-                                                <TrashIcon className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    );
-                                })}
+                        {orderFormOpen && (
+                            <div className="px-5 pb-4 border-t border-zinc-800/60">
+                                {companyConfig.orderFormHeaders && companyConfig.orderFormHeaders.length > 0 ? (
+                                    <div className="space-y-1.5 mt-3">
+                                        {companyConfig.orderFormHeaders.map((header, idx) => {
+                                            const currentField = companyConfig.orderFormFieldMap?.[idx] || inferFieldFromHeader(header);
+                                            const fixedValue = companyConfig.orderFormFixedValues?.[String(idx)] || '';
+                                            const hasFixed = fixedValue !== '';
+                                            return (
+                                                <div key={idx} className="flex items-center gap-2">
+                                                    <span className="text-[10px] font-bold text-zinc-600 w-5 text-right shrink-0">{idx + 1}</span>
+                                                    <select
+                                                        className={`w-32 shrink-0 bg-zinc-900 border rounded-lg px-2 py-1.5 text-[11px] outline-none focus:border-amber-500/40 transition-colors ${hasFixed ? 'border-zinc-800 text-zinc-600 line-through' : 'border-zinc-700 text-white'}`}
+                                                        value={currentField}
+                                                        disabled={hasFixed}
+                                                        title={hasFixed ? '고정값이 설정되어 있어 필드 매핑이 무시됩니다' : ''}
+                                                        onChange={(e) => {
+                                                            const newFieldMap = [...(companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h)))];
+                                                            newFieldMap[idx] = e.target.value;
+                                                            const selectedType = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === e.target.value);
+                                                            const oldType = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === currentField);
+                                                            if (selectedType && oldType && header === oldType.label) {
+                                                                const newHeaders = [...companyConfig.orderFormHeaders!];
+                                                                newHeaders[idx] = selectedType.label;
+                                                                props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
+                                                            } else {
+                                                                props.onUpdateOrderFormFieldMap(newFieldMap);
+                                                            }
+                                                        }}
+                                                    >
+                                                        {ORDER_FORM_FIELD_TYPES.map(ft => (
+                                                            <option key={ft.key} value={ft.key}>{ft.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <span className="text-zinc-600 text-[10px]">&rarr;</span>
+                                                    <input
+                                                        type="text"
+                                                        className="flex-1 min-w-0 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-300 outline-none focus:border-amber-500/40 transition-colors"
+                                                        value={header}
+                                                        placeholder="헤더명"
+                                                        onChange={(e) => {
+                                                            const newHeaders = [...companyConfig.orderFormHeaders!];
+                                                            newHeaders[idx] = e.target.value;
+                                                            props.onUpdateOrderFormHeaders(newHeaders);
+                                                        }}
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        className={`w-28 shrink-0 bg-zinc-900 border rounded-lg px-2 py-1.5 text-[11px] outline-none transition-colors ${hasFixed ? 'border-amber-500/60 text-amber-300 focus:border-amber-400' : 'border-zinc-800 text-zinc-400 focus:border-amber-500/40'}`}
+                                                        value={fixedValue}
+                                                        placeholder="고정값"
+                                                        title="값을 입력하면 필드 매핑을 무시하고 이 값이 항상 출력됩니다"
+                                                        onChange={(e) => props.onUpdateOrderFormFixedValue(idx, e.target.value)}
+                                                    />
+                                                    <button
+                                                        className="p-1 text-zinc-600 hover:text-red-400 transition-colors shrink-0"
+                                                        onClick={() => {
+                                                            const newHeaders = companyConfig.orderFormHeaders!.filter((_, i) => i !== idx);
+                                                            const newFieldMap = (companyConfig.orderFormFieldMap || companyConfig.orderFormHeaders!.map(h => inferFieldFromHeader(h))).filter((_, i) => i !== idx);
+                                                            props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
+                                                        }}
+                                                    >
+                                                        <TrashIcon className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <p className="text-[11px] text-zinc-600 py-2 mt-3">기본 양식 사용 중. 파일 업로드 또는 아래 버튼으로 열을 추가하세요.</p>
+                                )}
+                                <button
+                                    className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black border border-dashed border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all w-full justify-center"
+                                    onClick={() => {
+                                        const defaultField = 'empty';
+                                        const defaultLabel = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === defaultField)!.label;
+                                        const newHeaders = [...(companyConfig.orderFormHeaders || []), defaultLabel];
+                                        const newFieldMap = [...(companyConfig.orderFormFieldMap || (companyConfig.orderFormHeaders || []).map(h => inferFieldFromHeader(h))), defaultField];
+                                        props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
+                                    }}
+                                >
+                                    <PlusCircleIcon className="w-3.5 h-3.5" />
+                                    <span>열 추가</span>
+                                </button>
                             </div>
-                        ) : (
-                            <p className="text-[11px] text-zinc-600 py-2">기본 양식 사용 중. 파일 업로드 또는 아래 버튼으로 열을 추가하세요.</p>
                         )}
-                        <button
-                            className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black border border-dashed border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all w-full justify-center"
-                            onClick={() => {
-                                const defaultField = 'empty';
-                                const defaultLabel = ORDER_FORM_FIELD_TYPES.find(ft => ft.key === defaultField)!.label;
-                                const newHeaders = [...(companyConfig.orderFormHeaders || []), defaultLabel];
-                                const newFieldMap = [...(companyConfig.orderFormFieldMap || (companyConfig.orderFormHeaders || []).map(h => inferFieldFromHeader(h))), defaultField];
-                                props.onUpdateOrderFormHeaders(newHeaders, newFieldMap);
-                            }}
-                        >
-                            <PlusCircleIcon className="w-3.5 h-3.5" />
-                            <span>열 추가</span>
-                        </button>
                     </div>
-                    <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
-                        <div className="flex items-center gap-3 mb-2">
+                    <div className="bg-zinc-950 rounded-xl border border-zinc-800 shadow-inner overflow-hidden">
+                        <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-zinc-900/40 transition-all" onClick={() => setInvoiceFormOpen(o => !o)}>
                             <span className="text-lg">📄</span>
                             <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">송장파일 양식</span>
-                            <label className="ml-auto flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-lg text-[10px] font-black border border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all">
-                                <DocumentArrowUpIcon className="w-3.5 h-3.5" />
-                                <span>양식 파일에서 읽기</span>
-                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
-                                    console.log('[송장양식] onChange 실행됨');
-                                    const file = e.target.files?.[0];
-                                    if (!file) { console.log('[송장양식] 파일 없음'); return; }
-                                    console.log('[송장양식] 파일 선택:', file.name);
-                                    const reader = new FileReader();
-                                    reader.onload = (ev) => {
-                                        try {
-                                            const data = new Uint8Array(ev.target?.result as ArrayBuffer);
-                                            const wb = XLSX.read(data, { type: 'array' });
-                                            const ws = wb.Sheets[wb.SheetNames[0]];
-                                            const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                                            console.log('[송장양식] 파싱 완료, 행 수:', aoa.length);
-                                            if (aoa.length > 0) {
-                                                console.log('[송장양식] 첫 5행:', aoa.slice(0, 5));
-                                                // 헤더 행 자동 탐색: 첫 20행 중 키워드 포함 행 찾기
-                                                let headerRowIdx = -1;
-                                                for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
-                                                    const rowStr = (aoa[ri] || []).join('');
-                                                    if (rowStr.includes('번호') || rowStr.includes('송장') || rowStr.includes('운송장') || rowStr.includes('접수') || rowStr.includes('주문')) {
-                                                        headerRowIdx = ri;
-                                                        break;
-                                                    }
-                                                }
-                                                // 키워드 못 찾으면 비어있지 않은 셀이 가장 많은 행을 헤더로 사용
-                                                if (headerRowIdx === -1) {
-                                                    let maxCols = 0;
+                            <div className="ml-auto flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                <label className="flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-lg text-[10px] font-black border border-zinc-700 text-zinc-500 hover:border-amber-500/40 hover:text-amber-400 transition-all">
+                                    <DocumentArrowUpIcon className="w-3.5 h-3.5" />
+                                    <span>양식 파일에서 읽기</span>
+                                    <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e) => {
+                                        const file = e.target.files?.[0];
+                                        if (!file) return;
+                                        const reader = new FileReader();
+                                        reader.onload = (ev) => {
+                                            try {
+                                                const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+                                                const wb = XLSX.read(data, { type: 'array' });
+                                                const ws = wb.Sheets[wb.SheetNames[0]];
+                                                const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                                                if (aoa.length > 0) {
+                                                    let headerRowIdx = -1;
                                                     for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
-                                                        const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
-                                                        if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
+                                                        const rowStr = (aoa[ri] || []).join('');
+                                                        if (rowStr.includes('번호') || rowStr.includes('송장') || rowStr.includes('운송장') || rowStr.includes('접수') || rowStr.includes('주문')) {
+                                                            headerRowIdx = ri; break;
+                                                        }
                                                     }
-                                                    if (headerRowIdx === -1) headerRowIdx = 0;
+                                                    if (headerRowIdx === -1) {
+                                                        let maxCols = 0;
+                                                        for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
+                                                            const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
+                                                            if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
+                                                        }
+                                                        if (headerRowIdx === -1) headerRowIdx = 0;
+                                                    }
+                                                    const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                    if (headers.length > 0) {
+                                                        props.onUpdateVendorInvoiceHeaders(headers, headers.map((h: string) => inferVendorInvoiceField(h)));
+                                                    }
                                                 }
-                                                const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
-                                                console.log('[송장양식] headerRowIdx:', headerRowIdx, '헤더:', headers);
-                                                if (headers.length > 0) {
-                                                    const fieldMap = headers.map((h: string) => inferVendorInvoiceField(h));
-                                                    props.onUpdateVendorInvoiceHeaders(headers, fieldMap);
-                                                    console.log('[송장양식] 저장 완료, fieldMap:', fieldMap);
-                                                } else {
-                                                    console.log('[송장양식] 헤더가 비어있음');
-                                                }
-                                            }
-                                        } catch (err) { console.error('[송장양식 업로드 오류]', err); }
-                                    };
-                                    reader.readAsArrayBuffer(file);
-                                    e.target.value = '';
-                                }} />
-                            </label>
+                                            } catch (err) { console.error('[송장양식 업로드 오류]', err); }
+                                        };
+                                        reader.readAsArrayBuffer(file);
+                                        e.target.value = '';
+                                    }} />
+                                </label>
+                            </div>
+                            {invoiceFormOpen ? <ChevronUpIcon className="w-4 h-4 text-zinc-600 shrink-0" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600 shrink-0" />}
                         </div>
-                        <EditableField
-                            value={(companyConfig.vendorInvoiceHeaders || []).join(', ')}
-                            onSave={(val) => {
-                                const headers = val.split(/[,\t]+/).map(s => s.trim()).filter(Boolean);
-                                const existingMap = companyConfig.vendorInvoiceFieldMap || [];
-                                const fieldMap = headers.length > 0 ? headers.map((h, i) => existingMap[i] || inferVendorInvoiceField(h)) : undefined;
-                                props.onUpdateVendorInvoiceHeaders(headers, fieldMap);
-                            }}
-                            placeholder="업체에서 보내주는 송장파일의 헤더 (비워두면 자동 감지)"
-                            className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
-                        />
-                        <p className="text-[10px] text-zinc-600 mt-1">업체 송장파일의 컬럼 양식. 비워두면 자동 감지. 양식 파일 업로드 또는 쉼표로 구분하여 입력</p>
-                        {companyConfig.vendorInvoiceHeaders && companyConfig.vendorInvoiceHeaders.length > 0 && (
-                            <div className="mt-3 space-y-1">
-                                <span className="text-[11px] font-black text-amber-500/80 uppercase">필드 매핑</span>
-                                {companyConfig.vendorInvoiceHeaders.map((header, idx) => {
-                                    const currentField = companyConfig.vendorInvoiceFieldMap?.[idx] || inferVendorInvoiceField(header);
-                                    return (
-                                        <div key={idx} className="flex items-center gap-2">
-                                            <span className="text-[11px] font-bold text-zinc-500 w-36 truncate shrink-0" title={header}>
-                                                {header}
-                                            </span>
-                                            <span className="text-zinc-600 text-[10px]">&rarr;</span>
-                                            <select
-                                                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500/40 transition-colors"
-                                                value={currentField}
-                                                onChange={(e) => {
-                                                    const newMap = [...(companyConfig.vendorInvoiceFieldMap || companyConfig.vendorInvoiceHeaders!.map(h => inferVendorInvoiceField(h)))];
-                                                    newMap[idx] = e.target.value;
-                                                    props.onUpdateVendorInvoiceFieldMap(newMap);
-                                                }}
-                                            >
-                                                {VENDOR_INVOICE_FIELD_TYPES.map(ft => (
-                                                    <option key={ft.key} value={ft.key}>{ft.label}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    );
-                                })}
-                                {(() => {
-                                    const headers = companyConfig.vendorInvoiceHeaders!;
-                                    const fieldMap = companyConfig.vendorInvoiceFieldMap || headers.map(h => inferVendorInvoiceField(h));
-                                    // 송장번호로 매핑된 열은 매칭 기준 후보에서 제외
-                                    const candidateHeaders = headers.filter((_, i) => fieldMap[i] !== 'trackingNumber');
-                                    if (candidateHeaders.length === 0) return null;
-                                    const currentMatchHeaders = (companyConfig.vendorInvoiceMatchKey || '').split('|').filter(Boolean);
-                                    return (
-                                        <div className="mt-3">
-                                            <span className="text-[11px] font-black text-amber-500/80 uppercase">매칭 기준</span>
-                                            <p className="text-[10px] text-zinc-600 mb-1">업체 송장파일의 어떤 열로 주문서와 매칭할지 선택 (복수 선택 가능)</p>
-                                            <div className="flex flex-wrap gap-1.5 mt-1">
-                                                {candidateHeaders.map(header => {
-                                                    const isChecked = currentMatchHeaders.includes(header);
-                                                    return (
-                                                        <label key={header} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition-all ${isChecked ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : 'border-zinc-700 text-zinc-500 hover:border-zinc-600'}`}>
-                                                            <input
-                                                                type="checkbox"
-                                                                className="sr-only"
-                                                                checked={isChecked}
-                                                                onChange={() => {
-                                                                    let newKeys: string[];
-                                                                    if (isChecked) {
-                                                                        newKeys = currentMatchHeaders.filter(k => k !== header);
-                                                                    } else {
-                                                                        newKeys = [...currentMatchHeaders, header];
-                                                                    }
-                                                                    props.onUpdateVendorInvoiceMatchKey(newKeys.length > 0 ? newKeys.join('|') : '');
-                                                                }}
-                                                            />
-                                                            <span className={`w-3 h-3 rounded border flex items-center justify-center ${isChecked ? 'border-amber-500 bg-amber-500' : 'border-zinc-600'}`}>
-                                                                {isChecked && <span className="text-black text-[8px] font-black">✓</span>}
-                                                            </span>
-                                                            {header}
-                                                        </label>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
+                        {invoiceFormOpen && (
+                            <div className="px-5 pb-4 border-t border-zinc-800/60">
+                                <div className="mt-3">
+                                    <EditableField
+                                        value={(companyConfig.vendorInvoiceHeaders || []).join(', ')}
+                                        onSave={(val) => {
+                                            const headers = val.split(/[,\t]+/).map(s => s.trim()).filter(Boolean);
+                                            const existingMap = companyConfig.vendorInvoiceFieldMap || [];
+                                            const fieldMap = headers.length > 0 ? headers.map((h, i) => existingMap[i] || inferVendorInvoiceField(h)) : undefined;
+                                            props.onUpdateVendorInvoiceHeaders(headers, fieldMap);
+                                        }}
+                                        placeholder="업체에서 보내주는 송장파일의 헤더 (비워두면 자동 감지)"
+                                        className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
+                                    />
+                                    <p className="text-[10px] text-zinc-600 mt-1">업체 송장파일의 컬럼 양식. 비워두면 자동 감지. 양식 파일 업로드 또는 쉼표로 구분하여 입력</p>
+                                </div>
+                                {companyConfig.vendorInvoiceHeaders && companyConfig.vendorInvoiceHeaders.length > 0 && (
+                                    <div className="mt-3 space-y-1">
+                                        <span className="text-[11px] font-black text-amber-500/80 uppercase">필드 매핑</span>
+                                        {companyConfig.vendorInvoiceHeaders.map((header, idx) => {
+                                            const currentField = companyConfig.vendorInvoiceFieldMap?.[idx] || inferVendorInvoiceField(header);
+                                            return (
+                                                <div key={idx} className="flex items-center gap-2">
+                                                    <span className="text-[11px] font-bold text-zinc-500 w-36 truncate shrink-0" title={header}>{header}</span>
+                                                    <span className="text-zinc-600 text-[10px]">&rarr;</span>
+                                                    <select
+                                                        className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[11px] text-white outline-none focus:border-amber-500/40 transition-colors"
+                                                        value={currentField}
+                                                        onChange={(e) => {
+                                                            const newMap = [...(companyConfig.vendorInvoiceFieldMap || companyConfig.vendorInvoiceHeaders!.map(h => inferVendorInvoiceField(h)))];
+                                                            newMap[idx] = e.target.value;
+                                                            props.onUpdateVendorInvoiceFieldMap(newMap);
+                                                        }}
+                                                    >
+                                                        {VENDOR_INVOICE_FIELD_TYPES.map(ft => (
+                                                            <option key={ft.key} value={ft.key}>{ft.label}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            );
+                                        })}
+                                        {(() => {
+                                            const headers = companyConfig.vendorInvoiceHeaders!;
+                                            const fieldMap = companyConfig.vendorInvoiceFieldMap || headers.map(h => inferVendorInvoiceField(h));
+                                            const candidateHeaders = headers.filter((_, i) => fieldMap[i] !== 'trackingNumber');
+                                            if (candidateHeaders.length === 0) return null;
+                                            const currentMatchHeaders = (companyConfig.vendorInvoiceMatchKey || '').split('|').filter(Boolean);
+                                            return (
+                                                <div className="mt-3">
+                                                    <span className="text-[11px] font-black text-amber-500/80 uppercase">매칭 기준</span>
+                                                    <p className="text-[10px] text-zinc-600 mb-1">업체 송장파일의 어떤 열로 주문서와 매칭할지 선택 (복수 선택 가능)</p>
+                                                    <div className="flex flex-wrap gap-1.5 mt-1">
+                                                        {candidateHeaders.map(header => {
+                                                            const isChecked = currentMatchHeaders.includes(header);
+                                                            return (
+                                                                <label key={header} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition-all ${isChecked ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : 'border-zinc-700 text-zinc-500 hover:border-zinc-600'}`}>
+                                                                    <input type="checkbox" className="sr-only" checked={isChecked} onChange={() => {
+                                                                        const newKeys = isChecked ? currentMatchHeaders.filter(k => k !== header) : [...currentMatchHeaders, header];
+                                                                        props.onUpdateVendorInvoiceMatchKey(newKeys.length > 0 ? newKeys.join('|') : '');
+                                                                    }} />
+                                                                    <span className={`w-3 h-3 rounded border flex items-center justify-center ${isChecked ? 'border-amber-500 bg-amber-500' : 'border-zinc-600'}`}>
+                                                                        {isChecked && <span className="text-black text-[8px] font-black">✓</span>}
+                                                                    </span>
+                                                                    {header}
+                                                                </label>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
