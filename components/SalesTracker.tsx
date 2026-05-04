@@ -831,7 +831,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
           {allDates.map(date => {
             const dayMap = dateProductMargin.get(date)!;
             const dayTotal = Array.from(dayMap.values()).reduce((s, v) => s + v, 0);
-            const rows = Array.from(dayMap.entries()).sort(([, a], [, b]) => b - a);
+            const rows = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b, 'ko'));
             return (
               <div key={date} className="bg-zinc-900/60 rounded-xl border border-zinc-800 overflow-hidden">
                 {/* 카드 헤더 */}
