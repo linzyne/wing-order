@@ -181,6 +181,7 @@ export interface ReturnRecord {
   company: string;       // 업체명
   productKey: string;    // 품목 키
   productName: string;   // 품목명
+  registeredName?: string; // 등록상품명
   count: number;         // 반품 수량
   marginPerUnit: number; // 개당 마진
   totalMargin: number;   // 총 반품 마진 (음수)

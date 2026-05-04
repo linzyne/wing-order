@@ -2224,12 +2224,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
         // 반품시트 생성 (마진시트와 동일 양식, -금액)
         if (returns.length > 0) {
-            const returnSheetData: any[][] = [['날짜', '사유', '업체', '품목명', '수량', '개당마진', '반품마진']];
+            const returnSheetData: any[][] = [['날짜', '사유', '업체', '등록상품명', '품목명', '수량', '개당마진', '반품마진']];
             returns.forEach(r => {
-                returnSheetData.push([r.orderDate || '', r.memo || '', r.company, r.productName, r.count, r.marginPerUnit, r.totalMargin]);
+                returnSheetData.push([r.orderDate || '', r.memo || '', r.company, r.registeredName || '', r.productName, r.count, r.marginPerUnit, r.totalMargin]);
             });
             returnSheetData.push([]);
-            returnSheetData.push(['', '', '', '', '', '총 반품 마진', returns.reduce((s, r) => s + r.totalMargin, 0)]);
+            returnSheetData.push(['', '', '', '', '', '', '총 반품 마진', returns.reduce((s, r) => s + r.totalMargin, 0)]);
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnSheetData), "반품시트");
         }
 
@@ -3505,6 +3505,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     const qty = parseInt(returnCount);
                                     setReturns(prev => [...prev, {
                                         company: returnCompany, productKey: returnProductKey, productName: p.name,
+                                        registeredName: returnRegisteredName || undefined,
                                         count: qty, marginPerUnit: p.margin, totalMargin: -(p.margin * qty), memo: returnMemo || undefined,
                                         orderDate: returnOrderDate || undefined,
                                     }]);
@@ -3522,6 +3523,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     company: returnCompany,
                                     productKey: returnProductKey,
                                     productName: p.name,
+                                    registeredName: returnRegisteredName || undefined,
                                     count: qty,
                                     marginPerUnit: p.margin,
                                     totalMargin: -(p.margin * qty),
