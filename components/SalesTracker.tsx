@@ -781,9 +781,10 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
       );
     }
 
-    // 날짜 × 제품키 → 총마진
+    // 날짜 × 제품키 → 총마진 (마진 없거나 등록상품명 없는 항목 제외)
     const dateProductMargin = new Map<string, Map<string, number>>();
     records.forEach(r => {
+      if (!r.registeredName || r.totalMargin <= 0) return;
       const key = `${r.registeredName}::${r.productName}`;
       if (!dateProductMargin.has(r.date)) dateProductMargin.set(r.date, new Map());
       const m = dateProductMargin.get(r.date)!;
@@ -800,26 +801,12 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
     });
     const allProducts = Array.from(productTotalMap.entries()).sort(([, a], [, b]) => b.totalMargin - a.totalMargin);
 
-    // 모든 데이터 날짜 정렬
     const allDates = Array.from(dateProductMargin.keys()).sort();
-
-    // 월요일 기준 주 그룹핑
-    const getMonday = (dateStr: string): string => {
-      const d = new Date(dateStr);
-      const day = d.getDay();
-      d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
-      return d.toISOString().slice(0, 10);
+    const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
+    const fmtDate = (s: string) => {
+      const d = new Date(s);
+      return `${parseInt(s.slice(5, 7))}/${parseInt(s.slice(8))} (${DAY_LABELS[d.getDay()]})`;
     };
-    const weekMap = new Map<string, string[]>();
-    allDates.forEach(date => {
-      const mon = getMonday(date);
-      const list = weekMap.get(mon) || [];
-      list.push(date);
-      weekMap.set(mon, list);
-    });
-    const weeks = Array.from(weekMap.entries()).sort(([a], [b]) => a.localeCompare(b));
-
-    const fmt = (s: string) => `${parseInt(s.slice(5, 7))}/${parseInt(s.slice(8))}`;
 
     return (
       <div>
@@ -839,62 +826,38 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
           )}
         </div>
 
-        {/* 주별 테이블 */}
-        {weeks.map(([monday, weekDates]) => {
-          const activeProducts = allProducts.filter(([key]) =>
-            weekDates.some(d => dateProductMargin.get(d)?.has(key))
-          );
-          if (activeProducts.length === 0) return null;
-          const weekTotal = weekDates.reduce((s, d) => {
-            const m = dateProductMargin.get(d);
-            return s + (m ? Array.from(m.values()).reduce((ss, v) => ss + v, 0) : 0);
-          }, 0);
-
-          return (
-            <div key={monday} className="border-t border-zinc-800/60 px-6 py-3">
-              <div className="flex items-center gap-2 mb-1.5">
-                <span className="text-zinc-500 font-black text-[10px] uppercase tracking-widest">{fmt(weekDates[0])} – {fmt(weekDates[weekDates.length - 1])}</span>
-                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full font-black border border-emerald-500/20">{weekTotal.toLocaleString()}원</span>
+        {/* 날짜별 카드 그리드 */}
+        <div className="p-4 grid grid-cols-3 xl:grid-cols-4 gap-3">
+          {allDates.map(date => {
+            const dayMap = dateProductMargin.get(date)!;
+            const dayTotal = Array.from(dayMap.values()).reduce((s, v) => s + v, 0);
+            const rows = Array.from(dayMap.entries()).sort(([, a], [, b]) => b - a);
+            return (
+              <div key={date} className="bg-zinc-900/60 rounded-xl border border-zinc-800 overflow-hidden">
+                {/* 카드 헤더 */}
+                <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
+                  <span className="text-zinc-200 font-black text-xs">{fmtDate(date)}</span>
+                  <span className="text-emerald-400 font-black text-xs tabular-nums">{dayTotal.toLocaleString()}원</span>
+                </div>
+                {/* 품목 목록 */}
+                <div className="divide-y divide-zinc-800/50">
+                  {rows.map(([key, margin]) => {
+                    const [registeredName, productName] = key.split('::');
+                    return (
+                      <div key={key} className="px-3 py-1.5">
+                        <div className="text-violet-400 font-bold text-[11px] leading-tight">{registeredName}</div>
+                        <div className="flex items-center justify-between gap-2 mt-0.5">
+                          <span className="text-zinc-400 text-[11px] truncate">{productName}</span>
+                          <span className="text-emerald-400 font-bold text-[11px] tabular-nums whitespace-nowrap">{margin.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="overflow-x-auto">
-                <table className="text-xs border-collapse">
-                  <thead>
-                    <tr className="text-zinc-600 text-[10px] font-black border-b border-zinc-800">
-                      <th className="pb-1 pr-3 text-left whitespace-nowrap">등록상품명</th>
-                      <th className="pb-1 pr-4 text-left whitespace-nowrap">품목</th>
-                      {weekDates.map(d => (
-                        <th key={d} className="pb-1 px-2 text-center whitespace-nowrap min-w-[54px]">{fmt(d)}</th>
-                      ))}
-                      <th className="pb-1 pl-3 text-right whitespace-nowrap text-violet-500 border-l border-zinc-800">합계</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {activeProducts.map(([key, { registeredName, productName }]) => {
-                      const rowTotal = weekDates.reduce((s, d) => s + (dateProductMargin.get(d)?.get(key) || 0), 0);
-                      return (
-                        <tr key={key} className="border-b border-zinc-900/40 hover:bg-zinc-900/20">
-                          <td className="py-1 pr-3 font-bold text-violet-400 whitespace-nowrap">{registeredName}</td>
-                          <td className="py-1 pr-4 text-zinc-300 whitespace-nowrap">{productName}</td>
-                          {weekDates.map(d => {
-                            const val = dateProductMargin.get(d)?.get(key) || 0;
-                            return (
-                              <td key={d} className="py-1 px-2 text-center tabular-nums text-emerald-400">
-                                {val > 0 ? val.toLocaleString() : ''}
-                              </td>
-                            );
-                          })}
-                          <td className="py-1 pl-3 text-right font-black text-emerald-400 tabular-nums whitespace-nowrap border-l border-zinc-800">
-                            {rowTotal.toLocaleString()}원
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     );
   };
