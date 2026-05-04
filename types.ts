@@ -187,6 +187,7 @@ export interface ReturnRecord {
   totalMargin: number;   // 총 반품 마진 (음수)
   memo?: string;         // 반품 사유
   orderDate?: string;    // 주문 날짜 (YYYY-MM-DD)
+  type?: '반품' | '광고비' | '슬롯'; // 품목별관리 구분 (없으면 반품)
 }
 
 export interface ExpenseRecord {
