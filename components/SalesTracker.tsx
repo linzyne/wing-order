@@ -1261,21 +1261,28 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                       {parseInt(date.slice(8))}
                     </th>
                   ))}
+                  <th className="py-2 px-3 font-bold text-center whitespace-nowrap min-w-[48px] border-l border-zinc-700 text-violet-400">합계</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.map(({ base, rows }) => (
                   <React.Fragment key={base}>
-                    {rows.map(({ name, dateMap }) => (
-                      <tr key={name} className="border-b border-zinc-800/40 hover:bg-zinc-800/20">
-                        <td className="py-1.5 px-3 text-zinc-300 whitespace-nowrap sticky left-0 bg-zinc-950 border-r border-zinc-800">{name}</td>
-                        {trendDates.map(date => (
-                          <td key={date} className="py-1.5 px-2 text-center text-zinc-400 tabular-nums">
-                            {formatVal(dateMap.get(date) || 0)}
+                    {rows.map(({ name, dateMap }) => {
+                      const rowTotal = trendDates.reduce((s, d) => s + (dateMap.get(d) || 0), 0);
+                      return (
+                        <tr key={name} className="border-b border-zinc-800/40 hover:bg-zinc-800/20">
+                          <td className="py-1.5 px-3 text-zinc-300 whitespace-nowrap sticky left-0 bg-zinc-950 border-r border-zinc-800">{name}</td>
+                          {trendDates.map(date => (
+                            <td key={date} className="py-1.5 px-2 text-center text-zinc-400 tabular-nums">
+                              {formatVal(dateMap.get(date) || 0)}
+                            </td>
+                          ))}
+                          <td className="py-1.5 px-3 text-center text-zinc-300 tabular-nums border-l border-zinc-700 font-semibold">
+                            {formatVal(rowTotal)}
                           </td>
-                        ))}
-                      </tr>
-                    ))}
+                        </tr>
+                      );
+                    })}
                     {rows.length > 1 && (
                       <tr className="border-t border-zinc-700 border-b-2 border-b-zinc-700">
                         <td className="py-1.5 px-3 font-bold text-zinc-400 whitespace-nowrap sticky left-0 bg-zinc-900 border-r border-zinc-700 text-xs">{base} 합계</td>
@@ -1287,6 +1294,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                             </td>
                           );
                         })}
+                        <td className="py-1.5 px-3 text-center font-bold text-zinc-300 tabular-nums bg-zinc-900 text-xs border-l border-zinc-700">
+                          {formatVal(trendDates.reduce((s, date) => s + rows.reduce((ss, { dateMap }) => ss + (dateMap.get(date) || 0), 0), 0))}
+                        </td>
                       </tr>
                     )}
                   </React.Fragment>
@@ -1305,6 +1315,13 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
                       </td>
                     );
                   })}
+                  <td className="py-2 px-3 text-center font-black text-violet-300 tabular-nums bg-zinc-900 border-l border-zinc-700 whitespace-nowrap">
+                    {formatVal(trendDates.reduce((s, date) => s + (totalByDate.get(date) || 0), 0))}
+                    {trendMetric === 'count' && (() => {
+                      const totalKg = trendDates.reduce((s, date) => s + (kgByDate.get(date) || 0), 0);
+                      return totalKg > 0 ? <span className="text-zinc-500 font-medium text-[10px] ml-0.5">({formatKg(totalKg)})</span> : null;
+                    })()}
+                  </td>
                 </tr>
               </tbody>
             </table>
