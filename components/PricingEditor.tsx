@@ -1196,7 +1196,7 @@ const CompanyCard: React.FC<{
                     </div>
                     <div className="bg-zinc-950 px-5 py-4 rounded-xl border border-zinc-800 shadow-inner">
                         <div className="flex items-center gap-3 mb-2">
-                            <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">매칭 키워드</span>
+                            <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">등록상품명</span>
                             <span className="text-[10px] text-zinc-700">(엑셀 그룹컬럼 매칭용, 쉼표로 구분)</span>
                         </div>
                         <EditableField
