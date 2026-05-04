@@ -847,6 +847,20 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         });
     };
 
+    const handleBulkDeleteProducts = (companyName: string, productKeys: string[]) => {
+        setDialog({
+            type: 'confirm',
+            message: `선택한 ${productKeys.length}개 품목을 삭제할까요?`,
+            onConfirm: () => {
+                const newConfig = JSON.parse(JSON.stringify(configRef.current));
+                productKeys.forEach(key => { delete newConfig[companyName].products[key]; });
+                onConfigChange(newConfig);
+                setDialog(null);
+            },
+            onCancel: () => setDialog(null),
+        });
+    };
+
     const handleBulkUpdateKeyword = (companyName: string, productKeys: string[], keyword: string) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         productKeys.forEach(key => {
@@ -1043,6 +1057,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onAddProduct={() => handleAddProduct(companyName)}
                             onBulkAddProducts={(products) => handleBulkAddProducts(companyName, products)}
                             onDeleteProduct={(productKey) => handleDeleteProduct(companyName, productKey)}
+                            onBulkDeleteProducts={(productKeys) => handleBulkDeleteProducts(companyName, productKeys)}
                             onOpenProductEditor={(productKey, product) => setDialog({
                                 type: 'productEditor',
                                 message: '품목 정보 수정 ✍️',
@@ -1105,6 +1120,7 @@ const CompanyCard: React.FC<{
     onAddProduct: () => void;
     onBulkAddProducts: (products: ProductPricing[]) => void;
     onDeleteProduct: (productKey: string) => void;
+    onBulkDeleteProducts: (productKeys: string[]) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
     onBulkUpdateKeyword: (productKeys: string[], keyword: string) => void;
     onUpdateProduct: (productKey: string, product: ProductPricing) => void;
@@ -1496,7 +1512,7 @@ const CompanyCard: React.FC<{
                             </div>
                         )}
                     </div>
-                    <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onBulkAddProducts={props.onBulkAddProducts} onDeleteProduct={props.onDeleteProduct} onOpenProductEditor={props.onOpenProductEditor} onBulkUpdateKeyword={props.onBulkUpdateKeyword} onUpdateProduct={props.onUpdateProduct} />
+                    <ProductTable products={companyConfig.products} onAddProduct={props.onAddProduct} onBulkAddProducts={props.onBulkAddProducts} onDeleteProduct={props.onDeleteProduct} onBulkDeleteProducts={props.onBulkDeleteProducts} onOpenProductEditor={props.onOpenProductEditor} onBulkUpdateKeyword={props.onBulkUpdateKeyword} onUpdateProduct={props.onUpdateProduct} />
                 </div>
             )}
         </div>
@@ -1648,10 +1664,11 @@ const ProductTable: React.FC<{
     onAddProduct: () => void;
     onBulkAddProducts: (products: ProductPricing[]) => void;
     onDeleteProduct: (productKey: string) => void;
+    onBulkDeleteProducts: (productKeys: string[]) => void;
     onOpenProductEditor: (productKey: string, product: ProductPricing) => void;
     onBulkUpdateKeyword: (productKeys: string[], keyword: string) => void;
     onUpdateProduct: (productKey: string, product: ProductPricing) => void;
-}> = React.memo(({ products, onAddProduct, onBulkAddProducts, onDeleteProduct, onOpenProductEditor, onBulkUpdateKeyword, onUpdateProduct }) => {
+}> = React.memo(({ products, onAddProduct, onBulkAddProducts, onDeleteProduct, onBulkDeleteProducts, onOpenProductEditor, onBulkUpdateKeyword, onUpdateProduct }) => {
     const [showPaste, setShowPaste] = useState(false);
     const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
     const [bulkKeyword, setBulkKeyword] = useState('');
@@ -1734,6 +1751,10 @@ const ProductTable: React.FC<{
                                         onClick={() => { setSelectedKeys(new Set()); setBulkKeyword(''); }}
                                         className="px-3 py-1.5 bg-zinc-800 text-zinc-400 text-xs font-black rounded-lg hover:bg-zinc-700 transition-all shrink-0"
                                     >취소</button>
+                                    <button
+                                        onClick={() => { onBulkDeleteProducts([...selectedKeys]); setSelectedKeys(new Set()); setBulkKeyword(''); }}
+                                        className="px-3 py-1.5 bg-rose-500/20 hover:bg-rose-500/40 text-rose-400 text-xs font-black rounded-lg transition-all shrink-0"
+                                    >삭제</button>
                                 </div>
                             </td>
                         </tr>
