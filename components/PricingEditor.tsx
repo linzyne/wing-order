@@ -1597,14 +1597,14 @@ const ProductRow: React.FC<{
                         {product.aliases && product.aliases.length > 0 && <div className="text-[10px] text-zinc-600 truncate max-w-xs mt-0.5">{product.aliases.join(', ')}</div>}
                     </div>
                 </td>
-                <td className="px-3 py-1.5 text-right font-black text-rose-400 text-[13px] whitespace-nowrap">
-                    {numCell('supplyPrice', product.supplyPrice, 'font-black text-rose-400 text-[13px]')}
+                <td className="px-2 py-1.5 text-right font-black text-rose-400 text-[11px] whitespace-nowrap">
+                    {numCell('supplyPrice', product.supplyPrice, 'font-black text-rose-400 text-[11px]')}
                 </td>
-                <td className="px-3 py-1.5 text-right font-bold text-zinc-400 text-[13px] whitespace-nowrap">
-                    {numCell('sellingPrice', product.sellingPrice, 'font-bold text-zinc-400 text-[13px]')}
+                <td className="px-2 py-1.5 text-right font-bold text-zinc-400 text-[11px] whitespace-nowrap">
+                    {numCell('sellingPrice', product.sellingPrice, 'font-bold text-zinc-400 text-[11px]')}
                 </td>
-                <td className={`px-3 py-1.5 text-right font-black text-[13px] whitespace-nowrap`}>
-                    {numCell('margin', product.margin, `font-black text-[13px] ${margin > 0 ? 'text-sky-400' : margin < 0 ? 'text-red-400' : 'text-zinc-600'}`)}
+                <td className={`px-2 py-1.5 text-right font-black text-[11px] whitespace-nowrap`}>
+                    {numCell('margin', product.margin, `font-black text-[11px] ${margin > 0 ? 'text-sky-400' : margin < 0 ? 'text-red-400' : 'text-zinc-600'}`)}
                 </td>
                 <td className="px-2 py-1.5 text-center">
                     <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1695,11 +1695,11 @@ const ProductTable: React.FC<{
                                 onChange={(e) => setSelectedKeys(e.target.checked ? new Set(Object.keys(products)) : new Set())}
                             />
                         </th>
-                        <th className="px-2 py-2 w-[33%]">품목</th>
-                        <th className="px-3 py-2 text-right w-[17%] whitespace-nowrap">공급가</th>
-                        <th className="px-3 py-2 text-right w-[17%] whitespace-nowrap">판매가</th>
-                        <th className="px-3 py-2 text-right w-[17%] whitespace-nowrap">마진</th>
-                        <th className="px-3 py-2 text-center w-[10%]"></th>
+                        <th className="px-2 py-2 w-[45%]">품목</th>
+                        <th className="px-2 py-2 text-right w-[13%] whitespace-nowrap">공급가</th>
+                        <th className="px-2 py-2 text-right w-[13%] whitespace-nowrap">판매가</th>
+                        <th className="px-2 py-2 text-right w-[13%] whitespace-nowrap">마진</th>
+                        <th className="px-2 py-2 text-center w-[9%]"></th>
                     </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-900/60">
