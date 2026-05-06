@@ -903,7 +903,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </div>
                             </>
                         ) : (
-                            <div className="pl-4 border-l-2 border-zinc-800 py-1">
+                            <div className="pl-4 border-l-2 border-zinc-800 py-0.5">
                                 <div className="flex items-center gap-2">
                                     <span className="text-zinc-700 text-[12px] font-black">ㄴ</span>
                                     <div className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-indigo-500/20 whitespace-nowrap">
@@ -938,10 +938,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-1'}`}>
+                <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
                     <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {localResult ? (
-                            <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
+                            <div className="flex flex-col items-center gap-1 animate-fade-in w-full">
                                 {isFirstSession && (
                                     <textarea
                                         value={sessionMemo}
@@ -963,6 +963,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         ) : (
                                             <button onClick={handleDownloadOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
                                         )}
+                                    </div>
+                                )}
+                                {!isFirstSession && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
+                                        {excludedList.length > 0 && (
+                                            <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                                제외({excludedList.length})
+                                            </button>
+                                        )}
+                                        <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                     </div>
                                 )}
                                 <div className="flex items-center justify-center gap-4">
@@ -1079,20 +1090,22 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     </div>
                                 )}
-                                <div className="flex items-center gap-2">
-                                    <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
-                                    {excludedList.length > 0 && (
-                                        <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
-                                            제외({excludedList.length})
-                                        </button>
-                                    )}
-                                    <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
-                                </div>
+                                {isFirstSession && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
+                                        {excludedList.length > 0 && (
+                                            <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                                제외({excludedList.length})
+                                            </button>
+                                        )}
+                                        <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                    </div>
+                                )}
                             </div>
                         ) : isLocalProcessing ? (
                             <div className="flex flex-col items-center gap-1 text-indigo-400 font-black animate-pulse"><div className="w-4 h-4 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /><span className="text-[9px] uppercase tracking-widest">Analysing...</span></div>
                         ) : syncedData ? (
-                            <div className="flex flex-col items-center gap-2 animate-fade-in w-full">
+                            <div className="flex flex-col items-center gap-1 animate-fade-in w-full">
                                 {isFirstSession && (
                                     <textarea
                                         value={sessionMemo}
@@ -1101,6 +1114,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         rows={2}
                                         className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
                                     />
+                                )}
+                                {!isFirstSession && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
+                                        {(syncedData.excludedDetails?.length || 0) > 0 && (
+                                            <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                                제외({syncedData.excludedDetails.length})
+                                            </button>
+                                        )}
+                                        <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                    </div>
                                 )}
                                 <div className="flex items-center justify-center gap-4">
                                     <div className="text-center">
@@ -1187,15 +1211,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     </div>
                                 )}
-                                <div className="flex items-center gap-2">
-                                    <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
-                                    {(syncedData.excludedDetails?.length || 0) > 0 && (
-                                        <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
-                                            제외({syncedData.excludedDetails.length})
-                                        </button>
-                                    )}
-                                    <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
-                                </div>
+                                {isFirstSession && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
+                                        {(syncedData.excludedDetails?.length || 0) > 0 && (
+                                            <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
+                                                제외({syncedData.excludedDetails.length})
+                                            </button>
+                                        )}
+                                        <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center gap-2 w-full">
