@@ -953,29 +953,29 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                                 {isFirstSession && (
                                     <div className="flex items-center justify-center gap-4">
-                                        <div className="text-center">
-                                            <div className="text-pink-400 font-black text-xl">{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
-                                            <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
-                                        </div>
+                                        <div className="text-pink-400 font-black text-xl">{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         {onDownloadMergedOrder ? (
                                             <button onClick={onDownloadMergedOrder} className="bg-zinc-800 text-white border border-zinc-700 px-2.5 py-0.5 rounded font-black text-[9px] hover:bg-zinc-700 shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산</span></button>
                                         ) : (
-                                            <button onClick={handleDownloadOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
+                                            <button onClick={handleDownloadOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         )}
                                     </div>
                                 )}
                                 {isFirstSession ? (
                                     <div className="flex items-center justify-center gap-4">
-                                        <div className="text-center">
-                                            <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
-                                            <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
-                                        </div>
+                                        <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
-                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
+                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-2 justify-center">
+                                        {(localResult as any).consolidationLog?.length > 0 && (
+                                            <button onClick={() => setShowConsolidationLog(v => !v)} className="text-blue-400 text-[9px] font-black hover:text-blue-300 whitespace-nowrap">자{(localResult as any).consolidationLog.length}</button>
+                                        )}
+                                        {sizeMismatchItems.length > 0 && (
+                                            <button onClick={() => setShowSizeMismatch(v => !v)} className="text-red-400 text-[9px] font-black hover:text-red-300 whitespace-nowrap">발{sizeMismatchItems.length}</button>
+                                        )}
                                         <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                         {excludedList.length > 0 && (
                                             <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
@@ -984,32 +984,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         )}
                                         <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                         <div className="h-5 w-px bg-zinc-700" />
-                                        <div className="text-center">
-                                            <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
-                                            <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
-                                        </div>
+                                        <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
-                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
+                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
                                 )}
-                                {(localResult as any).consolidationLog?.length > 0 && (
-                                    <div className="bg-blue-500/10 border border-blue-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
-                                        <button
-                                            className="w-full text-left text-blue-400 text-xs font-black flex items-center gap-1.5"
-                                            onClick={() => setShowConsolidationLog(v => !v)}
-                                        >
-                                            🔄 자동합산{(localResult as any).consolidationLog.length}건
-                                            <span className="ml-auto text-blue-400/60 text-[10px]">{showConsolidationLog ? '▲' : '▼'}</span>
-                                        </button>
-                                        {showConsolidationLog && (
-                                            <div className="mt-1 space-y-0.5">
-                                                {(localResult as any).consolidationLog.map((entry: any, idx: number) => (
-                                                    <div key={idx} className="text-[9px] text-blue-300/80 font-mono truncate">
-                                                        {entry.recipientName}: {entry.before.map((b: any) => `${b.displayName} x${b.qty}`).join(' + ')} → {entry.after.map((a: any) => `${a.displayName} x${a.qty}`).join(' + ')}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                {showConsolidationLog && (localResult as any).consolidationLog?.length > 0 && (
+                                    <div className="bg-blue-500/10 border border-blue-500/40 rounded-lg px-2.5 py-1.5 w-full animate-fade-in">
+                                        <div className="space-y-0.5">
+                                            {(localResult as any).consolidationLog.map((entry: any, idx: number) => (
+                                                <div key={idx} className="text-[9px] text-blue-300/80 font-mono truncate">
+                                                    {entry.recipientName}: {entry.before.map((b: any) => `${b.displayName} x${b.qty}`).join(' + ')} → {entry.after.map((a: any) => `${a.displayName} x${a.qty}`).join(' + ')}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                                 {fakeOrderWarnings.length > 0 && (
@@ -1038,24 +1026,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </div>
                                     </div>
                                 )}
-                                {sizeMismatchItems.length > 0 && (
-                                    <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
-                                        <button
-                                            className="w-full text-left text-red-400 text-xs font-black flex items-center gap-1.5"
-                                            onClick={() => setShowSizeMismatch(v => !v)}
-                                        >
-                                            <span>⚠</span> 발주확인{sizeMismatchItems.length}건
-                                            <span className="ml-auto text-red-400/60 text-[10px]">{showSizeMismatch ? '▲' : '▼'}</span>
-                                        </button>
-                                        {showSizeMismatch && (
-                                            <div className="mt-1 space-y-0.5">
-                                                {sizeMismatchItems.map((item, idx) => (
-                                                    <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
-                                                        {item.recipientName}: {item.registeredProductName} {item.registeredOptionName} → {item.matchedProductKey}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
+                                {showSizeMismatch && sizeMismatchItems.length > 0 && (
+                                    <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-2.5 py-1.5 w-full animate-fade-in">
+                                        <div className="space-y-0.5">
+                                            {sizeMismatchItems.map((item, idx) => (
+                                                <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
+                                                    {item.recipientName}: {item.registeredProductName} {item.registeredOptionName} → {item.matchedProductKey}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
                                 {(() => {
@@ -1100,6 +1079,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                                 {isFirstSession && (
                                     <div className="flex items-center gap-2">
+                                        {(localResult as any).consolidationLog?.length > 0 && (
+                                            <button onClick={() => setShowConsolidationLog(v => !v)} className="text-blue-400 text-[9px] font-black hover:text-blue-300 whitespace-nowrap">자{(localResult as any).consolidationLog.length}</button>
+                                        )}
+                                        {sizeMismatchItems.length > 0 && (
+                                            <button onClick={() => setShowSizeMismatch(v => !v)} className="text-red-400 text-[9px] font-black hover:text-red-300 whitespace-nowrap">발{sizeMismatchItems.length}</button>
+                                        )}
                                         <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                         {excludedList.length > 0 && (
                                             <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
@@ -1129,7 +1114,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             {roundOrderCounts.length > 1 ? (
                                                 <>
                                                     <div className="text-pink-400 font-black text-xl">{companyTotalOrders}</div>
-                                                    <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
                                                     <div className="flex items-center justify-center gap-1.5 mt-0.5">
                                                         {roundOrderCounts.map((r, i) => (
                                                             <span key={i} className={`text-[10px] font-black ${platformColorClass(r.platform)}`}>
@@ -1139,10 +1123,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     </div>
                                                 </>
                                             ) : (
-                                                <>
-                                                    <div className="font-black text-pink-400 text-xl">{syncedData.orderCount}</div>
-                                                    <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
-                                                </>
+                                                <div className="font-black text-pink-400 text-xl">{syncedData.orderCount}</div>
                                             )}
                                         </div>
                                         <div className="h-6 w-px bg-zinc-800" />
@@ -1158,10 +1139,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         )}
                                         <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                         <div className="h-5 w-px bg-zinc-700" />
-                                        <div className="text-center">
-                                            <div className="font-black text-indigo-400 text-base">+{syncedData.orderCount}</div>
-                                            <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
-                                        </div>
+                                        <div className="font-black text-indigo-400 text-base">+{syncedData.orderCount}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
                                     </div>
@@ -1330,9 +1308,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
                         {!mergeResults ? (
                             <div className="flex flex-col items-center gap-2">
-                                <label className={`flex items-center gap-1.5 cursor-pointer px-2 py-0.5 rounded-lg text-[9px] font-black border transition-all shadow-md whitespace-nowrap ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFiles.length > 0 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
+                                <label className={`flex items-center cursor-pointer px-2 py-1 rounded-lg text-[9px] font-black border transition-all shadow-md ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFiles.length > 0 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
                                     <UploadIcon className="w-3 h-3" />
-                                    <span>{mergeStatus === 'processing' ? '매칭 중...' : mergeStatus === 'error' ? '송장 오류' : vendorFiles.length > 1 ? `송장 ${vendorFiles.length}개` : vendorFiles.length === 1 ? '송장 업로드됨' : '송장 선택'}</span>
                                     <input type="file" className="sr-only" accept=".xlsx,.xls" multiple onChange={(e) => { const files = e.target.files; if (files && files.length > 0) { resetMerge(); onVendorFileChange(Array.from(files)); } }} />
                                 </label>
                                 {mergeStatus === 'error' && mergeError && (
