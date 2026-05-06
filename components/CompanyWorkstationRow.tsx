@@ -1132,18 +1132,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
                                     </div>
                                 ) : (
-                                    <div className="flex items-center gap-2 justify-center">
+                                    <div className="flex items-center gap-2 w-full">
                                         <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                         {(syncedData.excludedDetails?.length || 0) > 0 && (
                                             <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
                                                 제외({syncedData.excludedDetails.length})
                                             </button>
                                         )}
-                                        <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
-                                        <div className="h-5 w-px bg-zinc-700" />
-                                        <div className="font-black text-indigo-400 text-base">+{syncedData.orderCount}</div>
-                                        <div className="h-6 w-px bg-zinc-800" />
-                                        <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
+                                        <div className="ml-auto flex items-center gap-2">
+                                            <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                            <div className="h-5 w-px bg-zinc-700" />
+                                            <div className="font-black text-indigo-400 text-base">+{syncedData.orderCount}</div>
+                                            <div className="h-6 w-px bg-zinc-800" />
+                                            <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
+                                        </div>
                                     </div>
                                 )}
                                 {fakeOrderWarnings.length > 0 && (
