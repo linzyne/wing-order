@@ -990,7 +990,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             className="w-full text-left text-blue-400 text-xs font-black flex items-center gap-1.5"
                                             onClick={() => setShowConsolidationLog(v => !v)}
                                         >
-                                            🔄 합산 {(localResult as any).consolidationLog.length}건 변환
+                                            🔄 자동합산{(localResult as any).consolidationLog.length}건
                                             <span className="ml-auto text-blue-400/60 text-[10px]">{showConsolidationLog ? '▲' : '▼'}</span>
                                         </button>
                                         {showConsolidationLog && (
@@ -1036,7 +1036,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             className="w-full text-left text-red-400 text-xs font-black flex items-center gap-1.5"
                                             onClick={() => setShowSizeMismatch(v => !v)}
                                         >
-                                            <span>⚠</span> 사이즈 불일치 {sizeMismatchItems.length}건 — 확인 필요
+                                            <span>⚠</span> 발주확인{sizeMismatchItems.length}건
                                             <span className="ml-auto text-red-400/60 text-[10px]">{showSizeMismatch ? '▲' : '▼'}</span>
                                         </button>
                                         {showSizeMismatch && (
