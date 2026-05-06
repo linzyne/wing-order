@@ -965,8 +965,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         )}
                                     </div>
                                 )}
-                                {!isFirstSession && (
-                                    <div className="flex items-center gap-2">
+                                {isFirstSession ? (
+                                    <div className="flex items-center justify-center gap-4">
+                                        <div className="text-center">
+                                            <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                        </div>
+                                        <div className="h-6 w-px bg-zinc-800" />
+                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2 justify-center">
                                         <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                         {excludedList.length > 0 && (
                                             <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
@@ -974,16 +983,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </button>
                                         )}
                                         <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                        <div className="h-5 w-px bg-zinc-700" />
+                                        <div className="text-center">
+                                            <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                        </div>
+                                        <div className="h-6 w-px bg-zinc-800" />
+                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
                                     </div>
                                 )}
-                                <div className="flex items-center justify-center gap-4">
-                                    <div className="text-center">
-                                        <div className={`font-black ${!isFirstSession ? 'text-indigo-400 text-base' : 'text-indigo-400 text-base'}`}>{!isFirstSession && '+'}{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
-                                        <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
-                                    </div>
-                                    <div className="h-6 w-px bg-zinc-800" />
-                                    <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2.5 py-0.5 rounded font-black text-[9px] shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>받기</span></button>
-                                </div>
                                 {(localResult as any).consolidationLog?.length > 0 && (
                                     <div className="bg-blue-500/10 border border-blue-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
                                         <button
@@ -1115,8 +1123,33 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         className="w-full text-sm bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-amber-300 placeholder-zinc-700 resize-none focus:outline-none focus:border-zinc-600 leading-tight font-medium"
                                     />
                                 )}
-                                {!isFirstSession && (
-                                    <div className="flex items-center gap-2">
+                                {isFirstSession ? (
+                                    <div className="flex items-center justify-center gap-4">
+                                        <div className="text-center">
+                                            {roundOrderCounts.length > 1 ? (
+                                                <>
+                                                    <div className="text-pink-400 font-black text-xl">{companyTotalOrders}</div>
+                                                    <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                                    <div className="flex items-center justify-center gap-1.5 mt-0.5">
+                                                        {roundOrderCounts.map((r, i) => (
+                                                            <span key={i} className={`text-[10px] font-black ${platformColorClass(r.platform)}`}>
+                                                                {platformAbbr(r.platform)}{r.count}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="font-black text-pink-400 text-xl">{syncedData.orderCount}</div>
+                                                    <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                                </>
+                                            )}
+                                        </div>
+                                        <div className="h-6 w-px bg-zinc-800" />
+                                        <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-2 justify-center">
                                         <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
                                         {(syncedData.excludedDetails?.length || 0) > 0 && (
                                             <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
@@ -1124,32 +1157,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </button>
                                         )}
                                         <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                        <div className="h-5 w-px bg-zinc-700" />
+                                        <div className="text-center">
+                                            <div className="font-black text-indigo-400 text-base">+{syncedData.orderCount}</div>
+                                            <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
+                                        </div>
+                                        <div className="h-6 w-px bg-zinc-800" />
+                                        <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
                                     </div>
                                 )}
-                                <div className="flex items-center justify-center gap-4">
-                                    <div className="text-center">
-                                        {isFirstSession && roundOrderCounts.length > 1 ? (
-                                            <>
-                                                <div className="text-pink-400 font-black text-xl">{companyTotalOrders}</div>
-                                                <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
-                                                <div className="flex items-center justify-center gap-1.5 mt-0.5">
-                                                    {roundOrderCounts.map((r, i) => (
-                                                        <span key={i} className={`text-[10px] font-black ${platformColorClass(r.platform)}`}>
-                                                            {platformAbbr(r.platform)}{r.count}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <div className={`font-black ${isFirstSession ? 'text-pink-400 text-xl' : 'text-indigo-400 text-base'}`}>{isFirstSession ? '' : '+'}{syncedData.orderCount}</div>
-                                                <div className="text-zinc-600 font-black text-[9px] uppercase tracking-widest">Orders</div>
-                                            </>
-                                        )}
-                                    </div>
-                                    <div className="h-6 w-px bg-zinc-800" />
-                                    <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
-                                </div>
                                 {fakeOrderWarnings.length > 0 && (
                                     <div className="bg-yellow-500/10 border border-yellow-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
                                         <div className="text-yellow-400 text-[10px] font-black flex items-center gap-1">
