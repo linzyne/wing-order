@@ -3886,6 +3886,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             .slice(0, sIdx)
                                             .map(ps => ({ round: ps.round, summary: allItemSummaries[ps.id] || {} }))
                                             .filter(item => Object.keys(item.summary).length > 0);
+                                        const prevSessionIds = sessions.slice(0, sIdx).map(ps => ps.id);
                                         const sessionPlatform = session.round <= 1 ? masterPlatformName : (batchPlatforms[session.id] || '쿠팡');
                                         const isChecked = checkedCompanies.has(company);
                                         const isEditingDeposit = editingCell?.company === company && editingCell?.field === 'deposit';
@@ -3955,6 +3956,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
                                                     onDownloadMergedInvoice={(companySessions[company] || []).length > 1 ? (type: 'mgmt' | 'upload') => handleDownloadMergedInvoice(company, type) : undefined}
                                                     previousRoundItems={prevItems}
+                                                    previousSessionIds={prevSessionIds}
                                                     manualOrdersRejected={manualOrdersRejectedCompanies.has(company)}
                                                     onManualOrdersApproval={handleManualOrdersApproval}
                                                     businessId={businessId}

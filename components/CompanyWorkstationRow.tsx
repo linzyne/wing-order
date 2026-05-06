@@ -74,6 +74,7 @@ interface CompanyWorkstationRowProps {
     onDownloadMergedOrder?: () => void;
     onDownloadMergedInvoice?: (type: 'mgmt' | 'upload') => void;
     previousRoundItems?: { round: number; summary: Record<string, { count: number; totalPrice: number }> }[];
+    previousSessionIds?: string[];
     manualOrdersRejected?: boolean; // deprecated: 체크박스 선택으로 대체
     onManualOrdersApproval?: (companyName: string, approved: boolean) => void; // deprecated
     businessId?: string;
@@ -94,6 +95,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     companySummaryBar,
     previousRoundItems = [],
+    previousSessionIds = [],
     manualOrdersRejected = false, onManualOrdersApproval,
     businessId, onConfigChange, masterExpectedCount = 0,
     missingItems = [],
@@ -346,6 +348,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         return included.filter(n => fakeNums.has(n));
     })();
 
+    // 누적 표시 시 이전 세션 포함 전체 조정 내역 (반품/차감이 1차에 있어도 2차+ 정산요약에 반영)
+    const isCumulativeView = cumulativeDepositText !== null;
+    const allSessionAdjustments: typeof sessionAdjustments = isCumulativeView && previousSessionIds.length > 0
+        ? [...previousSessionIds.flatMap(id => workspace?.sessionAdjustments?.[id] || []), ...sessionAdjustments]
+        : sessionAdjustments;
+
     // override 적용된 최종 정산 텍스트 (카톡용/엑셀용)
     const effectiveDisplayText = (() => {
         if (cumulativeDepositText !== null) return cumulativeDepositText;
@@ -592,11 +600,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const handleCopy = (id: string, baseText: string, type: 'kakao' | 'excel' = 'kakao') => {
         let finalText = baseText;
-        if (sessionAdjustments.length > 0) {
+        if (allSessionAdjustments.length > 0) {
             if (type === 'kakao') {
-                const adjText = sessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
-                const orderTotal = localResult ? Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0) : 0;
-                const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
+                const adjText = allSessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
+                const orderTotal = isCumulativeView
+                    ? Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0)
+                    : (localResult ? Object.values(localResult.summary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0)
+                       : Object.values((syncedData?.itemSummary || {}) as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0));
+                const adjTotal = allSessionAdjustments.reduce((a, b) => a + b.amount, 0);
                 finalText = baseText.replace('총 합계', `[추가/차감 내역]\n${adjText}\n\n총 합계`)
                                   .replace(/(총 합계\s+)([\d,]+)(원)/, (match, p1, p2, p3) => {
                                       return `${p1}${(orderTotal + adjTotal).toLocaleString()}${p3}`;
@@ -1496,12 +1507,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 ) : (
                                     <pre className="text-[12px] font-mono text-zinc-200 whitespace-pre-wrap leading-tight bg-zinc-950/50 p-4 rounded-lg border border-zinc-800/50 max-h-[300px] overflow-auto custom-scrollbar">
                                         {(() => {
-                                            const effectiveSummaryForDisplay = summaryOverride || (localResult?.summary) || (syncedData?.itemSummary) || {};
-                                            const baseTotal = Object.values(effectiveSummaryForDisplay as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
-                                            const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
+                                            const baseTotal = isCumulativeView
+                                                ? Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0)
+                                                : Object.values((summaryOverride || (localResult?.summary) || (syncedData?.itemSummary) || {}) as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
+                                            const adjTotal = allSessionAdjustments.reduce((a, b) => a + b.amount, 0);
                                             let text = effectiveDisplayText;
-                                            if (sessionAdjustments.length > 0) {
-                                                const adjRows = sessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
+                                            if (allSessionAdjustments.length > 0) {
+                                                const adjRows = allSessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
                                                 text = text.replace('총 합계', `[추가/차감 내역]\n${adjRows}\n\n총 합계`)
                                                            .replace(/(총 합계\s+)([\d,]+)(원)/, (match, p1, _p2, p3) => {
                                                                return `${p1}${(baseTotal + adjTotal).toLocaleString()}${p3}`;
