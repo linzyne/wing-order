@@ -723,6 +723,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         Object.keys(pricingConfig).forEach(name => initialIds.add(`${name}-1`));
         return initialIds;
     });
+    const [showSelectedSummaryModal, setShowSelectedSummaryModal] = useState(false);
 
     const [fakeOrderInput, setFakeOrderInput] = useState('');
     const [showFakeDetail, setShowFakeDetail] = useState(false);
@@ -3690,6 +3691,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     <button onClick={handleDownloadMergedUploadInvoices} disabled={selectedSessionIds.size === 0} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95 disabled:opacity-25 disabled:cursor-not-allowed">
                         <BoltIcon className="w-3.5 h-3.5" /><span>송장 병합</span>{selectedSessionIds.size > 0 && <span className="bg-zinc-700/60 text-[10px] px-1.5 py-0.5 rounded-full">{selectedSessionIds.size}</span>}
                     </button>
+                    <button
+                        onClick={() => setShowSelectedSummaryModal(true)}
+                        disabled={selectedSessionIds.size === 0}
+                        className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95 disabled:opacity-25 disabled:cursor-not-allowed"
+                    >
+                        <ChartBarIcon className="w-3.5 h-3.5" /><span>정산요약</span>{selectedSessionIds.size > 0 && <span className="bg-zinc-700/60 text-[10px] px-1.5 py-0.5 rounded-full">{selectedSessionIds.size}</span>}
+                    </button>
                     <button onClick={handleDownloadDepositList} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95">
                         <ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>입금목록</span>
                     </button>
@@ -4011,6 +4019,107 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 );
             })()}
             </div>
+
+            {/* 선택 발주건 정산요약 모달 */}
+            {showSelectedSummaryModal && (() => {
+                // 선택된 세션들의 정산 합산
+                const allSessions = Object.values(companySessions).flat() as SessionData[];
+                const selectedSessions = allSessions.filter(s => selectedSessionIds.has(s.id));
+
+                // 업체별로 그룹화하면서 품목 합산
+                const byCompany: Record<string, { round: number; items: Record<string, { count: number; totalPrice: number }> }[]> = {};
+                selectedSessions.forEach(s => {
+                    const summary = allItemSummaries[s.id];
+                    if (!byCompany[s.companyName]) byCompany[s.companyName] = [];
+                    byCompany[s.companyName].push({ round: s.round, items: summary || {} });
+                });
+
+                // 업체별 합산
+                const companyMerged: Record<string, { sessions: { round: number; total: number }[]; items: Record<string, { count: number; totalPrice: number }>; total: number }> = {};
+                Object.entries(byCompany).forEach(([company, rounds]) => {
+                    const merged: Record<string, { count: number; totalPrice: number }> = {};
+                    rounds.forEach(r => {
+                        Object.entries(r.items).forEach(([key, val]) => {
+                            if (!merged[key]) merged[key] = { count: 0, totalPrice: 0 };
+                            merged[key].count += val.count;
+                            merged[key].totalPrice += val.totalPrice;
+                        });
+                    });
+                    const total = Object.values(merged).reduce((s, v) => s + v.totalPrice, 0);
+                    const sessionTotals = rounds.map(r => ({
+                        round: r.round,
+                        total: Object.values(r.items).reduce((s, v) => s + v.totalPrice, 0),
+                    }));
+                    companyMerged[company] = { sessions: sessionTotals, items: merged, total };
+                });
+
+                const grandTotal = Object.values(companyMerged).reduce((s, c) => s + c.total, 0);
+                const sortedCompanies = Object.entries(companyMerged).sort(([, a], [, b]) => b.total - a.total);
+
+                const selectedRoundLabels = selectedSessions.map(s => `${s.companyName} ${s.round}차`).join(', ');
+
+                return createPortal(
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm" onClick={() => setShowSelectedSummaryModal(false)}>
+                        <div className="relative bg-zinc-900 border border-zinc-700 rounded-[2rem] shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col animate-fade-in" onClick={e => e.stopPropagation()}>
+                            {/* 헤더 */}
+                            <div className="px-6 py-5 border-b border-zinc-800 flex items-center justify-between shrink-0">
+                                <div>
+                                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">선택 발주건 정산요약</div>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-3xl font-black text-white">{grandTotal.toLocaleString()}</span>
+                                        <span className="text-lg font-black text-rose-500">원</span>
+                                    </div>
+                                    <div className="text-[10px] text-zinc-500 mt-1 font-bold">{selectedSessionIds.size}개 세션 선택됨</div>
+                                </div>
+                                <button onClick={() => setShowSelectedSummaryModal(false)} className="text-zinc-600 hover:text-white transition-colors text-2xl font-bold w-9 h-9 flex items-center justify-center rounded-xl hover:bg-zinc-800">×</button>
+                            </div>
+
+                            {/* 내용 */}
+                            <div className="overflow-y-auto custom-scrollbar flex-1 px-4 py-4 space-y-3">
+                                {sortedCompanies.length === 0 ? (
+                                    <p className="text-zinc-600 text-sm text-center py-8 font-bold">정산 데이터가 없습니다.<br/><span className="text-zinc-700 text-xs">발주서를 먼저 처리해주세요.</span></p>
+                                ) : sortedCompanies.map(([company, data]) => (
+                                    <div key={company} className="bg-zinc-800/50 rounded-2xl border border-zinc-700/50 overflow-hidden">
+                                        {/* 업체 헤더 */}
+                                        <div className="px-4 py-3 flex items-center justify-between border-b border-zinc-700/50 bg-zinc-800/30">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-rose-400 font-black text-sm">[{company}]</span>
+                                                <div className="flex gap-1">
+                                                    {data.sessions.map(s => (
+                                                        <span key={s.round} className="text-[9px] bg-zinc-700 text-zinc-400 px-1.5 py-0.5 rounded-full font-bold border border-zinc-600">
+                                                            {s.round}차 {s.total.toLocaleString()}원
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <span className="text-white font-black text-sm">{data.total.toLocaleString()}원</span>
+                                        </div>
+                                        {/* 품목 테이블 */}
+                                        {Object.keys(data.items).length > 0 ? (
+                                            <table className="w-full text-left">
+                                                <tbody className="divide-y divide-zinc-800/50">
+                                                    {Object.entries(data.items)
+                                                        .sort(([, a], [, b]) => b.totalPrice - a.totalPrice)
+                                                        .map(([key, val]) => (
+                                                        <tr key={key} className="text-xs hover:bg-zinc-700/20 transition-colors">
+                                                            <td className="py-2 pl-4 pr-2 font-bold text-zinc-300">{key}</td>
+                                                            <td className="py-2 pr-3 text-right text-zinc-400 font-bold">{val.count}개</td>
+                                                            <td className="py-2 pr-4 text-right text-white font-black">{val.totalPrice.toLocaleString()}원</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        ) : (
+                                            <p className="text-zinc-600 text-[11px] text-center py-3 font-bold">품목 데이터 없음</p>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                );
+            })()}
 
             {/* 토스트 알림 */}
             {toasts.length > 0 && (

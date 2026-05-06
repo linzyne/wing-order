@@ -969,7 +969,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
                                 ) : (
-                                    <div className="flex items-center gap-2 justify-center">
+                                    <div className="flex items-center gap-2 w-full">
                                         {(localResult as any).consolidationLog?.length > 0 && (
                                             <button onClick={() => setShowConsolidationLog(v => !v)} className="text-blue-400 text-[9px] font-black hover:text-blue-300 whitespace-nowrap">자{(localResult as any).consolidationLog.length}</button>
                                         )}
@@ -982,11 +982,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                 제외({excludedList.length})
                                             </button>
                                         )}
-                                        <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
-                                        <div className="h-5 w-px bg-zinc-700" />
-                                        <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
-                                        <div className="h-6 w-px bg-zinc-800" />
-                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                        <div className="ml-auto flex items-center gap-2">
+                                            <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                            <div className="h-5 w-px bg-zinc-700" />
+                                            <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            <div className="h-6 w-px bg-zinc-800" />
+                                            <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                        </div>
                                     </div>
                                 )}
                                 {showConsolidationLog && (localResult as any).consolidationLog?.length > 0 && (
