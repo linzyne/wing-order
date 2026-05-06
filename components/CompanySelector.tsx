@@ -2399,7 +2399,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     const companyConfig = pricingConfig[recordCurrentCompany];
                     let margin = 0;
                     if (companyConfig?.products) {
-                        const productEntry = Object.values(companyConfig.products).find((p: any) => p.displayName === productName);
+                        const productEntry = Object.values(companyConfig.products).find((p: any) => (p.orderFormName || p.displayName) === productName || p.displayName === productName);
                         if ((productEntry as any)?.margin) margin = (productEntry as any).margin;
                     }
                     const key = `${recordCurrentCompany}::${productName}`;
