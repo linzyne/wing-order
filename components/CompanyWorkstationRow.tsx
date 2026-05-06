@@ -133,6 +133,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [workflow, setWorkflow] = useState<WorkflowStatus>({ order: false, deposit: false, invoice: false });
     const [showPrevRoundItems, setShowPrevRoundItems] = useState(false);
     const [sessionMemo, setSessionMemo] = useState('');
+    const [showConsolidationLog, setShowConsolidationLog] = useState(false);
+    const [showSizeMismatch, setShowSizeMismatch] = useState(false);
 
     // 사이즈 불일치 감지: 매칭된 품목 키의 kg와 원본 옵션명의 kg가 다른 항목
     const sizeMismatchItems = (() => {
@@ -147,6 +149,29 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             return matchedSizes.length > 0 && rawSizes.length > 0 && !rawSizes.some(rs => matchedSizes.includes(rs));
         });
     })();
+
+    // 새 결과 생성 시 패널 접기 + 푸시 알림
+    const prevResultRef = useRef<ProcessedResult | null>(null);
+    useEffect(() => {
+        if (!localResult || localResult === prevResultRef.current) return;
+        prevResultRef.current = localResult;
+        setShowConsolidationLog(false);
+        setShowSizeMismatch(false);
+        const consolidationCount = (localResult as any).consolidationLog?.length || 0;
+        const mismatchCount = sizeMismatchItems.length;
+        if (consolidationCount === 0 && mismatchCount === 0) return;
+        const sendNotif = (title: string, body: string) => {
+            if (Notification.permission === 'granted') {
+                new Notification(title, { body });
+            } else if (Notification.permission !== 'denied') {
+                Notification.requestPermission().then(p => {
+                    if (p === 'granted') new Notification(title, { body });
+                });
+            }
+        };
+        if (consolidationCount > 0) sendNotif(`자동 합산 ${consolidationCount}건 변환`, `${companyName} 발주서 확인`);
+        if (mismatchCount > 0) sendNotif(`사이즈 불일치 ${mismatchCount}건`, `${companyName} 발주서 확인 필요`);
+    }, [localResult]);
 
     // 가구매 주문번호가 발주서에 포함된 경우 경고
     // 합산 헬퍼: previousRoundItems + 현재 세션 summary를 합산
@@ -669,6 +694,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const resetSyncedData = () => {
+        suppressSyncRef.current = true;
         deleteSessionResult(sessionId, businessId);
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
         delete currentSummary[sessionId];
@@ -949,16 +975,22 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </div>
                                 {(localResult as any).consolidationLog?.length > 0 && (
                                     <div className="bg-blue-500/10 border border-blue-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
-                                        <div className="text-blue-400 text-[10px] font-black flex items-center gap-1">
+                                        <button
+                                            className="w-full text-left text-blue-400 text-xs font-black flex items-center gap-1.5"
+                                            onClick={() => setShowConsolidationLog(v => !v)}
+                                        >
                                             🔄 자동 합산 {(localResult as any).consolidationLog.length}건 변환
-                                        </div>
-                                        <div className="mt-1 space-y-0.5">
-                                            {(localResult as any).consolidationLog.map((entry: any, idx: number) => (
-                                                <div key={idx} className="text-[9px] text-blue-300/80 font-mono truncate">
-                                                    {entry.recipientName}: {entry.before.map((b: any) => `${b.displayName} x${b.qty}`).join(' + ')} → {entry.after.map((a: any) => `${a.displayName} x${a.qty}`).join(' + ')}
-                                                </div>
-                                            ))}
-                                        </div>
+                                            <span className="ml-auto text-blue-400/60 text-[10px]">{showConsolidationLog ? '▲' : '▼'}</span>
+                                        </button>
+                                        {showConsolidationLog && (
+                                            <div className="mt-1 space-y-0.5">
+                                                {(localResult as any).consolidationLog.map((entry: any, idx: number) => (
+                                                    <div key={idx} className="text-[9px] text-blue-300/80 font-mono truncate">
+                                                        {entry.recipientName}: {entry.before.map((b: any) => `${b.displayName} x${b.qty}`).join(' + ')} → {entry.after.map((a: any) => `${a.displayName} x${a.qty}`).join(' + ')}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                                 {fakeOrderWarnings.length > 0 && (
@@ -989,16 +1021,22 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                                 {sizeMismatchItems.length > 0 && (
                                     <div className="bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-1.5 w-full animate-fade-in">
-                                        <div className="text-red-400 text-[10px] font-black flex items-center gap-1">
+                                        <button
+                                            className="w-full text-left text-red-400 text-xs font-black flex items-center gap-1.5"
+                                            onClick={() => setShowSizeMismatch(v => !v)}
+                                        >
                                             <span>⚠</span> 사이즈 불일치 {sizeMismatchItems.length}건 — 발주서 확인 필요
-                                        </div>
-                                        <div className="mt-1 space-y-0.5">
-                                            {sizeMismatchItems.map((item, idx) => (
-                                                <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
-                                                    {item.recipientName}: {item.registeredProductName} {item.registeredOptionName} → {item.matchedProductKey}
-                                                </div>
-                                            ))}
-                                        </div>
+                                            <span className="ml-auto text-red-400/60 text-[10px]">{showSizeMismatch ? '▲' : '▼'}</span>
+                                        </button>
+                                        {showSizeMismatch && (
+                                            <div className="mt-1 space-y-0.5">
+                                                {sizeMismatchItems.map((item, idx) => (
+                                                    <div key={idx} className="text-[9px] text-red-300/80 font-mono truncate">
+                                                        {item.recipientName}: {item.registeredProductName} {item.registeredOptionName} → {item.matchedProductKey}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                                 {(() => {
