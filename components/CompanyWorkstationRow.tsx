@@ -92,6 +92,7 @@ interface CompanyWorkstationRowProps {
     roundOrderCounts?: { round: number; count: number; platform: string }[]; // 라운드별 수량+플랫폼
     fakeMismatch?: boolean;
     companyChecked?: boolean;
+    isRecorded?: boolean;
     onRecord?: () => void;
 }
 
@@ -109,6 +110,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     roundPlatform = '쿠팡', companyTotalOrders = 0, roundOrderCounts = [],
     fakeMismatch = false,
     companyChecked = false,
+    isRecorded = false,
     isClosed = false, onToggleClosed,
     onRecord,
 }) => {
@@ -837,8 +839,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     {onRecord && (
                                         <button
                                             onClick={onRecord}
-                                            title={`${companyName} 기록하기`}
-                                            className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight border transition-all bg-transparent text-violet-500 border-violet-700 hover:bg-violet-500/15 hover:border-violet-400 hover:text-violet-300"
+                                            title={isRecorded ? '다시 기록하기' : `${companyName} 기록하기`}
+                                            className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight border transition-all ${
+                                                isRecorded
+                                                    ? 'bg-violet-500/15 text-violet-400 border-violet-500/40'
+                                                    : 'bg-transparent text-zinc-600 border-zinc-700 hover:border-violet-500/40 hover:text-violet-400'
+                                            }`}
                                         >
                                             기록
                                         </button>

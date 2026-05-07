@@ -512,6 +512,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
     const [checkedCompanies, setCheckedCompanies] = useState<Set<string>>(new Set());
     const [closedCompanies, setClosedCompanies] = useState<Set<string>>(new Set());
+    const [recordedCompanies, setRecordedCompanies] = useState<Set<string>>(new Set());
     const [companyOverrides, setCompanyOverrides] = useState<Record<string, { deposit?: number; margin?: number }>>({});
     const [editingCell, setEditingCell] = useState<{ company: string; field: 'deposit' | 'margin' } | null>(null);
     const [editingValue, setEditingValue] = useState('');
@@ -2510,6 +2511,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         try {
             await upsertDailySales(dailySales, businessId);
             setSaveStatus('success');
+            setRecordedCompanies(prev => { const next = new Set(prev); selectedCompanyNames.forEach(n => next.add(n)); return next; });
             onSaved?.();
             setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (err: any) {
@@ -2575,6 +2577,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }, businessId);
             }
             setDeleteStatus('success');
+            setRecordedCompanies(prev => { const next = new Set(prev); selectedCompanyNames.forEach(n => next.delete(n)); return next; });
             onSaved?.();
             setTimeout(() => setDeleteStatus('idle'), 2000);
         } catch {
@@ -4095,6 +4098,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     roundOrderCounts={roundOrderCountsForCompany}
                                                     fakeMismatch={fakeMismatch}
                                                     companyChecked={isChecked}
+                                                    isRecorded={recordedCompanies.has(company)}
                                                     onRecord={sIdx === 0 ? () => handleSaveToSalesHistory(new Set([company])) : undefined}
                                                 />
                                             </React.Fragment>
