@@ -2050,17 +2050,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (sessionAmounts.length === 0) return;
             const companyTotal = sessionAmounts.reduce((sum, s) => sum + s.amount, 0);
             const roundDetail = sessionAmounts.length > 1 ? sessionAmounts.map(s => `${s.round}차 ${s.amount.toLocaleString()}`).join(' / ') : '';
-            depositRows.push([name, config?.bankName || '', config?.accountNumber || '', companyTotal, roundDetail]);
+            const label = roundDetail ? `${name} (${roundDetail})` : name;
+            depositRows.push([config?.bankName || '', config?.accountNumber || '', companyTotal, label]);
             total += companyTotal;
         });
-        manualTransfers.forEach(t => { depositRows.push([t.label || '', t.bankName, t.accountNumber, t.amount, '']); total += t.amount; });
+        manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label || '']); total += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
             const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
-            depositRows.push([`${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`, fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, '']);
+            depositRows.push([fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, `${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
             total += deliveryFee;
         }
         if (depositRows.length === 0) { alert('선택된 업체 중 입금할 내역이 없습니다.'); return; }
-        depositRows.push([], ['', '', '합계', total, '']);
+        depositRows.push(['', '합계', total, '']);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(depositRows), "입금내역");
         XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_입금목록.xlsx`);
     };
