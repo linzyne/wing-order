@@ -2280,6 +2280,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
     const [saveError, setSaveError] = useState<string>('');
+    const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'success' | 'error'>('idle');
 
     const handleSaveToSalesHistory = async () => {
         // 마스터파일 이름에서 날짜 파싱 (예: "0309_주문목록.xlsx" → "2026-03-09")
@@ -2300,26 +2301,41 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
 
-        // 발주/송장 데이터 수집
-        const orderSheetData: any[][] = [];
-        const invoiceSheetData: any[][] = [];
+        // 선택된 업체 이름 추출 (선택된 세션이 하나라도 있는 업체)
+        const selectedCompanyNames = new Set<string>();
         sortedCompanyNames.forEach(name => {
+            if ((companySessions[name] || []).some(s => selectedSessionIds.has(s.id))) {
+                selectedCompanyNames.add(name);
+            }
+        });
+        const isPartialSave = selectedCompanyNames.size < sortedCompanyNames.length;
+
+        // 발주/송장 데이터 수집 (선택된 업체별 map)
+        const newCompanyOrderRows: Record<string, any[][]> = {};
+        const newCompanyInvoiceRows: Record<string, any[][]> = {};
+        sortedCompanyNames.forEach(name => {
+            if (!selectedCompanyNames.has(name)) return;
+            const orderRows: any[][] = [];
+            const invoiceRows: any[][] = [];
             (companySessions[name] || []).forEach(s => {
-                if (allOrderRows[s.id]) orderSheetData.push(...allOrderRows[s.id]);
-                if (allInvoiceRows[s.id]) invoiceSheetData.push(...allInvoiceRows[s.id]);
+                if (allOrderRows[s.id]) orderRows.push(...allOrderRows[s.id]);
+                if (allInvoiceRows[s.id]) invoiceRows.push(...allInvoiceRows[s.id]);
             });
+            if (orderRows.length > 0) newCompanyOrderRows[name] = orderRows;
+            if (invoiceRows.length > 0) newCompanyInvoiceRows[name] = invoiceRows;
         });
 
-        // 입금 데이터 수집
-        const depositRows: { bankName: string; accountNumber: string; amount: number }[] = [];
+        // 입금 데이터 수집 (선택된 업체만, company 필드 포함)
+        const depositRows: { bankName: string; accountNumber: string; amount: number; company?: string }[] = [];
         let depTotal = 0;
         sortedCompanyNames.forEach(name => {
+            if (!selectedCompanyNames.has(name)) return;
             const sessions = companySessions[name] || [];
             const config = pricingConfig[name];
             sessions.forEach(s => {
                 const amount = totalsMap[s.id] || 0;
                 if (amount > 0) {
-                    depositRows.push({ bankName: config?.bankName || '', accountNumber: config?.accountNumber || '', amount });
+                    depositRows.push({ bankName: config?.bankName || '', accountNumber: config?.accountNumber || '', amount, company: name });
                     depTotal += amount;
                 }
             });
@@ -2334,9 +2350,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             depTotal += deliveryFee;
         }
 
-        // 마진 데이터 수집: orderItems를 (회사, 등록상품명, productKey) 기준으로 집계
+        // 마진 데이터 수집 (선택된 업체만, company 필드 포함)
         const marginMap = new Map<string, MarginRecord>();
         sortedCompanyNames.forEach(name => {
+            if (!selectedCompanyNames.has(name)) return;
             const companyConfig = pricingConfig[name];
             if (!companyConfig) return;
             (companySessions[name] || []).forEach(s => {
@@ -2359,17 +2376,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             sellingPrice: product.sellingPrice || 0,
                             supplyPrice: product.supplyPrice || 0,
                             marginPerUnit: margin, totalMargin: margin * item.qty,
+                            company: name,
                         });
                     }
                 }
             });
         });
         const marginRecords = Array.from(marginMap.values());
-        const marginTotal = marginRecords.reduce((sum, r) => sum + r.totalMargin, 0);
 
-        // summaryLines는 매출 records 생성 등 다른 곳에서 사용
+        // summaryLines는 매출 records 생성 (선택된 업체만)
         const summaryLines: string[][] = [];
         sortedCompanyNames.forEach(name => {
+            if (!selectedCompanyNames.has(name)) return;
             const sessions = companySessions[name] || [];
             let hasAdded = false;
             sessions.forEach(s => {
@@ -2416,31 +2434,67 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
         }
         const records = Array.from(recordMap.values());
-        const totalAmount = records.reduce((sum, r) => sum + r.totalPrice, 0);
 
         // Firestore는 undefined를 저장할 수 없으므로 null로 치환
         const sanitizeRows = (rows: any[][]): any[][] =>
             rows.map(row => row.map(cell => cell === undefined ? null : cell));
 
-        // 반품 데이터: 로컬 입력 + 기존 Firestore 저장분 병합
+        // 기존 Firestore 데이터 로드 (반품 병합 + 부분 저장 merge에 공통 사용)
+        let existingDailySales: DailySales | undefined;
         let allReturns = [...returns];
         try {
             const { loadAllSalesHistory } = await import('../services/firestoreService');
             const allHistory = await loadAllSalesHistory(businessId);
-            const existing = allHistory.find(d => d.date === recordDate);
-            if (existing?.returnRecords) {
-                allReturns = [...existing.returnRecords, ...returns];
+            existingDailySales = allHistory.find(d => d.date === recordDate);
+            if (existingDailySales?.returnRecords) {
+                allReturns = [...existingDailySales.returnRecords, ...returns];
             }
         } catch {}
         const returnTotal = allReturns.reduce((s, r) => s + r.totalMargin, 0);
 
+        // 부분 저장: 선택된 업체 데이터만 교체하고 나머지 기존 데이터 유지
+        let mergedRecords = records;
+        let mergedMarginRecords = marginRecords;
+        let mergedDepositRows = depositRows;
+        if (isPartialSave && existingDailySales) {
+            mergedRecords = [
+                ...(existingDailySales.records || []).filter(r => !selectedCompanyNames.has(r.company)),
+                ...records,
+            ];
+            mergedMarginRecords = [
+                ...(existingDailySales.marginRecords || []).filter(r => !r.company || !selectedCompanyNames.has(r.company)),
+                ...marginRecords,
+            ];
+            // depositRecords: company 필드가 있는 것만 유지 (없는 건 수동이체/가구매로 항상 현재값 사용)
+            mergedDepositRows = [
+                ...(existingDailySales.depositRecords || []).filter(d => d.company && !selectedCompanyNames.has(d.company)),
+                ...depositRows,
+            ];
+        }
+
+        const totalAmount = mergedRecords.reduce((sum, r) => sum + r.totalPrice, 0);
+        const marginTotal = mergedMarginRecords.reduce((sum, r) => sum + r.totalMargin, 0);
+        const depositTotal = mergedDepositRows.reduce((sum, d) => sum + d.amount, 0);
+
+        // 발주/송장: 업체별 map merge 후 flat 배열 도출
+        const mergedCompanyOrderRows: Record<string, any[][]> = isPartialSave
+            ? { ...(existingDailySales?.companyOrderRows || {}), ...newCompanyOrderRows }
+            : newCompanyOrderRows;
+        const mergedCompanyInvoiceRows: Record<string, any[][]> = isPartialSave
+            ? { ...(existingDailySales?.companyInvoiceRows || {}), ...newCompanyInvoiceRows }
+            : newCompanyInvoiceRows;
+        const flatOrderRows = Object.values(mergedCompanyOrderRows).flat();
+        const flatInvoiceRows = Object.values(mergedCompanyInvoiceRows).flat();
+
         const dailySales: DailySales = {
-            date: recordDate, records, totalAmount, savedAt: new Date().toISOString(),
-            orderRows: orderSheetData.length > 0 ? sanitizeRows(orderSheetData) : undefined,
-            invoiceRows: invoiceSheetData.length > 0 ? sanitizeRows(invoiceSheetData) : undefined,
-            depositRecords: depositRows.length > 0 ? depositRows : undefined,
-            depositTotal: depTotal > 0 ? depTotal : undefined,
-            marginRecords: marginRecords.length > 0 ? marginRecords : undefined,
+            date: recordDate, records: mergedRecords, totalAmount, savedAt: new Date().toISOString(),
+            orderRows: flatOrderRows.length > 0 ? sanitizeRows(flatOrderRows) : undefined,
+            invoiceRows: flatInvoiceRows.length > 0 ? sanitizeRows(flatInvoiceRows) : undefined,
+            companyOrderRows: Object.keys(mergedCompanyOrderRows).length > 0 ? mergedCompanyOrderRows : undefined,
+            companyInvoiceRows: Object.keys(mergedCompanyInvoiceRows).length > 0 ? mergedCompanyInvoiceRows : undefined,
+            depositRecords: mergedDepositRows.length > 0 ? mergedDepositRows : undefined,
+            depositTotal: depositTotal > 0 ? depositTotal : undefined,
+            marginRecords: mergedMarginRecords.length > 0 ? mergedMarginRecords : undefined,
             marginTotal: marginTotal > 0 ? marginTotal : undefined,
             expenseRecords: allExpenses.length > 0 ? allExpenses : undefined,
             returnRecords: allReturns.length > 0 ? allReturns : undefined,
@@ -2465,6 +2519,68 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setSaveError(koreanMsg);
             setSaveStatus('error');
             setTimeout(() => setSaveStatus('idle'), 5000);
+        }
+    };
+
+    const handleDeleteTodayRecord = async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
+        const selectedCompanyNames = new Set<string>();
+        sortedCompanyNames.forEach(name => {
+            if ((companySessions[name] || []).some(s => selectedSessionIds.has(s.id))) {
+                selectedCompanyNames.add(name);
+            }
+        });
+        if (selectedCompanyNames.size === 0) { alert('삭제할 업체를 선택해주세요.'); return; }
+        const names = Array.from(selectedCompanyNames).join(', ');
+        if (!confirm(`오늘(${today}) [${names}] 기록을 삭제할까요?`)) return;
+
+        setDeleteStatus('deleting');
+        try {
+            const { loadAllSalesHistory, upsertDailySales, deleteDailySalesFromFirestore } = await import('../services/firestoreService');
+            const allHistory = await loadAllSalesHistory(businessId);
+            const existing = allHistory.find(d => d.date === today);
+            if (!existing) { setDeleteStatus('idle'); alert('오늘 기록이 없습니다.'); return; }
+
+            const remainingRecords = (existing.records || []).filter(r => !selectedCompanyNames.has(r.company));
+            const remainingMargins = (existing.marginRecords || []).filter(r => !r.company || !selectedCompanyNames.has(r.company));
+            const remainingDeposits = (existing.depositRecords || []).filter(d => d.company && !selectedCompanyNames.has(d.company));
+
+            // 업체별 발주/송장 행 삭제
+            const remainingCompanyOrderRows = { ...(existing.companyOrderRows || {}) };
+            const remainingCompanyInvoiceRows = { ...(existing.companyInvoiceRows || {}) };
+            selectedCompanyNames.forEach(name => {
+                delete remainingCompanyOrderRows[name];
+                delete remainingCompanyInvoiceRows[name];
+            });
+            const remainingOrderRows = Object.values(remainingCompanyOrderRows).flat();
+            const remainingInvoiceRows = Object.values(remainingCompanyInvoiceRows).flat();
+
+            const hasAnythingLeft = remainingRecords.length > 0 || remainingMargins.length > 0 || remainingDeposits.length > 0 || remainingOrderRows.length > 0;
+            if (!hasAnythingLeft) {
+                await deleteDailySalesFromFirestore(today, businessId);
+            } else {
+                const totalAmount = remainingRecords.reduce((s, r) => s + r.totalPrice, 0);
+                const marginTotal = remainingMargins.reduce((s, r) => s + r.totalMargin, 0);
+                const depositTotal = remainingDeposits.reduce((s, r) => s + r.amount, 0);
+                await upsertDailySales({
+                    ...existing,
+                    records: remainingRecords, totalAmount,
+                    marginRecords: remainingMargins.length > 0 ? remainingMargins : undefined,
+                    marginTotal: marginTotal > 0 ? marginTotal : undefined,
+                    depositRecords: remainingDeposits.length > 0 ? remainingDeposits : undefined,
+                    depositTotal: depositTotal > 0 ? depositTotal : undefined,
+                    companyOrderRows: Object.keys(remainingCompanyOrderRows).length > 0 ? remainingCompanyOrderRows : undefined,
+                    companyInvoiceRows: Object.keys(remainingCompanyInvoiceRows).length > 0 ? remainingCompanyInvoiceRows : undefined,
+                    orderRows: remainingOrderRows.length > 0 ? remainingOrderRows : undefined,
+                    invoiceRows: remainingInvoiceRows.length > 0 ? remainingInvoiceRows : undefined,
+                }, businessId);
+            }
+            setDeleteStatus('success');
+            setTimeout(() => setDeleteStatus('idle'), 2000);
+        } catch {
+            setDeleteStatus('error');
+            setTimeout(() => setDeleteStatus('idle'), 3000);
         }
     };
 
@@ -3712,31 +3828,54 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>요약</span>
                         </button>
                     </>}
-                    <div className="flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-2">
                         <button
-                            onClick={handleSaveToSalesHistory}
-                            disabled={saveStatus === 'saving'}
+                            onClick={handleDeleteTodayRecord}
+                            disabled={deleteStatus === 'deleting' || saveStatus === 'saving'}
                             className={`group flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 active:scale-95 border ${
-                                saveStatus === 'success'
+                                deleteStatus === 'success'
                                     ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                                    : saveStatus === 'error'
+                                    : deleteStatus === 'error'
                                     ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                                    : saveStatus === 'saving'
+                                    : deleteStatus === 'deleting'
                                     ? 'bg-zinc-800/60 text-zinc-500 border-zinc-700/30 cursor-wait'
-                                    : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/30 hover:text-white hover:border-zinc-600 hover:bg-zinc-700/60'
+                                    : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/30 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/10'
                             }`}
                         >
-                            <ChartBarIcon className="w-3.5 h-3.5" />
+                            <TrashIcon className="w-3.5 h-3.5" />
                             <span>{
-                                saveStatus === 'saving' ? '저장 중...'
-                                : saveStatus === 'success' ? '기록 완료!'
-                                : saveStatus === 'error' ? '저장 실패'
-                                : '기록하기'
+                                deleteStatus === 'deleting' ? '삭제 중...'
+                                : deleteStatus === 'success' ? '삭제 완료!'
+                                : deleteStatus === 'error' ? '삭제 실패'
+                                : '기록 삭제'
                             }</span>
                         </button>
-                        {saveStatus === 'error' && saveError && (
-                            <span className="text-red-400 text-[10px] font-bold max-w-[200px] text-right">{saveError}</span>
-                        )}
+                        <div className="flex flex-col items-end gap-1">
+                            <button
+                                onClick={handleSaveToSalesHistory}
+                                disabled={saveStatus === 'saving'}
+                                className={`group flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 active:scale-95 border ${
+                                    saveStatus === 'success'
+                                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                                        : saveStatus === 'error'
+                                        ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                                        : saveStatus === 'saving'
+                                        ? 'bg-zinc-800/60 text-zinc-500 border-zinc-700/30 cursor-wait'
+                                        : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/30 hover:text-white hover:border-zinc-600 hover:bg-zinc-700/60'
+                                }`}
+                            >
+                                <ChartBarIcon className="w-3.5 h-3.5" />
+                                <span>{
+                                    saveStatus === 'saving' ? '저장 중...'
+                                    : saveStatus === 'success' ? '기록 완료!'
+                                    : saveStatus === 'error' ? '저장 실패'
+                                    : '기록하기'
+                                }</span>
+                            </button>
+                            {saveStatus === 'error' && saveError && (
+                                <span className="text-red-400 text-[10px] font-bold max-w-[200px] text-right">{saveError}</span>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

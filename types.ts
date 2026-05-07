@@ -165,6 +165,7 @@ export interface DepositRecord {
   accountNumber: string;
   amount: number;
   label?: string;
+  company?: string;
 }
 
 export interface MarginRecord {
@@ -175,6 +176,7 @@ export interface MarginRecord {
   supplyPrice: number;    // 공급가
   marginPerUnit: number;  // 마진(개당)
   totalMargin: number;    // 총마진
+  company?: string;       // 업체명 (부분 저장 merge용)
 }
 
 export interface ReturnRecord {
@@ -265,6 +267,8 @@ export interface DailySales {
   orderHeaders?: string[];
   invoiceRows?: any[][];
   invoiceHeaders?: string[];
+  companyOrderRows?: Record<string, any[][]>;   // 업체별 발주 행 (merge/삭제용)
+  companyInvoiceRows?: Record<string, any[][]>; // 업체별 송장 행 (merge/삭제용)
   depositRecords?: DepositRecord[];
   depositTotal?: number;
   marginRecords?: MarginRecord[];

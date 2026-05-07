@@ -96,6 +96,20 @@ export const loadAllSalesHistory = async (businessId?: string): Promise<DailySal
     if (typeof data.invoiceRows === 'string') {
       try { data.invoiceRows = JSON.parse(data.invoiceRows); } catch { data.invoiceRows = undefined; }
     }
+    if (data.companyOrderRows && typeof data.companyOrderRows === 'object') {
+      data.companyOrderRows = Object.fromEntries(
+        Object.entries(data.companyOrderRows).map(([k, v]) => {
+          try { return [k, typeof v === 'string' ? JSON.parse(v) : v]; } catch { return [k, []]; }
+        })
+      );
+    }
+    if (data.companyInvoiceRows && typeof data.companyInvoiceRows === 'object') {
+      data.companyInvoiceRows = Object.fromEntries(
+        Object.entries(data.companyInvoiceRows).map(([k, v]) => {
+          try { return [k, typeof v === 'string' ? JSON.parse(v) : v]; } catch { return [k, []]; }
+        })
+      );
+    }
     return data as DailySales;
   });
 };
@@ -109,6 +123,16 @@ export const upsertDailySales = async (
   const serialized: any = { ...dailySales };
   if (serialized.orderRows) serialized.orderRows = JSON.stringify(serialized.orderRows);
   if (serialized.invoiceRows) serialized.invoiceRows = JSON.stringify(serialized.invoiceRows);
+  if (serialized.companyOrderRows) {
+    serialized.companyOrderRows = Object.fromEntries(
+      Object.entries(serialized.companyOrderRows).map(([k, v]) => [k, JSON.stringify(v)])
+    );
+  }
+  if (serialized.companyInvoiceRows) {
+    serialized.companyInvoiceRows = Object.fromEntries(
+      Object.entries(serialized.companyInvoiceRows).map(([k, v]) => [k, JSON.stringify(v)])
+    );
+  }
   // Firestore는 undefined 값을 허용하지 않으므로 제거
   Object.keys(serialized).forEach(key => {
     if (serialized[key] === undefined) delete serialized[key];
