@@ -534,6 +534,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllHeaders({});
         setAllSummaries({});
         setAllItemSummaries({});
+        setAllOrderItems({});
+        setAllRegisteredNames({});
+        setAllPreConsolidationByGroup({});
         setCompanyOverrides({});
     }, [updateField]);
 
