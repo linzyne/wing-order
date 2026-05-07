@@ -92,6 +92,7 @@ interface CompanyWorkstationRowProps {
     roundOrderCounts?: { round: number; count: number; platform: string }[]; // 라운드별 수량+플랫폼
     fakeMismatch?: boolean;
     companyChecked?: boolean;
+    onRecord?: () => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -108,7 +109,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     roundPlatform = '쿠팡', companyTotalOrders = 0, roundOrderCounts = [],
     fakeMismatch = false,
     companyChecked = false,
-    isClosed = false, onToggleClosed
+    isClosed = false, onToggleClosed,
+    onRecord,
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -832,6 +834,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     >
                                         마감
                                     </button>
+                                    {onRecord && (
+                                        <button
+                                            onClick={onRecord}
+                                            title={`${companyName} 기록하기`}
+                                            className="shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight border transition-all bg-transparent text-violet-500 border-violet-700 hover:bg-violet-500/15 hover:border-violet-400 hover:text-violet-300"
+                                        >
+                                            기록
+                                        </button>
+                                    )}
                                     <div
                                         className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${isClosed ? 'line-through text-zinc-600' : companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
                                         {...dragHandle.attributes}
