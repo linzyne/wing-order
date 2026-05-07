@@ -5,6 +5,7 @@ import {
   savePricingConfigToFirestore,
   subscribeDailyWorkspace,
   updateDailyWorkspaceField,
+  updateDailyWorkspaceSessionField,
   loadPlatformConfigs,
   savePlatformConfigs,
   subscribeTodos,
@@ -145,7 +146,11 @@ export const useDailyWorkspace = (businessId?: string) => {
     await updateDailyWorkspaceField(field, value, businessId);
   }, [businessId]);
 
-  return { workspace, updateField, isReady };
+  const updateSessionField = useCallback(async (dotPath: string, value: any) => {
+    await updateDailyWorkspaceSessionField(dotPath, value, businessId);
+  }, [businessId]);
+
+  return { workspace, updateField, updateSessionField, isReady };
 };
 
 // ===== Session Results Hook (별도 문서 구독) =====

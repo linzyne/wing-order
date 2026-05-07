@@ -1,6 +1,6 @@
 import { db } from '../firebase';
 import {
-  doc, setDoc, getDoc, deleteDoc,
+  doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, orderBy, getDocs,
   onSnapshot, Timestamp, deleteField,
   type Unsubscribe
@@ -246,6 +246,17 @@ export const updateDailyWorkspaceField = async (
     [field]: value,
     updatedAt: Timestamp.now(),
   }, { merge: true });
+};
+
+// 세션별 중첩 필드를 점 표기법(dot-notation)으로 원자적 업데이트
+// spread 방식 대신 이걸 써야 동시 쓰기 시 다른 세션 데이터를 덮어씌우는 race condition이 없음
+export const updateDailyWorkspaceSessionField = async (
+  dotPath: string,  // e.g. 'sessionAdjustments.리앤유-1-xxx'
+  value: any,
+  businessId?: string
+): Promise<void> => {
+  const docRef = doc(db, getWorkspaceCollectionName(businessId), getTodayDocId());
+  await updateDoc(docRef, { [dotPath]: value, updatedAt: Timestamp.now() });
 };
 
 export const getDailyWorkspace = async (businessId?: string): Promise<DailyWorkspaceData | null> => {

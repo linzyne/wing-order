@@ -13,6 +13,7 @@ import { DragHandleContext } from './DragHandleContext';
 import { getBusinessInfo } from '../types';
 import { useDailyWorkspace, useSessionResults } from '../hooks/useFirestore';
 import { saveSessionResult, deleteSessionResult } from '../services/firestoreService';
+import { deleteField } from 'firebase/firestore';
 import type { SessionResultData } from '../services/firestoreService';
 
 declare var XLSX: any;
@@ -125,7 +126,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const pricingConfigRef = useRef(pricingConfig);
     pricingConfigRef.current = pricingConfig;
     
-    const { workspace, updateField } = useDailyWorkspace(businessId);
+    const { workspace, updateField, updateSessionField } = useDailyWorkspace(businessId);
     const sessionResults = useSessionResults(businessId);
 
     // 수동 차감/추가 내역 상태
@@ -424,9 +425,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (isInitialWorkflowLoad.current) { isInitialWorkflowLoad.current = false; return; }
         const currentStr = JSON.stringify(workflow);
         if (currentStr === lastFirestoreWorkflowRef.current) return;
-        const currentWorkflows = workspace?.sessionWorkflows || {};
-        updateField('sessionWorkflows', { ...currentWorkflows, [sessionId]: workflow });
-    }, [workflow, sessionId, updateField]);
+        lastFirestoreWorkflowRef.current = currentStr;
+        updateSessionField(`sessionWorkflows.${sessionId}`, workflow);
+    }, [workflow, sessionId, updateSessionField]);
 
     // sessionAdjustments 변경 → Firestore에 저장
     const isInitialAdjLoad = useRef(true);
@@ -434,9 +435,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (isInitialAdjLoad.current) { isInitialAdjLoad.current = false; return; }
         const currentStr = JSON.stringify(sessionAdjustments);
         if (currentStr === lastFirestoreAdjRef.current) return;
-        const currentAdjs = workspace?.sessionAdjustments || {};
-        updateField('sessionAdjustments', { ...currentAdjs, [sessionId]: sessionAdjustments });
-    }, [sessionAdjustments, sessionId, updateField]);
+        lastFirestoreAdjRef.current = currentStr;
+        updateSessionField(`sessionAdjustments.${sessionId}`, sessionAdjustments);
+    }, [sessionAdjustments, sessionId, updateSessionField]);
 
     // sessionMemo 변경 → Firestore에 디바운스 저장 (타이핑 중 write 폭증 방지)
     const isInitialMemoLoad = useRef(true);
@@ -448,11 +449,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         memoDebounceRef.current = setTimeout(() => {
             if (sessionMemo === lastFirestoreMemoRef.current) return;
             lastFirestoreMemoRef.current = sessionMemo;
-            const currentMemos = workspace?.sessionMemos || {};
-            updateField('sessionMemos', { ...currentMemos, [sessionId]: sessionMemo });
+            updateSessionField(`sessionMemos.${sessionId}`, sessionMemo);
         }, 1000);
         return () => { if (memoDebounceRef.current) clearTimeout(memoDebounceRef.current); };
-    }, [sessionMemo, sessionId, updateField]);
+    }, [sessionMemo, sessionId, updateSessionField]);
 
     // summaryOverride 변경 → Firestore에 저장
     const isInitialOverrideLoad = useRef(true);
@@ -461,14 +461,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const currentStr = summaryOverride ? JSON.stringify(summaryOverride) : '';
         if (currentStr === lastFirestoreOverrideRef.current) return;
         lastFirestoreOverrideRef.current = currentStr;
-        const currentOverrides = workspace?.summaryOverrides || {};
         if (summaryOverride) {
-            updateField('summaryOverrides', { ...currentOverrides, [sessionId]: summaryOverride });
+            updateSessionField(`summaryOverrides.${sessionId}`, summaryOverride);
         } else {
-            const { [sessionId]: _, ...rest } = currentOverrides;
-            updateField('summaryOverrides', rest);
+            updateSessionField(`summaryOverrides.${sessionId}`, deleteField());
         }
-    }, [summaryOverride, sessionId, updateField]);
+    }, [summaryOverride, sessionId, updateSessionField]);
 
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);
