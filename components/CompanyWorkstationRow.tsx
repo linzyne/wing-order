@@ -323,7 +323,16 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const [copiedCombinedId, setCopiedCombinedId] = useState<string | null>(null);
     const handleCopyCombined = () => {
-        navigator.clipboard.writeText(combinedDepositText);
+        let finalText = combinedDepositText;
+        if (allSessionAdjustments.length > 0) {
+            const adjText = allSessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
+            const orderTotal = Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
+            const adjTotal = allSessionAdjustments.reduce((a, b) => a + b.amount, 0);
+            finalText = finalText
+                .replace('총 합계', `[추가/차감 내역]\n${adjText}\n\n총 합계`)
+                .replace(/(총 합계\s+)([\d,]+)(원)/, (_match, p1, _p2, p3) => `${p1}${(orderTotal + adjTotal).toLocaleString()}${p3}`);
+        }
+        navigator.clipboard.writeText(finalText);
         setCopiedCombinedId(sessionId);
         setTimeout(() => setCopiedCombinedId(null), 2000);
     };
@@ -849,39 +858,41 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             기록
                                         </button>
                                     )}
-                                    <div
-                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${isClosed ? 'line-through text-zinc-600' : companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
-                                        {...dragHandle.attributes}
-                                        {...dragHandle.listeners}
-                                    >
-                                        {companyName}
-                                    </div>
-                                    
-                                    <div className="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 gap-0.5">
-                                        {(['order', 'deposit', 'invoice'] as const).map((step) => (
-                                            <button 
-                                                key={step}
-                                                onClick={() => toggleStep(step)}
-                                                className={`px-1.5 py-0.5 rounded text-[9px] font-black transition-all ${
-                                                    workflow[step] 
-                                                        ? (step === 'order' ? 'bg-pink-500' : step === 'deposit' ? 'bg-emerald-500' : 'bg-indigo-500') + ' text-white shadow-md'
-                                                        : 'text-zinc-600 hover:text-zinc-400'
-                                                }`}
-                                            >
-                                                {step === 'order' ? '발주' : step === 'deposit' ? '입금' : '송장'}
-                                            </button>
-                                        ))}
-                                    </div>
-
-                                    {deadline && (
-                                        <div className="bg-pink-500/10 text-pink-500 px-2 py-0.5 rounded-lg border border-pink-500/30 flex items-center gap-1 shrink-0">
-                                            <span className="text-[9px] font-black uppercase opacity-70 tracking-tight">마감</span>
-                                            <span className="text-[11px] font-black">{deadline}</span>
+                                    <div className={`flex items-center gap-2 flex-wrap ${isClosed ? 'opacity-30' : ''}`}>
+                                        <div
+                                            className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
+                                            {...dragHandle.attributes}
+                                            {...dragHandle.listeners}
+                                        >
+                                            {companyName}
                                         </div>
-                                    )}
+
+                                        <div className="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 gap-0.5">
+                                            {(['order', 'deposit', 'invoice'] as const).map((step) => (
+                                                <button
+                                                    key={step}
+                                                    onClick={() => toggleStep(step)}
+                                                    className={`px-1.5 py-0.5 rounded text-[9px] font-black transition-all ${
+                                                        workflow[step]
+                                                            ? (step === 'order' ? 'bg-pink-500' : step === 'deposit' ? 'bg-emerald-500' : 'bg-indigo-500') + ' text-white shadow-md'
+                                                            : 'text-zinc-600 hover:text-zinc-400'
+                                                    }`}
+                                                >
+                                                    {step === 'order' ? '발주' : step === 'deposit' ? '입금' : '송장'}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {deadline && (
+                                            <div className="bg-pink-500/10 text-pink-500 px-2 py-0.5 rounded-lg border border-pink-500/30 flex items-center gap-1 shrink-0">
+                                                <span className="text-[9px] font-black uppercase opacity-70 tracking-tight">마감</span>
+                                                <span className="text-[11px] font-black">{deadline}</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
-                                <div className="flex flex-col gap-1.5">
+                                <div className={`flex flex-col gap-1.5 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                                     <div className="flex items-center gap-2">
                                         <div className="flex items-center gap-1.5 bg-zinc-950/50 px-2 py-1 rounded-lg border border-zinc-800 shrink-0">
                                             <input 
@@ -923,7 +934,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     )}
                                 </div>
 
-                                <div className="flex flex-wrap gap-1 items-center mb-3">
+                                <div className={`flex flex-wrap gap-1 items-center mb-3 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                                     {keywords.map(kw => (
                                         <span key={kw} className="text-[9px] bg-zinc-900/80 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-800 font-bold tracking-tight group/kw flex items-center gap-1">
                                             {kw}
@@ -947,7 +958,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </div>
                             </>
                         ) : (
-                            <div className="pl-4 border-l-2 border-zinc-800 py-0.5">
+                            <div className={`pl-4 border-l-2 border-zinc-800 py-0.5 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                                 <div className="flex items-center gap-2">
                                     <span className="text-zinc-700 text-[12px] font-black">ㄴ</span>
                                     <div className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-indigo-500/20 whitespace-nowrap">
@@ -973,7 +984,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                 <div className="text-emerald-400 text-[9px] font-black">1~{roundNumber}차 합산 정산</div>
                                                 <button onClick={handleCopyCombined} className={`text-[9px] font-black px-2 py-0.5 rounded border transition-all ${copiedCombinedId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-pink-400 border-zinc-700 hover:text-white'}`}>{copiedCombinedId ? '복사됨!' : '카톡용'}</button>
                                             </div>
-                                            <pre className="text-[10px] font-mono text-zinc-300 whitespace-pre-wrap leading-tight">{combinedDepositText}</pre>
+                                            <pre className="text-[10px] font-mono text-zinc-300 whitespace-pre-wrap leading-tight">{(() => {
+                                                let text = combinedDepositText;
+                                                if (allSessionAdjustments.length > 0) {
+                                                    const adjRows = allSessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
+                                                    const orderTotal = Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
+                                                    const adjTotal = allSessionAdjustments.reduce((a, b) => a + b.amount, 0);
+                                                    text = text.replace('총 합계', `[추가/차감 내역]\n${adjRows}\n\n총 합계`)
+                                                               .replace(/(총 합계\s+)([\d,]+)(원)/, (_match, p1, _p2, p3) => `${p1}${(orderTotal + adjTotal).toLocaleString()}${p3}`);
+                                                }
+                                                return text;
+                                            })()}</pre>
                                         </div>
                                     </div>
                                 )}
@@ -983,7 +1004,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 </td>
 
                 <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
-                    <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
+                    <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                         {localResult ? (
                             <div className="flex flex-col items-center gap-1 animate-fade-in w-full">
                                 {isFirstSession && (
@@ -1353,7 +1374,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 </td>
 
                 <td className={`px-3 ${isFirstSession ? 'py-2' : 'py-1'}`}>
-                    <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'}`}>
+                    <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                         {!mergeResults ? (
                             <div className="flex flex-col items-center gap-2">
                                 <label className={`flex items-center cursor-pointer px-2 py-1 rounded-lg text-[9px] font-black border transition-all shadow-md ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFiles.length > 0 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
