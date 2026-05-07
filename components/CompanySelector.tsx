@@ -690,6 +690,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, [pricingConfig, masterOrderData]);
 
+    // 오늘 기록된 업체를 Firestore에서 로드하여 recordedCompanies 초기화
+    useEffect(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        import('../services/firestoreService').then(({ loadDailySales }) => {
+            loadDailySales(today, businessId).then(existing => {
+                if (!existing) return;
+                const companies = new Set<string>();
+                (existing.records || []).forEach(r => { if (r.company) companies.add(r.company); });
+                Object.keys(existing.companyOrderRows || {}).forEach(c => companies.add(c));
+                (existing.depositRecords || []).forEach(d => { if (d.company) companies.add(d.company); });
+                if (companies.size > 0) setRecordedCompanies(companies);
+            }).catch(() => {});
+        });
+    }, [businessId]);
+
     // 수동발주 Firestore 영구 저장 - 구독
     useEffect(() => {
         const unsubscribe = subscribeManualOrders((orders) => {
@@ -2066,7 +2081,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const handleDownloadWorkLog = () => {
-        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
+        if (recordedCompanies.size === 0) {
+            alert('기록된 업체가 없습니다.\n업체별 기록 버튼을 먼저 눌러주세요.');
+            return;
+        }
+        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig)).filter(n => recordedCompanies.has(n));
 
         // 마진시트에서 매칭 실패할 품목 미리 감지 (단가관리에서 삭제/키변경된 경우)
         const missingMargin: { company: string; regName: string; productKey: string; count: number }[] = [];
@@ -2144,8 +2163,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (invoiceSheetData.length > 0) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(invoiceSheetData), "송장시트");
 
         // 마진시트 생성: orderItems를 (회사, 등록상품명, productKey) 기준으로 집계
-        // K열 등록상품명은 원본 엑셀에서 그대로, 가격/마진은 단가관리에서 productKey로 직접 조회
-        const marginSheetData: any[][] = [['등록상품명', '품목명', '수량', '판매가', '공급가', '마진(개당)', '총마진', '지출금액', '지출내역']];
+        const marginSheetData: any[][] = [['등록상품명', '품목명', '수량', '판매가', '공급가', '마진(개당)', '총마진']];
         type MarginGroup = { regName: string; productName: string; count: number; sellingPrice: number; supplyPrice: number; margin: number };
         const marginGroups: { company: string; key: string; data: MarginGroup }[] = [];
         const marginGroupIndex = new Map<string, number>();
@@ -2182,69 +2200,34 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             });
         });
-        // 품목 연동 비용을 marginGroup key로 집계 (company::productKey → expenses)
-        // 같은 품목에 여러 비용이 있으면 첫 번째 비용 금액/내역을 H/I에 입력 (추가 비용은 합산)
-        type LinkedExpense = { amount: number; descriptions: string[] };
-        const linkedExpenseMap = new Map<string, LinkedExpense>();
-        allExpenses.forEach(exp => {
-            if (exp.company && exp.productKey) {
-                const key = `${exp.company}::${exp.productKey}`;
-                const existing = linkedExpenseMap.get(key);
-                if (existing) {
-                    existing.amount += exp.amount;
-                    existing.descriptions.push(exp.description);
-                } else {
-                    linkedExpenseMap.set(key, { amount: exp.amount, descriptions: [exp.description] });
-                }
-            }
-        });
 
-        // 마진시트 행 추가 + H/I 품목 연동 비용 채우기
         for (const g of marginGroups) {
             const d = g.data;
-            // key 마지막 segment가 productKey
-            const productKey = g.key.split('::')[2] ?? '';
-            const linkedKey = `${g.company}::${productKey}`;
-            const linked = linkedExpenseMap.get(linkedKey);
-            marginSheetData.push([
-                d.regName, d.productName, d.count,
-                d.sellingPrice, d.supplyPrice, d.margin, d.margin * d.count,
-                linked ? linked.amount : '',
-                linked ? linked.descriptions.join(' / ') : '',
-            ]);
+            marginSheetData.push([d.regName, d.productName, d.count, d.sellingPrice, d.supplyPrice, d.margin, d.margin * d.count]);
         }
 
-        // 총 마진
         const totalMargin = marginSheetData.length > 1
             ? marginSheetData.slice(1).reduce((sum: number, r: any[]) => sum + (r[6] || 0), 0)
             : 0;
         if (marginSheetData.length > 1) {
             marginSheetData.push([]);
-            marginSheetData.push(['', '', '', '', '', '총 마진', totalMargin, '', '']);
-        }
-
-        // 비용 섹션 — 품목 미연동 비용만 (자동 물류비 + 업체/품목 미지정 비용)
-        const generalExpenses = allExpenses.filter(exp => !(exp.company && exp.productKey));
-        if (generalExpenses.length > 0) {
-            marginSheetData.push([]);
-            marginSheetData.push(['', '[비용]', '', '', '', '', '', '', '']);
-            generalExpenses.forEach(exp => {
-                marginSheetData.push(['', exp.category, '', '', '', '', '', exp.amount, exp.description]);
-            });
-            const totalExpense = allExpenses.reduce((sum, e) => sum + e.amount, 0);
-            marginSheetData.push([]);
-            marginSheetData.push(['', '', '', '', '', '총 비용', '', totalExpense, '']);
-            marginSheetData.push(['', '', '', '', '', '순이익', '', totalMargin - totalExpense, '']);
-        } else if (allExpenses.length > 0) {
-            // 모든 비용이 품목 연동인 경우도 순이익 표시
-            const totalExpense = allExpenses.reduce((sum, e) => sum + e.amount, 0);
-            marginSheetData.push([]);
-            marginSheetData.push(['', '', '', '', '', '총 비용', '', totalExpense, '']);
-            marginSheetData.push(['', '', '', '', '', '순이익', '', totalMargin - totalExpense, '']);
+            marginSheetData.push(['', '', '', '', '', '총 마진', totalMargin]);
         }
 
         if (marginSheetData.length > 1) {
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(marginSheetData), "마진시트");
+        }
+
+        // 비용시트 생성
+        if (allExpenses.length > 0) {
+            const expenseSheetData: any[][] = [['구분', '금액', '내역', '연동업체', '연동품목']];
+            allExpenses.forEach(exp => {
+                expenseSheetData.push([exp.category, exp.amount, exp.description, exp.company || '', exp.productName || '']);
+            });
+            const totalExpense = allExpenses.reduce((sum, e) => sum + e.amount, 0);
+            expenseSheetData.push([]);
+            expenseSheetData.push(['합계', totalExpense, '', '', '']);
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expenseSheetData), "비용시트");
         }
 
         // 품목별비용 시트 생성

@@ -1666,7 +1666,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       {filteredHistory.length === 0 ? (
         <div className="bg-zinc-900/40 rounded-[2.5rem] p-12 border border-zinc-800 text-center">
           <p className="text-zinc-600 font-bold text-sm">{periodLabel} 매출 데이터가 없습니다.</p>
-          <p className="text-zinc-700 text-xs mt-2">위에서 업무일지 엑셀 파일을 업로드하거나, 발주서/송장 관리 탭에서 업무일지를 다운로드하면 자동 기록됩니다.</p>
+          <p className="text-zinc-700 text-xs mt-2">위에서 업무일지 엑셀 파일을 업로드하거나, 발주서/송장 관리 탭에서 기록 버튼을 눌러 기록하세요.</p>
         </div>
       ) : (
         <section className="bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
