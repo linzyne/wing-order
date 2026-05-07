@@ -71,6 +71,8 @@ interface CompanyWorkstationRowProps {
     onAddSession: () => void;
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
+    isClosed?: boolean;
+    onToggleClosed?: () => void;
     onDownloadMergedOrder?: () => void;
     onDownloadMergedInvoice?: (type: 'mgmt' | 'upload') => void;
     previousRoundItems?: { round: number; summary: Record<string, { count: number; totalPrice: number }> }[];
@@ -104,7 +106,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     fakeCourierRows,
     roundPlatform = '쿠팡', companyTotalOrders = 0, roundOrderCounts = [],
     fakeMismatch = false,
-    companyChecked = false
+    companyChecked = false,
+    isClosed = false, onToggleClosed
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -820,8 +823,19 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             <>
                                 {companySummaryBar}
                                 <div className="flex items-center gap-2 flex-wrap">
+                                    <button
+                                        onClick={onToggleClosed}
+                                        title={isClosed ? '마감 해제' : '마감 처리'}
+                                        className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight border transition-all ${
+                                            isClosed
+                                                ? 'bg-red-500 text-white border-red-400 shadow-md shadow-red-500/20'
+                                                : 'bg-transparent text-zinc-600 border-zinc-700 hover:border-red-500/50 hover:text-red-400'
+                                        }`}
+                                    >
+                                        마감
+                                    </button>
                                     <div
-                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
+                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${isClosed ? 'line-through text-zinc-600' : companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
                                         {...dragHandle.attributes}
                                         {...dragHandle.listeners}
                                     >
@@ -874,9 +888,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                 <PlusCircleIcon className="w-3 h-3" />
                                             </button>
                                         </div>
-                                        <button onClick={onAddSession} className="p-1 bg-zinc-800 text-zinc-500 rounded-lg hover:bg-pink-500 hover:text-white transition-all border border-zinc-700">
-                                            <PlusCircleIcon className="w-4 h-4" />
-                                        </button>
+                                        {!isClosed && (
+                                            <button onClick={onAddSession} className="p-1 bg-zinc-800 text-zinc-500 rounded-lg hover:bg-pink-500 hover:text-white transition-all border border-zinc-700">
+                                                <PlusCircleIcon className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </div>
                                     
                                     {sessionAdjustments.length > 0 && (
