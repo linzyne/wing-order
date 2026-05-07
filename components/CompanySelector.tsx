@@ -2488,8 +2488,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
         const dailySales: DailySales = {
             date: recordDate, records: mergedRecords, totalAmount, savedAt: new Date().toISOString(),
-            orderRows: flatOrderRows.length > 0 ? sanitizeRows(flatOrderRows) : undefined,
-            invoiceRows: flatInvoiceRows.length > 0 ? sanitizeRows(flatInvoiceRows) : undefined,
             companyOrderRows: Object.keys(mergedCompanyOrderRows).length > 0 ? mergedCompanyOrderRows : undefined,
             companyInvoiceRows: Object.keys(mergedCompanyInvoiceRows).length > 0 ? mergedCompanyInvoiceRows : undefined,
             depositRecords: mergedDepositRows.length > 0 ? mergedDepositRows : undefined,
@@ -2553,10 +2551,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 delete remainingCompanyOrderRows[name];
                 delete remainingCompanyInvoiceRows[name];
             });
-            const remainingOrderRows = Object.values(remainingCompanyOrderRows).flat();
-            const remainingInvoiceRows = Object.values(remainingCompanyInvoiceRows).flat();
-
-            const hasAnythingLeft = remainingRecords.length > 0 || remainingMargins.length > 0 || remainingDeposits.length > 0 || remainingOrderRows.length > 0;
+            const hasAnythingLeft = remainingRecords.length > 0 || remainingMargins.length > 0 || remainingDeposits.length > 0
+                || Object.keys(remainingCompanyOrderRows).length > 0;
             if (!hasAnythingLeft) {
                 await deleteDailySalesFromFirestore(today, businessId);
             } else {
@@ -2572,8 +2568,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     depositTotal: depositTotal > 0 ? depositTotal : undefined,
                     companyOrderRows: Object.keys(remainingCompanyOrderRows).length > 0 ? remainingCompanyOrderRows : undefined,
                     companyInvoiceRows: Object.keys(remainingCompanyInvoiceRows).length > 0 ? remainingCompanyInvoiceRows : undefined,
-                    orderRows: remainingOrderRows.length > 0 ? remainingOrderRows : undefined,
-                    invoiceRows: remainingInvoiceRows.length > 0 ? remainingInvoiceRows : undefined,
+                    orderRows: undefined,
+                    invoiceRows: undefined,
                 }, businessId);
             }
             setDeleteStatus('success');

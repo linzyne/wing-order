@@ -76,24 +76,26 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
 
   const allRecords = useMemo(() => filteredHistory.flatMap(d => d.records), [filteredHistory]);
 
-  // 발주 데이터 합산
+  // 발주 데이터 합산 (companyOrderRows 우선, 없으면 flat orderRows 폴백)
   const allOrderRows = useMemo(() => {
     const rows: { date: string; data: any[][] }[] = [];
     filteredHistory.forEach(d => {
-      if (d.orderRows && d.orderRows.length > 0) {
-        rows.push({ date: d.date, data: d.orderRows });
-      }
+      const data = d.companyOrderRows
+        ? Object.values(d.companyOrderRows).flat()
+        : d.orderRows || [];
+      if (data.length > 0) rows.push({ date: d.date, data });
     });
     return rows;
   }, [filteredHistory]);
 
-  // 송장 데이터 합산
+  // 송장 데이터 합산 (companyInvoiceRows 우선, 없으면 flat invoiceRows 폴백)
   const allInvoiceRows = useMemo(() => {
     const rows: { date: string; data: any[][] }[] = [];
     filteredHistory.forEach(d => {
-      if (d.invoiceRows && d.invoiceRows.length > 0) {
-        rows.push({ date: d.date, data: d.invoiceRows });
-      }
+      const data = d.companyInvoiceRows
+        ? Object.values(d.companyInvoiceRows).flat()
+        : d.invoiceRows || [];
+      if (data.length > 0) rows.push({ date: d.date, data });
     });
     return rows;
   }, [filteredHistory]);
