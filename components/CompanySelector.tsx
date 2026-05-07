@@ -2279,7 +2279,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'success' | 'error'>('idle');
 
     const handleSaveToSalesHistory = async () => {
-        if (selectedSessionIds.size === 0) { alert('기록할 업체를 선택해주세요.'); return; }
+        if (checkedCompanies.size === 0) { alert('기록할 업체를 선택해주세요.'); return; }
         // 마스터파일 이름에서 날짜 파싱 (예: "0309_주문목록.xlsx" → "2026-03-09")
         let recordDate = new Date().toISOString().slice(0, 10);
         if (masterOrderFile) {
@@ -2298,13 +2298,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
 
-        // 선택된 업체 이름 추출 (선택된 세션이 하나라도 있는 업체)
-        const selectedCompanyNames = new Set<string>();
-        sortedCompanyNames.forEach(name => {
-            if ((companySessions[name] || []).some(s => selectedSessionIds.has(s.id))) {
-                selectedCompanyNames.add(name);
-            }
-        });
+        // 체크된 업체 기준으로 선택 및 부분저장 여부 결정
+        const selectedCompanyNames = checkedCompanies;
         const isPartialSave = selectedCompanyNames.size < sortedCompanyNames.length;
 
         // 발주/송장 데이터 수집 (선택된 업체별 map)
@@ -2519,13 +2514,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const handleDeleteTodayRecord = async () => {
         const today = new Date().toISOString().slice(0, 10);
-        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
-        const selectedCompanyNames = new Set<string>();
-        sortedCompanyNames.forEach(name => {
-            if ((companySessions[name] || []).some(s => selectedSessionIds.has(s.id))) {
-                selectedCompanyNames.add(name);
-            }
-        });
+        const selectedCompanyNames = checkedCompanies;
         if (selectedCompanyNames.size === 0) { alert('삭제할 업체를 선택해주세요.'); return; }
         const names = Array.from(selectedCompanyNames).join(', ');
         if (!confirm(`오늘(${today}) [${names}] 기록을 삭제할까요?`)) return;
