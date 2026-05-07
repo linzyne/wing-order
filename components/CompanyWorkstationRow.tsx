@@ -88,6 +88,7 @@ interface CompanyWorkstationRowProps {
     companyTotalOrders?: number;     // 업체 전체 합계 (1차+2차+...)
     roundOrderCounts?: { round: number; count: number; platform: string }[]; // 라운드별 수량+플랫폼
     fakeMismatch?: boolean;
+    companyChecked?: boolean;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -102,7 +103,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     orderPlatformMap, platformConfigs,
     fakeCourierRows,
     roundPlatform = '쿠팡', companyTotalOrders = 0, roundOrderCounts = [],
-    fakeMismatch = false
+    fakeMismatch = false,
+    companyChecked = false
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -819,7 +821,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 {companySummaryBar}
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <div
-                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${isAllDone ? 'text-emerald-400' : 'text-white'}`}
+                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
                                         {...dragHandle.attributes}
                                         {...dragHandle.listeners}
                                     >
