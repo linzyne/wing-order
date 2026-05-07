@@ -2451,9 +2451,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         let existingDailySales: DailySales | undefined;
         let allReturns = [...returns];
         try {
-            const { loadAllSalesHistory } = await import('../services/firestoreService');
-            const allHistory = await loadAllSalesHistory(businessId);
-            existingDailySales = allHistory.find(d => d.date === recordDate);
+            const { loadDailySales } = await import('../services/firestoreService');
+            existingDailySales = await loadDailySales(recordDate, businessId);
             if (existingDailySales?.returnRecords) {
                 allReturns = [...existingDailySales.returnRecords, ...returns];
             }
@@ -2539,9 +2538,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
         setDeleteStatus('deleting');
         try {
-            const { loadAllSalesHistory, upsertDailySales, deleteDailySalesFromFirestore } = await import('../services/firestoreService');
-            const allHistory = await loadAllSalesHistory(businessId);
-            const existing = allHistory.find(d => d.date === today);
+            const { loadDailySales, upsertDailySales, deleteDailySalesFromFirestore } = await import('../services/firestoreService');
+            const existing = await loadDailySales(today, businessId);
             if (!existing) { setDeleteStatus('idle'); alert('오늘 기록이 없습니다.'); return; }
 
             const remainingRecords = (existing.records || []).filter(r => !selectedCompanyNames.has(r.company));

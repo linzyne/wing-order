@@ -87,31 +87,38 @@ export const loadAllSalesHistory = async (businessId?: string): Promise<DailySal
     orderBy('date', 'desc')
   );
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(d => {
-    const data = d.data() as any;
-    // Firestore에 JSON 문자열로 저장된 중첩 배열을 역직렬화
-    if (typeof data.orderRows === 'string') {
-      try { data.orderRows = JSON.parse(data.orderRows); } catch { data.orderRows = undefined; }
-    }
-    if (typeof data.invoiceRows === 'string') {
-      try { data.invoiceRows = JSON.parse(data.invoiceRows); } catch { data.invoiceRows = undefined; }
-    }
-    if (data.companyOrderRows && typeof data.companyOrderRows === 'object') {
-      data.companyOrderRows = Object.fromEntries(
-        Object.entries(data.companyOrderRows).map(([k, v]) => {
-          try { return [k, typeof v === 'string' ? JSON.parse(v) : v]; } catch { return [k, []]; }
-        })
-      );
-    }
-    if (data.companyInvoiceRows && typeof data.companyInvoiceRows === 'object') {
-      data.companyInvoiceRows = Object.fromEntries(
-        Object.entries(data.companyInvoiceRows).map(([k, v]) => {
-          try { return [k, typeof v === 'string' ? JSON.parse(v) : v]; } catch { return [k, []]; }
-        })
-      );
-    }
-    return data as DailySales;
-  });
+  return snapshot.docs.map(d => deserializeDailySales({ ...d.data() }));
+};
+
+const deserializeDailySales = (data: any): DailySales => {
+  if (typeof data.orderRows === 'string') {
+    try { data.orderRows = JSON.parse(data.orderRows); } catch { data.orderRows = undefined; }
+  }
+  if (typeof data.invoiceRows === 'string') {
+    try { data.invoiceRows = JSON.parse(data.invoiceRows); } catch { data.invoiceRows = undefined; }
+  }
+  if (data.companyOrderRows && typeof data.companyOrderRows === 'object') {
+    data.companyOrderRows = Object.fromEntries(
+      Object.entries(data.companyOrderRows).map(([k, v]) => {
+        try { return [k, typeof v === 'string' ? JSON.parse(v) : v]; } catch { return [k, []]; }
+      })
+    );
+  }
+  if (data.companyInvoiceRows && typeof data.companyInvoiceRows === 'object') {
+    data.companyInvoiceRows = Object.fromEntries(
+      Object.entries(data.companyInvoiceRows).map(([k, v]) => {
+        try { return [k, typeof v === 'string' ? JSON.parse(v) : v]; } catch { return [k, []]; }
+      })
+    );
+  }
+  return data as DailySales;
+};
+
+export const loadDailySales = async (date: string, businessId?: string): Promise<DailySales | undefined> => {
+  const docRef = doc(db, getSalesCollectionName(businessId), date);
+  const snapshot = await getDoc(docRef);
+  if (!snapshot.exists()) return undefined;
+  return deserializeDailySales({ ...snapshot.data() });
 };
 
 export const upsertDailySales = async (
