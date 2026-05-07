@@ -10,7 +10,7 @@ declare var XLSX: any;
 type ViewMode = 'settlement' | 'invoices' | 'margin' | 'returns' | 'trend';
 type DateMode = 'month' | 'range';
 
-const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ isActive, businessId }) => {
+const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshTrigger?: number }> = ({ isActive, businessId, refreshTrigger }) => {
   const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
   const { salesHistory, load, refresh, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
@@ -19,6 +19,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string }> = ({ i
   useEffect(() => {
     if (isActive) load();
   }, [isActive, load]);
+
+  // 기록 저장/삭제 시 자동 갱신
+  useEffect(() => {
+    if (refreshTrigger) refresh();
+  }, [refreshTrigger]);
   const [viewMode, setViewMode] = useState<ViewMode>('settlement');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [importStatus, setImportStatus] = useState<string | null>(null);

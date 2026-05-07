@@ -42,7 +42,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: () => void; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -468,7 +468,7 @@ const CourierTemplateManager: React.FC<{
     );
 };
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false, isCurrent = false }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false, isCurrent = false, onSaved }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
     const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
     const { courierTemplates, saveTemplates: saveCourierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates(businessId);
@@ -2510,6 +2510,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         try {
             await upsertDailySales(dailySales, businessId);
             setSaveStatus('success');
+            onSaved?.();
             setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (err: any) {
             console.error('매출 기록 저장 실패:', err);
@@ -2574,6 +2575,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }, businessId);
             }
             setDeleteStatus('success');
+            onSaved?.();
             setTimeout(() => setDeleteStatus('idle'), 2000);
         } catch {
             setDeleteStatus('error');

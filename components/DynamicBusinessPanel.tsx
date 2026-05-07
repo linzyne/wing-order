@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import CompanySelector from './CompanySelector';
 import PricingEditor from './PricingEditor';
 import SalesTracker from './SalesTracker';
@@ -13,6 +13,7 @@ interface DynamicBusinessPanelProps {
 const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId, activeTab, isCurrentBusiness }) => {
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
+  const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0);
 
   if (isLoading) {
     return (
@@ -35,6 +36,7 @@ const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId,
           platformConfigs={platformConfigs}
           isActive={activeTab === 'converter' && isCurrentBusiness}
           isCurrent={isCurrentBusiness}
+          onSaved={() => setSalesRefreshTrigger(n => n + 1)}
         />
       </div>
       <div style={{ display: (activeTab === 'pricing' && isCurrentBusiness) ? undefined : 'none' }}>
@@ -47,7 +49,7 @@ const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId,
         />
       </div>
       <div style={{ display: (activeTab === 'sales' && isCurrentBusiness) ? undefined : 'none' }}>
-        <SalesTracker isActive={activeTab === 'sales' && isCurrentBusiness} businessId={businessId} />
+        <SalesTracker isActive={activeTab === 'sales' && isCurrentBusiness} businessId={businessId} refreshTrigger={salesRefreshTrigger} />
       </div>
     </>
   );

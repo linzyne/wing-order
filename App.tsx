@@ -29,6 +29,7 @@ const App: React.FC = () => {
     return saved || '안군농원';
   });
   const [showAddModal, setShowAddModal] = useState(false);
+  const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0);
 
   const { businesses: allBusinesses, dynamicBusinesses, isLoading: businessListLoading, addBusiness, removeBusiness } = useBusinessList();
 
@@ -249,6 +250,7 @@ const App: React.FC = () => {
                 platformConfigs={configMap[b.id].platform.platformConfigs}
                 isActive={activeTab === 'converter' && currentBusiness === b.id}
                 isCurrent={currentBusiness === b.id}
+                onSaved={() => setSalesRefreshTrigger(n => n + 1)}
               />
             </div>
           ))}
@@ -259,7 +261,7 @@ const App: React.FC = () => {
                 <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} platformConfigs={platformConfigs!} onPlatformConfigsChange={savePlatformConfig} />
               </div>
               <div style={{ display: activeTab === 'sales' ? undefined : 'none' }}>
-                <SalesTracker isActive={activeTab === 'sales'} businessId={currentBusiness} />
+                <SalesTracker isActive={activeTab === 'sales'} businessId={currentBusiness} refreshTrigger={salesRefreshTrigger} />
               </div>
             </>
           )}
