@@ -533,6 +533,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllHeaders({});
         setAllSummaries({});
         setAllItemSummaries({});
+        setCompanyOverrides({});
     }, [updateField]);
 
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
