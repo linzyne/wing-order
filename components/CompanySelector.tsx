@@ -2038,7 +2038,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const handleDownloadDepositList = () => {
-        const activeIds = selectedSessionIds.size > 0 ? selectedSessionIds : new Set(Object.values(companySessions).flat().map(s => s.id));
         const wb = XLSX.utils.book_new();
         const depositRows: any[][] = [];
         let total = 0;
@@ -2046,7 +2045,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             const config = pricingConfig[name];
-            const sessionAmounts = sessions.filter(s => activeIds.has(s.id)).map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
+            const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
             if (sessionAmounts.length === 0) return;
             const companyTotal = sessionAmounts.reduce((sum, s) => sum + s.amount, 0);
             const roundDetail = sessionAmounts.length > 1 ? sessionAmounts.map(s => `${s.round}차 ${s.amount.toLocaleString()}`).join(' / ') : '';
