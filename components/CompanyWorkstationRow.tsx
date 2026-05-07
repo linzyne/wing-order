@@ -828,8 +828,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         title={isClosed ? '마감 해제' : '마감 처리'}
                                         className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight border transition-all ${
                                             isClosed
-                                                ? 'bg-amber-500/15 text-amber-400 border-amber-500/40'
-                                                : 'bg-transparent text-zinc-600 border-zinc-700 hover:border-amber-500/40 hover:text-amber-400'
+                                                ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                                                : 'bg-transparent text-zinc-700 border-zinc-800 hover:text-zinc-500 hover:border-zinc-600'
                                         }`}
                                     >
                                         마감
