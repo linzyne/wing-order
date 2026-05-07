@@ -3771,7 +3771,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </div>
                             </div>
                         )}
-                        <div className="flex flex-wrap gap-2 mt-1">
+                        <div className="flex flex-wrap gap-2 mt-1 min-h-[36px]">
                             {sortCompanies(Object.keys(pricingConfig)).map(name => {
                                 const sessions = companySessions[name] || [];
                                 const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
