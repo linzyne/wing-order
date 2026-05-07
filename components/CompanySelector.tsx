@@ -511,6 +511,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allSummaries, setAllSummaries] = useState<Record<string, string>>({});
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
     const [checkedCompanies, setCheckedCompanies] = useState<Set<string>>(new Set());
+    const [closedCompanies, setClosedCompanies] = useState<Set<string>>(new Set());
     const [companyOverrides, setCompanyOverrides] = useState<Record<string, { deposit?: number; margin?: number }>>({});
     const [editingCell, setEditingCell] = useState<{ company: string; field: 'deposit' | 'margin' } | null>(null);
     const [editingValue, setEditingValue] = useState('');
@@ -1541,7 +1542,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const newSessions: Record<string, SessionData[]> = { ...companySessions };
             const newSelectedIds = new Set(selectedSessionIds);
             for (const companyName of companiesInFile) {
-                if (pricingConfig[companyName]?.isClosed) continue;
+                if (closedCompanies.has(companyName)) continue;
                 const newSessionId = `${companyName}-batch-${nextRound}-${Date.now()}`;
                 const newSession: SessionData = { id: newSessionId, companyName, round: nextRound };
                 newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
@@ -1822,14 +1823,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const handleToggleClosed = (companyName: string) => {
-        const current = pricingConfig[companyName];
-        if (!current) return;
-        const newConfig = { ...pricingConfig, [companyName]: { ...current, isClosed: !current.isClosed } };
-        onConfigChange(newConfig);
+        setClosedCompanies(prev => {
+            const next = new Set(prev);
+            if (next.has(companyName)) next.delete(companyName);
+            else next.add(companyName);
+            return next;
+        });
     };
 
     const handleAddSession = (companyName: string) => {
-        if (pricingConfig[companyName]?.isClosed) return;
+        if (closedCompanies.has(companyName)) return;
         const newSessionId = `${companyName}-${Date.now()}`;
         setCompanySessions(prev => {
             const current = prev[companyName] || [];
@@ -4066,7 +4069,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
-                                                    isClosed={!!pricingConfig[company]?.isClosed} onToggleClosed={() => handleToggleClosed(company)}
+                                                    isClosed={closedCompanies.has(company)} onToggleClosed={() => handleToggleClosed(company)}
                                                     onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
                                                     onDownloadMergedInvoice={(companySessions[company] || []).length > 1 ? (type: 'mgmt' | 'upload') => handleDownloadMergedInvoice(company, type) : undefined}
                                                     previousRoundItems={prevItems}
