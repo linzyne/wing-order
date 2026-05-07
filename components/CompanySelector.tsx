@@ -718,11 +718,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     });
 
 
-    const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(() => {
-        const initialIds = new Set<string>();
-        Object.keys(pricingConfig).forEach(name => initialIds.add(`${name}-1`));
-        return initialIds;
-    });
+    const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
     const [showSelectedSummaryModal, setShowSelectedSummaryModal] = useState(false);
 
     const [fakeOrderInput, setFakeOrderInput] = useState('');
@@ -2283,6 +2279,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'success' | 'error'>('idle');
 
     const handleSaveToSalesHistory = async () => {
+        if (selectedSessionIds.size === 0) { alert('기록할 업체를 선택해주세요.'); return; }
         // 마스터파일 이름에서 날짜 파싱 (예: "0309_주문목록.xlsx" → "2026-03-09")
         let recordDate = new Date().toISOString().slice(0, 10);
         if (masterOrderFile) {
