@@ -42,7 +42,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: () => void; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -2046,12 +2046,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             const config = pricingConfig[name];
-            let companyTotal = 0;
             sessions.forEach(s => {
                 if (!selectedSessionIds.has(s.id)) return;
-                companyTotal += totalsMap[s.id] || 0;
+                const amount = totalsMap[s.id] || 0;
+                if (amount <= 0) return;
+                const label = sessions.length > 1 ? `${name} ${s.round}차` : name;
+                depositRows.push([config?.bankName || '은행미지정', config?.accountNumber || '계좌미지정', amount, label]);
+                total += amount;
             });
-            if (companyTotal > 0) { depositRows.push([config?.bankName || '은행미지정', config?.accountNumber || '계좌미지정', companyTotal, name]); total += companyTotal; }
         });
         manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label]); total += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
@@ -2511,7 +2513,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             await upsertDailySales(dailySales, businessId);
             setSaveStatus('success');
             setRecordedCompanies(prev => { const next = new Set(prev); selectedCompanyNames.forEach(n => next.add(n)); return next; });
-            onSaved?.();
+            onSaved?.(recordDate);
             setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (err: any) {
             console.error('매출 기록 저장 실패:', err);
@@ -2576,7 +2578,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             setDeleteStatus('success');
             setRecordedCompanies(prev => { const next = new Set(prev); selectedCompanyNames.forEach(n => next.delete(n)); return next; });
-            onSaved?.();
+            onSaved?.(today);
             setTimeout(() => setDeleteStatus('idle'), 2000);
         } catch {
             setDeleteStatus('error');

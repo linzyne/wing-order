@@ -1,7 +1,9 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { DailySales, SalesRecord, PricingConfig, DepositRecord, MarginRecord } from '../types';
 import {
   loadAllSalesHistory,
+  loadSalesHistoryByMonth,
+  loadDailySales,
   upsertDailySales,
   deleteDailySalesFromFirestore,
 } from '../services/firestoreService';
@@ -210,25 +212,54 @@ export const deleteDailySales = async (date: string, businessId?: string) => {
 
 export const useSalesTracker = (businessId?: string) => {
   const [salesHistory, setSalesHistory] = useState<DailySales[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const loadedMonths = useRef<Set<string>>(new Set());
 
+  const mergeMonth = useCallback((monthData: DailySales[], yearMonth: string) => {
+    setSalesHistory(prev => {
+      const filtered = prev.filter(d => !d.date.startsWith(yearMonth));
+      return [...monthData, ...filtered].sort((a, b) => b.date.localeCompare(a.date));
+    });
+  }, []);
+
+  const loadMonth = useCallback(async (yearMonth: string, force = false) => {
+    if (!force && loadedMonths.current.has(yearMonth)) return;
+    loadedMonths.current.add(yearMonth);
+    try {
+      const monthData = await loadSalesHistoryByMonth(yearMonth, businessId);
+      mergeMonth(monthData, yearMonth);
+    } catch { loadedMonths.current.delete(yearMonth); }
+  }, [businessId, mergeMonth]);
+
+  // 초기 로드: 현재 월만
   const load = useCallback(async () => {
-    if (loaded) return;
-    const history = await loadAllSalesHistory(businessId);
-    setSalesHistory(history);
-    setLoaded(true);
-  }, [businessId, loaded]);
+    const now = new Date();
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    await loadMonth(ym);
+  }, [loadMonth]);
 
-  const refresh = useCallback(async () => {
-    const history = await loadAllSalesHistory(businessId);
-    setSalesHistory(history);
-    setLoaded(true);
+  // 저장/삭제 후 단일 날짜만 갱신
+  const refreshDate = useCallback(async (date: string) => {
+    try {
+      const updated = await loadDailySales(date, businessId);
+      setSalesHistory(prev => {
+        const filtered = prev.filter(d => d.date !== date);
+        if (updated) return [updated, ...filtered].sort((a, b) => b.date.localeCompare(a.date));
+        return filtered;
+      });
+    } catch {}
   }, [businessId]);
+
+  // 엑셀 import 후 전체 재로드 (로드된 월들만)
+  const refresh = useCallback(async () => {
+    const months = Array.from(loadedMonths.current);
+    loadedMonths.current.clear();
+    await Promise.all(months.map(m => loadMonth(m)));
+  }, [loadMonth]);
 
   const remove = useCallback(async (date: string) => {
     await deleteDailySalesFromFirestore(date, businessId);
     setSalesHistory(prev => prev.filter(d => d.date !== date));
   }, [businessId]);
 
-  return { salesHistory, load, refresh, remove };
+  return { salesHistory, load, loadMonth, refresh, refreshDate, remove };
 };

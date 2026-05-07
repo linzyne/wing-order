@@ -29,7 +29,7 @@ const App: React.FC = () => {
     return saved || '안군농원';
   });
   const [showAddModal, setShowAddModal] = useState(false);
-  const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0);
+  const [salesRefreshTrigger, setSalesRefreshTrigger] = useState<{ date: string; n: number } | undefined>();
 
   const { businesses: allBusinesses, dynamicBusinesses, isLoading: businessListLoading, addBusiness, removeBusiness } = useBusinessList();
 
@@ -250,7 +250,7 @@ const App: React.FC = () => {
                 platformConfigs={configMap[b.id].platform.platformConfigs}
                 isActive={activeTab === 'converter' && currentBusiness === b.id}
                 isCurrent={currentBusiness === b.id}
-                onSaved={() => setSalesRefreshTrigger(n => n + 1)}
+                onSaved={(date) => setSalesRefreshTrigger(prev => ({ date, n: (prev?.n ?? 0) + 1 }))}
               />
             </div>
           ))}

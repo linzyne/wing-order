@@ -1,7 +1,7 @@
 import { db } from '../firebase';
 import {
   doc, setDoc, updateDoc, getDoc, deleteDoc,
-  collection, query, orderBy, getDocs,
+  collection, query, orderBy, where, getDocs,
   onSnapshot, Timestamp, deleteField,
   type Unsubscribe
 } from 'firebase/firestore';
@@ -112,6 +112,17 @@ const deserializeDailySales = (data: any): DailySales => {
     );
   }
   return data as DailySales;
+};
+
+export const loadSalesHistoryByMonth = async (yearMonth: string, businessId?: string): Promise<DailySales[]> => {
+  const q = query(
+    collection(db, getSalesCollectionName(businessId)),
+    where('date', '>=', `${yearMonth}-01`),
+    where('date', '<=', `${yearMonth}-31`),
+    orderBy('date', 'desc')
+  );
+  const snapshot = await getDocs(q);
+  return snapshot.docs.map(d => deserializeDailySales({ ...d.data() }));
 };
 
 export const loadDailySales = async (date: string, businessId?: string): Promise<DailySales | undefined> => {

@@ -13,7 +13,7 @@ interface DynamicBusinessPanelProps {
 const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId, activeTab, isCurrentBusiness }) => {
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
-  const [salesRefreshTrigger, setSalesRefreshTrigger] = useState(0);
+  const [salesRefreshTrigger, setSalesRefreshTrigger] = useState<{ date: string; n: number } | undefined>();
 
   if (isLoading) {
     return (
@@ -36,7 +36,7 @@ const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId,
           platformConfigs={platformConfigs}
           isActive={activeTab === 'converter' && isCurrentBusiness}
           isCurrent={isCurrentBusiness}
-          onSaved={() => setSalesRefreshTrigger(n => n + 1)}
+          onSaved={(date) => setSalesRefreshTrigger(prev => ({ date, n: (prev?.n ?? 0) + 1 }))}
         />
       </div>
       <div style={{ display: (activeTab === 'pricing' && isCurrentBusiness) ? undefined : 'none' }}>

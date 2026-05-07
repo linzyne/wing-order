@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
 import { usePricingConfig } from '../hooks/useFirestore';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
@@ -10,20 +10,20 @@ declare var XLSX: any;
 type ViewMode = 'settlement' | 'invoices' | 'margin' | 'returns' | 'trend';
 type DateMode = 'month' | 'range';
 
-const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshTrigger?: number }> = ({ isActive, businessId, refreshTrigger }) => {
+const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshTrigger?: { date: string; n: number } }> = ({ isActive, businessId, refreshTrigger }) => {
   const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
-  const { salesHistory, load, refresh, remove } = useSalesTracker(businessId);
+  const { salesHistory, load, loadMonth, refresh, refreshDate, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
 
-  // 탭 최초 활성화 시에만 로드
+  // 탭 최초 활성화 시 현재 월 로드
   useEffect(() => {
     if (isActive) load();
   }, [isActive, load]);
 
-  // 기록 저장/삭제 시 자동 갱신
+  // 기록 저장/삭제 후 해당 날짜 1건만 갱신
   useEffect(() => {
-    if (refreshTrigger) refresh();
-  }, [refreshTrigger]);
+    if (refreshTrigger) refreshDate(refreshTrigger.date);
+  }, [refreshTrigger?.n]);
   const [viewMode, setViewMode] = useState<ViewMode>('settlement');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -53,6 +53,12 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   const [rangeEnd, setRangeEnd] = useState(todayStr);
 
   const selectedYearMonth = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
+
+  // 월 이동 시 해당 월 데이터 로드 (캐시 있으면 스킵)
+  useEffect(() => {
+    loadMonth(selectedYearMonth);
+  }, [selectedYearMonth, loadMonth]);
+
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();
@@ -191,7 +197,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     const updatedReturnTotal = updatedReturns.reduce((s, r) => s + r.totalMargin, 0);
     const { upsertDailySales } = await import('../services/firestoreService');
     await upsertDailySales({ ...existing, returnRecords: updatedReturns.length > 0 ? updatedReturns : undefined, returnTotal: updatedReturnTotal || undefined }, businessId);
-    await refresh();
+    await refreshDate(date);
   };
 
   // 월별분석: 선택 연도의 전체 월별 품목별 마진 + 비용 데이터
