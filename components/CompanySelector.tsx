@@ -3227,7 +3227,28 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         </div>
                     )}
                     {masterOrderFile && (
-                        <div className="bg-zinc-950 p-2 rounded-2xl border border-dashed border-zinc-700 hover:border-rose-500/50 transition-all">
+                        <div className="bg-zinc-950 rounded-2xl border border-dashed border-zinc-700 hover:border-rose-500/50 transition-all overflow-hidden">
+                            {(() => {
+                                const roundMap = new Map<number, string>();
+                                Object.entries(batchFiles).forEach(([sessionId, file]) => {
+                                    const match = sessionId.match(/-batch-(\d+)-/);
+                                    if (match) {
+                                        const round = parseInt(match[1]);
+                                        if (!roundMap.has(round)) roundMap.set(round, file.name);
+                                    }
+                                });
+                                const rounds = Array.from(roundMap.entries()).sort((a, b) => a[0] - b[0]);
+                                return rounds.length > 0 ? (
+                                    <div className="px-2 pt-1.5 pb-0.5 flex flex-col gap-0.5">
+                                        {rounds.map(([round, fileName]) => (
+                                            <div key={round} className="flex items-center gap-1.5">
+                                                <span className="text-rose-400 font-black text-[9px] shrink-0">{round}차</span>
+                                                <span className="text-zinc-500 text-[9px] truncate">{fileName}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : null;
+                            })()}
                             <input ref={batchFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleBatchUpload(f); e.target.value = ''; } }} />
                             <button onClick={() => batchFileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 py-1.5 text-[10px] font-black text-zinc-500 hover:text-rose-400 transition-colors">
                                 <PlusCircleIcon className="w-3.5 h-3.5" />
