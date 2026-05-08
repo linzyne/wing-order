@@ -543,12 +543,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
+    const [fakeMasterOrderFile, setFakeMasterOrderFile] = useState<File | null>(null);
+    const [fakeMasterOrderData, setFakeMasterOrderData] = useState<any[][] | null>(null);
     const [detectedCompanies, setDetectedCompanies] = useState<Set<string>>(new Set());
     const [batchFiles, setBatchFiles] = useState<Record<string, File>>({});
     const [batchExpectedCounts, setBatchExpectedCounts] = useState<Record<string, number>>({});
     const [batchMasterRows, setBatchMasterRows] = useState<Record<string, any[][]>>({});
     const [batchPlatforms, setBatchPlatforms] = useState<Record<string, string>>({}); // sessionId → 플랫폼명
     const batchFileInputRef = useRef<HTMLInputElement>(null);
+    const fakeMasterFileInputRef = useRef<HTMLInputElement>(null);
     // 멀티 플랫폼: 업로드된 플랫폼 목록 + 건수
     const [uploadedPlatforms, setUploadedPlatforms] = useState<{ name: string; count: number }[]>([]);
     // 행별 출처 플랫폼 (인덱스 = masterOrderData 행 인덱스, 값 = 플랫폼 이름 또는 null=쿠팡)
@@ -957,11 +960,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             foundDetails[cleanNum] = ex;
         });
 
-        // 마스터 주문서에서 모든 주문번호 추출
+        // 마스터 주문서에서 모든 주문번호 추출 (가구매용 마스터 우선)
+        const effectiveMasterData = fakeMasterOrderData ?? masterOrderData;
         const masterOrderNumbers = new Set<string>();
-        if (masterOrderData && masterOrderData.length > 1) {
-            for (let i = 1; i < masterOrderData.length; i++) {
-                const row = masterOrderData[i];
+        if (effectiveMasterData && effectiveMasterData.length > 1) {
+            for (let i = 1; i < effectiveMasterData.length; i++) {
+                const row = effectiveMasterData[i];
                 if (!row) continue;
                 const orderNum = String(row[2] || '').trim();
                 if (orderNum) masterOrderNumbers.add(orderNum);
@@ -977,7 +981,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         );
 
         return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates };
-    }, [fakeOrderInput, allExcludedDetails, masterOrderData]);
+    }, [fakeOrderInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
 
     // 가구매 수량 미매칭 여부: 명단 주문번호 수 vs 실제 제외된 주문번호 수
     const fakeMismatch = useMemo(() => {
@@ -1460,6 +1464,49 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); };
 
+    const handleFakeMasterUpload = async (file: File) => {
+        setFakeMasterOrderFile(file);
+        setFakeMasterOrderData(null);
+        try {
+            const data = await file.arrayBuffer();
+            const wb = XLSX.read(data, { type: 'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            let json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null }) as any[][];
+            if (!json || json.length < 2) return;
+
+            const detectedPlatform = detectPlatform(json);
+            if (detectedPlatform) {
+                const pc = detectedPlatform.platform;
+                const dataStart = detectedPlatform.actualDataStartRow;
+                const coupangHeader = new Array(31).fill('');
+                coupangHeader[2] = '주문번호';
+                coupangHeader[10] = '그룹명';
+                coupangHeader[11] = '상품명';
+                coupangHeader[22] = '수량';
+                coupangHeader[26] = '받는분';
+                coupangHeader[27] = '전화번호';
+                coupangHeader[28] = '우편번호';
+                coupangHeader[29] = '주소';
+                coupangHeader[30] = '배송메세지';
+                const normalized = [coupangHeader];
+                for (let i = dataStart; i < json.length; i++) {
+                    const row = json[i];
+                    if (!row || row.every((c: any) => !c)) continue;
+                    normalized.push(normalizePlatformRow(row, pc.orderColumns, detectedPlatform.columnRemap));
+                }
+                json = normalized;
+                const normalizedSheet = XLSX.utils.aoa_to_sheet(json);
+                const normalizedWb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(normalizedWb, normalizedSheet, 'Sheet1');
+                const normalizedBuffer = XLSX.write(normalizedWb, { bookType: 'xlsx', type: 'array' });
+                setFakeMasterOrderFile(new File([normalizedBuffer], file.name, {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                }));
+            }
+            setFakeMasterOrderData(json);
+        } catch (error) { console.error("Fake master upload failed:", error); }
+    };
+
     const handleBatchUpload = async (file: File) => {
         console.log('🚀 [배치 업로드] 시작:', file.name);
         if (fakeMismatch) alert('미매칭(수량)을 확인해주세요.');
@@ -1606,11 +1653,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     // 범용 택배 양식 다운로드: 템플릿 매핑에 따라 주문 데이터 채워서 다운로드
     const handleCourierDownload = async (template: CourierTemplate) => {
-        if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
+        const activeCourierFile = fakeMasterOrderFile ?? masterOrderFile;
+        if (!activeCourierFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
 
         try {
             // 1차 마스터 파일 읽기
-            const masterData = await masterOrderFile.arrayBuffer();
+            const masterData = await activeCourierFile.arrayBuffer();
             const masterWb = XLSX.read(masterData, { type: 'array' });
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
@@ -1676,7 +1724,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     // 범용 운송장 파일 업로드: 템플릿 매핑에 따라 주문번호/운송장번호 매칭
     const handleCourierFileUpload = async (template: CourierTemplate, file: File) => {
-        if (!masterOrderFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
+        const activeCourierFile = fakeMasterOrderFile ?? masterOrderFile;
+        if (!activeCourierFile) { alert('원본 주문서를 먼저 업로드해주세요.'); return; }
         setCourierFiles(prev => ({ ...prev, [template.id]: file }));
         setCourierResults(prev => { const n = { ...prev }; delete n[template.id]; return n; });
         setCourierMatchedRows(prev => { const n = { ...prev }; delete n[template.id]; return n; });
@@ -1705,7 +1754,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             console.log(`[가구매송장] trackingMap: ${trackingMap.size}건`);
 
             // 원본 주문서 + 2차+ 배치 행에서 매칭
-            const masterData = await masterOrderFile.arrayBuffer();
+            const masterData = await activeCourierFile.arrayBuffer();
             const masterWb = XLSX.read(masterData, { type: 'array' });
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
@@ -3216,6 +3265,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </h3>
                         </div>
                         <div className="flex gap-1">
+                            <input ref={fakeMasterFileInputRef} type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleFakeMasterUpload(f); e.target.value = ''; } }} />
+                            <button onClick={() => fakeMasterFileInputRef.current?.click()} className={`p-1 transition-colors relative ${fakeMasterOrderFile ? 'text-violet-400' : 'text-zinc-600 hover:text-white'}`} title={fakeMasterOrderFile ? `가구매용 주문서: ${fakeMasterOrderFile.name}` : '가구매용 주문서 업로드'}>
+                                <DocumentArrowUpIcon className="w-3.5 h-3.5" />
+                                {fakeMasterOrderFile && <span className="absolute top-0 right-0 w-1.5 h-1.5 bg-violet-400 rounded-full" />}
+                            </button>
                             <button onClick={() => setShowFakeCourierSettings(!showFakeCourierSettings)} className={`p-1 transition-colors ${showFakeCourierSettings ? 'text-cyan-500' : 'text-zinc-600 hover:text-white'}`} title="가구매 택배 설정">
                                 <Cog6ToothIcon className="w-3.5 h-3.5" />
                             </button>
