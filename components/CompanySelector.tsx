@@ -3398,7 +3398,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     택배 양식을 먼저 추가해주세요
                                 </div>
                             )}
-                            {courierTemplates.map((tmpl: CourierTemplate) => {
+                            {[...courierTemplates].sort((a, b) => {
+                                const nameA = a.label ? `${a.name} (${a.label})` : a.name;
+                                const nameB = b.label ? `${b.name} (${b.label})` : b.name;
+                                const officeA = nameA.includes('사무실') ? 0 : nameA.includes('대행') ? 1 : 2;
+                                const officeB = nameB.includes('사무실') ? 0 : nameB.includes('대행') ? 1 : 2;
+                                return officeA - officeB;
+                            }).map((tmpl: CourierTemplate) => {
                                 const file = courierFiles[tmpl.id];
                                 const result = courierResults[tmpl.id];
                                 const matched = courierMatchedRows[tmpl.id];
