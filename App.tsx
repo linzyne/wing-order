@@ -261,7 +261,7 @@ const App: React.FC = () => {
                 <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} platformConfigs={platformConfigs!} onPlatformConfigsChange={savePlatformConfig} />
               </div>
               <div style={{ display: activeTab === 'sales' ? undefined : 'none' }}>
-                <SalesTracker isActive={activeTab === 'sales'} businessId={currentBusiness} refreshTrigger={salesRefreshTrigger} />
+                <SalesTracker key={currentBusiness} isActive={activeTab === 'sales'} businessId={currentBusiness} refreshTrigger={salesRefreshTrigger} />
               </div>
             </>
           )}

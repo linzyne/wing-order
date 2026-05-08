@@ -840,6 +840,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             <>
                                 {companySummaryBar}
                                 <div className="flex items-center gap-2 flex-wrap">
+                                    <div
+                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${isClosed ? 'opacity-30' : ''} ${companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
+                                        {...dragHandle.attributes}
+                                        {...dragHandle.listeners}
+                                    >
+                                        {companyName}
+                                    </div>
                                     <button
                                         onClick={onToggleClosed}
                                         title={isClosed ? '마감 해제' : '마감 처리'}
@@ -865,14 +872,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         </button>
                                     )}
                                     <div className={`flex items-center gap-2 flex-wrap ${isClosed ? 'opacity-30' : ''}`}>
-                                        <div
-                                            className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
-                                            {...dragHandle.attributes}
-                                            {...dragHandle.listeners}
-                                        >
-                                            {companyName}
-                                        </div>
-
                                         <div className="flex items-center bg-zinc-950 p-0.5 rounded-lg border border-zinc-800 gap-0.5">
                                             {(['order', 'deposit', 'invoice'] as const).map((step) => (
                                                 <button
