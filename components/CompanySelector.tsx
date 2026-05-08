@@ -2512,9 +2512,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     };
 
-    const handleDeleteTodayRecord = async () => {
+    const handleDeleteTodayRecord = async (companyOverride?: Set<string>) => {
         const today = new Date().toISOString().slice(0, 10);
-        const selectedCompanyNames = checkedCompanies;
+        const selectedCompanyNames = companyOverride ?? checkedCompanies;
         if (selectedCompanyNames.size === 0) { alert('삭제할 업체를 선택해주세요.'); return; }
         const names = Array.from(selectedCompanyNames).join(', ');
         if (!confirm(`오늘(${today}) [${names}] 기록을 삭제할까요?`)) return;
@@ -4080,7 +4080,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     fakeMismatch={fakeMismatch}
                                                     companyChecked={isChecked}
                                                     isRecorded={recordedCompanies.has(company)}
-                                                    onRecord={sIdx === 0 ? () => handleSaveToSalesHistory(new Set([company])) : undefined}
+                                                    onRecord={sIdx === 0 ? () => recordedCompanies.has(company) ? handleDeleteTodayRecord(new Set([company])) : handleSaveToSalesHistory(new Set([company])) : undefined}
                                                 />
                                             </React.Fragment>
                                         ) : null;
