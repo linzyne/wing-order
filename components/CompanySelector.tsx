@@ -3414,7 +3414,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <div key={tmpl.id} className={`space-y-1.5 p-2 rounded-xl border ${cs.border} bg-zinc-950/40`}>
                                         <button
                                             onClick={() => handleCourierDownload(tmpl)}
-                                            disabled={!masterOrderFile || fakeOrderAnalysis.inputNumbers.size === 0}
+                                            disabled={!(fakeMasterOrderFile || masterOrderFile) || fakeOrderAnalysis.inputNumbers.size === 0}
                                             className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed ${cs.bg} ${cs.border} ${cs.text} ${cs.hoverBg} ${cs.hoverBorder}`}
                                         >
                                             <ArrowDownTrayIcon className="w-3.5 h-3.5" />
