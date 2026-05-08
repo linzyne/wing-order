@@ -1989,7 +1989,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllSummaries(prev => ({ ...prev, [sessionId]: summaryExcel }));
         if (registeredProductNames) setAllRegisteredNames(prev => ({ ...prev, [sessionId]: registeredProductNames }));
         if (itemSummary) setAllItemSummaries(prev => ({ ...prev, [sessionId]: itemSummary }));
+        else if (orderRows.length === 0) setAllItemSummaries(prev => ({ ...prev, [sessionId]: {} }));
         if (orderItems) setAllOrderItems(prev => ({ ...prev, [sessionId]: orderItems }));
+        else if (orderRows.length === 0) setAllOrderItems(prev => ({ ...prev, [sessionId]: [] }));
         if (preConsolidationByGroup) setAllPreConsolidationByGroup(prev => ({ ...prev, [sessionId]: preConsolidationByGroup }));
     }, [addToast]);
 
