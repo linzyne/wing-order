@@ -213,6 +213,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // 전체 차수 합산 (useMemo 제거 - 캐싱 문제 원천 차단)
     const { merged: combinedSummary, sessionSummary: currentSessionSummary } = _mergeSummaries();
 
+    // 저장된 summary key를 현재 품목 설정의 orderFormName || displayName으로 변환
+    const resolveProductDisplayName = (key: string): string => {
+        const product = pricingConfig[companyName]?.products?.[key];
+        return product?.orderFormName || product?.displayName || key;
+    };
+
     // 합산 정산 텍스트
     const combinedDepositText = (() => {
         if (Object.keys(combinedSummary).length === 0) return '';
@@ -231,13 +237,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         entries
             .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
             .forEach(([name, stat]) => {
-                lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+                lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
             });
 
         // 현재 차수 추가분 표시
         if (currentSessionSummary && Object.keys(currentSessionSummary).length > 0) {
             const addedItems = Object.entries(currentSessionSummary)
-                .map(([key, stat]: [string, any]) => `${key} ${stat.count}개 ${stat.totalPrice.toLocaleString()}원`)
+                .map(([key, stat]: [string, any]) => `${resolveProductDisplayName(key)} ${stat.count}개 ${stat.totalPrice.toLocaleString()}원`)
                 .join(', ');
             lines.push('');
             lines.push(`(${roundNumber}차 추가 : ${addedItems})`);
@@ -266,7 +272,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         entries
             .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
             .forEach(([name, stat]) => {
-                lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+                lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
             });
         lines.push('');
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
@@ -285,7 +291,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const lines: string[] = [];
         entries.forEach(([name, stat], idx) => {
             let col1 = idx === 0 ? dateTitle : idx === 1 ? `총 ${totalCount}개` : '';
-            let line = `${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
+            let line = `${col1}\t${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
             if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
             lines.push(line);
         });
@@ -299,7 +305,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         let grandTotal = 0;
         const lines = [firstLine, `총주문수\t${totalCount}개`, ''];
         Object.entries(summary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })).forEach(([name, stat]) => {
-            lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+            lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
             grandTotal += stat.totalPrice;
         });
         lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${senderName})`);
@@ -314,7 +320,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const lines: string[] = [];
         entries.forEach(([name, stat], idx) => {
             let col1 = idx === 0 ? firstLineTitle : idx === 1 ? `총 ${totalCount}개` : '';
-            let line = `${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
+            let line = `${col1}\t${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
             if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
             lines.push(line);
         });
