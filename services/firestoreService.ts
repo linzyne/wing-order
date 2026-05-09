@@ -206,6 +206,16 @@ const getTodayDocId = () => new Date().toISOString().slice(0, 10);
 const getSessionsCollectionName = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'dailyWorkspaceSessions' : `dailyWorkspaceSessions_${businessId}`;
 
+export const loadSessionResults = async (businessId?: string): Promise<Record<string, SessionResultData> | null> => {
+  try {
+    const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists() ? (snapshot.data() as Record<string, SessionResultData>) : null;
+  } catch {
+    return null;
+  }
+};
+
 export const subscribeSessionResults = (
   callback: (results: Record<string, SessionResultData> | null) => void,
   businessId?: string
@@ -319,6 +329,16 @@ export const subscribeManualOrders = (
     console.error('[Firestore] ManualOrders 구독 오류:', error);
     callback([]);
   });
+};
+
+export const loadManualOrders = async (businessId?: string): Promise<any[]> => {
+  try {
+    const docRef = doc(db, 'config', getManualOrdersDocId(businessId));
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists() ? (snapshot.data().orders || []) : [];
+  } catch {
+    return [];
+  }
 };
 
 export const saveManualOrders = async (orders: any[], businessId?: string): Promise<void> => {
@@ -488,4 +508,24 @@ export const saveDynamicBusinesses = async (
     businesses,
     updatedAt: Timestamp.now(),
   });
+};
+
+export const loadDynamicBusinesses = async (): Promise<DynamicBusinessEntry[]> => {
+  try {
+    const docRef = doc(db, 'config', 'dynamicBusinesses');
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists() ? ((snapshot.data().businesses || []) as DynamicBusinessEntry[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+export const loadTodos = async (businessId?: string): Promise<TodoItem[] | null> => {
+  try {
+    const docRef = doc(db, 'config', getTodosDocId(businessId));
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists() ? (snapshot.data().todos as TodoItem[]) : null;
+  } catch {
+    return null;
+  }
 };

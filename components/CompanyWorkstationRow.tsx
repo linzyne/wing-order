@@ -11,10 +11,8 @@ import {
 import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder, PlatformConfigs } from '../types';
 import { DragHandleContext } from './DragHandleContext';
 import { getBusinessInfo } from '../types';
-import { useDailyWorkspace, useSessionResults } from '../hooks/useFirestore';
-import { saveSessionResult, deleteSessionResult } from '../services/firestoreService';
 import { deleteField } from 'firebase/firestore';
-import type { SessionResultData } from '../services/firestoreService';
+import type { SessionResultData, DailyWorkspaceData } from '../services/firestoreService';
 
 declare var XLSX: any;
 
@@ -94,6 +92,12 @@ interface CompanyWorkstationRowProps {
     companyChecked?: boolean;
     isRecorded?: boolean;
     onRecord?: () => void;
+    workspace: DailyWorkspaceData | null;
+    updateField: (field: string, value: any) => Promise<void>;
+    updateSessionField: (dotPath: string, value: any) => Promise<void>;
+    sessionResults: Record<string, SessionResultData> | null;
+    onSaveSessionResult: (sessionId: string, data: SessionResultData) => void;
+    onDeleteSessionResult: (sessionId: string) => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -113,6 +117,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     isRecorded = false,
     isClosed = false, onToggleClosed,
     onRecord,
+    workspace, updateField, updateSessionField, sessionResults, onSaveSessionResult, onDeleteSessionResult,
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -129,9 +134,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const newKeywordRef = useRef('');
     const pricingConfigRef = useRef(pricingConfig);
     pricingConfigRef.current = pricingConfig;
-    
-    const { workspace, updateField, updateSessionField } = useDailyWorkspace(businessId);
-    const sessionResults = useSessionResults(businessId);
 
     // 수동 차감/추가 내역 상태
     const [adjAmount, setAdjAmount] = useState('');
@@ -586,7 +588,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const resultStr = JSON.stringify(resultData);
             if (resultStr === lastSavedResultRef.current) return;
             lastSavedResultRef.current = resultStr;
-            saveSessionResult(sessionId, resultData, businessId);
+            onSaveSessionResult(sessionId, resultData);
             updateField('sessionSummary', { ...(workspace?.sessionSummary || {}), [sessionId]: { orderCount: resultData.orderCount } });
         }, 500);
         return () => { if (saveResultDebounceRef.current) clearTimeout(saveResultDebounceRef.current); };
@@ -718,7 +720,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // Firestore 구독 업데이트 전까지 syncedData 억제
         suppressSyncRef.current = true;
         // Firestore 세션 결과도 함께 제거
-        deleteSessionResult(sessionId, businessId);
+        onDeleteSessionResult(sessionId);
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
         if (currentSummary[sessionId]) {
             delete currentSummary[sessionId];
@@ -728,7 +730,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const resetSyncedData = () => {
         suppressSyncRef.current = true;
-        deleteSessionResult(sessionId, businessId);
+        onDeleteSessionResult(sessionId);
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
         delete currentSummary[sessionId];
         updateField('sessionSummary', currentSummary);

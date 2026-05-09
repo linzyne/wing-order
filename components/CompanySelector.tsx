@@ -8,7 +8,7 @@ import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
-import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadQuickRecipients, saveQuickRecipients, clearSessionResults, type QuickRecipientData } from '../services/firestoreService';
+import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import {
     DndContext,
     closestCenter,
@@ -470,7 +470,27 @@ const CourierTemplateManager: React.FC<{
 
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false, isCurrent = false, onSaved }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
-    const { workspace, updateField, isReady } = useDailyWorkspace(businessId);
+    const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
+    const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
+
+    useEffect(() => {
+        setSessionResults(null);
+        loadSessionResults(businessId).then(setSessionResults);
+    }, [businessId]);
+
+    const handleSaveSessionResult = useCallback(async (sessionId: string, data: SessionResultData) => {
+        setSessionResults(prev => ({ ...(prev || {}), [sessionId]: data }));
+        await saveSessionResult(sessionId, data, businessId);
+    }, [businessId]);
+
+    const handleDeleteSessionResult = useCallback(async (sessionId: string) => {
+        setSessionResults(prev => {
+            if (!prev) return prev;
+            const { [sessionId]: _, ...rest } = prev;
+            return rest;
+        });
+        await deleteSessionResult(sessionId, businessId);
+    }, [businessId]);
     const { courierTemplates, saveTemplates: saveCourierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates(businessId);
 
     // 새로고침 시 워크스테이션 데이터 초기화 (마운트 = 새로고침에서만 발생, 사업자 전환 시에는 display:none으로 유지)
@@ -520,6 +540,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 워크스테이션 수동 초기화 함수
     const handleResetWorkstations = useCallback(() => {
         if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
+        setSessionResults(null);
         Promise.all([
             clearSessionResults(businessId),
             updateField('sessionSummary', {}),
@@ -708,22 +729,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, [businessId]);
 
-    // 수동발주 Firestore 영구 저장 - 구독
+    // 수동발주 초기 로드 (getDoc 1회)
     useEffect(() => {
-        const unsubscribe = subscribeManualOrders((orders) => {
+        loadManualOrders(businessId).then(orders => {
             const str = JSON.stringify(orders);
-            if (str !== lastWrittenManualOrdersRef.current) {
-                const typedOrders = orders as ManualOrder[];
-                setManualOrders(typedOrders);
-                setSelectedManualOrderIds(prev => {
-                    const next = new Set(prev);
-                    typedOrders.forEach(o => { if (!prev.has(o.id)) next.add(o.id); });
-                    return next;
-                });
-                lastWrittenManualOrdersRef.current = str;
-            }
-        }, businessId);
-        return unsubscribe;
+            lastWrittenManualOrdersRef.current = str;
+            const typedOrders = orders as ManualOrder[];
+            setManualOrders(typedOrders);
+            setSelectedManualOrderIds(new Set(typedOrders.map(o => o.id)));
+        });
     }, [businessId]);
 
     // 수동발주 변경 → Firestore에 저장
@@ -4164,6 +4178,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     companyChecked={isChecked}
                                                     isRecorded={recordedCompanies.has(company)}
                                                     onRecord={sIdx === 0 ? () => recordedCompanies.has(company) ? handleDeleteTodayRecord(new Set([company])) : handleSaveToSalesHistory(new Set([company])) : undefined}
+                                                    workspace={workspace}
+                                                    updateField={updateField}
+                                                    updateSessionField={updateWorkspaceSessionField}
+                                                    sessionResults={sessionResults}
+                                                    onSaveSessionResult={handleSaveSessionResult}
+                                                    onDeleteSessionResult={handleDeleteSessionResult}
                                                 />
                                             </React.Fragment>
                                         ) : null;

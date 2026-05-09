@@ -3,7 +3,7 @@ import { Timestamp } from 'firebase/firestore';
 import { BUSINESS_INFO, registerDynamicBusiness, unregisterDynamicBusiness } from '../types';
 import type { HardcodedBusinessId } from '../types';
 import {
-  subscribeDynamicBusinesses,
+  loadDynamicBusinesses,
   saveDynamicBusinesses,
   savePricingConfigToFirestore,
 } from '../services/firestoreService';
@@ -44,10 +44,8 @@ export const useBusinessList = () => {
   const dynamicBusinessesRef = useRef<DynamicBusinessEntry[]>([]);
 
   useEffect(() => {
-    const unsubscribe = subscribeDynamicBusinesses((businesses) => {
-      // 런타임 레지스트리 갱신: ref를 통해 이전 등록 해제 (stale closure 방지)
+    loadDynamicBusinesses().then(businesses => {
       registeredIdsRef.current.forEach(id => unregisterDynamicBusiness(id));
-      // 새로 등록
       businesses.forEach((b: DynamicBusinessEntry) => registerDynamicBusiness(b.id, {
         displayName: b.displayName,
         shortName: b.shortName,
@@ -63,8 +61,6 @@ export const useBusinessList = () => {
       setIsLoading(false);
     });
     return () => {
-      unsubscribe();
-      // cleanup: ref 기반으로 레지스트리에서 해제
       registeredIdsRef.current.forEach(id => unregisterDynamicBusiness(id));
       registeredIdsRef.current = [];
     };
@@ -89,24 +85,29 @@ export const useBusinessList = () => {
     entry: Omit<DynamicBusinessEntry, 'createdAt'>,
     initialConfig?: PricingConfig
   ) => {
-    const newEntry: DynamicBusinessEntry = {
-      ...entry,
-      createdAt: Timestamp.now(),
-    };
-    // ref를 통해 최신 목록 사용 (경쟁 조건 방지)
+    const newEntry: DynamicBusinessEntry = { ...entry, createdAt: Timestamp.now() };
     const updated = [...dynamicBusinessesRef.current, newEntry];
     await saveDynamicBusinesses(updated);
-
-    // 초기 PricingConfig가 있으면 Firestore에 저장
+    registerDynamicBusiness(newEntry.id, {
+      displayName: newEntry.displayName, shortName: newEntry.shortName,
+      senderName: newEntry.senderName, phone: newEntry.phone,
+      address: newEntry.address, themeColor: newEntry.themeColor, buttonColor: newEntry.buttonColor,
+    });
+    registeredIdsRef.current = [...registeredIdsRef.current, newEntry.id];
+    dynamicBusinessesRef.current = updated;
+    setDynamicBusinesses(updated);
     if (initialConfig && Object.keys(initialConfig).length > 0) {
       await savePricingConfigToFirestore(initialConfig, entry.id);
     }
   }, []);
 
   const removeBusiness = useCallback(async (businessId: string) => {
-    // ref를 통해 최신 목록 사용 (경쟁 조건 방지)
     const updated = dynamicBusinessesRef.current.filter(b => b.id !== businessId);
     await saveDynamicBusinesses(updated);
+    unregisterDynamicBusiness(businessId);
+    registeredIdsRef.current = registeredIdsRef.current.filter(id => id !== businessId);
+    dynamicBusinessesRef.current = updated;
+    setDynamicBusinesses(updated);
   }, []);
 
   return {

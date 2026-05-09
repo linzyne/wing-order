@@ -1,21 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { FieldValue } from 'firebase/firestore';
 import type { PricingConfig, PlatformConfigs, TodoItem, CourierTemplate } from '../types';
 import {
   loadPricingConfig,
   savePricingConfigToFirestore,
-  subscribeDailyWorkspace,
+  getDailyWorkspace,
   updateDailyWorkspaceField,
   updateDailyWorkspaceSessionField,
   loadPlatformConfigs,
   savePlatformConfigs,
-  subscribeTodos,
+  loadTodos,
   saveTodos as saveTodosToFirestore,
   loadCourierTemplates,
   saveCourierTemplates as saveCourierTemplatesToFirestore,
   saveFakeCourierSettings as saveFakeCourierSettingsToFirestore,
-  subscribeSessionResults,
   type DailyWorkspaceData,
-  type SessionResultData,
   type FakeCourierSettings,
   DEFAULT_FAKE_COURIER_SETTINGS,
 } from '../services/firestoreService';
@@ -125,145 +124,82 @@ export const useCourierTemplates = (businessId?: string) => {
 export const useDailyWorkspace = (businessId?: string) => {
   const [workspace, setWorkspace] = useState<DailyWorkspaceData | null>(null);
   const [isReady, setIsReady] = useState(false);
-  // businessId를 ref로 추적하여 stale subscription 콜백 방지
   const currentBusinessIdRef = useRef(businessId);
 
   useEffect(() => {
-    // businessId 변경 시 이전 데이터 즉시 클리어 (교차 오염 방지)
     currentBusinessIdRef.current = businessId;
     setWorkspace(null);
     setIsReady(false);
-    const unsubscribe = subscribeDailyWorkspace((data) => {
-      // businessId가 변경된 후 도착한 stale snapshot 무시
+    getDailyWorkspace(businessId).then(data => {
       if (currentBusinessIdRef.current !== businessId) return;
       setWorkspace(data);
       setIsReady(true);
-    }, businessId);
-    return unsubscribe;
+    });
   }, [businessId]);
 
   const updateField = useCallback(async (field: string, value: any) => {
+    setWorkspace(prev => prev ? { ...prev, [field]: value } : { [field]: value } as DailyWorkspaceData);
     await updateDailyWorkspaceField(field, value, businessId);
   }, [businessId]);
 
   const updateSessionField = useCallback(async (dotPath: string, value: any) => {
+    const dotIdx = dotPath.indexOf('.');
+    if (dotIdx !== -1) {
+      const topKey = dotPath.slice(0, dotIdx);
+      const subKey = dotPath.slice(dotIdx + 1);
+      setWorkspace(prev => {
+        if (!prev) return prev;
+        const top: Record<string, any> = { ...((prev as any)[topKey] || {}) };
+        if (value instanceof FieldValue) {
+          delete top[subKey];
+        } else {
+          top[subKey] = value;
+        }
+        return { ...prev, [topKey]: top };
+      });
+    }
     await updateDailyWorkspaceSessionField(dotPath, value, businessId);
   }, [businessId]);
 
-  return { workspace, updateField, updateSessionField, isReady };
-};
-
-// ===== Session Results Hook (별도 문서 구독) =====
-export const useSessionResults = (businessId?: string) => {
-  const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
-
-  useEffect(() => {
-    const unsubscribe = subscribeSessionResults((results) => {
-      setSessionResults(results);
-    }, businessId);
-    return unsubscribe;
-  }, [businessId]);
-
-  return sessionResults;
+  return { workspace, setWorkspace, updateField, updateSessionField, isReady };
 };
 
 // ===== Todos Hook =====
 export const useTodos = (businessId?: string) => {
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const pendingSaves = useRef(0);
-  const saveGraceUntil = useRef(0);
 
   // localStorage에서 기존 데이터 마이그레이션 (한 번만)
   useEffect(() => {
-    const migrateFromLocalStorage = async () => {
-      const saved = localStorage.getItem('todos');
-      if (saved) {
-        try {
-          const localTodos = JSON.parse(saved);
-          if (Array.isArray(localTodos) && localTodos.length > 0) {
-            console.log('[Todos] localStorage → Firestore 마이그레이션:', localTodos.length, '개');
-            await saveTodosToFirestore(localTodos, businessId);
-            localStorage.removeItem('todos'); // 마이그레이션 후 삭제
-          }
-        } catch (error) {
-          console.error('[Todos] 마이그레이션 실패:', error);
+    const saved = localStorage.getItem('todos');
+    if (saved) {
+      try {
+        const localTodos = JSON.parse(saved);
+        if (Array.isArray(localTodos) && localTodos.length > 0) {
+          saveTodosToFirestore(localTodos, businessId);
+          localStorage.removeItem('todos');
         }
-      }
-    };
-    migrateFromLocalStorage();
+      } catch {}
+    }
   }, [businessId]);
 
   useEffect(() => {
-    const unsubscribe = subscribeTodos((firestoreTodos) => {
-      if (pendingSaves.current > 0 || Date.now() < saveGraceUntil.current) return;
-
-      if (firestoreTodos) {
-        setTodos(firestoreTodos);
-      } else {
-        // 문서가 없으면 빈 배열로 초기화
-        setTodos([]);
-      }
+    setIsLoading(true);
+    loadTodos(businessId).then(firestoreTodos => {
+      setTodos(firestoreTodos || []);
       setIsLoading(false);
-    }, businessId);
-
-    return unsubscribe;
+    });
   }, [businessId]);
 
   const saveTodos = useCallback(async (newTodos: TodoItem[]) => {
-    pendingSaves.current++;
     setTodos(newTodos);
     try {
       await saveTodosToFirestore(newTodos, businessId);
-      saveGraceUntil.current = Date.now() + 1000;
     } catch (error) {
       console.error('[Todos] Firestore 저장 실패:', error);
-    } finally {
-      pendingSaves.current--;
     }
   }, [businessId]);
 
   return { todos, saveTodos, isLoading };
 };
 
-// ===== All Business Workspaces Hook (하드코딩 + 동적 사업자 동시 구독) =====
-const HARDCODED_BUSINESS_IDS: string[] = ['안군농원', '조에'];
-
-export const useAllBusinessWorkspaces = (dynamicBusinessIds: string[] = []) => {
-  const [workspaces, setWorkspaces] = useState<Record<string, DailyWorkspaceData | null>>({
-    '안군농원': null,
-    '조에': null,
-  });
-  const [isReady, setIsReady] = useState(false);
-
-  // 동적 ID를 JSON으로 직렬화하여 의존성 안정화
-  const dynamicIdsKey = JSON.stringify(dynamicBusinessIds);
-
-  useEffect(() => {
-    const allIds = [...HARDCODED_BUSINESS_IDS, ...dynamicBusinessIds];
-    setIsReady(false);
-
-    // 삭제된 사업자의 stale 키 정리: 현재 구독 대상에 없는 키 제거
-    setWorkspaces((prev) => {
-      const cleaned: Record<string, DailyWorkspaceData | null> = {};
-      for (const id of allIds) cleaned[id] = prev[id] ?? null;
-      return cleaned;
-    });
-
-    const allIdsSet = new Set(allIds);
-    const receivedCount = new Set<string>();
-    const unsubscribes = allIds.map((bid) =>
-      subscribeDailyWorkspace((data) => {
-        // 이미 구독 해제된(삭제된) 사업자의 stale 콜백 무시
-        if (!allIdsSet.has(bid)) return;
-        setWorkspaces((prev) => ({ ...prev, [bid]: data }));
-        receivedCount.add(bid);
-        if (receivedCount.size >= allIds.length) setIsReady(true);
-      }, bid)
-    );
-
-    return () => unsubscribes.forEach((unsub) => unsub());
-  }, [dynamicIdsKey]);
-
-  return { workspaces, isReady };
-};
