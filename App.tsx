@@ -30,6 +30,13 @@ const App: React.FC = () => {
   });
   const [showAddModal, setShowAddModal] = useState(false);
   const [salesRefreshTrigger, setSalesRefreshTrigger] = useState<{ date: string; n: number } | undefined>();
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+
+  useEffect(() => {
+    const handler = () => setQuotaExceeded(true);
+    window.addEventListener('firestore-quota-exceeded', handler);
+    return () => window.removeEventListener('firestore-quota-exceeded', handler);
+  }, []);
 
   const { businesses: allBusinesses, dynamicBusinesses, isLoading: businessListLoading, addBusiness, removeBusiness } = useBusinessList();
 
@@ -299,6 +306,28 @@ const App: React.FC = () => {
         onAdd={addBusiness}
         existingIds={allBusinesses.map(b => b.id)}
       />
+
+      {/* Firestore 한도 초과 팝업 */}
+      {quotaExceeded && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="bg-zinc-900 border border-red-500/60 rounded-2xl p-8 max-w-sm w-full mx-4 shadow-2xl text-center">
+            <div className="text-4xl mb-4">🚫</div>
+            <h2 className="text-red-400 font-black text-lg mb-2">Firestore 일일 한도 초과</h2>
+            <p className="text-zinc-300 text-sm leading-relaxed mb-1">
+              오늘 사용 가능한 Firestore 읽기/쓰기 횟수를 모두 소진했어요.
+            </p>
+            <p className="text-zinc-500 text-xs leading-relaxed mb-6">
+              자정(00:00)이 지나면 자동으로 초기화됩니다.
+            </p>
+            <button
+              onClick={() => setQuotaExceeded(false)}
+              className="px-6 py-2 bg-zinc-700 hover:bg-zinc-600 rounded-xl text-zinc-200 text-sm font-bold transition-colors"
+            >
+              닫기
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

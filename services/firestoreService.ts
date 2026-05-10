@@ -7,6 +7,16 @@ import {
 } from 'firebase/firestore';
 import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate } from '../types';
 
+// ===== Firestore 한도 초과 감지 =====
+
+const isQuotaError = (e: any): boolean => {
+  const msg = String(e?.code || e?.message || '');
+  return msg.includes('quota-exceeded') || msg.includes('RESOURCE_EXHAUSTED');
+};
+
+export const notifyQuotaExceeded = () =>
+  window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+
 // ===== 사업자별 Firestore 경로 헬퍼 =====
 // 안군농원(또는 미지정)이면 기존 경로 그대로, 그 외 사업자는 접미사 추가
 const getConfigDocId = (businessId?: string): string =>
@@ -63,7 +73,8 @@ export const loadPricingConfig = async (
     const snapshot = await getDoc(docRef);
     if (snapshot.exists()) return { config: snapshot.data().data as PricingConfig, exists: true };
     return { config: null, exists: false };
-  } catch {
+  } catch (e) {
+    if (isQuotaError(e)) notifyQuotaExceeded();
     return { config: null, exists: false };
   }
 };
@@ -211,7 +222,8 @@ export const loadSessionResults = async (businessId?: string): Promise<Record<st
     const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data() as Record<string, SessionResultData>) : null;
-  } catch {
+  } catch (e) {
+    if (isQuotaError(e)) notifyQuotaExceeded();
     return null;
   }
 };
@@ -306,7 +318,8 @@ export const loadQuickRecipients = async (businessId?: string): Promise<QuickRec
     const docRef = doc(db, 'config', getQuickRecipientsDocId(businessId));
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data().recipients || []) : [];
-  } catch {
+  } catch (e) {
+    if (isQuotaError(e)) notifyQuotaExceeded();
     return [];
   }
 };
@@ -336,7 +349,8 @@ export const loadManualOrders = async (businessId?: string): Promise<any[]> => {
     const docRef = doc(db, 'config', getManualOrdersDocId(businessId));
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data().orders || []) : [];
-  } catch {
+  } catch (e) {
+    if (isQuotaError(e)) notifyQuotaExceeded();
     return [];
   }
 };
@@ -417,7 +431,8 @@ export const loadPlatformConfigs = async (
     const docRef = doc(db, 'config', getPlatformConfigsDocId(businessId));
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data().data as PlatformConfigs) : null;
-  } catch {
+  } catch (e) {
+    if (isQuotaError(e)) notifyQuotaExceeded();
     return null;
   }
 };
@@ -511,7 +526,8 @@ export const loadDynamicBusinesses = async (): Promise<DynamicBusinessEntry[]> =
     const docRef = doc(db, 'config', 'dynamicBusinesses');
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? ((snapshot.data().businesses || []) as DynamicBusinessEntry[]) : [];
-  } catch {
+  } catch (e) {
+    if (isQuotaError(e)) notifyQuotaExceeded();
     return [];
   }
 };
@@ -521,7 +537,8 @@ export const loadTodos = async (businessId?: string): Promise<TodoItem[] | null>
     const docRef = doc(db, 'config', getTodosDocId(businessId));
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data().todos as TodoItem[]) : null;
-  } catch {
+  } catch (e) {
+    if (isQuotaError(e)) notifyQuotaExceeded();
     return null;
   }
 };
