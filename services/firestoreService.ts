@@ -400,16 +400,12 @@ export const loadCourierTemplates = async (
 
 export const saveCourierTemplates = async (templates: CourierTemplate[], businessId?: string): Promise<void> => {
   const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
-  const snapshot = await getDoc(docRef);
-  const existing = snapshot.exists() ? snapshot.data() : {};
-  await setDoc(docRef, { ...existing, templates, updatedAt: Timestamp.now() });
+  await setDoc(docRef, { templates, updatedAt: Timestamp.now() }, { merge: true });
 };
 
 export const saveFakeCourierSettings = async (settings: FakeCourierSettings, businessId?: string): Promise<void> => {
   const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
-  const snapshot = await getDoc(docRef);
-  const existing = snapshot.exists() ? snapshot.data() : {};
-  await setDoc(docRef, { ...existing, fakeCourierSettings: settings, updatedAt: Timestamp.now() });
+  await setDoc(docRef, { fakeCourierSettings: settings, updatedAt: Timestamp.now() }, { merge: true });
 };
 
 // ===== Platform Configs (멀티 플랫폼 설정) =====
