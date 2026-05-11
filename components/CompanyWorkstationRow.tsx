@@ -836,7 +836,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     return (
         <>
             <tr id={`session-${sessionId}`} className={`transition-all duration-300 border-none ${isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10'}`}>
-                <td className={`px-6 min-w-[360px] ${isFirstSession ? 'py-2' : 'py-1'}`}>
+                <td className={`px-6 min-w-[360px] ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
                     <div className="flex flex-col gap-2">
                         {isFirstSession ? (
                             <>
@@ -1380,7 +1380,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className={`px-3 ${isFirstSession ? 'py-2' : 'py-1'}`}>
+                <td className={`px-3 ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
                     <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                         {!mergeResults ? (
                             <div className="flex flex-col items-center gap-2">
