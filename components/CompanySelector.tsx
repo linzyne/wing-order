@@ -1934,6 +1934,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setSelectedSessionIds(prev => { const next = new Set(prev); next.delete(sessionId); return next; });
     };
 
+    const handleDeleteBatchRound = (round: number) => {
+        if (!confirm(`${round}차 주문서를 삭제하시겠습니까?\n워크스테이션의 ${round}차 발주서도 함께 사라집니다.`)) return;
+        const sessionIds = Object.keys(batchFiles).filter(id => id.match(new RegExp(`-batch-${round}-`)));
+        setBatchFiles(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
+        setBatchExpectedCounts(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
+        setBatchMasterRows(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
+        setBatchPlatforms(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
+        setCompanySessions(prev => {
+            const n = { ...prev };
+            for (const company of Object.keys(n)) n[company] = n[company].filter(s => !sessionIds.includes(s.id));
+            return n;
+        });
+        setTotalsMap(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
+        setExcludedCountsMap(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
+        setAllExcludedDetails(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
+        setSelectedSessionIds(prev => { const next = new Set(prev); sessionIds.forEach(id => next.delete(id)); return next; });
+    };
+
     const handleVendorFileChange = (companyName: string, files: File[]) => {
         setVendorFiles(prev => {
             const newState = { ...prev };
@@ -3255,9 +3273,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 return rounds.length > 0 ? (
                                     <div className="px-2 pt-1.5 pb-0.5 flex flex-col gap-0.5">
                                         {rounds.map(([round, fileName]) => (
-                                            <div key={round} className="flex items-center gap-1.5">
+                                            <div key={round} className="flex items-center gap-1.5 group/round">
                                                 <span className="text-rose-400 font-black text-[9px] shrink-0">{round}차</span>
-                                                <span className="text-zinc-500 text-[9px] truncate">{fileName}</span>
+                                                <span className="text-zinc-500 text-[9px] truncate flex-1">{fileName}</span>
+                                                <button onClick={() => handleDeleteBatchRound(round)} className="shrink-0 opacity-0 group-hover/round:opacity-100 text-zinc-600 hover:text-red-400 transition-all text-[9px] leading-none px-0.5" title={`${round}차 삭제`}>✕</button>
                                             </div>
                                         ))}
                                     </div>
