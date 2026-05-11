@@ -237,7 +237,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lines.push(`총주문수\t${totalCount}개`);
         lines.push('');
         entries
-            .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+            .sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true }))
             .forEach(([name, stat]) => {
                 lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
             });
@@ -272,7 +272,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lines.push(`총주문수\t${totalCount}개`);
         lines.push('');
         entries
-            .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+            .sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true }))
             .forEach(([name, stat]) => {
                 lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
             });
@@ -287,7 +287,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const today = new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
-        const entries = Object.entries(combinedSummary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })) as [string, { count: number; totalPrice: number }][];
+        const entries = Object.entries(combinedSummary).sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true })) as [string, { count: number; totalPrice: number }][];
         const totalCount = entries.reduce((acc, [, s]) => acc + s.count, 0);
         const grandTotal = entries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
         const lines: string[] = [];
@@ -306,7 +306,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const totalCount = Object.values(summary).reduce((a, b) => a + b.count, 0);
         let grandTotal = 0;
         const lines = [firstLine, `총주문수\t${totalCount}개`, ''];
-        Object.entries(summary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true })).forEach(([name, stat]) => {
+        Object.entries(summary).sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true })).forEach(([name, stat]) => {
             lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
             grandTotal += stat.totalPrice;
         });
@@ -315,7 +315,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const buildDepositExcelFromSummary = (summary: Record<string, { count: number; totalPrice: number }>, originalExcel: string | null | undefined): string => {
-        const entries = Object.entries(summary).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
+        const entries = Object.entries(summary).sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true }));
         const totalCount = entries.reduce((a, [, s]) => a + s.count, 0);
         const grandTotal = entries.reduce((a, [, s]) => a + s.totalPrice, 0);
         const firstLineTitle = originalExcel?.split('\t')[0] || '';
