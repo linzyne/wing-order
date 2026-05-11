@@ -1034,7 +1034,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         )}
                                     </div>
                                 )}
-                                {isFirstSession && isLastSession ? (
+                                {isFirstSession ? (
                                     <div className="flex items-center justify-center gap-4">
                                         <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
@@ -1042,10 +1042,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-2 w-full">
-                                        {!isFirstSession && (localResult as any).consolidationLog?.length > 0 && (
+                                        {(localResult as any).consolidationLog?.length > 0 && (
                                             <button onClick={() => setShowConsolidationLog(v => !v)} className="text-blue-400 text-[9px] font-black hover:text-blue-300 whitespace-nowrap">자{(localResult as any).consolidationLog.length}</button>
                                         )}
-                                        {!isFirstSession && sizeMismatchItems.length > 0 && (
+                                        {sizeMismatchItems.length > 0 && (
                                             <button onClick={() => setShowSizeMismatch(v => !v)} className="text-red-400 text-[9px] font-black hover:text-red-300 whitespace-nowrap">발{sizeMismatchItems.length}</button>
                                         )}
                                         <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
@@ -1055,9 +1055,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </button>
                                         )}
                                         <div className="ml-auto flex items-center gap-2">
-                                            {!isFirstSession && <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>}
-                                            {!isFirstSession && <div className="h-5 w-px bg-zinc-700" />}
-                                            <div className="font-black text-indigo-400 text-base">{isFirstSession ? '' : '+'}{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
+                                            <div className="h-5 w-px bg-zinc-700" />
+                                            <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                             <div className="h-6 w-px bg-zinc-800" />
                                             <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         </div>
