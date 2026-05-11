@@ -941,7 +941,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     )}
                                 </div>
 
-                                <div className={`flex flex-wrap gap-1 items-center mb-3 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
+                                <div className={`flex flex-wrap gap-1 items-center ${!isLastSession && localResult ? 'mb-1' : 'mb-3'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                                     {keywords.map(kw => (
                                         <span key={kw} className="text-[9px] bg-zinc-900/80 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-800 font-bold tracking-tight group/kw flex items-center gap-1">
                                             {kw}
@@ -963,6 +963,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <button onClick={() => setIsAddingKeyword(true)} className="text-[9px] bg-zinc-900/50 text-zinc-600 hover:text-pink-400 px-1.5 py-0.5 rounded border border-dashed border-zinc-800 hover:border-pink-500/30 font-bold transition-colors">+</button>
                                     )}
                                 </div>
+                                {!isLastSession && localResult && (
+                                    <div className={`flex items-center gap-3 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
+                                        <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                        <div className="h-5 w-px bg-zinc-800" />
+                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                    </div>
+                                )}
                             </>
                         ) : (
                             <div className={`pl-4 border-l-2 border-zinc-800 py-0.5 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
@@ -1010,10 +1017,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-0.5'}`} style={isFirstSession ? { height: '1px' } : undefined}>
-                    <div className={`flex flex-col items-center h-full ${isFirstSession ? 'gap-2' : 'gap-1'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
+                <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
+                    <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                         {localResult ? (
-                            <div className="flex flex-col items-center gap-1 animate-fade-in w-full h-full">
+                            <div className="flex flex-col items-center gap-1 animate-fade-in w-full">
                                 {isFirstSession && (
                                     <textarea
                                         value={sessionMemo}
@@ -1034,13 +1041,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         )}
                                     </div>
                                 )}
-                                {isFirstSession ? (
-                                    <div className="flex items-center justify-center gap-4 mt-auto">
+                                {isFirstSession && isLastSession ? (
+                                    <div className="flex items-center justify-center gap-4">
                                         <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
-                                ) : (
+                                ) : !isFirstSession ? (
                                     <div className="flex items-center gap-2 w-full">
                                         {(localResult as any).consolidationLog?.length > 0 && (
                                             <button onClick={() => setShowConsolidationLog(v => !v)} className="text-blue-400 text-[9px] font-black hover:text-blue-300 whitespace-nowrap">자{(localResult as any).consolidationLog.length}</button>
@@ -1062,7 +1069,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         </div>
                                     </div>
-                                )}
+                                ) : null}
                                 {showConsolidationLog && (localResult as any).consolidationLog?.length > 0 && (
                                     <div className="bg-blue-500/10 border border-blue-500/40 rounded-lg px-2.5 py-1.5 w-full animate-fade-in">
                                         <div className="space-y-0.5">
