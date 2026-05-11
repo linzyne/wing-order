@@ -941,7 +941,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     )}
                                 </div>
 
-                                <div className={`flex flex-wrap gap-1 items-center ${!isLastSession && localResult ? 'mb-1' : 'mb-3'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
+                                <div className={`flex flex-wrap gap-1 items-center mb-3 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                                     {keywords.map(kw => (
                                         <span key={kw} className="text-[9px] bg-zinc-900/80 text-zinc-500 px-1.5 py-0.5 rounded border border-zinc-800 font-bold tracking-tight group/kw flex items-center gap-1">
                                             {kw}
@@ -963,13 +963,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <button onClick={() => setIsAddingKeyword(true)} className="text-[9px] bg-zinc-900/50 text-zinc-600 hover:text-pink-400 px-1.5 py-0.5 rounded border border-dashed border-zinc-800 hover:border-pink-500/30 font-bold transition-colors">+</button>
                                     )}
                                 </div>
-                                {!isLastSession && localResult && (
-                                    <div className={`flex items-center gap-3 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
-                                        <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
-                                        <div className="h-5 w-px bg-zinc-800" />
-                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
-                                    </div>
-                                )}
                             </>
                         ) : (
                             <div className={`pl-4 border-l-2 border-zinc-800 py-0.5 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
@@ -1047,12 +1040,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="h-6 w-px bg-zinc-800" />
                                         <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
-                                ) : !isFirstSession ? (
+                                ) : (
                                     <div className="flex items-center gap-2 w-full">
-                                        {(localResult as any).consolidationLog?.length > 0 && (
+                                        {!isFirstSession && (localResult as any).consolidationLog?.length > 0 && (
                                             <button onClick={() => setShowConsolidationLog(v => !v)} className="text-blue-400 text-[9px] font-black hover:text-blue-300 whitespace-nowrap">자{(localResult as any).consolidationLog.length}</button>
                                         )}
-                                        {sizeMismatchItems.length > 0 && (
+                                        {!isFirstSession && sizeMismatchItems.length > 0 && (
                                             <button onClick={() => setShowSizeMismatch(v => !v)} className="text-red-400 text-[9px] font-black hover:text-red-300 whitespace-nowrap">발{sizeMismatchItems.length}</button>
                                         )}
                                         <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
@@ -1062,14 +1055,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </button>
                                         )}
                                         <div className="ml-auto flex items-center gap-2">
-                                            <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
-                                            <div className="h-5 w-px bg-zinc-700" />
-                                            <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            {!isFirstSession && <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>}
+                                            {!isFirstSession && <div className="h-5 w-px bg-zinc-700" />}
+                                            <div className="font-black text-indigo-400 text-base">{isFirstSession ? '' : '+'}{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                             <div className="h-6 w-px bg-zinc-800" />
                                             <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         </div>
                                     </div>
-                                ) : null}
+                                )}
                                 {showConsolidationLog && (localResult as any).consolidationLog?.length > 0 && (
                                     <div className="bg-blue-500/10 border border-blue-500/40 rounded-lg px-2.5 py-1.5 w-full animate-fade-in">
                                         <div className="space-y-0.5">
