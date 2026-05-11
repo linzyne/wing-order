@@ -1028,7 +1028,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="text-pink-400 font-black text-xl">{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         {onDownloadMergedOrder ? (
-                                            <button onClick={onDownloadMergedOrder} className="bg-zinc-800 text-white border border-zinc-700 px-2.5 py-0.5 rounded font-black text-[9px] hover:bg-zinc-700 shadow-md flex items-center gap-1 transition-all"><ArrowDownTrayIcon className="w-3 h-3" /><span>합산</span></button>
+                                            <button onClick={onDownloadMergedOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         ) : (
                                             <button onClick={handleDownloadOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         )}
