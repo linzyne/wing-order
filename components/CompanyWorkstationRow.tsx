@@ -1010,7 +1010,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
 
-                <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
+                <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-0.5'}`} style={isFirstSession ? { height: '1px' } : undefined}>
                     <div className={`flex flex-col items-center h-full ${isFirstSession ? 'gap-2' : 'gap-1'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                         {localResult ? (
                             <div className="flex flex-col items-center gap-1 animate-fade-in w-full h-full">
