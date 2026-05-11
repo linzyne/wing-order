@@ -30,7 +30,7 @@ const HARDCODED_ENTRIES: BusinessEntry[] = (Object.keys(BUSINESS_INFO) as Hardco
   senderName: BUSINESS_INFO[id].senderName,
   phone: BUSINESS_INFO[id].phone,
   address: BUSINESS_INFO[id].address,
-  themeColor: id === '조에' ? '#1a0d12' : '#09090b',
+  themeColor: id === '조에' ? '#f472b6' : '#09090b',
   buttonColor: id === '조에' ? '#f472b6' : '#f43f5e',
   isDynamic: false,
 }));
