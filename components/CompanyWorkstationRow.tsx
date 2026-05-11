@@ -1011,9 +1011,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 </td>
 
                 <td className={`px-6 text-center ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
-                    <div className={`flex flex-col items-center ${isFirstSession ? 'gap-2' : 'gap-1'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
+                    <div className={`flex flex-col items-center h-full ${isFirstSession ? 'gap-2' : 'gap-1'} ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
                         {localResult ? (
-                            <div className="flex flex-col items-center gap-1 animate-fade-in w-full">
+                            <div className="flex flex-col items-center gap-1 animate-fade-in w-full h-full">
                                 {isFirstSession && (
                                     <textarea
                                         value={sessionMemo}
@@ -1035,7 +1035,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     </div>
                                 )}
                                 {isFirstSession ? (
-                                    <div className="flex items-center justify-center gap-4">
+                                    <div className="flex items-center justify-center gap-4 mt-auto">
                                         <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
