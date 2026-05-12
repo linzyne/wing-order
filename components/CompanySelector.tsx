@@ -716,7 +716,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     // 오늘 기록된 업체를 Firestore에서 로드하여 recordedCompanies 초기화
     useEffect(() => {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = new Date().toLocaleDateString('en-CA');
         import('../services/firestoreService').then(({ loadDailySales }) => {
             loadDailySales(today, businessId).then(existing => {
                 if (!existing) return;
@@ -827,7 +827,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [returnProductKey, setReturnProductKey] = useState('');
     const [returnCount, setReturnCount] = useState('1');
     const [returnMemo, setReturnMemo] = useState('');
-    const [returnOrderDate, setReturnOrderDate] = useState(() => new Date().toISOString().slice(0, 10));
+    const [returnOrderDate, setReturnOrderDate] = useState(() => new Date().toLocaleDateString('en-CA'));
     const returnRegisteredNames = useMemo(() => {
         if (!returnCompany || !pricingConfig[returnCompany]) return [];
         return (pricingConfig[returnCompany] as any).keywords || [];
@@ -1725,7 +1725,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
             const tmplDisplayName = template.label ? `${template.name}_${template.label}` : template.name;
-            XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_${tmplDisplayName}.xlsx`);
+            XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_${businessPrefix}_${tmplDisplayName}.xlsx`);
 
             if (notFoundOrders.length > 0) {
                 alert(`${template.name} ${matchedCount}건 다운로드 완료!\n\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
@@ -1829,7 +1829,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const ws = XLSX.utils.aoa_to_sheet(rows);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '주문서');
-        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
+        XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
     };
 
     const handleAddManualOrder = (e: React.FormEvent) => {
@@ -2055,7 +2055,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         ws['!cols'] = header.map(() => ({ wch: 15 }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
-        const dateStr = new Date().toISOString().slice(0, 10);
+        const dateStr = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산발주서.xlsx`);
     };
 
@@ -2100,7 +2100,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const aoa = headerRow.length > 0 ? [headerRow, ...mergedRows] : mergedRows;
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         XLSX.utils.book_append_sheet(wb, ws, type === 'mgmt' ? '기록용' : '업로드용');
-        const dateStr = new Date().toISOString().slice(0, 10);
+        const dateStr = new Date().toLocaleDateString('en-CA');
         const label = type === 'mgmt' ? '기록용' : '업로드용';
         XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산송장_${label}.xlsx`);
     };
@@ -2130,7 +2130,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const aoa = headerRow.length > 0 ? [headerRow, ...mergedRows] : mergedRows;
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         XLSX.utils.book_append_sheet(wb, ws, "병합송장");
-        const dateStr = new Date().toISOString().slice(0, 10);
+        const dateStr = new Date().toLocaleDateString('en-CA');
         const companiesStr = selectedCompanyNames.length > 3 ? `${selectedCompanyNames.slice(0, 3).join(', ')} 외 ${selectedCompanyNames.length - 3}곳` : selectedCompanyNames.join(', ');
         XLSX.writeFile(wb, `${dateStr} [${businessPrefix ? businessPrefix + ' ' : ''}${companiesStr}] 업로드용_송장_병합.xlsx`);
     };
@@ -2160,7 +2160,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (depositRows.length === 0) { alert('선택된 업체 중 입금할 내역이 없습니다.'); return; }
         depositRows.push(['', '합계', total, '']);
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(depositRows), "입금내역");
-        XLSX.writeFile(wb, `${new Date().toISOString().slice(0, 10)}_${businessPrefix}_입금목록.xlsx`);
+        XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_${businessPrefix}_입금목록.xlsx`);
     };
 
     const handleDownloadWorkLog = () => {
@@ -2324,7 +2324,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnSheetData), "품목별비용");
         }
 
-        const todayDate = new Date().toISOString().slice(0, 10);
+        const todayDate = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${todayDate}_${businessPrefix}_업무일지.xlsx`);
     };
 
@@ -2340,7 +2340,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         ws['!cols'] = [{ wch: 15 }, { wch: 8 }, { wch: 15 }, { wch: 15 }];
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '업체별요약');
-        const dateStr = new Date().toISOString().slice(0, 10);
+        const dateStr = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${dateStr}_${businessPrefix}_업체별요약.xlsx`);
     };
 
@@ -2365,7 +2365,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const selectedCompanyNames = companyOverride ?? checkedCompanies;
         if (selectedCompanyNames.size === 0) { alert('기록할 업체를 선택해주세요.'); return; }
         // 마스터파일 이름에서 날짜 파싱 (예: "0309_주문목록.xlsx" → "2026-03-09")
-        let recordDate = new Date().toISOString().slice(0, 10);
+        let recordDate = new Date().toLocaleDateString('en-CA');
         if (masterOrderFile) {
             const fname = masterOrderFile.name;
             const fullMatch = fname.match(/(\d{4})-(\d{2})-(\d{2})/);
@@ -2596,7 +2596,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const handleDeleteTodayRecord = async (companyOverride?: Set<string>) => {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = new Date().toLocaleDateString('en-CA');
         const selectedCompanyNames = companyOverride ?? checkedCompanies;
         if (selectedCompanyNames.size === 0) { alert('삭제할 업체를 선택해주세요.'); return; }
         const names = Array.from(selectedCompanyNames).join(', ');

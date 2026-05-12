@@ -1633,8 +1633,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                       const end = new Date();
                       const start = new Date();
                       start.setDate(start.getDate() - days + 1);
-                      setRangeStart(start.toISOString().slice(0, 10));
-                      setRangeEnd(end.toISOString().slice(0, 10));
+                      setRangeStart(start.toLocaleDateString('en-CA'));
+                      setRangeEnd(end.toLocaleDateString('en-CA'));
                     }}
                     className="px-3 py-2 text-[11px] font-black bg-zinc-800 text-zinc-400 hover:text-white hover:bg-zinc-700 rounded-lg border border-zinc-700 transition-all"
                   >

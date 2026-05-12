@@ -210,7 +210,7 @@ export interface DailyWorkspaceData {
   updatedAt?: any;
 }
 
-const getTodayDocId = () => new Date().toISOString().slice(0, 10);
+const getTodayDocId = () => new Date().toLocaleDateString('en-CA');
 
 // ===== Session Results (별도 문서 — 대용량 데이터 분리) =====
 

@@ -120,7 +120,7 @@ export const importWorkLogExcel = async (file: File, businessId?: string): Promi
 
   const filenameDateMatch = file.name.match(/(\d{4}-\d{2}-\d{2})/);
   const filenameDate = filenameDateMatch ? filenameDateMatch[1] : null;
-  const date = filenameDate || new Date().toISOString().slice(0, 10);
+  const date = filenameDate || new Date().toLocaleDateString('en-CA');
 
   // ── 요약시트 파싱 (매출 records) ──
   const summarySheetName = findSheet(wb.SheetNames, '요약', 'Summary') || wb.SheetNames[0];

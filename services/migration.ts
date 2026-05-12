@@ -51,7 +51,7 @@ export const migrateLocalStorageToFirestore = async (): Promise<boolean> => {
   }
 
   // 3. 당일 작업 데이터 마이그레이션
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA');
   const fakeOrderInput = localStorage.getItem('fakeOrderInput') || '';
   const manualTransfersStr = localStorage.getItem('manualTransfers');
   const manualTransfersDate = localStorage.getItem('manualTransfersDate');
