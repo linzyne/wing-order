@@ -722,7 +722,46 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const newArr = [...companiesInFile].sort().join(',');
             return prevArr === newArr ? prev : companiesInFile;
         });
-    }, [pricingConfig, masterOrderData, uploadOwnerTag]);
+
+        // uploadOwnerTag가 설정된 경우 세션 ownerTag 자동 관리
+        if (uploadOwnerTag) {
+            const tag = uploadOwnerTag;
+            const newSessionIds: string[] = [];
+            const newBatchEntries: { id: string; file: File }[] = [];
+            setCompanySessions(prev => {
+                let changed = false;
+                const next = { ...prev };
+                for (const company of companiesInFile) {
+                    const sessions = next[company] || [];
+                    if (sessions.some(s => s.ownerTag === tag)) continue;
+                    const untaggedIdx = sessions.findIndex(s => s.ownerTag === undefined);
+                    if (untaggedIdx >= 0) {
+                        // 기존 태그 없는 세션에 ownerTag 부여
+                        const updated = [...sessions];
+                        updated[untaggedIdx] = { ...updated[untaggedIdx], ownerTag: tag };
+                        next[company] = updated;
+                        changed = true;
+                    } else {
+                        // 새 세션 생성 (2번째 사업자 업로드)
+                        const newId = `${company}-master-${tag}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                        newSessionIds.push(newId);
+                        next[company] = [...sessions, { id: newId, companyName: company, round: 1, ownerTag: tag }];
+                        changed = true;
+                    }
+                }
+                return changed ? next : prev;
+            });
+            // 새 세션에 masterOrderFile을 batchFile로 저장 (isFirstSession=false인 세션도 처리 가능하도록)
+            if (newSessionIds.length > 0 && masterOrderFile) {
+                setBatchFiles(prev => {
+                    const next = { ...prev };
+                    newSessionIds.forEach(id => { next[id] = masterOrderFile; });
+                    return next;
+                });
+                setSelectedSessionIds(prev => { const next = new Set(prev); newSessionIds.forEach(id => next.add(id)); return next; });
+            }
+        }
+    }, [pricingConfig, masterOrderData, uploadOwnerTag, masterOrderFile]);
 
     // 오늘 기록된 업체 상태는 세션 내에서만 유지 (새로고침 시 초기화)
 
@@ -4184,7 +4223,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             </div>
                                                         </div>
                                                     ) : undefined}
-                                                    vendorFiles={vendorFiles[company] || []} masterFile={!uploadOwnerTag || !(pricingConfig[company] as any)?.ownerTags?.length || (pricingConfig[company] as any)?.ownerTags?.includes(uploadOwnerTag) ? masterOrderFile : null} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                    vendorFiles={vendorFiles[company] || []} masterFile={(!uploadOwnerTag || !(pricingConfig[company] as any)?.ownerTags?.length || (pricingConfig[company] as any)?.ownerTags?.includes(uploadOwnerTag)) && (!uploadOwnerTag || !session.ownerTag || session.ownerTag === uploadOwnerTag) ? masterOrderFile : null} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
