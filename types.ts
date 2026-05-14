@@ -88,6 +88,7 @@ export const VENDOR_INVOICE_FIELD_TYPES = [
 export type VendorInvoiceFieldKey = typeof VENDOR_INVOICE_FIELD_TYPES[number]['key'];
 
 export interface CompanyConfig {
+  ownerTag?: string;   // 사업자 태그 (예: 안군농원, 조에) — 마스터주문서 처리 필터용
   phone?: string;
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
   bankName?: string;

@@ -562,6 +562,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setCompanyOverrides({});
     }, [updateField]);
 
+    const [uploadOwnerTag, setUploadOwnerTag] = useState<string>('');
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [fakeMasterOrderFile, setFakeMasterOrderFile] = useState<File | null>(null);
@@ -682,13 +683,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     }, [pricingConfig, companySessions]);
 
+    // pricingConfig에서 사용 중인 ownerTag 목록 (업로드 시 사업자 선택용)
+    const ownerTagsInConfig = useMemo(() =>
+        [...new Set(Object.values(pricingConfig).map(c => (c as any).ownerTag).filter((t): t is string => !!t))],
+    [pricingConfig]);
+
     // pricingConfig 변경 시 detectedCompanies 재계산 (마스터 파일이 이미 업로드된 상태에서 새 업체 키워드 반영)
     useEffect(() => {
         if (!masterOrderData || masterOrderData.length < 2) return;
         const groupColIdx = 10;
         const companiesInFile = new Set<string>();
         const companyKeywordsMap = new Map<string, string[]>();
-        Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+        Object.keys(pricingConfig)
+            .filter(name => !uploadOwnerTag || !(pricingConfig[name] as any).ownerTag || (pricingConfig[name] as any).ownerTag === uploadOwnerTag)
+            .forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
         for (let i = 1; i < masterOrderData.length; i++) {
             const rawVal = String(masterOrderData[i]?.[groupColIdx] || '');
             const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
@@ -712,7 +720,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const newArr = [...companiesInFile].sort().join(',');
             return prevArr === newArr ? prev : companiesInFile;
         });
-    }, [pricingConfig, masterOrderData]);
+    }, [pricingConfig, masterOrderData, uploadOwnerTag]);
 
     // 오늘 기록된 업체를 Firestore에서 로드하여 recordedCompanies 초기화
     useEffect(() => {
@@ -1019,9 +1027,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         let qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('수량'));
         if (qtyColIdx === -1) qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('구매수'));
         if (qtyColIdx === -1) qtyColIdx = 22; // 기본값: W열
-        // 업체-키워드 맵 생성
+        // 업체-키워드 맵 생성 (uploadOwnerTag 선택 시 해당 사업자 업체만)
         const companyKeywordsMap = new Map<string, string[]>();
-        Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+        Object.keys(pricingConfig)
+            .filter(name => !uploadOwnerTag || !(pricingConfig[name] as any).ownerTag || (pricingConfig[name] as any).ownerTag === uploadOwnerTag)
+            .forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
         const productToCompany: Record<string, string> = {};
         const realOrders: Record<string, number> = {};
         const fakeOrders: Record<string, number> = {};
@@ -1111,7 +1121,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (unclaimedOrders.length > 0) console.log(`[마스터검증] unclaimedOrders:`, unclaimedOrders);
         if (skippedOrders.length > 0) console.log(`[마스터검증] skippedOrders:`, skippedOrders);
         return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount };
-    }, [masterOrderData, fakeOrderInput, pricingConfig, rowPlatformSources]);
+    }, [masterOrderData, fakeOrderInput, pricingConfig, rowPlatformSources, uploadOwnerTag]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
     // 차수별로 분리: [2차, 3차, 4차, ...] — 데이터 없는 차수는 0으로 채움
@@ -3203,6 +3213,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
                 {/* 2) 발주서 엑셀 파일 업로드 */}
                 <div className="mb-3 flex flex-col gap-2">
+                    {ownerTagsInConfig.length > 0 && (
+                        <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-zinc-500 text-[10px] font-black shrink-0">사업자</span>
+                            <div className="flex gap-1 flex-wrap">
+                                <button onClick={() => setUploadOwnerTag('')}
+                                    className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadOwnerTag === '' ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
+                                    전체
+                                </button>
+                                {ownerTagsInConfig.map(tag => (
+                                    <button key={tag} onClick={() => setUploadOwnerTag(tag)}
+                                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadOwnerTag === tag ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
+                                        {tag}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     <label
                         htmlFor={`file-upload-sidebar-${businessId}`}
                         className="flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-800 border border-zinc-700/40 hover:border-zinc-600 cursor-pointer transition-all duration-200"
@@ -4169,7 +4196,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             </div>
                                                         </div>
                                                     ) : undefined}
-                                                    vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                    vendorFiles={vendorFiles[company] || []} masterFile={!uploadOwnerTag || !(pricingConfig[company] as any)?.ownerTag || (pricingConfig[company] as any)?.ownerTag === uploadOwnerTag ? masterOrderFile : null} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
