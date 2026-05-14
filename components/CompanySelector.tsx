@@ -565,6 +565,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, [updateField]);
 
     const [uploadOwnerTag, setUploadOwnerTag] = useState<string>('');
+    const [uploadRound, setUploadRound] = useState<number>(1);
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [fakeMasterOrderFile, setFakeMasterOrderFile] = useState<File | null>(null);
@@ -690,6 +691,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         [...new Set(Object.values(pricingConfig).flatMap(c => (c as any).ownerTags || []).filter((t): t is string => !!t))],
     [pricingConfig]);
 
+    // 선택된 사업자 기준 사용 가능한 차수 목록 (기존 차수 + 다음 새 차수)
+    const availableRounds = useMemo(() => {
+        const rounds = new Set<number>();
+        Object.values(companySessions).forEach((sessions: any) => {
+            (sessions as SessionData[]).forEach(s => {
+                if (!uploadOwnerTag || s.ownerTag === uploadOwnerTag) rounds.add(s.round);
+            });
+        });
+        const maxRound = rounds.size > 0 ? Math.max(...rounds) : 0;
+        rounds.add(maxRound + 1);
+        return [...rounds].sort((a, b) => a - b);
+    }, [companySessions, uploadOwnerTag]);
+
     // pricingConfig 변경 시 detectedCompanies 재계산 (마스터 파일이 이미 업로드된 상태에서 새 업체 키워드 반영)
     useEffect(() => {
         if (!masterOrderData || masterOrderData.length < 2) return;
@@ -723,35 +737,36 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             return prevArr === newArr ? prev : companiesInFile;
         });
 
-        // uploadOwnerTag가 설정된 경우 세션 ownerTag 자동 관리
+        // (uploadOwnerTag + uploadRound) 기반 세션 자동 관리
         if (uploadOwnerTag) {
             const tag = uploadOwnerTag;
+            const round = uploadRound;
             const newSessionIds: string[] = [];
-            const newBatchEntries: { id: string; file: File }[] = [];
             setCompanySessions(prev => {
                 let changed = false;
                 const next = { ...prev };
                 for (const company of companiesInFile) {
                     const sessions = next[company] || [];
-                    if (sessions.some(s => s.ownerTag === tag)) continue;
-                    const untaggedIdx = sessions.findIndex(s => s.ownerTag === undefined);
-                    if (untaggedIdx >= 0) {
-                        // 기존 태그 없는 세션에 ownerTag 부여
+                    // 이미 (ownerTag, round) 조합 세션 존재 시 스킵
+                    if (sessions.some(s => s.ownerTag === tag && s.round === round)) continue;
+                    // round=1이고 태그 없는 1차 세션이 있으면 그 세션에 ownerTag 부여
+                    const untaggedFirstIdx = round === 1 ? sessions.findIndex(s => s.ownerTag === undefined && s.round === 1) : -1;
+                    if (untaggedFirstIdx >= 0) {
                         const updated = [...sessions];
-                        updated[untaggedIdx] = { ...updated[untaggedIdx], ownerTag: tag };
+                        updated[untaggedFirstIdx] = { ...updated[untaggedFirstIdx], ownerTag: tag };
                         next[company] = updated;
                         changed = true;
                     } else {
-                        // 새 세션 생성 (2번째 사업자 업로드)
-                        const newId = `${company}-master-${tag}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+                        // 새 세션 생성
+                        const newId = `${company}-master-${tag}-r${round}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
                         newSessionIds.push(newId);
-                        next[company] = [...sessions, { id: newId, companyName: company, round: 1, ownerTag: tag }];
+                        next[company] = [...sessions, { id: newId, companyName: company, round, ownerTag: tag }];
                         changed = true;
                     }
                 }
                 return changed ? next : prev;
             });
-            // 새 세션에 masterOrderFile을 batchFile로 저장 (isFirstSession=false인 세션도 처리 가능하도록)
+            // 새 세션(비첫번째 세션)에 masterFile을 batchFile로 저장
             if (newSessionIds.length > 0 && masterOrderFile) {
                 setBatchFiles(prev => {
                     const next = { ...prev };
@@ -761,7 +776,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 setSelectedSessionIds(prev => { const next = new Set(prev); newSessionIds.forEach(id => next.add(id)); return next; });
             }
         }
-    }, [pricingConfig, masterOrderData, uploadOwnerTag, masterOrderFile]);
+    }, [pricingConfig, masterOrderData, uploadOwnerTag, uploadRound, masterOrderFile]);
 
     // 오늘 기록된 업체 상태는 세션 내에서만 유지 (새로고침 시 초기화)
 
@@ -1657,11 +1672,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const newSelectedIds = new Set(selectedSessionIds);
             for (const companyName of companiesInFile) {
                 if (closedCompanies.has(companyName)) continue;
-                const sameTagCount = (newSessions[companyName] || []).filter(s => s.ownerTag === batchTag).length;
-                const nextRound = sameTagCount + 1;
-                const newSessionId = `${companyName}-batch-${nextRound}-${Date.now()}`;
-                const newSession: SessionData = { id: newSessionId, companyName, round: nextRound, ownerTag: batchTag };
-                newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
+                const existingSession = (newSessions[companyName] || []).find(s => s.ownerTag === batchTag && s.round === uploadRound);
+                const newSessionId = existingSession ? existingSession.id : `${companyName}-batch-${uploadRound}-${Date.now()}`;
+                if (!existingSession) {
+                    const newSession: SessionData = { id: newSessionId, companyName, round: uploadRound, ownerTag: batchTag };
+                    newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
+                }
                 newSelectedIds.add(newSessionId);
                 newBatchFiles[newSessionId] = processedFile;
                 newExpectedCounts[newSessionId] = companyRowCounts[companyName] || 0;
@@ -3241,19 +3257,32 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 {/* 2) 발주서 엑셀 파일 업로드 */}
                 <div className="mb-3 flex flex-col gap-2">
                     {ownerTagsInConfig.length > 0 && (
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-zinc-500 text-[10px] font-black shrink-0">사업자</span>
-                            <div className="flex gap-1 flex-wrap">
-                                <button onClick={() => setUploadOwnerTag('')}
-                                    className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadOwnerTag === '' ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
-                                    전체
-                                </button>
-                                {ownerTagsInConfig.map(tag => (
-                                    <button key={tag} onClick={() => setUploadOwnerTag(tag)}
-                                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadOwnerTag === tag ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
-                                        {tag}
+                        <div className="flex flex-col gap-1.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-zinc-500 text-[10px] font-black shrink-0 w-8">사업자</span>
+                                <div className="flex gap-1 flex-wrap">
+                                    <button onClick={() => setUploadOwnerTag('')}
+                                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadOwnerTag === '' ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
+                                        전체
                                     </button>
-                                ))}
+                                    {ownerTagsInConfig.map(tag => (
+                                        <button key={tag} onClick={() => setUploadOwnerTag(tag)}
+                                            className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadOwnerTag === tag ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
+                                            {tag}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-zinc-500 text-[10px] font-black shrink-0 w-8">차수</span>
+                                <div className="flex gap-1 flex-wrap">
+                                    {availableRounds.map(r => (
+                                        <button key={r} onClick={() => setUploadRound(r)}
+                                            className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadRound === r ? 'bg-pink-600 text-white shadow-lg shadow-pink-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
+                                            {r}차
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -4223,7 +4252,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             </div>
                                                         </div>
                                                     ) : undefined}
-                                                    vendorFiles={vendorFiles[company] || []} masterFile={(!uploadOwnerTag || !(pricingConfig[company] as any)?.ownerTags?.length || (pricingConfig[company] as any)?.ownerTags?.includes(uploadOwnerTag)) && (!uploadOwnerTag || !session.ownerTag || session.ownerTag === uploadOwnerTag) ? masterOrderFile : null} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                    vendorFiles={vendorFiles[company] || []} masterFile={(!uploadOwnerTag || !(pricingConfig[company] as any)?.ownerTags?.length || (pricingConfig[company] as any)?.ownerTags?.includes(uploadOwnerTag)) && (!uploadOwnerTag || !session.ownerTag || session.ownerTag === uploadOwnerTag) && session.round === uploadRound ? masterOrderFile : null} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
