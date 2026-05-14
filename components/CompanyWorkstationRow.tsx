@@ -831,6 +831,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const currentStat = mergeResults?.companyStats?.[companyName];
     const keywords = getKeywordsForCompany(companyName, pricingConfig);
     const deadline = pricingConfig[companyName]?.deadline;
+    const ownerTag = (pricingConfig[companyName] as any)?.ownerTag as string | undefined;
     const isAllDone = workflow.order && workflow.deposit && workflow.invoice;
 
     return (
@@ -849,6 +850,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     >
                                         {companyName}
                                     </div>
+                                    {ownerTag && (
+                                        <span className="shrink-0 px-1.5 py-0.5 bg-violet-500/10 text-violet-400 border border-violet-500/25 rounded text-[8px] font-black tracking-tight">
+                                            {ownerTag}
+                                        </span>
+                                    )}
                                     <button
                                         onClick={onToggleClosed}
                                         title={isClosed ? '마감 해제' : '마감 처리'}

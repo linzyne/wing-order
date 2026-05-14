@@ -560,6 +560,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllRegisteredNames({});
         setAllPreConsolidationByGroup({});
         setCompanyOverrides({});
+        setRecordedCompanies(new Set());
     }, [updateField]);
 
     const [uploadOwnerTag, setUploadOwnerTag] = useState<string>('');
@@ -722,20 +723,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, [pricingConfig, masterOrderData, uploadOwnerTag]);
 
-    // 오늘 기록된 업체를 Firestore에서 로드하여 recordedCompanies 초기화
-    useEffect(() => {
-        const today = new Date().toLocaleDateString('en-CA');
-        import('../services/firestoreService').then(({ loadDailySales }) => {
-            loadDailySales(today, businessId).then(existing => {
-                if (!existing) return;
-                const companies = new Set<string>();
-                (existing.records || []).forEach(r => { if (r.company) companies.add(r.company); });
-                Object.keys(existing.companyOrderRows || {}).forEach(c => companies.add(c));
-                (existing.depositRecords || []).forEach(d => { if (d.company) companies.add(d.company); });
-                if (companies.size > 0) setRecordedCompanies(companies);
-            }).catch(() => {});
-        });
-    }, [businessId]);
+    // 오늘 기록된 업체 상태는 세션 내에서만 유지 (새로고침 시 초기화)
 
     // 수동발주 초기 로드 (getDoc 1회)
     useEffect(() => {
