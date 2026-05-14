@@ -40,6 +40,7 @@ interface SessionData {
     id: string;
     companyName: string;
     round: number;
+    ownerTag?: string;
 }
 
 interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; }
@@ -686,7 +687,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     // pricingConfig에서 사용 중인 ownerTag 목록 (업로드 시 사업자 선택용)
     const ownerTagsInConfig = useMemo(() =>
-        [...new Set(Object.values(pricingConfig).map(c => (c as any).ownerTag).filter((t): t is string => !!t))],
+        [...new Set(Object.values(pricingConfig).flatMap(c => (c as any).ownerTags || []).filter((t): t is string => !!t))],
     [pricingConfig]);
 
     // pricingConfig 변경 시 detectedCompanies 재계산 (마스터 파일이 이미 업로드된 상태에서 새 업체 키워드 반영)
@@ -696,7 +697,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const companiesInFile = new Set<string>();
         const companyKeywordsMap = new Map<string, string[]>();
         Object.keys(pricingConfig)
-            .filter(name => !uploadOwnerTag || !(pricingConfig[name] as any).ownerTag || (pricingConfig[name] as any).ownerTag === uploadOwnerTag)
+            .filter(name => !uploadOwnerTag || !(pricingConfig[name] as any).ownerTags?.length || (pricingConfig[name] as any).ownerTags?.includes(uploadOwnerTag))
             .forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
         for (let i = 1; i < masterOrderData.length; i++) {
             const rawVal = String(masterOrderData[i]?.[groupColIdx] || '');
@@ -1018,7 +1019,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         // 업체-키워드 맵 생성 (uploadOwnerTag 선택 시 해당 사업자 업체만)
         const companyKeywordsMap = new Map<string, string[]>();
         Object.keys(pricingConfig)
-            .filter(name => !uploadOwnerTag || !(pricingConfig[name] as any).ownerTag || (pricingConfig[name] as any).ownerTag === uploadOwnerTag)
+            .filter(name => !uploadOwnerTag || !(pricingConfig[name] as any).ownerTags?.length || (pricingConfig[name] as any).ownerTags?.includes(uploadOwnerTag))
             .forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
         const productToCompany: Record<string, string> = {};
         const realOrders: Record<string, number> = {};
@@ -1609,11 +1610,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             const companiesInFile = new Set(Object.keys(companyRowCounts));
             if (companiesInFile.size === 0) { alert('주문서에서 매칭되는 업체를 찾지 못했습니다.'); return; }
-            let maxRound = 0;
-            (Object.values(companySessions) as SessionData[][]).forEach(sessions => {
-                sessions.forEach(s => { if (s.round > maxRound) maxRound = s.round; });
-            });
-            const nextRound = maxRound + 1;
+            const batchTag = uploadOwnerTag || undefined;
             const newBatchFiles: Record<string, File> = {};
             const newExpectedCounts: Record<string, number> = {};
             const newBatchMasterRows: Record<string, any[][]> = {};
@@ -1621,8 +1618,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const newSelectedIds = new Set(selectedSessionIds);
             for (const companyName of companiesInFile) {
                 if (closedCompanies.has(companyName)) continue;
+                const sameTagCount = (newSessions[companyName] || []).filter(s => s.ownerTag === batchTag).length;
+                const nextRound = sameTagCount + 1;
                 const newSessionId = `${companyName}-batch-${nextRound}-${Date.now()}`;
-                const newSession: SessionData = { id: newSessionId, companyName, round: nextRound };
+                const newSession: SessionData = { id: newSessionId, companyName, round: nextRound, ownerTag: batchTag };
                 newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
                 newSelectedIds.add(newSessionId);
                 newBatchFiles[newSessionId] = processedFile;
@@ -1914,10 +1913,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleAddSession = (companyName: string) => {
         if (closedCompanies.has(companyName)) return;
         const newSessionId = `${companyName}-${Date.now()}`;
+        const tag = uploadOwnerTag || undefined;
         setCompanySessions(prev => {
             const current = prev[companyName] || [];
-            const nextRound = current.length + 1;
-            const newSession: SessionData = { id: newSessionId, companyName, round: nextRound };
+            const sameTagCount = current.filter(s => s.ownerTag === tag).length;
+            const newSession: SessionData = { id: newSessionId, companyName, round: sameTagCount + 1, ownerTag: tag };
             return { ...prev, [companyName]: [...current, newSession] };
         });
         setSelectedSessionIds(prev => { const next = new Set(prev); next.add(newSessionId); return next; });
@@ -4140,7 +4140,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         return workstationsReady ? (
                                             <React.Fragment key={session.id}>
                                                 <CompanyWorkstationRow
-                                                    sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
+                                                    sessionId={session.id} companyName={company} roundNumber={session.round} sessionOwnerTag={session.ownerTag} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                     companySummaryBar={sIdx === 0 && showStats ? (
                                                         <div className="flex items-center gap-3 flex-wrap">
                                                             <input
@@ -4184,7 +4184,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             </div>
                                                         </div>
                                                     ) : undefined}
-                                                    vendorFiles={vendorFiles[company] || []} masterFile={!uploadOwnerTag || !(pricingConfig[company] as any)?.ownerTag || (pricingConfig[company] as any)?.ownerTag === uploadOwnerTag ? masterOrderFile : null} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                    vendorFiles={vendorFiles[company] || []} masterFile={!uploadOwnerTag || !(pricingConfig[company] as any)?.ownerTags?.length || (pricingConfig[company] as any)?.ownerTags?.includes(uploadOwnerTag) ? masterOrderFile : null} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
