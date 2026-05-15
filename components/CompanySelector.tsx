@@ -5,7 +5,7 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
-import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon } from './icons';
+import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
@@ -754,6 +754,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [manualInput, setManualInput] = useState({
         companyName: '', recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: ''
     });
+    const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
 
     const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
@@ -1837,14 +1838,34 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (!manualInput.companyName || !manualInput.recipientName || !manualInput.productName) {
             alert('업체, 수령자 이름, 품목명은 필수입니다.'); return;
         }
-        const newOrder: ManualOrder = {
-            id: `mo-${Date.now()}`, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
-            phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName, qty: parseInt(manualInput.qty) || 1,
-            memo: manualInput.memo
-        };
-        setManualOrders(prev => [...prev, newOrder]);
-        setSelectedManualOrderIds(prev => new Set([...prev, newOrder.id]));
+        if (editingOrderId) {
+            setManualOrders(prev => prev.map(o => o.id === editingOrderId ? {
+                ...o, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
+                phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName,
+                qty: parseInt(manualInput.qty) || 1, memo: manualInput.memo
+            } : o));
+            setEditingOrderId(null);
+        } else {
+            const newOrder: ManualOrder = {
+                id: `mo-${Date.now()}`, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
+                phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName, qty: parseInt(manualInput.qty) || 1,
+                memo: manualInput.memo
+            };
+            setManualOrders(prev => [...prev, newOrder]);
+            setSelectedManualOrderIds(prev => new Set([...prev, newOrder.id]));
+        }
         setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: '' }));
+    };
+
+    const handleStartEditManualOrder = (o: ManualOrder) => {
+        setEditingOrderId(o.id);
+        const productKey = Object.entries(pricingConfig[o.companyName]?.products ?? {}).find(([, p]: [string, any]) => (p.orderFormName || p.displayName) === o.productName)?.[0] ?? '';
+        setManualInput({ companyName: o.companyName, recipientName: o.recipientName, phone: o.phone, address: o.address, productName: o.productName, productKey, qty: String(o.qty), memo: o.memo ?? '' });
+    };
+
+    const handleCancelEditManualOrder = () => {
+        setEditingOrderId(null);
+        setManualInput({ companyName: '', recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: '' });
     };
 
     const handleQuickSelect = (person: { name: string, phone: string, address: string }) => {
@@ -3097,21 +3118,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </select>
                             <div className="flex gap-2">
                                 <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-14 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <button type="submit" className="flex-1 btn-accent rounded-xl text-xs">추가</button>
+                                <button type="submit" className={`flex-1 rounded-xl text-xs font-black transition-all ${editingOrderId ? 'bg-amber-500 hover:bg-amber-400 text-white' : 'btn-accent'}`}>{editingOrderId ? '수정 완료' : '추가'}</button>
                             </div>
                         </div>
-                        <input placeholder="메모 (배송메세지로 입력됨)" value={manualInput.memo} onChange={e => setManualInput({...manualInput, memo: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                        <div className="flex gap-2 items-center">
+                            <input placeholder="메모 (배송메세지로 입력됨)" value={manualInput.memo} onChange={e => setManualInput({...manualInput, memo: e.target.value})} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                            {editingOrderId && <button type="button" onClick={handleCancelEditManualOrder} className="px-2.5 py-2 text-[10px] font-black text-zinc-500 hover:text-zinc-300 transition-colors whitespace-nowrap">취소</button>}
+                        </div>
                     </form>
                     {manualOrders.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1.5">
                             {manualOrders.map(o => {
                                 const isSelected = selectedManualOrderIds.has(o.id);
+                                const isEditing = editingOrderId === o.id;
                                 return (
-                                <div key={o.id} className={`px-2.5 py-1 rounded-lg border flex items-center gap-1.5 group animate-pop-in cursor-pointer transition-all ${isSelected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-950 border-zinc-900 opacity-40'}`} onClick={() => handleToggleManualOrderSelection(o.id)}>
+                                <div key={o.id} className={`px-2.5 py-1 rounded-lg border flex items-center gap-1.5 group animate-pop-in cursor-pointer transition-all ${isEditing ? 'bg-amber-900/30 border-amber-600/50' : isSelected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-950 border-zinc-900 opacity-40'}`} onClick={() => handleToggleManualOrderSelection(o.id)}>
                                     <input type="checkbox" checked={isSelected} onChange={() => handleToggleManualOrderSelection(o.id)} onClick={e => e.stopPropagation()} className="w-3 h-3 accent-rose-500 cursor-pointer" />
                                     <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
                                     <span className="text-[10px] font-bold text-zinc-300">{o.recipientName}</span>
                                     <span className="text-[9px] text-zinc-600 truncate max-w-[60px]">{o.productName}</span>
+                                    <button onClick={(e) => { e.stopPropagation(); handleStartEditManualOrder(o); }} className="text-zinc-700 hover:text-amber-400 transition-colors"><PencilIcon className="w-3 h-3" /></button>
                                     <button onClick={(e) => { e.stopPropagation(); handleRemoveManualOrder(o.id); }} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
                                 </div>
                                 );
