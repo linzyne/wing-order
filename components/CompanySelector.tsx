@@ -3137,7 +3137,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
                                     <span className="text-[10px] font-bold text-zinc-300">{o.recipientName}</span>
                                     <span className="text-[9px] text-zinc-600 truncate max-w-[60px]">{o.productName}</span>
-                                    <button onClick={(e) => { e.stopPropagation(); handleStartEditManualOrder(o); }} className="text-zinc-500 hover:text-amber-400 transition-colors"><PencilIcon className="w-3 h-3" /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleStartEditManualOrder(o); }} className="text-amber-500 hover:text-amber-300 transition-colors"><PencilIcon className="w-3 h-3" /></button>
                                     <button onClick={(e) => { e.stopPropagation(); handleRemoveManualOrder(o.id); }} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
                                 </div>
                                 );
