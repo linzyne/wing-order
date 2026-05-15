@@ -738,12 +738,6 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
-    const handleUpdateOwnerTags = (companyName: string, tags: string[]) => {
-        const newConfig = JSON.parse(JSON.stringify(configRef.current));
-        newConfig[companyName].ownerTags = tags.length > 0 ? tags : undefined;
-        handleUpdate(newConfig);
-    };
-
     const handleUpdateKeywords = (companyName: string, keywords: string[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].keywords = keywords.length > 0 ? keywords : undefined;
@@ -1052,7 +1046,6 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
                             onUpdateDeadline={(deadline) => handleUpdateDeadline(companyName, deadline)}
-                            onUpdateOwnerTags={(tags) => handleUpdateOwnerTags(companyName, tags)}
                             onUpdateAutoConsolidate={(enabled) => handleUpdateAutoConsolidate(companyName, enabled)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
@@ -1116,7 +1109,6 @@ const CompanyCard: React.FC<{
     onUpdateAccount: (account: string) => void;
     onUpdateCourier: (courier: string) => void;
     onUpdateDeadline: (deadline: string) => void;
-    onUpdateOwnerTags: (tags: string[]) => void;
     onUpdateAutoConsolidate: (enabled: boolean) => void;
     onUpdateKeywords: (keywords: string[]) => void;
     onUpdateOrderFormHeaders: (headers: string[], fieldMap?: string[]) => void;
@@ -1193,18 +1185,6 @@ const CompanyCard: React.FC<{
                                 onSave={props.onUpdateDeadline}
                                 placeholder="마감 (예: 09:00)"
                                 className="text-sm font-bold text-rose-400 focus:outline-none w-full"
-                            />
-                        </div>
-                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-violet-500/30 shadow-inner">
-                            <span className="text-sm shrink-0">🏷</span>
-                            <EditableField
-                                value={(companyConfig.ownerTags || []).join(', ')}
-                                onSave={(val) => {
-                                    const tags = val.split(',').map(s => s.trim()).filter(Boolean);
-                                    props.onUpdateOwnerTags(tags);
-                                }}
-                                placeholder="사업자 태그 (예: 안군농원, 조에)"
-                                className="text-sm font-bold text-violet-400 focus:outline-none w-full"
                             />
                         </div>
                     </div>

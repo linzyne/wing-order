@@ -52,7 +52,6 @@ interface CompanyWorkstationRowProps {
     sessionId: string;
     companyName: string;
     roundNumber: number;
-    sessionOwnerTag?: string;
     isFirstSession: boolean;
     isLastSession: boolean;
     pricingConfig: PricingConfig;
@@ -102,7 +101,7 @@ interface CompanyWorkstationRowProps {
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
-    sessionId, companyName, roundNumber, sessionOwnerTag, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
+    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     companySummaryBar,
     previousRoundItems = [],
@@ -832,7 +831,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const currentStat = mergeResults?.companyStats?.[companyName];
     const keywords = getKeywordsForCompany(companyName, pricingConfig);
     const deadline = pricingConfig[companyName]?.deadline;
-    const ownerTags: string[] = (pricingConfig[companyName] as any)?.ownerTags || [];
     const isAllDone = workflow.order && workflow.deposit && workflow.invoice;
 
     return (
@@ -851,11 +849,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     >
                                         {companyName}
                                     </div>
-                                    {ownerTags.map(tag => (
-                                        <span key={tag} className="shrink-0 px-1.5 py-0.5 bg-violet-500/10 text-violet-400 border border-violet-500/25 rounded text-[8px] font-black tracking-tight">
-                                            {tag}
-                                        </span>
-                                    ))}
                                     <button
                                         onClick={onToggleClosed}
                                         title={isClosed ? '마감 해제' : '마감 처리'}
@@ -976,7 +969,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 <div className="flex items-center gap-2">
                                     <span className="text-zinc-700 text-[12px] font-black">ㄴ</span>
                                     <div className="bg-indigo-500/10 text-indigo-400 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border border-indigo-500/20 whitespace-nowrap">
-                                        {roundNumber}차{sessionOwnerTag ? `(${sessionOwnerTag})` : ''} 추가 발주
+                                        {roundNumber}차 추가 발주
                                     </div>
                                     {previousRoundItems.length > 0 && (
                                         <button

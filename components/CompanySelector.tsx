@@ -5,7 +5,7 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
-import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon } from './icons';
+import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
@@ -40,7 +40,6 @@ interface SessionData {
     id: string;
     companyName: string;
     round: number;
-    ownerTag?: string;
 }
 
 interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; }
@@ -561,11 +560,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllRegisteredNames({});
         setAllPreConsolidationByGroup({});
         setCompanyOverrides({});
-        setRecordedCompanies(new Set());
     }, [updateField]);
 
-    const [uploadOwnerTag, setUploadOwnerTag] = useState<string>('');
-    const [uploadRound, setUploadRound] = useState<number>(1);
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [fakeMasterOrderFile, setFakeMasterOrderFile] = useState<File | null>(null);
@@ -686,33 +682,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     }, [pricingConfig, companySessions]);
 
-    // pricingConfig에서 사용 중인 ownerTag 목록 (업로드 시 사업자 선택용)
-    const ownerTagsInConfig = useMemo(() =>
-        [...new Set(Object.values(pricingConfig).flatMap(c => (c as any).ownerTags || []).filter((t): t is string => !!t))],
-    [pricingConfig]);
-
-    // 선택된 사업자 기준 사용 가능한 차수 목록 (기존 차수 + 다음 새 차수)
-    const availableRounds = useMemo(() => {
-        const rounds = new Set<number>();
-        Object.values(companySessions).forEach((sessions: any) => {
-            (sessions as SessionData[]).forEach(s => {
-                if (!uploadOwnerTag || s.ownerTag === uploadOwnerTag) rounds.add(s.round);
-            });
-        });
-        const maxRound = rounds.size > 0 ? Math.max(...rounds) : 0;
-        rounds.add(maxRound + 1);
-        return [...rounds].sort((a, b) => a - b);
-    }, [companySessions, uploadOwnerTag]);
-
     // pricingConfig 변경 시 detectedCompanies 재계산 (마스터 파일이 이미 업로드된 상태에서 새 업체 키워드 반영)
     useEffect(() => {
         if (!masterOrderData || masterOrderData.length < 2) return;
         const groupColIdx = 10;
         const companiesInFile = new Set<string>();
         const companyKeywordsMap = new Map<string, string[]>();
-        Object.keys(pricingConfig)
-            .filter(name => !uploadOwnerTag || !(pricingConfig[name] as any).ownerTags?.length || (pricingConfig[name] as any).ownerTags?.includes(uploadOwnerTag))
-            .forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+        Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
         for (let i = 1; i < masterOrderData.length; i++) {
             const rawVal = String(masterOrderData[i]?.[groupColIdx] || '');
             const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
@@ -736,49 +712,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const newArr = [...companiesInFile].sort().join(',');
             return prevArr === newArr ? prev : companiesInFile;
         });
+    }, [pricingConfig, masterOrderData]);
 
-        // (uploadOwnerTag + uploadRound) 기반 세션 자동 관리
-        if (uploadOwnerTag) {
-            const tag = uploadOwnerTag;
-            const round = uploadRound;
-            const newSessionIds: string[] = [];
-            setCompanySessions(prev => {
-                let changed = false;
-                const next = { ...prev };
-                for (const company of companiesInFile) {
-                    const sessions = next[company] || [];
-                    // 이미 (ownerTag, round) 조합 세션 존재 시 스킵
-                    if (sessions.some(s => s.ownerTag === tag && s.round === round)) continue;
-                    // round=1이고 태그 없는 1차 세션이 있으면 그 세션에 ownerTag 부여
-                    const untaggedFirstIdx = round === 1 ? sessions.findIndex(s => s.ownerTag === undefined && s.round === 1) : -1;
-                    if (untaggedFirstIdx >= 0) {
-                        const updated = [...sessions];
-                        updated[untaggedFirstIdx] = { ...updated[untaggedFirstIdx], ownerTag: tag };
-                        next[company] = updated;
-                        changed = true;
-                    } else {
-                        // 새 세션 생성
-                        const newId = `${company}-master-${tag}-r${round}-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
-                        newSessionIds.push(newId);
-                        next[company] = [...sessions, { id: newId, companyName: company, round, ownerTag: tag }];
-                        changed = true;
-                    }
-                }
-                return changed ? next : prev;
-            });
-            // 새 세션(비첫번째 세션)에 masterFile을 batchFile로 저장
-            if (newSessionIds.length > 0 && masterOrderFile) {
-                setBatchFiles(prev => {
-                    const next = { ...prev };
-                    newSessionIds.forEach(id => { next[id] = masterOrderFile; });
-                    return next;
-                });
-                setSelectedSessionIds(prev => { const next = new Set(prev); newSessionIds.forEach(id => next.add(id)); return next; });
-            }
-        }
-    }, [pricingConfig, masterOrderData, uploadOwnerTag, uploadRound, masterOrderFile]);
-
-    // 오늘 기록된 업체 상태는 세션 내에서만 유지 (새로고침 시 초기화)
+    // 오늘 기록된 업체를 Firestore에서 로드하여 recordedCompanies 초기화
+    useEffect(() => {
+        const today = new Date().toLocaleDateString('en-CA');
+        import('../services/firestoreService').then(({ loadDailySales }) => {
+            loadDailySales(today, businessId).then(existing => {
+                if (!existing) return;
+                const companies = new Set<string>();
+                (existing.records || []).forEach(r => { if (r.company) companies.add(r.company); });
+                Object.keys(existing.companyOrderRows || {}).forEach(c => companies.add(c));
+                (existing.depositRecords || []).forEach(d => { if (d.company) companies.add(d.company); });
+                if (companies.size > 0) setRecordedCompanies(companies);
+            }).catch(() => {});
+        });
+    }, [businessId]);
 
     // 수동발주 초기 로드 (getDoc 1회)
     useEffect(() => {
@@ -805,6 +754,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [manualInput, setManualInput] = useState({
         companyName: '', recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: ''
     });
+    const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
 
     const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
@@ -1070,11 +1020,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         let qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('수량'));
         if (qtyColIdx === -1) qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('구매수'));
         if (qtyColIdx === -1) qtyColIdx = 22; // 기본값: W열
-        // 업체-키워드 맵 생성 (uploadOwnerTag 선택 시 해당 사업자 업체만)
+        // 업체-키워드 맵 생성
         const companyKeywordsMap = new Map<string, string[]>();
-        Object.keys(pricingConfig)
-            .filter(name => !uploadOwnerTag || !(pricingConfig[name] as any).ownerTags?.length || (pricingConfig[name] as any).ownerTags?.includes(uploadOwnerTag))
-            .forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
+        Object.keys(pricingConfig).forEach(name => companyKeywordsMap.set(name, getKeywordsForCompany(name, pricingConfig)));
         const productToCompany: Record<string, string> = {};
         const realOrders: Record<string, number> = {};
         const fakeOrders: Record<string, number> = {};
@@ -1164,7 +1112,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (unclaimedOrders.length > 0) console.log(`[마스터검증] unclaimedOrders:`, unclaimedOrders);
         if (skippedOrders.length > 0) console.log(`[마스터검증] skippedOrders:`, skippedOrders);
         return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount };
-    }, [masterOrderData, fakeOrderInput, pricingConfig, rowPlatformSources, uploadOwnerTag]);
+    }, [masterOrderData, fakeOrderInput, pricingConfig, rowPlatformSources]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
     // 차수별로 분리: [2차, 3차, 4차, ...] — 데이터 없는 차수는 0으로 채움
@@ -1664,7 +1612,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             const companiesInFile = new Set(Object.keys(companyRowCounts));
             if (companiesInFile.size === 0) { alert('주문서에서 매칭되는 업체를 찾지 못했습니다.'); return; }
-            const batchTag = uploadOwnerTag || undefined;
+            let maxRound = 0;
+            (Object.values(companySessions) as SessionData[][]).forEach(sessions => {
+                sessions.forEach(s => { if (s.round > maxRound) maxRound = s.round; });
+            });
+            const nextRound = maxRound + 1;
             const newBatchFiles: Record<string, File> = {};
             const newExpectedCounts: Record<string, number> = {};
             const newBatchMasterRows: Record<string, any[][]> = {};
@@ -1672,12 +1624,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const newSelectedIds = new Set(selectedSessionIds);
             for (const companyName of companiesInFile) {
                 if (closedCompanies.has(companyName)) continue;
-                const existingSession = (newSessions[companyName] || []).find(s => s.ownerTag === batchTag && s.round === uploadRound);
-                const newSessionId = existingSession ? existingSession.id : `${companyName}-batch-${uploadRound}-${Date.now()}`;
-                if (!existingSession) {
-                    const newSession: SessionData = { id: newSessionId, companyName, round: uploadRound, ownerTag: batchTag };
-                    newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
-                }
+                const newSessionId = `${companyName}-batch-${nextRound}-${Date.now()}`;
+                const newSession: SessionData = { id: newSessionId, companyName, round: nextRound };
+                newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
                 newSelectedIds.add(newSessionId);
                 newBatchFiles[newSessionId] = processedFile;
                 newExpectedCounts[newSessionId] = companyRowCounts[companyName] || 0;
@@ -1889,14 +1838,34 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (!manualInput.companyName || !manualInput.recipientName || !manualInput.productName) {
             alert('업체, 수령자 이름, 품목명은 필수입니다.'); return;
         }
-        const newOrder: ManualOrder = {
-            id: `mo-${Date.now()}`, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
-            phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName, qty: parseInt(manualInput.qty) || 1,
-            memo: manualInput.memo
-        };
-        setManualOrders(prev => [...prev, newOrder]);
-        setSelectedManualOrderIds(prev => new Set([...prev, newOrder.id]));
+        if (editingOrderId) {
+            setManualOrders(prev => prev.map(o => o.id === editingOrderId ? {
+                ...o, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
+                phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName,
+                qty: parseInt(manualInput.qty) || 1, memo: manualInput.memo
+            } : o));
+            setEditingOrderId(null);
+        } else {
+            const newOrder: ManualOrder = {
+                id: `mo-${Date.now()}`, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
+                phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName, qty: parseInt(manualInput.qty) || 1,
+                memo: manualInput.memo
+            };
+            setManualOrders(prev => [...prev, newOrder]);
+            setSelectedManualOrderIds(prev => new Set([...prev, newOrder.id]));
+        }
         setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: '' }));
+    };
+
+    const handleStartEditManualOrder = (o: ManualOrder) => {
+        setEditingOrderId(o.id);
+        const productKey = Object.entries(pricingConfig[o.companyName]?.products ?? {}).find(([, p]: [string, any]) => (p.orderFormName || p.displayName) === o.productName)?.[0] ?? '';
+        setManualInput({ companyName: o.companyName, recipientName: o.recipientName, phone: o.phone, address: o.address, productName: o.productName, productKey, qty: String(o.qty), memo: o.memo ?? '' });
+    };
+
+    const handleCancelEditManualOrder = () => {
+        setEditingOrderId(null);
+        setManualInput({ companyName: '', recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: '' });
     };
 
     const handleQuickSelect = (person: { name: string, phone: string, address: string }) => {
@@ -1968,11 +1937,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleAddSession = (companyName: string) => {
         if (closedCompanies.has(companyName)) return;
         const newSessionId = `${companyName}-${Date.now()}`;
-        const tag = uploadOwnerTag || undefined;
         setCompanySessions(prev => {
             const current = prev[companyName] || [];
-            const sameTagCount = current.filter(s => s.ownerTag === tag).length;
-            const newSession: SessionData = { id: newSessionId, companyName, round: sameTagCount + 1, ownerTag: tag };
+            const nextRound = current.length + 1;
+            const newSession: SessionData = { id: newSessionId, companyName, round: nextRound };
             return { ...prev, [companyName]: [...current, newSession] };
         });
         setSelectedSessionIds(prev => { const next = new Set(prev); next.add(newSessionId); return next; });
@@ -3150,21 +3118,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </select>
                             <div className="flex gap-2">
                                 <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-14 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <button type="submit" className="flex-1 btn-accent rounded-xl text-xs">추가</button>
+                                <button type="submit" className={`flex-1 rounded-xl text-xs font-black transition-all ${editingOrderId ? 'bg-amber-500 hover:bg-amber-400 text-white' : 'btn-accent'}`}>{editingOrderId ? '수정 완료' : '추가'}</button>
                             </div>
                         </div>
-                        <input placeholder="메모 (배송메세지로 입력됨)" value={manualInput.memo} onChange={e => setManualInput({...manualInput, memo: e.target.value})} className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                        <div className="flex gap-2 items-center">
+                            <input placeholder="메모 (배송메세지로 입력됨)" value={manualInput.memo} onChange={e => setManualInput({...manualInput, memo: e.target.value})} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
+                            {editingOrderId && <button type="button" onClick={handleCancelEditManualOrder} className="px-2.5 py-2 text-[10px] font-black text-zinc-500 hover:text-zinc-300 transition-colors whitespace-nowrap">취소</button>}
+                        </div>
                     </form>
                     {manualOrders.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1.5">
                             {manualOrders.map(o => {
                                 const isSelected = selectedManualOrderIds.has(o.id);
+                                const isEditing = editingOrderId === o.id;
                                 return (
-                                <div key={o.id} className={`px-2.5 py-1 rounded-lg border flex items-center gap-1.5 group animate-pop-in cursor-pointer transition-all ${isSelected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-950 border-zinc-900 opacity-40'}`} onClick={() => handleToggleManualOrderSelection(o.id)}>
+                                <div key={o.id} className={`px-2.5 py-1 rounded-lg border flex items-center gap-1.5 group animate-pop-in cursor-pointer transition-all ${isEditing ? 'bg-amber-900/30 border-amber-600/50' : isSelected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-950 border-zinc-900 opacity-40'}`} onClick={() => handleToggleManualOrderSelection(o.id)}>
                                     <input type="checkbox" checked={isSelected} onChange={() => handleToggleManualOrderSelection(o.id)} onClick={e => e.stopPropagation()} className="w-3 h-3 accent-rose-500 cursor-pointer" />
                                     <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
                                     <span className="text-[10px] font-bold text-zinc-300">{o.recipientName}</span>
                                     <span className="text-[9px] text-zinc-600 truncate max-w-[60px]">{o.productName}</span>
+                                    <button onClick={(e) => { e.stopPropagation(); handleStartEditManualOrder(o); }} className="text-zinc-700 hover:text-amber-400 transition-colors"><PencilIcon className="w-3 h-3" /></button>
                                     <button onClick={(e) => { e.stopPropagation(); handleRemoveManualOrder(o.id); }} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
                                 </div>
                                 );
@@ -3256,36 +3229,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
                 {/* 2) 발주서 엑셀 파일 업로드 */}
                 <div className="mb-3 flex flex-col gap-2">
-                    {ownerTagsInConfig.length > 0 && (
-                        <div className="flex flex-col gap-1.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-zinc-500 text-[10px] font-black shrink-0 w-8">사업자</span>
-                                <div className="flex gap-1 flex-wrap">
-                                    <button onClick={() => setUploadOwnerTag('')}
-                                        className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadOwnerTag === '' ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
-                                        전체
-                                    </button>
-                                    {ownerTagsInConfig.map(tag => (
-                                        <button key={tag} onClick={() => setUploadOwnerTag(tag)}
-                                            className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadOwnerTag === tag ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
-                                            {tag}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-zinc-500 text-[10px] font-black shrink-0 w-8">차수</span>
-                                <div className="flex gap-1 flex-wrap">
-                                    {availableRounds.map(r => (
-                                        <button key={r} onClick={() => setUploadRound(r)}
-                                            className={`px-2.5 py-1 text-[10px] font-black rounded-lg transition-all ${uploadRound === r ? 'bg-pink-600 text-white shadow-lg shadow-pink-900/40' : 'text-zinc-500 hover:text-zinc-300 bg-zinc-800/60'}`}>
-                                            {r}차
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                    )}
                     <label
                         htmlFor={`file-upload-sidebar-${businessId}`}
                         className="flex items-center gap-2 px-3 py-2.5 rounded-2xl bg-zinc-800 border border-zinc-700/40 hover:border-zinc-600 cursor-pointer transition-all duration-200"
@@ -4208,7 +4151,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         return workstationsReady ? (
                                             <React.Fragment key={session.id}>
                                                 <CompanyWorkstationRow
-                                                    sessionId={session.id} companyName={company} roundNumber={session.round} sessionOwnerTag={session.ownerTag} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
+                                                    sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                     companySummaryBar={sIdx === 0 && showStats ? (
                                                         <div className="flex items-center gap-3 flex-wrap">
                                                             <input
@@ -4252,7 +4195,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             </div>
                                                         </div>
                                                     ) : undefined}
-                                                    vendorFiles={vendorFiles[company] || []} masterFile={(!uploadOwnerTag || !(pricingConfig[company] as any)?.ownerTags?.length || (pricingConfig[company] as any)?.ownerTags?.includes(uploadOwnerTag)) && (!uploadOwnerTag || !session.ownerTag || session.ownerTag === uploadOwnerTag) && session.round === uploadRound ? masterOrderFile : null} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                    vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}

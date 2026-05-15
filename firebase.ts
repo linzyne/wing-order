@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeFirestore } from 'firebase/firestore';
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -13,6 +13,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(app, {
   ignoreUndefinedProperties: true,
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 });
 
 export default app;
