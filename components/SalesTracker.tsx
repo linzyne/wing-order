@@ -794,20 +794,43 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       );
     }
 
-    // 날짜 × 등록상품명 → 총마진 (마진 없거나 등록상품명 없는 항목 제외)
-    const dateProductMargin = new Map<string, Map<string, number>>();
+    // 날짜 × 등록상품명 → { 총마진, 총수량 } (마진 없거나 등록상품명 없는 항목 제외)
+    const dateProductData = new Map<string, Map<string, { margin: number; count: number }>>();
     records.forEach(r => {
       if (!r.registeredName || r.totalMargin <= 0) return;
-      if (!dateProductMargin.has(r.date)) dateProductMargin.set(r.date, new Map());
-      const m = dateProductMargin.get(r.date)!;
-      m.set(r.registeredName, (m.get(r.registeredName) || 0) + r.totalMargin);
+      if (!dateProductData.has(r.date)) dateProductData.set(r.date, new Map());
+      const m = dateProductData.get(r.date)!;
+      const prev = m.get(r.registeredName) || { margin: 0, count: 0 };
+      m.set(r.registeredName, { margin: prev.margin + r.totalMargin, count: prev.count + r.count });
     });
 
-    const allDates = Array.from(dateProductMargin.keys()).sort();
+    const allDates = Array.from(dateProductData.keys()).sort();
     const DAY_LABELS = ['일', '월', '화', '수', '목', '금', '토'];
     const fmtDate = (s: string) => {
       const d = new Date(s);
       return `${parseInt(s.slice(5, 7))}/${parseInt(s.slice(8))} (${DAY_LABELS[d.getDay()]})`;
+    };
+
+    const handleCopyMargin = () => {
+      const lines: string[] = [];
+      lines.push(`📊 ${periodLabel} 마진 현황`);
+      lines.push(`총 마진: ${total.toLocaleString()}원`);
+      if (allReturnData.total < 0) lines.push(`반품: ${allReturnData.total.toLocaleString()}원`);
+      if (allExpenseData.total > 0) lines.push(`비용: -${allExpenseData.total.toLocaleString()}원`);
+      if (allExpenseData.total > 0 || allReturnData.total < 0) {
+        lines.push(`순수익: ${(total + allReturnData.total - allExpenseData.total).toLocaleString()}원`);
+      }
+      lines.push('');
+      allDates.forEach(date => {
+        const dayMap = dateProductData.get(date)!;
+        const dayTotal = Array.from(dayMap.values()).reduce((s, v) => s + v.margin, 0);
+        const rows = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b, 'ko'));
+        lines.push(`${fmtDate(date)}  ${dayTotal.toLocaleString()}원`);
+        rows.forEach(([name, { margin, count }]) => {
+          lines.push(`  · ${name} x${count}  ${margin.toLocaleString()}`);
+        });
+      });
+      navigator.clipboard.writeText(lines.join('\n'));
     };
 
     return (
@@ -826,13 +849,17 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
               {(total + allReturnData.total - allExpenseData.total).toLocaleString()}원
             </span></span>
           )}
+          <button onClick={handleCopyMargin}
+            className="ml-auto px-3 py-1.5 text-xs font-bold rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 transition-all">
+            복사
+          </button>
         </div>
 
         {/* 날짜별 카드 그리드 */}
         <div className="p-4 grid grid-cols-3 xl:grid-cols-4 gap-3">
           {allDates.map(date => {
-            const dayMap = dateProductMargin.get(date)!;
-            const dayTotal = Array.from(dayMap.values()).reduce((s, v) => s + v, 0);
+            const dayMap = dateProductData.get(date)!;
+            const dayTotal = Array.from(dayMap.values()).reduce((s, v) => s + v.margin, 0);
             const rows = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b, 'ko'));
             return (
               <div key={date} className="bg-zinc-900/60 rounded-xl border border-zinc-800 overflow-hidden">
@@ -843,9 +870,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 </div>
                 {/* 등록상품명별 마진 */}
                 <div className="divide-y divide-zinc-800/50">
-                  {rows.map(([registeredName, margin]) => (
+                  {rows.map(([registeredName, { margin, count }]) => (
                     <div key={registeredName} className="px-3 py-1.5 flex items-center justify-between gap-2">
-                      <span className="text-violet-400 font-bold text-[11px] truncate">{registeredName}</span>
+                      <span className="text-violet-400 font-bold text-[11px] truncate">{registeredName} <span className="text-zinc-500 font-normal">x{count}</span></span>
                       <span className="text-emerald-400 font-bold text-[11px] tabular-nums whitespace-nowrap">{margin.toLocaleString()}</span>
                     </div>
                   ))}
