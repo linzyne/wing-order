@@ -871,8 +871,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 {/* 등록상품명별 마진 */}
                 <div className="divide-y divide-zinc-800/50">
                   {rows.map(([registeredName, { margin, count }]) => (
-                    <div key={registeredName} className="px-3 py-1.5 flex items-center justify-between gap-2">
-                      <span className="text-violet-400 font-bold text-[11px] truncate">{registeredName} <span className="text-zinc-500 font-normal">x{count}</span></span>
+                    <div key={registeredName} className="px-3 py-1.5 flex items-center justify-between gap-1.5">
+                      <span className="text-violet-400 font-bold text-[11px] truncate min-w-0">{registeredName}</span>
+                      <span className="text-zinc-500 font-bold text-[11px] tabular-nums whitespace-nowrap">×{count}</span>
                       <span className="text-emerald-400 font-bold text-[11px] tabular-nums whitespace-nowrap">{margin.toLocaleString()}</span>
                     </div>
                   ))}
