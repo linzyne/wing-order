@@ -836,7 +836,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     return (
         <>
-            <tr id={`session-${sessionId}`} className={`transition-all duration-500 border-none ${isActive ? (isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10') : 'opacity-20 pointer-events-none'}`}>
+            <tr id={`session-${sessionId}`} className={`transition-all duration-500 border-none ${isActive ? (isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10') : 'opacity-20'}`}>
                 <td className={`px-6 min-w-[360px] ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
                     <div className="flex flex-col gap-2">
                         {isFirstSession ? (
@@ -844,7 +844,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 {companySummaryBar}
                                 <div className="flex items-center gap-2 flex-wrap">
                                     <div
-                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none pointer-events-auto ${isClosed ? 'opacity-30' : ''} ${companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
+                                        className={`font-black text-xl tracking-tighter whitespace-nowrap transition-colors cursor-grab active:cursor-grabbing select-none ${isClosed ? 'opacity-30' : ''} ${companyChecked ? 'text-indigo-300/60' : isAllDone ? 'text-emerald-400' : 'text-white'}`}
                                         {...dragHandle.attributes}
                                         {...dragHandle.listeners}
                                     >
