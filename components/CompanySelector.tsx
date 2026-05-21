@@ -176,7 +176,7 @@ const CourierTemplateManager: React.FC<{
                     }
                 }
                 if (headerRow) {
-                    const headers = headerRow.map((h: any) => String(h || ''));
+                    const headers = Array.from({ length: headerRow.length }, (_, i) => String(headerRow[i] ?? ''));
                     console.log('[택배양식] 헤더 설정:', headers.length, '열');
                     setNewHeaders(headers);
                     setNewMapping({});
@@ -213,7 +213,7 @@ const CourierTemplateManager: React.FC<{
                     }
                 }
                 if (headerRow) {
-                    const headers = headerRow.map((h: any) => String(h || ''));
+                    const headers = Array.from({ length: headerRow.length }, (_, i) => String(headerRow[i] ?? ''));
                     setNewReturnHeaders(headers);
                     // 자동 감지: 주문번호/운송장번호 열 찾기
                     const autoMapping: Record<string, number> = {};
@@ -1928,8 +1928,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleToggleClosed = (companyName: string) => {
         setClosedCompanies(prev => {
             const next = new Set(prev);
+            const isClosing = !next.has(companyName);
             if (next.has(companyName)) next.delete(companyName);
             else next.add(companyName);
+            if (isClosing) {
+                const sendNotif = (title: string, body: string) => {
+                    if (Notification.permission === 'granted') {
+                        new Notification(title, { body });
+                    } else if (Notification.permission !== 'denied') {
+                        Notification.requestPermission().then(p => {
+                            if (p === 'granted') new Notification(title, { body });
+                        });
+                    }
+                };
+                sendNotif(`${companyName} 마감`, '마감 처리되었습니다.');
+            }
             return next;
         });
     };
@@ -2032,13 +2045,28 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (newCount > 0 && prevCount === 0 && Date.now() > toastSuppressUntilRef.current) {
             const companyName = sessionId.replace(/-\d+$/, '');
             addToast(companyName, newCount, sessionId);
+            const sendNotif = (title: string, body: string) => {
+                if (Notification.permission === 'granted') {
+                    new Notification(title, { body });
+                } else if (Notification.permission !== 'denied') {
+                    Notification.requestPermission().then(p => {
+                        if (p === 'granted') new Notification(title, { body });
+                    });
+                }
+            };
+            sendNotif(`${companyName} 발주서 생성`, `${newCount}건`);
         }
         prevOrderRowsRef.current[sessionId] = newCount;
 
         setAllOrderRows(prev => ({ ...prev, [sessionId]: orderRows }));
-        setAllInvoiceRows(prev => ({ ...prev, [sessionId]: invoiceRows }));
-        setAllUploadInvoiceRows(prev => ({ ...prev, [sessionId]: uploadInvoiceRows }));
-        if (header) setAllHeaders(prev => ({ ...prev, [sessionId]: header }));
+        // header가 있으면 병합이 실행된 것 → 결과가 0건이어도 갱신
+        // orderRows가 비어있으면 명시적 초기화(세션 삭제) → 항상 초기화
+        // 그 외(발주서만 재업로드, mergeResults=null) → 기존 송장 데이터 유지
+        if (header || uploadInvoiceRows.length > 0 || orderRows.length === 0) {
+            setAllInvoiceRows(prev => ({ ...prev, [sessionId]: invoiceRows }));
+            setAllUploadInvoiceRows(prev => ({ ...prev, [sessionId]: uploadInvoiceRows }));
+            if (header) setAllHeaders(prev => ({ ...prev, [sessionId]: header }));
+        }
         setAllSummaries(prev => ({ ...prev, [sessionId]: summaryExcel }));
         if (registeredProductNames) setAllRegisteredNames(prev => ({ ...prev, [sessionId]: registeredProductNames }));
         if (itemSummary) setAllItemSummaries(prev => ({ ...prev, [sessionId]: itemSummary }));
@@ -4137,6 +4165,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         const companyDeposit = companyOverride.deposit !== undefined ? companyOverride.deposit : companyCalcDeposit;
                                         const companyMargin = companyOverride.margin !== undefined ? companyOverride.margin : companyCalcMargin;
                                         const showStats = companyCalcDeposit > 0 || companyCalcMargin > 0;
+                                        const companyHasOrders = sessions.some(s =>
+                                            (allOrderRows[s.id]?.length || 0) > 0 ||
+                                            (sessionResults?.[s.id]?.orderCount || 0) > 0
+                                        );
 
                                         return sessions.map((session, sIdx) => {
                                         const prevItems = sessions
@@ -4153,7 +4185,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 <CompanyWorkstationRow
                                                     sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                     companySummaryBar={sIdx === 0 && showStats ? (
-                                                        <div className="flex items-center gap-3 flex-wrap">
+                                                        <div className={`flex items-center gap-3 flex-wrap ${closedCompanies.has(company) ? 'opacity-30 pointer-events-none' : ''}`}>
                                                             <input
                                                                 type="checkbox"
                                                                 checked={isChecked}
@@ -4200,6 +4232,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
                                                     isClosed={closedCompanies.has(company)} onToggleClosed={() => handleToggleClosed(company)}
+                                                    isActive={companyHasOrders}
                                                     onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
                                                     onDownloadMergedInvoice={(companySessions[company] || []).length > 1 ? (type: 'mgmt' | 'upload') => handleDownloadMergedInvoice(company, type) : undefined}
                                                     previousRoundItems={prevItems}
