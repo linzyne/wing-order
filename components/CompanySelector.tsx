@@ -8,7 +8,7 @@ import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
-import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
+import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import {
     DndContext,
     closestCenter,
@@ -49,8 +49,9 @@ import { DragHandleContext } from './DragHandleContext';
 
 const SortableCompanyRow: React.FC<{
     id: string;
+    groupBg?: string;
     children: React.ReactNode;
-}> = ({ id, children }) => {
+}> = ({ id, groupBg, children }) => {
     const {
         attributes,
         listeners,
@@ -64,6 +65,7 @@ const SortableCompanyRow: React.FC<{
         transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
         transition,
         opacity: isDragging ? 0.5 : 1,
+        backgroundColor: groupBg || undefined,
     };
 
     return (
@@ -72,6 +74,95 @@ const SortableCompanyRow: React.FC<{
                 {children}
             </tbody>
         </DragHandleContext.Provider>
+    );
+};
+
+// 구분선 ID 헬퍼
+const isDivider = (id: string) => id.startsWith('__div:');
+const parseDividerLabel = (id: string) => { const m = id.match(/^__div:(.*):(\d+)$/); return m ? m[1] : ''; };
+const makeDividerId = (label: string) => `__div:${label}:${Date.now()}`;
+
+// 그룹 색상 팔레트
+const GROUP_COLORS: { key: string; swatch: string; bg: string; accent: string }[] = [
+    { key: 'none',    swatch: '#3f3f46', bg: 'transparent',              accent: '#52525b' },
+    { key: 'amber',   swatch: '#b45309', bg: 'rgba(120,53,15,0.28)',     accent: '#d97706' },
+    { key: 'emerald', swatch: '#059669', bg: 'rgba(6,78,59,0.28)',       accent: '#10b981' },
+    { key: 'sky',     swatch: '#0284c7', bg: 'rgba(12,74,110,0.28)',     accent: '#38bdf8' },
+    { key: 'purple',  swatch: '#7c3aed', bg: 'rgba(59,7,100,0.28)',      accent: '#a78bfa' },
+    { key: 'rose',    swatch: '#e11d48', bg: 'rgba(136,19,55,0.28)',     accent: '#fb7185' },
+    { key: 'orange',  swatch: '#ea580c', bg: 'rgba(124,45,18,0.28)',     accent: '#fb923c' },
+];
+const getGroupColor = (key: string) => GROUP_COLORS.find(c => c.key === key) || GROUP_COLORS[0];
+
+// 드래그 가능한 구분선 컴포넌트
+const SortableDividerRow: React.FC<{
+    id: string;
+    label: string;
+    colorKey: string;
+    onLabelChange: (oldId: string, newLabel: string) => void;
+    onColorChange: (id: string, colorKey: string) => void;
+    onDelete: (id: string) => void;
+}> = ({ id, label, colorKey, onLabelChange, onColorChange, onDelete }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+    const [editing, setEditing] = React.useState(false);
+    const [draft, setDraft] = React.useState(label);
+    const [showPalette, setShowPalette] = React.useState(false);
+    const color = getGroupColor(colorKey);
+
+    const commit = () => {
+        const trimmed = draft.trim() || '구분선';
+        onLabelChange(id, trimmed);
+        setEditing(false);
+    };
+
+    return (
+        <tbody ref={setNodeRef} style={{ transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined, transition, opacity: isDragging ? 0.5 : 1 }}>
+            <tr style={{ backgroundColor: colorKey !== 'none' ? color.bg : undefined }}>
+                <td colSpan={3} className="px-3 py-1.5">
+                    <div className="flex items-center gap-2 group/divider">
+                        <span {...attributes} {...listeners} className="text-zinc-600 hover:text-zinc-400 cursor-grab active:cursor-grabbing select-none text-base leading-none">⠿</span>
+                        {/* 색상 선택 */}
+                        <div className="relative">
+                            <button onClick={() => setShowPalette(p => !p)} className="w-3.5 h-3.5 rounded-full border border-zinc-600 transition-all hover:scale-110 shrink-0" style={{ backgroundColor: color.swatch }} />
+                            {showPalette && (
+                                <div className="absolute left-0 top-5 z-50 flex gap-1.5 bg-zinc-900 border border-zinc-700 rounded-xl p-2 shadow-xl">
+                                    {GROUP_COLORS.map(c => (
+                                        <button
+                                            key={c.key}
+                                            onClick={() => { onColorChange(id, c.key); setShowPalette(false); }}
+                                            className={`w-4 h-4 rounded-full border-2 transition-all hover:scale-110 ${colorKey === c.key ? 'border-white' : 'border-transparent'}`}
+                                            style={{ backgroundColor: c.swatch }}
+                                            title={c.key}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex-1 flex items-center gap-2">
+                            <div className="flex-1 border-t border-dashed" style={{ borderColor: colorKey !== 'none' ? color.accent + '80' : '#3f3f4660' }} />
+                            {editing ? (
+                                <input
+                                    autoFocus
+                                    value={draft}
+                                    onChange={e => setDraft(e.target.value)}
+                                    onBlur={commit}
+                                    onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
+                                    className="text-[10px] font-black text-zinc-300 bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 w-28 focus:outline-none focus:border-rose-500/50"
+                                />
+                            ) : (
+                                <button onClick={() => { setDraft(label); setEditing(true); }} className="text-[10px] font-black transition-colors px-1 whitespace-nowrap" style={{ color: colorKey !== 'none' ? color.accent : '#71717a' }}>
+                                    {label || '구분선'}
+                                </button>
+                            )}
+                            <div className="flex-1 border-t border-dashed" style={{ borderColor: colorKey !== 'none' ? color.accent + '80' : '#3f3f4660' }} />
+                        </div>
+                        <button onClick={() => onDelete(id)} className="text-zinc-700 hover:text-rose-500 transition-colors opacity-0 group-hover/divider:opacity-100">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        </tbody>
     );
 };
 
@@ -611,16 +702,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const lastWrittenCompanyOrderRef = useRef('[]');
     const [firestoreOrderLoaded, setFirestoreOrderLoaded] = useState(false);
 
+    // 구분선 색상
+    const [dividerColors, setDividerColors] = useState<Record<string, string>>({});
+    const lastWrittenDividerColorsRef = useRef('{}');
+
     // 업체 순서 Firestore 로드 (최초 1회)
     useEffect(() => {
         setFirestoreOrderLoaded(false);
-        loadCompanyOrder(businessId).then((order) => {
+        Promise.all([
+            loadCompanyOrder(businessId),
+            loadDividerColors(businessId),
+        ]).then(([order, colors]) => {
             setFirestoreOrderLoaded(true);
             const str = JSON.stringify(order);
             if (str !== lastWrittenCompanyOrderRef.current) {
                 setCompanyOrder(order);
                 lastWrittenCompanyOrderRef.current = str;
             }
+            setDividerColors(colors);
+            lastWrittenDividerColorsRef.current = JSON.stringify(colors);
         });
     }, [businessId]);
 
@@ -645,12 +745,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             saveCompanyOrder(ordered, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
             return;
         }
-        // 새로 추가된 업체를 companyOrder에 자동 반영 (드래그 가능하도록)
+        // 새로 추가된 업체를 companyOrder에 자동 반영 (드래그 가능하도록, 구분선 항목 보존)
         const newCompanies = companies.filter(c => !companyOrder.includes(c));
-        const removedCompanies = companyOrder.filter(c => !companies.includes(c));
+        const removedCompanies = companyOrder.filter(c => !isDivider(c) && !companies.includes(c));
         if (newCompanies.length > 0 || removedCompanies.length > 0) {
             const updated = [
-                ...companyOrder.filter(c => companies.includes(c)),
+                ...companyOrder.filter(c => isDivider(c) || companies.includes(c)),
                 ...newCompanies,
             ];
             console.log(`[CompanyOrder:${businessId}] 업체 추가/제거 동기화: new=${newCompanies} removed=${removedCompanies} → 결과:`, updated.slice(0, 5));
@@ -807,6 +907,43 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             return arrayMove(items, oldIndex, newIndex);
         });
     };
+
+    // 구분선 추가/수정/삭제/색상
+    const handleAddDivider = () => {
+        setCompanyOrder(prev => [...prev, makeDividerId('구분선')]);
+    };
+    const handleChangeDividerLabel = (oldId: string, newLabel: string) => {
+        const m = oldId.match(/^__div:(.*):(\d+)$/);
+        if (!m) return;
+        const newId = `__div:${newLabel}:${m[2]}`;
+        setCompanyOrder(prev => prev.map(id => id === oldId ? newId : id));
+        setDividerColors(prev => {
+            if (!(oldId in prev)) return prev;
+            const next = { ...prev, [newId]: prev[oldId] };
+            delete next[oldId];
+            return next;
+        });
+    };
+    const handleDeleteDivider = (id: string) => {
+        setCompanyOrder(prev => prev.filter(item => item !== id));
+        setDividerColors(prev => { const next = { ...prev }; delete next[id]; return next; });
+    };
+    const handleChangeDividerColor = (id: string, colorKey: string) => {
+        setDividerColors(prev => {
+            const next = colorKey === 'none' ? { ...prev } : { ...prev, [id]: colorKey };
+            if (colorKey === 'none') delete next[id];
+            return next;
+        });
+    };
+
+    // dividerColors 변경 → Firestore 저장
+    useEffect(() => {
+        if (!firestoreOrderLoaded) return;
+        const currentStr = JSON.stringify(dividerColors);
+        if (currentStr === lastWrittenDividerColorsRef.current) return;
+        lastWrittenDividerColorsRef.current = currentStr;
+        saveDividerColors(dividerColors, businessId).catch(e => console.error('[Firestore] dividerColors 저장 실패:', e));
+    }, [dividerColors, businessId, firestoreOrderLoaded]);
 
 
     // 비용(지출내역) 관리
@@ -4098,6 +4235,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     <div className="flex items-center gap-3">
                         <div className="bg-zinc-800 p-2 rounded-xl border border-zinc-700"><BuildingStorefrontIcon className="w-5 h-5 text-rose-500" /></div>
                         <h2 className="text-xl font-black text-white tracking-tight uppercase">Workstation</h2>
+                        <button onClick={handleAddDivider} title="구분선 추가" className="flex items-center gap-1 text-[10px] font-black text-zinc-500 hover:text-zinc-300 border border-dashed border-zinc-700 hover:border-zinc-500 rounded-lg px-2 py-1 transition-colors">
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m-8-8h16" /></svg>
+                            구분선
+                        </button>
                     </div>
                     {(() => {
                         const totalOrders: number = Object.values(allOrderRows).reduce<number>((sum, rows) => sum + (rows as any[][]).length, 0);
@@ -4136,11 +4277,38 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </tr>
                             </thead>
                             <SortableContext
-                                items={sortCompanies(Object.keys(pricingConfig))}
+                                items={companyOrder.filter(id => isDivider(id) || !!pricingConfig[id])}
                                 strategy={verticalListSortingStrategy}
                             >
-                                {sortCompanies(Object.keys(pricingConfig)).map(company => (
-                                    <SortableCompanyRow key={company} id={company}>
+                                {(() => {
+                                    const orderedItems = companyOrder.filter(id => isDivider(id) || !!pricingConfig[id]);
+                                    // 업체별 그룹 배경색 사전 계산
+                                    const companyGroupBg: Record<string, string> = {};
+                                    let curColorKey = 'none';
+                                    for (const id of orderedItems) {
+                                        if (isDivider(id)) {
+                                            curColorKey = dividerColors[id] || 'none';
+                                        } else if (curColorKey !== 'none') {
+                                            companyGroupBg[id] = getGroupColor(curColorKey).bg;
+                                        }
+                                    }
+                                    return orderedItems.map(id => {
+                                    if (isDivider(id)) {
+                                        return (
+                                            <SortableDividerRow
+                                                key={id}
+                                                id={id}
+                                                label={parseDividerLabel(id)}
+                                                colorKey={dividerColors[id] || 'none'}
+                                                onLabelChange={handleChangeDividerLabel}
+                                                onColorChange={handleChangeDividerColor}
+                                                onDelete={handleDeleteDivider}
+                                            />
+                                        );
+                                    }
+                                    const company = id;
+                                    return (
+                                    <SortableCompanyRow key={company} id={company} groupBg={companyGroupBg[company]}>
                                         {(() => {
                                         // 업체의 라운드별 수량+플랫폼 계산
                                         const sessions = companySessions[company] || [];
@@ -4268,7 +4436,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     });
                                     })()}
                                 </SortableCompanyRow>
-                            ))}
+                                    );
+                                });
+                                })()}
                             </SortableContext>
                         </table>
                     </DndContext>

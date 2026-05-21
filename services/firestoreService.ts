@@ -374,7 +374,22 @@ export const loadCompanyOrder = async (businessId?: string): Promise<string[]> =
 
 export const saveCompanyOrder = async (order: string[], businessId?: string): Promise<void> => {
   const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
-  await setDoc(docRef, { order, updatedAt: Timestamp.now() });
+  await setDoc(docRef, { order, updatedAt: Timestamp.now() }, { merge: true });
+};
+
+export const loadDividerColors = async (businessId?: string): Promise<Record<string, string>> => {
+  try {
+    const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
+    const snapshot = await getDoc(docRef);
+    return snapshot.exists() ? (snapshot.data().dividerColors || {}) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const saveDividerColors = async (colors: Record<string, string>, businessId?: string): Promise<void> => {
+  const docRef = doc(db, 'config', getCompanyOrderDocId(businessId));
+  await setDoc(docRef, { dividerColors: colors }, { merge: true });
 };
 
 // ===== Courier Templates (택배 양식 관리) =====
