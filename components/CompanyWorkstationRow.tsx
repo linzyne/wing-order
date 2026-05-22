@@ -350,6 +350,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const lastProcessedBatchRef = useRef<File | null>(null);
     const lastFakeOrdersRef = useRef<string>('');
     const lastManualOrdersRef = useRef<string>('');
+    const lastGoodMergeRef = useRef<{ rows: any[][], uploadRows: any[][], header: any[] } | null>(null);
 
     // 리셋 직후 Firestore 구독 업데이트 전까지 syncedData 억제
     const suppressSyncRef = useRef(false);
@@ -568,11 +569,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
             const effectiveDepositText = summaryOverride ? buildDepositTextFromSummary(summaryOverride, localResult.depositSummary) : localResult.depositSummary || '';
             const effectiveDepositExcel = summaryOverride ? buildDepositExcelFromSummary(summaryOverride, localResult.depositSummaryExcel) : localResult.depositSummaryExcel || '';
+            // mergeResults가 null이면(리셋/처리중) 마지막으로 저장된 병합 데이터 사용
+            if (mergeResults) lastGoodMergeRef.current = { rows: mergeResults.rows || [], uploadRows: mergeResults.uploadRows || [], header: mergeResults.header || [] };
+            const effectiveMerge = mergeResults ? lastGoodMergeRef.current! : (lastGoodMergeRef.current || { rows: [], uploadRows: [], header: [] });
             const resultData: SessionResultData = {
                 orderRows: JSON.stringify(localResult.rows || []) as any,
-                invoiceRows: JSON.stringify(mergeResults?.rows || []) as any,
-                uploadInvoiceRows: JSON.stringify(mergeResults?.uploadRows || []) as any,
-                header: mergeResults?.header || [],
+                invoiceRows: JSON.stringify(effectiveMerge.rows) as any,
+                uploadInvoiceRows: JSON.stringify(effectiveMerge.uploadRows) as any,
+                header: effectiveMerge.header,
                 summaryExcel: effectiveDepositExcel,
                 depositSummary: effectiveDepositText,
                 depositSummaryExcel: effectiveDepositExcel,
@@ -605,7 +609,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lastSyncedCallbackRef.current = key;
         onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
         const parseRows = (v: any) => typeof v === 'string' ? JSON.parse(v) : (v || []);
-        onDataUpdate(sessionId, parseRows(syncedData.orderRows), parseRows(syncedData.invoiceRows), parseRows(syncedData.uploadInvoiceRows), syncedData.summaryExcel, syncedData.header?.length > 0 ? syncedData.header : undefined, syncedData.registeredProductNames, syncedData.itemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup);
+        const syncedUploadRows = parseRows(syncedData.uploadInvoiceRows);
+        const syncedInvoiceRows = parseRows(syncedData.invoiceRows);
+        const syncedHeader = syncedData.header?.length > 0 ? syncedData.header : [];
+        // Firestore에서 유효한 병합 데이터가 있으면 ref 복원 (page-refresh 후 재저장 시 덮어쓰기 방지)
+        if (syncedUploadRows.length > 0 || syncedInvoiceRows.length > 0) {
+            lastGoodMergeRef.current = { rows: syncedInvoiceRows, uploadRows: syncedUploadRows, header: syncedHeader };
+        }
+        onDataUpdate(sessionId, parseRows(syncedData.orderRows), syncedInvoiceRows, syncedUploadRows, syncedData.summaryExcel, syncedHeader.length > 0 ? syncedHeader : undefined, syncedData.registeredProductNames, syncedData.itemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup);
         if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 
