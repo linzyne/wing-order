@@ -1624,7 +1624,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceTo(''); setKReplaceHistory([]); };
 
     const applyKValueReplacement = () => {
-        if (!kReplaceFrom || !kReplaceTo || !masterOrderData) return;
+        if (!kReplaceFrom || !kReplaceTo || !masterOrderData || !masterOrderFile) return;
         const updated = masterOrderData.map((row, idx) => {
             if (idx === 0) return row;
             const currentK = String(row[10] || '').trim();
@@ -1636,6 +1636,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             return row;
         });
         setMasterOrderData(updated);
+        // masterOrderFile도 교체된 데이터로 재생성해야 발주서 생성 시 반영됨
+        const ws = XLSX.utils.aoa_to_sheet(updated);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+        const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
         setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo }]);
         setKReplaceFrom('');
         setKReplaceTo('');
