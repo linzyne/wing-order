@@ -497,6 +497,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const hasBatchFileChanged = batchFile && batchFile !== lastProcessedBatchRef.current;
         const hasFakeOrdersChanged = fakeOrderNumbers !== lastFakeOrdersRef.current;
         const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
+        // 마스터 파일이 바뀌었는데 이 업체가 더 이상 감지되지 않으면 이전 세션 자동 초기화
+        const hasFileChangedButEvicted = isFirstSession && masterFile && !isDetected
+            && lastProcessedMasterRef.current !== null && masterFile !== lastProcessedMasterRef.current;
 
         if (hasBatchFileChanged && batchFile) {
             // N차 일괄 업로드: 가구매 제외 포함하여 처리
@@ -534,6 +537,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             if (confirmedManualOrderIdsRef.current !== null && lastProcessedMasterRef.current) {
                 handleLocalFileChange(lastProcessedMasterRef.current);
             }
+        } else if (hasFileChangedButEvicted) {
+            // K열 교체 등으로 이 업체가 마스터에서 제거됨 → 이전 세션 자동 초기화
+            lastProcessedMasterRef.current = masterFile;
+            resetSyncedData();
         } else {
             // Firestore 초기 로드 등 - ref만 업데이트 (재처리 안함)
             lastFakeOrdersRef.current = fakeOrderNumbers;

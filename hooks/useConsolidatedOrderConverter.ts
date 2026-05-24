@@ -182,10 +182,11 @@ const findBestMatchForProduct = async (
 
         if (productType) {
             const lowerType = productType.toLowerCase();
-            // siteProductName이 품목 종류와 일치하는 후보 필터
-            const typeMatched = availableEntries.filter(([, p]) =>
-                p.siteProductName && lowerType.includes(p.siteProductName.toLowerCase())
-            );
+            // siteProductName이 품목 종류와 일치하는 후보 필터 (siteProductName 없으면 displayName으로 폴백)
+            const typeMatched = availableEntries.filter(([, p]) => {
+                if (p.siteProductName) return lowerType.includes(p.siteProductName.toLowerCase());
+                return (p.displayName || '').toLowerCase().includes(lowerType);
+            });
 
             if (typeMatched.length === 1) {
                 // 후보가 하나면 바로 확정
