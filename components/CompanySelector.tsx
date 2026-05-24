@@ -668,6 +668,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [uploadedPlatforms, setUploadedPlatforms] = useState<{ name: string; count: number }[]>([]);
     // 행별 출처 플랫폼 (인덱스 = masterOrderData 행 인덱스, 값 = 플랫폼 이름 또는 null=쿠팡)
     const [rowPlatformSources, setRowPlatformSources] = useState<(string | null)[]>([]);
+    // 등록상품명 교체 (K열)
+    const [kReplaceFrom, setKReplaceFrom] = useState('');
+    const [kReplaceTo, setKReplaceTo] = useState('');
+    const [kReplaceHistory, setKReplaceHistory] = useState<{ from: string; to: string }[]>([]);
 
     // rowPlatformSources + masterOrderData → 주문번호→플랫폼 Map 생성
     const orderPlatformMap = useMemo(() => {
@@ -1602,6 +1606,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             setDetectedCompanies(companiesInFile);
             setMasterOrderData(json);
+            setKReplaceFrom('');
+            setKReplaceTo('');
+            setKReplaceHistory([]);
 
             // 기존 수동 입금내역이 있으면 포함 여부 확인
             if (manualTransfers.length > 0) {
@@ -1614,7 +1621,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); };
+    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceTo(''); setKReplaceHistory([]); };
+
+    const applyKValueReplacement = () => {
+        if (!kReplaceFrom || !kReplaceTo || !masterOrderData) return;
+        const updated = masterOrderData.map((row, idx) => {
+            if (idx === 0) return row;
+            const currentK = String(row[10] || '').trim();
+            if (currentK === kReplaceFrom) {
+                const newRow = [...row];
+                newRow[10] = kReplaceTo;
+                return newRow;
+            }
+            return row;
+        });
+        setMasterOrderData(updated);
+        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo }]);
+        setKReplaceFrom('');
+        setKReplaceTo('');
+    };
 
     const handleFakeMasterUpload = async (file: File) => {
         setFakeMasterOrderFile(file);
@@ -3449,6 +3474,66 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             })()}
                         </div>
                     )}
+                    {masterOrderFile && masterOrderData && (() => {
+                        const uniqueKValues = ([...new Set(
+                            masterOrderData.slice(1)
+                                .map((r: any[]) => String(r[10] || '').trim())
+                                .filter((v: string) => v.length > 0)
+                        )] as string[]).sort((a, b) => a.localeCompare(b, 'ko'));
+                        const allVendorKeywords = (Object.entries(pricingConfig) as [string, import('../types').CompanyConfig][]).flatMap(([company, cfg]) =>
+                            (cfg.keywords || []).map((kw: string) => ({ kw, company }))
+                        ).sort((a, b) => a.kw.localeCompare(b.kw, 'ko'));
+                        return (
+                        <div className="bg-zinc-950 p-3 rounded-2xl border border-zinc-800 shadow-inner flex flex-col gap-2">
+                            <div className="flex items-center gap-2">
+                                <div className="bg-amber-500/10 p-1 rounded-lg shrink-0">
+                                    <svg className="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" /></svg>
+                                </div>
+                                <h4 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest">등록상품명 교체</h4>
+                            </div>
+                            <div className="flex flex-col gap-1.5">
+                                <select
+                                    value={kReplaceFrom}
+                                    onChange={e => setKReplaceFrom(e.target.value)}
+                                    className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
+                                >
+                                    <option value="">현재 K열 값 선택...</option>
+                                    {uniqueKValues.map(v => (
+                                        <option key={v} value={v}>{v}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={kReplaceTo}
+                                    onChange={e => setKReplaceTo(e.target.value)}
+                                    className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
+                                >
+                                    <option value="">교체할 등록상품명 선택...</option>
+                                    {allVendorKeywords.map(({ kw, company }) => (
+                                        <option key={`${company}::${kw}`} value={kw}>{kw} ({company})</option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={applyKValueReplacement}
+                                    disabled={!kReplaceFrom || !kReplaceTo || kReplaceFrom === kReplaceTo}
+                                    className="w-full py-1.5 text-[11px] font-black rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30 hover:border-amber-400/50 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+                                >
+                                    교체 적용
+                                </button>
+                            </div>
+                            {kReplaceHistory.length > 0 && (
+                                <div className="flex flex-col gap-0.5 mt-0.5">
+                                    {kReplaceHistory.map((h, i) => (
+                                        <div key={i} className="flex items-center gap-1 text-[10px]">
+                                            <span className="text-zinc-500 truncate max-w-[80px]">{h.from}</span>
+                                            <span className="text-amber-600 shrink-0">→</span>
+                                            <span className="text-amber-300 truncate max-w-[80px]">{h.to}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        );
+                    })()}
                     {masterOrderFile && (
                         <div className="bg-zinc-950 rounded-2xl border border-dashed border-zinc-700 hover:border-rose-500/50 transition-all overflow-hidden">
                             {(() => {
