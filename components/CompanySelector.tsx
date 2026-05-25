@@ -672,9 +672,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [kReplaceFrom, setKReplaceFrom] = useState('');
     const [kReplaceTo, setKReplaceTo] = useState('');
     const [kReplaceToCompany, setKReplaceToCompany] = useState('');
-    const [kReplaceProductFrom, setKReplaceProductFrom] = useState('');
-    const [kReplaceProductTo, setKReplaceProductTo] = useState('');
-    const [kReplaceHistory, setKReplaceHistory] = useState<{ from: string; to: string; productFrom?: string; productTo?: string }[]>([]);
+    const [kReplaceProductMap, setKReplaceProductMap] = useState<Record<string, string>>({}); // 원래L → 새품목명
+    const [kReplaceHistory, setKReplaceHistory] = useState<{ from: string; to: string; productMap?: Record<string, string> }[]>([]);
 
     // rowPlatformSources + masterOrderData → 주문번호→플랫폼 Map 생성
     const orderPlatformMap = useMemo(() => {
@@ -1612,8 +1611,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setKReplaceFrom('');
             setKReplaceTo('');
             setKReplaceToCompany('');
-            setKReplaceProductFrom('');
-            setKReplaceProductTo('');
+            setKReplaceProductMap({});
             setKReplaceHistory([]);
 
             // 기존 수동 입금내역이 있으면 포함 여부 확인
@@ -1627,7 +1625,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductFrom(''); setKReplaceProductTo(''); setKReplaceHistory([]); };
+    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductMap({}); setKReplaceHistory([]); };
 
     const applyKValueReplacement = () => {
         if (!kReplaceFrom || !kReplaceTo || !masterOrderData || !masterOrderFile) return;
@@ -1637,12 +1635,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (currentK === kReplaceFrom) {
                 const newRow = [...row];
                 newRow[10] = kReplaceTo;
-                // L열: 사용자가 품목명 매칭을 선택한 경우에만 교체
-                if (kReplaceProductFrom && kReplaceProductTo) {
-                    const currentL = String(row[11] || '').trim();
-                    if (currentL === kReplaceProductFrom) {
-                        newRow[11] = kReplaceProductTo;
-                    }
+                const currentL = String(row[11] || '').trim();
+                if (kReplaceProductMap[currentL]) {
+                    newRow[11] = kReplaceProductMap[currentL];
                 }
                 return newRow;
             }
@@ -1656,12 +1651,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
         clearProductMatchCache();
-        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productFrom: kReplaceProductFrom || undefined, productTo: kReplaceProductTo || undefined }]);
+        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: Object.keys(kReplaceProductMap).length > 0 ? { ...kReplaceProductMap } : undefined }]);
         setKReplaceFrom('');
         setKReplaceTo('');
         setKReplaceToCompany('');
-        setKReplaceProductFrom('');
-        setKReplaceProductTo('');
+        setKReplaceProductMap({});
     };
 
     const handleFakeMasterUpload = async (file: File) => {
@@ -3544,7 +3538,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <option key={`${company}::${kw}`} value={`${company}::${kw}`}>{kw} ({company})</option>
                                     ))}
                                 </select>
-                                {/* 품목명 매칭: K값 선택 후 표시 */}
+                                {/* 품목명 매칭: K값 선택 후 전체 목록 표시 */}
                                 {kReplaceFrom && (() => {
                                     const uniqueLValues = ([...new Set(
                                         masterOrderData!.slice(1)
@@ -3555,31 +3549,32 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     const targetProducts = kReplaceToCompany
                                         ? Object.values((pricingConfig[kReplaceToCompany] as import('../types').CompanyConfig | undefined)?.products || {}).map(p => p.displayName).sort((a, b) => a.localeCompare(b, 'ko'))
                                         : [];
+                                    if (uniqueLValues.length === 0) return null;
                                     return (
                                         <>
                                             <div className="h-px bg-zinc-800 my-0.5" />
                                             <span className="text-[9px] font-black text-zinc-600 uppercase tracking-wide">품목명 매칭 (선택)</span>
-                                            <select
-                                                value={kReplaceProductFrom}
-                                                onChange={e => setKReplaceProductFrom(e.target.value)}
-                                                className="w-full bg-zinc-900 border border-zinc-700 text-zinc-300 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
-                                            >
-                                                <option value="">원래 품목명 선택...</option>
-                                                {uniqueLValues.map(v => (
-                                                    <option key={v} value={v}>{v}</option>
-                                                ))}
-                                            </select>
-                                            <select
-                                                value={kReplaceProductTo}
-                                                onChange={e => setKReplaceProductTo(e.target.value)}
-                                                disabled={!kReplaceToCompany}
-                                                className="w-full bg-zinc-900 border border-zinc-700 text-zinc-300 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50 disabled:opacity-40"
-                                            >
-                                                <option value="">{kReplaceToCompany ? '새 업체 품목명 선택...' : '(K열 대상 먼저 선택)'}</option>
-                                                {targetProducts.map(v => (
-                                                    <option key={v} value={v}>{v}</option>
-                                                ))}
-                                            </select>
+                                            {uniqueLValues.map(lVal => (
+                                                <div key={lVal} className="flex flex-col gap-0.5">
+                                                    <span className="text-[10px] text-zinc-500 truncate">{lVal}</span>
+                                                    <select
+                                                        value={kReplaceProductMap[lVal] || ''}
+                                                        onChange={e => setKReplaceProductMap(prev => {
+                                                            const next = { ...prev };
+                                                            if (e.target.value) next[lVal] = e.target.value;
+                                                            else delete next[lVal];
+                                                            return next;
+                                                        })}
+                                                        disabled={!kReplaceToCompany}
+                                                        className="w-full bg-zinc-900 border border-zinc-700 text-zinc-300 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50 disabled:opacity-40"
+                                                    >
+                                                        <option value="">{kReplaceToCompany ? '→ 새 업체 품목명 선택' : '(K열 대상 먼저 선택)'}</option>
+                                                        {targetProducts.map(v => (
+                                                            <option key={v} value={v}>{v}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                            ))}
                                         </>
                                     );
                                 })()}
@@ -3592,7 +3587,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </button>
                             </div>
                             {kReplaceHistory.length > 0 && (
-                                <div className="flex flex-col gap-0.5 mt-0.5">
+                                <div className="flex flex-col gap-1 mt-0.5">
                                     {kReplaceHistory.map((h, i) => (
                                         <div key={i} className="flex flex-col gap-0.5 text-[10px]">
                                             <div className="flex items-center gap-1">
@@ -3600,13 +3595,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 <span className="text-amber-600 shrink-0">→</span>
                                                 <span className="text-amber-300 truncate max-w-[80px]">{h.to}</span>
                                             </div>
-                                            {h.productFrom && h.productTo && (
-                                                <div className="flex items-center gap-1 pl-2">
-                                                    <span className="text-zinc-600 truncate max-w-[75px]">{h.productFrom}</span>
+                                            {h.productMap && Object.entries(h.productMap).map(([lFrom, lTo]) => (
+                                                <div key={lFrom} className="flex items-center gap-1 pl-2">
+                                                    <span className="text-zinc-600 truncate max-w-[70px]">{lFrom}</span>
                                                     <span className="text-zinc-700 shrink-0">→</span>
-                                                    <span className="text-zinc-400 truncate max-w-[75px]">{h.productTo}</span>
+                                                    <span className="text-zinc-400 truncate max-w-[70px]">{lTo}</span>
                                                 </div>
-                                            )}
+                                            ))}
                                         </div>
                                     ))}
                                 </div>
