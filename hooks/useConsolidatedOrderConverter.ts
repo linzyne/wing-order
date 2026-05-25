@@ -466,19 +466,33 @@ const consolidateMatchedOrders = (
             const before = famOrders.map(o => ({ displayName: o.config.displayName, qty: o.qty }));
             const after: { displayName: string; qty: number }[] = [];
 
-            // totalKg가 딱 하나의 상품 크기와 일치할 때만 합산 (택배 1번으로 해결 가능한 경우만)
-            // 그 외(여러 박스 필요)는 원본 주문 그대로 유지
-            const exactProduct = members.find(m => m.kg === totalKg);
-            if (exactProduct) {
-                result.push({
-                    ...template,
-                    productKey: exactProduct.productKey,
-                    config: exactProduct.config,
-                    qty: 1,
-                });
-                after.push({ displayName: exactProduct.config.displayName, qty: 1 });
+            // 그리디로 최소 박스 수 계산
+            const greedyResult: { productKey: string; config: ProductPricing; qty: number }[] = [];
+            let remaining = totalKg;
+            for (const member of members) {
+                if (remaining <= 0) break;
+                const count = Math.floor(remaining / member.kg);
+                if (count > 0) {
+                    greedyResult.push({ productKey: member.productKey, config: member.config, qty: count });
+                    remaining -= member.kg * count;
+                }
+            }
+            if (remaining > 0) {
+                const smallest = members[members.length - 1];
+                greedyResult.push({ productKey: smallest.productKey, config: smallest.config, qty: 1 });
+            }
+
+            const originalBoxCount = famOrders.reduce((sum, o) => sum + o.qty, 0);
+            const greedyBoxCount = greedyResult.reduce((sum, r) => sum + r.qty, 0);
+
+            if (greedyBoxCount < originalBoxCount) {
+                // 박스 수가 줄어드는 경우만 합산
+                for (const r of greedyResult) {
+                    result.push({ ...template, productKey: r.productKey, config: r.config, qty: r.qty });
+                    after.push({ displayName: r.config.displayName, qty: r.qty });
+                }
             } else {
-                // 단일 배송 불가 → 원본 그대로
+                // 박스 수가 같거나 늘어나면 원본 유지
                 for (const o of famOrders) result.push(o);
                 after.push(...famOrders.map(o => ({ displayName: o.config.displayName, qty: o.qty })));
             }
