@@ -9,6 +9,7 @@ declare var XLSX: any;
 
 // 모듈 수준 Gemini 캐시 — 동일 세션 내 재처리 시 동일 품목명 재질의 방지
 const geminiProductCache: Map<string, [string, ProductPricing] | null> = new Map();
+export function clearProductMatchCache() { geminiProductCache.clear(); }
 
 export interface OrderItem {
     registeredProductName: string; // 등록상품명 (원본 엑셀)
