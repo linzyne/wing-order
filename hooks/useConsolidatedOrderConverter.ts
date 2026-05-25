@@ -468,7 +468,9 @@ const consolidateMatchedOrders = (
             const after: { displayName: string; qty: number }[] = [];
 
             // 동일 단위로 딱 떨어지는 품목을 우선 선택 (예: 4kg → 2kg x 2 우선)
-            const evenMatch = members.find(m => totalKg % m.kg === 0 && m.kg !== totalKg);
+            // 단, totalKg와 정확히 일치하는 상품이 있으면 그것을 우선 사용 (10kg → 2×5kg 방지)
+            const hasExactProduct = members.some(m => m.kg === totalKg);
+            const evenMatch = !hasExactProduct && members.find(m => totalKg % m.kg === 0 && m.kg !== totalKg);
             if (evenMatch && evenMatch.kg > (members[members.length - 1]?.kg || 0)) {
                 const count = totalKg / evenMatch.kg;
                 result.push({
