@@ -668,10 +668,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [uploadedPlatforms, setUploadedPlatforms] = useState<{ name: string; count: number }[]>([]);
     // 행별 출처 플랫폼 (인덱스 = masterOrderData 행 인덱스, 값 = 플랫폼 이름 또는 null=쿠팡)
     const [rowPlatformSources, setRowPlatformSources] = useState<(string | null)[]>([]);
-    // 등록상품명 교체 (K열)
+    // 등록상품명 교체 (K열 + L열 품목명 매칭)
     const [kReplaceFrom, setKReplaceFrom] = useState('');
     const [kReplaceTo, setKReplaceTo] = useState('');
-    const [kReplaceHistory, setKReplaceHistory] = useState<{ from: string; to: string }[]>([]);
+    const [kReplaceToCompany, setKReplaceToCompany] = useState('');
+    const [kReplaceProductFrom, setKReplaceProductFrom] = useState('');
+    const [kReplaceProductTo, setKReplaceProductTo] = useState('');
+    const [kReplaceHistory, setKReplaceHistory] = useState<{ from: string; to: string; productFrom?: string; productTo?: string }[]>([]);
 
     // rowPlatformSources + masterOrderData → 주문번호→플랫폼 Map 생성
     const orderPlatformMap = useMemo(() => {
@@ -1608,6 +1611,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setMasterOrderData(json);
             setKReplaceFrom('');
             setKReplaceTo('');
+            setKReplaceToCompany('');
+            setKReplaceProductFrom('');
+            setKReplaceProductTo('');
             setKReplaceHistory([]);
 
             // 기존 수동 입금내역이 있으면 포함 여부 확인
@@ -1621,7 +1627,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceTo(''); setKReplaceHistory([]); };
+    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductFrom(''); setKReplaceProductTo(''); setKReplaceHistory([]); };
 
     const applyKValueReplacement = () => {
         if (!kReplaceFrom || !kReplaceTo || !masterOrderData || !masterOrderFile) return;
@@ -1631,10 +1637,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (currentK === kReplaceFrom) {
                 const newRow = [...row];
                 newRow[10] = kReplaceTo;
-                // L열 상품명도 교체: "하루팜_초당옥수수 1박스..." → "초록_초당옥수수 1박스..."
-                const currentL = String(row[11] || '');
-                if (currentL.startsWith(kReplaceFrom)) {
-                    newRow[11] = kReplaceTo + currentL.slice(kReplaceFrom.length);
+                // L열: 사용자가 품목명 매칭을 선택한 경우에만 교체
+                if (kReplaceProductFrom && kReplaceProductTo) {
+                    const currentL = String(row[11] || '').trim();
+                    if (currentL === kReplaceProductFrom) {
+                        newRow[11] = kReplaceProductTo;
+                    }
                 }
                 return newRow;
             }
@@ -1648,9 +1656,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
         clearProductMatchCache();
-        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo }]);
+        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productFrom: kReplaceProductFrom || undefined, productTo: kReplaceProductTo || undefined }]);
         setKReplaceFrom('');
         setKReplaceTo('');
+        setKReplaceToCompany('');
+        setKReplaceProductFrom('');
+        setKReplaceProductTo('');
     };
 
     const handleFakeMasterUpload = async (file: File) => {
@@ -3504,9 +3515,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 <h4 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest">등록상품명 교체</h4>
                             </div>
                             <div className="flex flex-col gap-1.5">
+                                {/* K열 교체 */}
                                 <select
                                     value={kReplaceFrom}
-                                    onChange={e => setKReplaceFrom(e.target.value)}
+                                    onChange={e => { setKReplaceFrom(e.target.value); setKReplaceProductFrom(''); setKReplaceProductTo(''); }}
                                     className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
                                 >
                                     <option value="">현재 K열 값 선택...</option>
@@ -3515,15 +3527,62 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     ))}
                                 </select>
                                 <select
-                                    value={kReplaceTo}
-                                    onChange={e => setKReplaceTo(e.target.value)}
+                                    value={kReplaceTo ? `${kReplaceToCompany}::${kReplaceTo}` : ''}
+                                    onChange={e => {
+                                        if (!e.target.value) { setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductTo(''); return; }
+                                        const idx = e.target.value.indexOf('::');
+                                        const company = e.target.value.slice(0, idx);
+                                        const kw = e.target.value.slice(idx + 2);
+                                        setKReplaceTo(kw);
+                                        setKReplaceToCompany(company);
+                                        setKReplaceProductTo('');
+                                    }}
                                     className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
                                 >
                                     <option value="">교체할 등록상품명 선택...</option>
                                     {allVendorKeywords.map(({ kw, company }) => (
-                                        <option key={`${company}::${kw}`} value={kw}>{kw} ({company})</option>
+                                        <option key={`${company}::${kw}`} value={`${company}::${kw}`}>{kw} ({company})</option>
                                     ))}
                                 </select>
+                                {/* 품목명 매칭: K값 선택 후 표시 */}
+                                {kReplaceFrom && (() => {
+                                    const uniqueLValues = ([...new Set(
+                                        masterOrderData!.slice(1)
+                                            .filter((r: any[]) => String(r[10] || '').trim() === kReplaceFrom)
+                                            .map((r: any[]) => String(r[11] || '').trim())
+                                            .filter((v: string) => v.length > 0)
+                                    )] as string[]).sort((a, b) => a.localeCompare(b, 'ko'));
+                                    const targetProducts = kReplaceToCompany
+                                        ? Object.values((pricingConfig[kReplaceToCompany] as import('../types').CompanyConfig | undefined)?.products || {}).map(p => p.displayName).sort((a, b) => a.localeCompare(b, 'ko'))
+                                        : [];
+                                    return (
+                                        <>
+                                            <div className="h-px bg-zinc-800 my-0.5" />
+                                            <span className="text-[9px] font-black text-zinc-600 uppercase tracking-wide">품목명 매칭 (선택)</span>
+                                            <select
+                                                value={kReplaceProductFrom}
+                                                onChange={e => setKReplaceProductFrom(e.target.value)}
+                                                className="w-full bg-zinc-900 border border-zinc-700 text-zinc-300 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
+                                            >
+                                                <option value="">원래 품목명 선택...</option>
+                                                {uniqueLValues.map(v => (
+                                                    <option key={v} value={v}>{v}</option>
+                                                ))}
+                                            </select>
+                                            <select
+                                                value={kReplaceProductTo}
+                                                onChange={e => setKReplaceProductTo(e.target.value)}
+                                                disabled={!kReplaceToCompany}
+                                                className="w-full bg-zinc-900 border border-zinc-700 text-zinc-300 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50 disabled:opacity-40"
+                                            >
+                                                <option value="">{kReplaceToCompany ? '새 업체 품목명 선택...' : '(K열 대상 먼저 선택)'}</option>
+                                                {targetProducts.map(v => (
+                                                    <option key={v} value={v}>{v}</option>
+                                                ))}
+                                            </select>
+                                        </>
+                                    );
+                                })()}
                                 <button
                                     onClick={applyKValueReplacement}
                                     disabled={!kReplaceFrom || !kReplaceTo || kReplaceFrom === kReplaceTo}
@@ -3535,10 +3594,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             {kReplaceHistory.length > 0 && (
                                 <div className="flex flex-col gap-0.5 mt-0.5">
                                     {kReplaceHistory.map((h, i) => (
-                                        <div key={i} className="flex items-center gap-1 text-[10px]">
-                                            <span className="text-zinc-500 truncate max-w-[80px]">{h.from}</span>
-                                            <span className="text-amber-600 shrink-0">→</span>
-                                            <span className="text-amber-300 truncate max-w-[80px]">{h.to}</span>
+                                        <div key={i} className="flex flex-col gap-0.5 text-[10px]">
+                                            <div className="flex items-center gap-1">
+                                                <span className="text-zinc-500 truncate max-w-[80px]">{h.from}</span>
+                                                <span className="text-amber-600 shrink-0">→</span>
+                                                <span className="text-amber-300 truncate max-w-[80px]">{h.to}</span>
+                                            </div>
+                                            {h.productFrom && h.productTo && (
+                                                <div className="flex items-center gap-1 pl-2">
+                                                    <span className="text-zinc-600 truncate max-w-[75px]">{h.productFrom}</span>
+                                                    <span className="text-zinc-700 shrink-0">→</span>
+                                                    <span className="text-zinc-400 truncate max-w-[75px]">{h.productTo}</span>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
