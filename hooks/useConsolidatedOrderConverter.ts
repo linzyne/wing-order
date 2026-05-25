@@ -460,53 +460,27 @@ const consolidateMatchedOrders = (
         // 각 패밀리에 대해 그리디 분해
         for (const [baseName, { orders: famOrders, totalKg }] of familyGroups.entries()) {
             const members = families.get(baseName)!;
-            let remaining = totalKg;
             const template = famOrders[0];
 
             // before 기록
             const before = famOrders.map(o => ({ displayName: o.config.displayName, qty: o.qty }));
             const after: { displayName: string; qty: number }[] = [];
 
-            // 동일 단위로 딱 떨어지는 품목을 우선 선택 (예: 4kg → 2kg x 2 우선)
-            // 단, totalKg와 정확히 일치하는 상품이 있으면 그것을 우선 사용 (10kg → 2×5kg 방지)
-            const hasExactProduct = members.some(m => m.kg === totalKg);
-            const evenMatch = !hasExactProduct && members.find(m => totalKg % m.kg === 0 && m.kg !== totalKg);
-            if (evenMatch && evenMatch.kg > (members[members.length - 1]?.kg || 0)) {
-                const count = totalKg / evenMatch.kg;
+            // totalKg가 딱 하나의 상품 크기와 일치할 때만 합산 (택배 1번으로 해결 가능한 경우만)
+            // 그 외(여러 박스 필요)는 원본 주문 그대로 유지
+            const exactProduct = members.find(m => m.kg === totalKg);
+            if (exactProduct) {
                 result.push({
                     ...template,
-                    productKey: evenMatch.productKey,
-                    config: evenMatch.config,
-                    qty: count,
+                    productKey: exactProduct.productKey,
+                    config: exactProduct.config,
+                    qty: 1,
                 });
-                after.push({ displayName: evenMatch.config.displayName, qty: count });
-                remaining = 0;
+                after.push({ displayName: exactProduct.config.displayName, qty: 1 });
             } else {
-                // 균등 분할 불가 → 큰 것부터 채우는 그리디
-                for (const member of members) {
-                    if (remaining <= 0) break;
-                    const count = Math.floor(remaining / member.kg);
-                    if (count > 0) {
-                        result.push({
-                            ...template,
-                            productKey: member.productKey,
-                            config: member.config,
-                            qty: count,
-                        });
-                        after.push({ displayName: member.config.displayName, qty: count });
-                        remaining -= member.kg * count;
-                    }
-                }
-                if (remaining > 0) {
-                    const smallest = members[members.length - 1];
-                    result.push({
-                        ...template,
-                        productKey: smallest.productKey,
-                        config: smallest.config,
-                        qty: 1,
-                    });
-                    after.push({ displayName: smallest.config.displayName, qty: 1 });
-                }
+                // 단일 배송 불가 → 원본 그대로
+                for (const o of famOrders) result.push(o);
+                after.push(...famOrders.map(o => ({ displayName: o.config.displayName, qty: o.qty })));
             }
 
             // before와 after가 다를 때만 로그 기록
