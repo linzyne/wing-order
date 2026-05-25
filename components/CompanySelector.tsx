@@ -1631,6 +1631,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (currentK === kReplaceFrom) {
                 const newRow = [...row];
                 newRow[10] = kReplaceTo;
+                // L열 상품명도 교체: "하루팜_초당옥수수 1박스..." → "초록_초당옥수수 1박스..."
+                const currentL = String(row[11] || '');
+                if (currentL.startsWith(kReplaceFrom)) {
+                    newRow[11] = kReplaceTo + currentL.slice(kReplaceFrom.length);
+                }
                 return newRow;
             }
             return row;
