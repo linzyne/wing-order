@@ -1685,10 +1685,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         let optionColIdx = headers0.findIndex((h: string) => h.includes('옵션정보'));
         if (optionColIdx === -1) optionColIdx = headers0.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
         const hasProductMap = Object.keys(kReplaceProductMap).length > 0;
+        let dbgTotal = 0, dbgMatchedFrom = 0, dbgMapHit = 0, dbgLSet = 0;
+        console.log(`[K교체] kReplaceFromCompany="${kReplaceFromCompany}" fromProducts keys=${Object.keys(fromProducts).length} kReplaceProductMap=`, kReplaceProductMap);
         const updated = masterOrderData.map((row, idx) => {
             if (idx === 0) return row;
             const currentK = String(row[10] || '').trim();
             if (currentK !== kReplaceFrom) return row;
+            dbgTotal++;
             const newRow = [...row];
             newRow[10] = kReplaceTo;
             if (hasProductMap) {
@@ -1698,15 +1701,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 let rawPN = `${currentK} ${rowL}`.trim();
                 if (optionVal) rawPN += ' ' + optionVal;
                 const matchedFrom = matchProductSync(rawPN, fromProducts, currentK);
-                if (matchedFrom && kReplaceProductMap[matchedFrom]) {
-                    const targetDisplayName = kReplaceProductMap[matchedFrom];
-                    // L열(index 11)을 대상 업체 displayName으로 교체
-                    // → converter가 rawProductName("초록_초당옥수수 초당옥수수 18cm 내외 / 10개")에서 정규화 매칭
-                    newRow[11] = targetDisplayName;
+                if (matchedFrom) {
+                    dbgMatchedFrom++;
+                    if (kReplaceProductMap[matchedFrom]) {
+                        dbgMapHit++;
+                        const targetDisplayName = kReplaceProductMap[matchedFrom];
+                        newRow[11] = targetDisplayName;
+                        dbgLSet++;
+                        if (dbgLSet <= 3) console.log(`[K교체] L교체: "${rowL}" → "${targetDisplayName}" (via "${matchedFrom}")`);
+                    } else {
+                        if (dbgMatchedFrom <= 3) console.log(`[K교체] 맵 미매칭: matchedFrom="${matchedFrom}" rawPN="${rawPN}"`);
+                    }
+                } else {
+                    if (dbgTotal <= 3) console.log(`[K교체] matchProductSync 실패: rawPN="${rawPN}"`);
                 }
             }
             return newRow;
         });
+        console.log(`[K교체] 완료: K일치=${dbgTotal}, matchedFrom=${dbgMatchedFrom}, 맵히트=${dbgMapHit}, L교체=${dbgLSet}`);
         setMasterOrderData(updated);
         // masterOrderFile도 교체된 데이터로 재생성해야 발주서 생성 시 반영됨
         const ws = XLSX.utils.aoa_to_sheet(updated);
