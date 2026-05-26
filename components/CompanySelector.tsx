@@ -1692,7 +1692,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const newRow = [...row];
             newRow[10] = kReplaceTo;
             if (hasProductMap) {
-                // a업체 displayName으로 역매칭 후 b업체 displayName으로 교체
+                // a업체 품목명으로 역매칭 후 b업체 displayName을 L열에 직접 기입
                 const rowL = String(row[11] || '').trim();
                 const optionVal = optionColIdx !== -1 ? String(row[optionColIdx] || '').trim() : '';
                 let rawPN = `${currentK} ${rowL}`.trim();
@@ -1700,11 +1700,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const matchedFrom = matchProductSync(rawPN, fromProducts, currentK);
                 if (matchedFrom && kReplaceProductMap[matchedFrom]) {
                     const targetDisplayName = kReplaceProductMap[matchedFrom];
-                    const toEntry = Object.entries(toProducts).find(([, p]: [string, any]) => p.displayName === targetDisplayName);
-                    if (toEntry) {
-                        // col 40에 target 품목 키 저장 → converter가 매칭 없이 직접 사용
-                        newRow[40] = toEntry[0];
-                    }
+                    // L열(index 11)을 대상 업체 displayName으로 교체
+                    // → converter가 rawProductName("초록_초당옥수수 초당옥수수 18cm 내외 / 10개")에서 정규화 매칭
+                    newRow[11] = targetDisplayName;
                 }
             }
             return newRow;
