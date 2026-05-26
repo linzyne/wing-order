@@ -1685,7 +1685,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         let optionColIdx = headers0.findIndex((h: string) => h.includes('옵션정보'));
         if (optionColIdx === -1) optionColIdx = headers0.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
         const hasProductMap = Object.keys(kReplaceProductMap).length > 0;
-        clearProductMatchCache();
         const updated = masterOrderData.map((row, idx) => {
             if (idx === 0) return row;
             const currentK = String(row[10] || '').trim();
@@ -1702,7 +1701,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (matchedFrom && kReplaceProductMap[matchedFrom]) {
                     const targetDisplayName = kReplaceProductMap[matchedFrom];
                     newRow[11] = targetDisplayName;
-                    // b업체 품목 캐시 직접 주입
+                    // b업체 품목 캐시 직접 주입 (rawProductName은 converter와 동일하게 K열+L열 구성)
                     const newRawPN = `${kReplaceTo} ${targetDisplayName}` + (optionVal ? ' ' + optionVal : '');
                     const toEntry = Object.entries(toProducts).find(([, p]: [string, any]) => p.displayName === targetDisplayName);
                     if (toEntry) preSetProductMatchCache(`${kReplaceToCompany}::${newRawPN}`, toEntry as [string, import('../types').ProductPricing]);
@@ -1717,6 +1716,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
         const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
+        // K 교체 후 detectedCompanies 갱신: 대상 업체 추가, K-from 업체 행이 0이면 제거
+        setDetectedCompanies(prev => {
+            const next = new Set(prev);
+            if (kReplaceToCompany) next.add(kReplaceToCompany);
+            // K-from 업체의 행이 더 이상 없으면 감지 목록에서 제거
+            const fromStillHasRows = updated.slice(1).some((r: any[]) => String(r[10] || '').trim() === kReplaceFrom);
+            if (!fromStillHasRows && kReplaceFromCompany) next.delete(kReplaceFromCompany);
+            return next;
+        });
         setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: hasProductMap ? { ...kReplaceProductMap } : undefined }]);
         setKReplaceFrom('');
         setKReplaceFromCompany('');
