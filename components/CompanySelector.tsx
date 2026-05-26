@@ -1700,11 +1700,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const matchedFrom = matchProductSync(rawPN, fromProducts, currentK);
                 if (matchedFrom && kReplaceProductMap[matchedFrom]) {
                     const targetDisplayName = kReplaceProductMap[matchedFrom];
-                    newRow[11] = targetDisplayName;
-                    // b업체 품목 캐시 직접 주입 (rawProductName은 converter와 동일하게 K열+L열 구성)
-                    const newRawPN = `${kReplaceTo} ${targetDisplayName}` + (optionVal ? ' ' + optionVal : '');
                     const toEntry = Object.entries(toProducts).find(([, p]: [string, any]) => p.displayName === targetDisplayName);
-                    if (toEntry) preSetProductMatchCache(`${kReplaceToCompany}::${newRawPN}`, toEntry as [string, import('../types').ProductPricing]);
+                    if (toEntry) {
+                        // converter는 파일에서 K열+L열(원본)로 rawProductName을 구성하므로
+                        // 그 키로 캐시를 주입해야 확실히 hit됨
+                        const converterRawPN = `${kReplaceTo} ${rowL}` + (optionVal ? ' ' + optionVal : '');
+                        preSetProductMatchCache(`${kReplaceToCompany}::${converterRawPN}`, toEntry as [string, import('../types').ProductPricing]);
+                    }
                 }
             }
             return newRow;
