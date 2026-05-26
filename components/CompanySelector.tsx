@@ -1702,10 +1702,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     const targetDisplayName = kReplaceProductMap[matchedFrom];
                     const toEntry = Object.entries(toProducts).find(([, p]: [string, any]) => p.displayName === targetDisplayName);
                     if (toEntry) {
-                        // converter는 파일에서 K열+L열(원본)로 rawProductName을 구성하므로
-                        // 그 키로 캐시를 주입해야 확실히 hit됨
-                        const converterRawPN = `${kReplaceTo} ${rowL}` + (optionVal ? ' ' + optionVal : '');
-                        preSetProductMatchCache(`${kReplaceToCompany}::${converterRawPN}`, toEntry as [string, import('../types').ProductPricing]);
+                        // col 40에 target 품목 키 저장 → converter가 매칭 없이 직접 사용
+                        newRow[40] = toEntry[0];
                     }
                 }
             }

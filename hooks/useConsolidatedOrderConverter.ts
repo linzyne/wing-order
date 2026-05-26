@@ -616,7 +616,14 @@ const generateWorkbookForCompany = async (
                         }
                     }
                 }
-                const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig, String(row[groupColIdx] || '').trim(), String(regOptionColIdx !== -1 ? row[regOptionColIdx] || '' : '').trim());
+                // K교체 시 품목키 직접 주입 (col 40): 매칭 파이프라인 우회
+                const productKeyOverride = String(row[40] || '').trim();
+                let productConfigTuple: [string, ProductPricing] | null;
+                if (productKeyOverride && companyConfig.products[productKeyOverride]) {
+                    productConfigTuple = [productKeyOverride, companyConfig.products[productKeyOverride]];
+                } else {
+                    productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig, String(row[groupColIdx] || '').trim(), String(regOptionColIdx !== -1 ? row[regOptionColIdx] || '' : '').trim());
+                }
 
                 if (productConfigTuple) {
                     const [productKey, config] = productConfigTuple;
