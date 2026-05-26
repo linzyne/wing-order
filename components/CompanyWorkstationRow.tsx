@@ -508,12 +508,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             handleLocalFileChange(batchFile);
         } else if (hasFileChanged) {
             if (masterFile) {
-                // 항상 ref 업데이트 (정규화된 파일로 재트리거 방지)
-                lastProcessedMasterRef.current = masterFile;
                 lastFakeOrdersRef.current = fakeOrderNumbers;
                 lastManualOrdersRef.current = manualOrdersStr;
 
                 if (!isProcessingRef.current) {
+                    // ref는 실제 처리가 시작될 때만 업데이트 (처리 중 파일 교체 시 재트리거 허용)
+                    lastProcessedMasterRef.current = masterFile;
                     // 수동발주가 있고 아직 선택 안 했으면 모달로 선택 후 처리, 아니면 바로 처리
                     if (isFirstSession && manualOrders.length > 0 && confirmedManualOrderIdsRef.current === null) {
                         pendingFileRef.current = masterFile;
