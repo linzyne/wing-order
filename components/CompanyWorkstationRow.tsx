@@ -522,6 +522,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     } else if (confirmedManualOrderIdsRef.current === null) {
                         handleLocalFileChange(masterFile, []);
                     }
+                } else {
+                    console.log(`[auto-trigger] ${companyName} 파일 변경 감지됐지만 처리 중 → 처리 완료 후 재트리거 예정`);
                 }
             }
         } else if (hasFakeOrdersChanged && (lastProcessedMasterRef.current || lastProcessedBatchRef.current)) {
