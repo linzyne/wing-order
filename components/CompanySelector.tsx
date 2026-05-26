@@ -6,7 +6,7 @@ import FileUpload from './FileUpload';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon } from './icons';
-import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
+import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import {
@@ -1651,6 +1651,27 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
         clearProductMatchCache();
+        // 명시적으로 매핑한 품목은 캐시에 직접 주입 → 복잡한 매칭 파이프라인 우회
+        if (Object.keys(kReplaceProductMap).length > 0 && kReplaceToCompany) {
+            const targetProducts = (pricingConfig as import('../types').PricingConfig)[kReplaceToCompany]?.products || {};
+            const headers = ((updated[0] as any[]) || []).map((h: any) => String(h).trim());
+            let optionColIdx = headers.findIndex((h: string) => h.includes('옵션정보'));
+            if (optionColIdx === -1) optionColIdx = headers.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
+            for (let i = 1; i < updated.length; i++) {
+                const row = updated[i] as any[];
+                if (!row) continue;
+                const rowK = String(row[10] || '').trim();
+                if (rowK !== kReplaceTo) continue;
+                const rowL = String(row[11] || '').trim();
+                if (!rowL) continue;
+                let rawProductName = `${rowK} ${rowL}`.trim();
+                if (optionColIdx !== -1 && row[optionColIdx]) rawProductName += ' ' + String(row[optionColIdx]).trim();
+                const productEntry = Object.entries(targetProducts).find(([, p]: [string, any]) => p.displayName === rowL);
+                if (productEntry) {
+                    preSetProductMatchCache(`${kReplaceToCompany}::${rawProductName}`, productEntry as [string, import('../types').ProductPricing]);
+                }
+            }
+        }
         setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: Object.keys(kReplaceProductMap).length > 0 ? { ...kReplaceProductMap } : undefined }]);
         setKReplaceFrom('');
         setKReplaceTo('');
