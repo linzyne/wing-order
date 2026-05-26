@@ -3512,7 +3512,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 {/* K열 교체 */}
                                 <select
                                     value={kReplaceFrom}
-                                    onChange={e => { setKReplaceFrom(e.target.value); setKReplaceProductFrom(''); setKReplaceProductTo(''); }}
+                                    onChange={e => { setKReplaceFrom(e.target.value); setKReplaceProductMap({}); }}
                                     className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
                                 >
                                     <option value="">현재 K열 값 선택...</option>
@@ -3523,13 +3523,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 <select
                                     value={kReplaceTo ? `${kReplaceToCompany}::${kReplaceTo}` : ''}
                                     onChange={e => {
-                                        if (!e.target.value) { setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductTo(''); return; }
+                                        if (!e.target.value) { setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductMap({}); return; }
                                         const idx = e.target.value.indexOf('::');
                                         const company = e.target.value.slice(0, idx);
                                         const kw = e.target.value.slice(idx + 2);
                                         setKReplaceTo(kw);
                                         setKReplaceToCompany(company);
-                                        setKReplaceProductTo('');
+                                        setKReplaceProductMap({});
                                     }}
                                     className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
                                 >
