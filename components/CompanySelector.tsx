@@ -3523,13 +3523,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 <select
                                     value={kReplaceTo ? `${kReplaceToCompany}::${kReplaceTo}` : ''}
                                     onChange={e => {
-                                        if (!e.target.value) { setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductMap({}); return; }
+                                        if (!e.target.value) { setKReplaceTo(''); setKReplaceToCompany(''); return; }
                                         const idx = e.target.value.indexOf('::');
                                         const company = e.target.value.slice(0, idx);
                                         const kw = e.target.value.slice(idx + 2);
+                                        if (company !== kReplaceToCompany) setKReplaceProductMap({});
                                         setKReplaceTo(kw);
                                         setKReplaceToCompany(company);
-                                        setKReplaceProductMap({});
                                     }}
                                     className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
                                 >
