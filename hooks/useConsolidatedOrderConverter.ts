@@ -1029,6 +1029,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
 
     const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = []) => {
         try {
+            console.log(`[발주처리] ${targetCompanyName} 처리 시작`);
             const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
             const ai = geminiKey ? new GoogleGenAI({ apiKey: geminiKey }) : null;
             let json: any[][] = [];
@@ -1082,6 +1083,8 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
                         if (bestCompany === targetCompanyName) json.push(row);
                     }
                 }
+                console.log(`[발주처리] ${targetCompanyName} 라우팅 결과: ${json.length - 1}건 (헤더 제외)`);
+                if (json.length > 1) console.log(`[발주처리] 첫 행 K="${json[1][10]}" L="${json[1][11]}"`);
             }
 
             const fakeOrderNumbers = new Set<string>();

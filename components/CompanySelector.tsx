@@ -1657,6 +1657,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const headers = ((updated[0] as any[]) || []).map((h: any) => String(h).trim());
             let optionColIdx = headers.findIndex((h: string) => h.includes('옵션정보'));
             if (optionColIdx === -1) optionColIdx = headers.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
+            console.log(`[K교체] ${kReplaceToCompany} 캐시 주입 시작. optionColIdx=${optionColIdx}, 매핑:`, kReplaceProductMap);
+            let injectedCount = 0;
             for (let i = 1; i < updated.length; i++) {
                 const row = updated[i] as any[];
                 if (!row) continue;
@@ -1665,12 +1667,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const rowL = String(row[11] || '').trim();
                 if (!rowL) continue;
                 let rawProductName = `${rowK} ${rowL}`.trim();
-                if (optionColIdx !== -1 && row[optionColIdx]) rawProductName += ' ' + String(row[optionColIdx]).trim();
+                const optionVal = optionColIdx !== -1 ? String(row[optionColIdx] || '').trim() : '';
+                if (optionVal) rawProductName += ' ' + optionVal;
                 const productEntry = Object.entries(targetProducts).find(([, p]: [string, any]) => p.displayName === rowL);
                 if (productEntry) {
-                    preSetProductMatchCache(`${kReplaceToCompany}::${rawProductName}`, productEntry as [string, import('../types').ProductPricing]);
+                    const cacheKey = `${kReplaceToCompany}::${rawProductName}`;
+                    preSetProductMatchCache(cacheKey, productEntry as [string, import('../types').ProductPricing]);
+                    injectedCount++;
+                    if (injectedCount <= 3) console.log(`[K교체] 캐시 주입: "${cacheKey}" → "${productEntry[0]}"`);
+                } else {
+                    console.warn(`[K교체] L="${rowL}"에 매칭되는 ${kReplaceToCompany} 품목 없음. 사용가능 품목:`, Object.values(targetProducts).map((p: any) => p.displayName));
                 }
             }
+            console.log(`[K교체] 총 ${injectedCount}건 캐시 주입 완료`);
         }
         setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: Object.keys(kReplaceProductMap).length > 0 ? { ...kReplaceProductMap } : undefined }]);
         setKReplaceFrom('');
