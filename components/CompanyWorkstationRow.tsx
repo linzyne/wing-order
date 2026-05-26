@@ -522,8 +522,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         pendingFileRef.current = masterFile;
                         setModalSelectedIds(new Set(manualOrders.map(o => o.id)));
                         setShowManualOrderModal(true);
-                    } else if (confirmedManualOrderIdsRef.current === null) {
-                        handleLocalFileChange(masterFile, []);
+                    } else {
+                        const ordersToUse = confirmedManualOrderIdsRef.current !== null
+                            ? manualOrders.filter(o => confirmedManualOrderIdsRef.current!.has(o.id))
+                            : [];
+                        handleLocalFileChange(masterFile, ordersToUse);
                     }
                 } else {
                     // 처리 중 파일 교체 → 완료 후 handleLocalFileChange에서 직접 재실행
