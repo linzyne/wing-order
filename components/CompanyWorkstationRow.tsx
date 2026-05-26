@@ -523,7 +523,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         handleLocalFileChange(masterFile, []);
                     }
                 } else {
-                    console.log(`[auto-trigger] ${companyName} 파일 변경 감지됐지만 처리 중 → 처리 완료 후 재트리거 예정`);
+                    // 처리 중 파일 교체 → 완료 후 handleLocalFileChange에서 직접 재실행
+                    pendingReprocessFileRef.current = masterFile;
                 }
             }
         } else if (hasFakeOrdersChanged && (lastProcessedMasterRef.current || lastProcessedBatchRef.current)) {
@@ -668,6 +669,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const isProcessingRef = useRef(false);
+    const pendingReprocessFileRef = useRef<File | null>(null); // 처리 중 파일 교체 시 완료 후 재처리할 파일
+    const latestMasterFileRef = useRef<File | null>(masterFile); // 항상 최신 masterFile 참조
+    latestMasterFileRef.current = masterFile;
     // 수동발주 선택 모달 상태
     const [showManualOrderModal, setShowManualOrderModal] = useState(false);
     const [modalSelectedIds, setModalSelectedIds] = useState<Set<string>>(new Set());
@@ -717,6 +721,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
         setIsLocalProcessing(false);
         isProcessingRef.current = false;
+        // 처리 중 파일이 교체됐으면 최신 파일로 즉시 재처리
+        const pendingFile = pendingReprocessFileRef.current;
+        if (pendingFile && pendingFile !== file) {
+            pendingReprocessFileRef.current = null;
+            lastProcessedMasterRef.current = pendingFile;
+            handleLocalFileChange(pendingFile, []);
+            return;
+        }
+        pendingReprocessFileRef.current = null;
         // 송장 파일이 있으면 merge 결과 보존 (resetMerge가 results를 null로 밀어버림 방지)
         if (vendorFiles.length === 0) {
             resetMerge();
