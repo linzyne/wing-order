@@ -724,6 +724,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [kReplaceToCompany, setKReplaceToCompany] = useState('');
     const [kReplaceProductMap, setKReplaceProductMap] = useState<Record<string, string>>({}); // a업체 displayName → b업체 displayName
     const [kReplaceHistory, setKReplaceHistory] = useState<{ from: string; to: string; productMap?: Record<string, string> }[]>([]);
+    const [kReplaceRound, setKReplaceRound] = useState<number | null>(null); // null=1차수(마스터), n=n차 batch
 
     // rowPlatformSources + masterOrderData → 주문번호→플랫폼 Map 생성
     const orderPlatformMap = useMemo(() => {
@@ -1675,135 +1676,110 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceFromCompany(''); setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductMap({}); setKReplaceHistory([]); };
+    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceFromCompany(''); setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductMap({}); setKReplaceHistory([]); setKReplaceRound(null); };
 
     const applyKValueReplacement = () => {
-        if (!kReplaceFrom || !kReplaceTo || !masterOrderData || !masterOrderFile) return;
+        if (!kReplaceFrom || !kReplaceTo) return;
         const fromProducts = kReplaceFromCompany ? (pricingConfig as import('../types').PricingConfig)[kReplaceFromCompany]?.products || {} : {};
-        const toProducts = kReplaceToCompany ? (pricingConfig as import('../types').PricingConfig)[kReplaceToCompany]?.products || {} : {};
-        const headers0 = ((masterOrderData[0] as any[]) || []).map((h: any) => String(h || '').trim());
-        let optionColIdx = headers0.findIndex((h: string) => h.includes('옵션정보'));
-        if (optionColIdx === -1) optionColIdx = headers0.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
         const hasProductMap = Object.keys(kReplaceProductMap).length > 0;
-        let dbgTotal = 0, dbgMatchedFrom = 0, dbgMapHit = 0, dbgLSet = 0;
-        console.log(`[K교체] kReplaceFromCompany="${kReplaceFromCompany}" fromProducts keys=${Object.keys(fromProducts).length} kReplaceProductMap=`, kReplaceProductMap);
-        const updated = masterOrderData.map((row, idx) => {
-            if (idx === 0) return row;
-            const currentK = String(row[10] || '').trim();
-            if (currentK !== kReplaceFrom) return row;
-            dbgTotal++;
-            const newRow = [...row];
-            newRow[10] = kReplaceTo;
-            if (hasProductMap) {
-                // a업체 품목명으로 역매칭 후 b업체 displayName을 L열에 직접 기입
-                const rowL = String(row[11] || '').trim();
-                const optionVal = optionColIdx !== -1 ? String(row[optionColIdx] || '').trim() : '';
-                let rawPN = `${currentK} ${rowL}`.trim();
-                if (optionVal) rawPN += ' ' + optionVal;
-                const matchedFrom = matchProductSync(rawPN, fromProducts, currentK);
-                if (matchedFrom) {
-                    dbgMatchedFrom++;
-                    if (kReplaceProductMap[matchedFrom]) {
-                        dbgMapHit++;
-                        const targetDisplayName = kReplaceProductMap[matchedFrom];
-                        newRow[11] = targetDisplayName;
-                        dbgLSet++;
-                        if (dbgLSet <= 3) console.log(`[K교체] L교체: "${rowL}" → "${targetDisplayName}" (via "${matchedFrom}")`);
-                    } else {
-                        if (dbgMatchedFrom <= 3) console.log(`[K교체] 맵 미매칭: matchedFrom="${matchedFrom}" rawPN="${rawPN}"`);
+
+        const applyRowReplacement = (rows: any[][], optionColIdx: number): any[][] =>
+            rows.map(row => {
+                const currentK = String(row[10] || '').trim();
+                if (currentK !== kReplaceFrom) return row;
+                const newRow = [...row];
+                newRow[10] = kReplaceTo;
+                if (hasProductMap) {
+                    const rowL = String(row[11] || '').trim();
+                    const optionVal = optionColIdx !== -1 ? String(row[optionColIdx] || '').trim() : '';
+                    let rawPN = `${currentK} ${rowL}`.trim();
+                    if (optionVal) rawPN += ' ' + optionVal;
+                    const matchedFrom = matchProductSync(rawPN, fromProducts, currentK);
+                    if (matchedFrom && kReplaceProductMap[matchedFrom]) {
+                        newRow[11] = kReplaceProductMap[matchedFrom];
                     }
-                } else {
-                    if (dbgTotal <= 3) console.log(`[K교체] matchProductSync 실패: rawPN="${rawPN}"`);
                 }
+                return newRow;
+            });
+
+        const isBatchRound = kReplaceRound !== null && kReplaceRound > 1;
+
+        if (!isBatchRound) {
+            // ── 1차수(마스터) 교체 ──────────────────────────────────────
+            if (!masterOrderData || !masterOrderFile) return;
+            const headers0 = ((masterOrderData[0] as any[]) || []).map((h: any) => String(h || '').trim());
+            let optionColIdx = headers0.findIndex((h: string) => h.includes('옵션정보'));
+            if (optionColIdx === -1) optionColIdx = headers0.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
+
+            const updated = [masterOrderData[0], ...applyRowReplacement(masterOrderData.slice(1), optionColIdx)];
+            const changedCount = updated.slice(1).filter((r, i) => String(r[10] || '') !== String(masterOrderData[i + 1]?.[10] || '')).length;
+            setMasterOrderData(updated);
+            if (changedCount > 0) {
+                // 실제로 행이 변경된 경우에만 새 File 생성 (불필요한 1차수 재트리거 방지)
+                const ws = XLSX.utils.aoa_to_sheet(updated);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+                const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+                setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
+                setDetectedCompanies(prev => {
+                    const next = new Set(prev);
+                    if (kReplaceToCompany) next.add(kReplaceToCompany);
+                    const fromStillHasRows = updated.slice(1).some((r: any[]) => String(r[10] || '').trim() === kReplaceFrom);
+                    if (!fromStillHasRows && kReplaceFromCompany) next.delete(kReplaceFromCompany);
+                    return next;
+                });
             }
-            return newRow;
-        });
-        console.log(`[K교체] 완료: K일치=${dbgTotal}, matchedFrom=${dbgMatchedFrom}, 맵히트=${dbgMapHit}, L교체=${dbgLSet}`);
-        setMasterOrderData(updated);
-        // masterOrderFile도 교체된 데이터로 재생성해야 발주서 생성 시 반영됨
-        const ws = XLSX.utils.aoa_to_sheet(updated);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-        const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-        setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
-        // K 교체 후 detectedCompanies 갱신: 대상 업체 추가, K-from 업체 행이 0이면 제거
-        setDetectedCompanies(prev => {
-            const next = new Set(prev);
-            if (kReplaceToCompany) next.add(kReplaceToCompany);
-            // K-from 업체의 행이 더 이상 없으면 감지 목록에서 제거
-            const fromStillHasRows = updated.slice(1).some((r: any[]) => String(r[10] || '').trim() === kReplaceFrom);
-            if (!fromStillHasRows && kReplaceFromCompany) next.delete(kReplaceFromCompany);
-            return next;
-        });
-        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: hasProductMap ? { ...kReplaceProductMap } : undefined }]);
+        } else {
+            // ── N차수(batch) 교체 ─────────────────────────────────────
+            if (!kReplaceFromCompany || !kReplaceToCompany) return;
+            const headers0 = masterOrderData ? ((masterOrderData[0] as any[]) || []).map((h: any) => String(h || '').trim()) : [];
+            let optionColIdx = headers0.findIndex((h: string) => h.includes('옵션정보'));
+            if (optionColIdx === -1) optionColIdx = headers0.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
 
-        // Batch 세션(2차수+)에도 동일하게 K/L 교체 적용
-        if (kReplaceFromCompany && kReplaceToCompany) {
-            const fromBatchSessions = (companySessions[kReplaceFromCompany] || [])
-                .filter(s => !!batchFiles[s.id]);
-            if (fromBatchSessions.length > 0) {
-                const newCompanySessions = { ...companySessions };
-                const addedBatchFiles: Record<string, File> = {};
-                const addedBatchMasterRows: Record<string, any[][]> = {};
-                const addedBatchExpectedCounts: Record<string, number> = {};
-                const addedBatchPlatforms: Record<string, string> = {};
-                const removedIds = new Set<string>();
-                const newSelectedIds = new Set(selectedSessionIds);
+            const targetSessions = (companySessions[kReplaceFromCompany] || [])
+                .filter(s => s.round === kReplaceRound && !!batchFiles[s.id]);
+            if (targetSessions.length === 0) return;
 
-                for (const session of fromBatchSessions) {
-                    const oldRows = batchMasterRows[session.id] || [];
-                    const newRows = oldRows.map(row => {
-                        const currentK = String(row[10] || '').trim();
-                        if (currentK !== kReplaceFrom) return row;
-                        const newRow = [...row];
-                        newRow[10] = kReplaceTo;
-                        if (hasProductMap) {
-                            const rowL = String(row[11] || '').trim();
-                            const optionVal = optionColIdx !== -1 ? String(row[optionColIdx] || '').trim() : '';
-                            let rawPN = `${currentK} ${rowL}`.trim();
-                            if (optionVal) rawPN += ' ' + optionVal;
-                            const matchedFrom = matchProductSync(rawPN, fromProducts, currentK);
-                            if (matchedFrom && kReplaceProductMap[matchedFrom]) {
-                                newRow[11] = kReplaceProductMap[matchedFrom];
-                            }
-                        }
-                        return newRow;
-                    });
+            const newCompanySessions = { ...companySessions };
+            const addedBatchFiles: Record<string, File> = {};
+            const addedBatchMasterRows: Record<string, any[][]> = {};
+            const addedBatchExpectedCounts: Record<string, number> = {};
+            const addedBatchPlatforms: Record<string, string> = {};
+            const removedIds = new Set<string>();
+            const newSelectedIds = new Set(selectedSessionIds);
 
-                    const newSessionId = `${kReplaceToCompany}-batch-${session.round}-${Date.now()}`;
-                    const newSession: SessionData = { id: newSessionId, companyName: kReplaceToCompany, round: session.round };
-                    newCompanySessions[kReplaceToCompany] = [
-                        ...(newCompanySessions[kReplaceToCompany] || []).filter(s => s.round !== session.round),
-                        newSession,
-                    ];
-
-                    const headers = masterOrderData[0] || [];
-                    const ws2 = XLSX.utils.aoa_to_sheet([headers, ...newRows]);
-                    const wb2 = XLSX.utils.book_new();
-                    XLSX.utils.book_append_sheet(wb2, ws2, 'Sheet1');
-                    const buf2 = XLSX.write(wb2, { bookType: 'xlsx', type: 'array' });
-                    addedBatchFiles[newSessionId] = new File([buf2], `k교체_${kReplaceToCompany}_${session.round}차.xlsx`);
-                    addedBatchMasterRows[newSessionId] = newRows;
-                    addedBatchExpectedCounts[newSessionId] = newRows.length;
-                    addedBatchPlatforms[newSessionId] = batchPlatforms[session.id] || '쿠팡';
-
-                    removedIds.add(session.id);
-                    newSelectedIds.delete(session.id);
-                    newSelectedIds.add(newSessionId);
-                }
-
-                newCompanySessions[kReplaceFromCompany] = (newCompanySessions[kReplaceFromCompany] || []).filter(s => !removedIds.has(s.id));
-                if (newCompanySessions[kReplaceFromCompany].length === 0) delete newCompanySessions[kReplaceFromCompany];
-
-                setCompanySessions(newCompanySessions);
-                setSelectedSessionIds(newSelectedIds);
-                setBatchFiles(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchFiles }; });
-                setBatchMasterRows(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchMasterRows }; });
-                setBatchExpectedCounts(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchExpectedCounts }; });
-                setBatchPlatforms(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchPlatforms }; });
+            for (const session of targetSessions) {
+                const newRows = applyRowReplacement(batchMasterRows[session.id] || [], optionColIdx);
+                const newSessionId = `${kReplaceToCompany}-batch-${session.round}-${Date.now()}`;
+                newCompanySessions[kReplaceToCompany] = [
+                    ...(newCompanySessions[kReplaceToCompany] || []).filter(s => s.round !== session.round),
+                    { id: newSessionId, companyName: kReplaceToCompany, round: session.round },
+                ];
+                const headers = masterOrderData?.[0] || [];
+                const ws2 = XLSX.utils.aoa_to_sheet([headers, ...newRows]);
+                const wb2 = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb2, ws2, 'Sheet1');
+                const buf2 = XLSX.write(wb2, { bookType: 'xlsx', type: 'array' });
+                addedBatchFiles[newSessionId] = new File([buf2], `k교체_${kReplaceToCompany}_${session.round}차.xlsx`);
+                addedBatchMasterRows[newSessionId] = newRows;
+                addedBatchExpectedCounts[newSessionId] = newRows.length;
+                addedBatchPlatforms[newSessionId] = batchPlatforms[session.id] || '쿠팡';
+                removedIds.add(session.id);
+                newSelectedIds.delete(session.id);
+                newSelectedIds.add(newSessionId);
             }
+            newCompanySessions[kReplaceFromCompany] = (newCompanySessions[kReplaceFromCompany] || []).filter(s => !removedIds.has(s.id));
+            if (newCompanySessions[kReplaceFromCompany].length === 0) delete newCompanySessions[kReplaceFromCompany];
+
+            setCompanySessions(newCompanySessions);
+            setSelectedSessionIds(newSelectedIds);
+            setBatchFiles(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchFiles }; });
+            setBatchMasterRows(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchMasterRows }; });
+            setBatchExpectedCounts(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchExpectedCounts }; });
+            setBatchPlatforms(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchPlatforms }; });
         }
 
+        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: hasProductMap ? { ...kReplaceProductMap } : undefined, round: kReplaceRound ?? 1 } as any]);
         setKReplaceFrom('');
         setKReplaceFromCompany('');
         setKReplaceTo('');
@@ -3645,10 +3621,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         </div>
                     )}
                     {masterOrderFile && masterOrderData && (() => {
+                        // 차수별 K값 소스 계산
+                        const batchRounds = [...new Set(
+                            Object.values(companySessions).flat()
+                                .filter(s => !!batchFiles[s.id])
+                                .map(s => s.round)
+                        )].sort((a, b) => a - b);
+                        const availableRounds = batchRounds.length > 0 ? [1, ...batchRounds] : [];
+                        const activeRound = kReplaceRound ?? 1;
+                        const roundRows: any[][] = activeRound === 1
+                            ? masterOrderData.slice(1)
+                            : Object.values(companySessions).flat()
+                                .filter(s => s.round === activeRound && !!batchFiles[s.id])
+                                .flatMap(s => batchMasterRows[s.id] || []);
                         const uniqueKValues = ([...new Set(
-                            masterOrderData.slice(1)
-                                .map((r: any[]) => String(r[10] || '').trim())
-                                .filter((v: string) => v.length > 0)
+                            roundRows.map((r: any[]) => String(r[10] || '').trim()).filter((v: string) => v.length > 0)
                         )] as string[]).sort((a, b) => a.localeCompare(b, 'ko'));
                         const allVendorKeywords = (Object.entries(pricingConfig) as [string, import('../types').CompanyConfig][]).flatMap(([company, cfg]) =>
                             (cfg.keywords || []).map((kw: string) => ({ kw, company }))
@@ -3662,6 +3649,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 <h4 className="text-zinc-400 font-black text-[10px] uppercase tracking-widest">등록상품명 교체</h4>
                             </div>
                             <div className="flex flex-col gap-1.5">
+                                {/* 차수 선택 (배치 세션이 있을 때만 표시) */}
+                                {availableRounds.length > 1 && (
+                                    <div className="flex gap-1">
+                                        {availableRounds.map(r => (
+                                            <button
+                                                key={r}
+                                                onClick={() => {
+                                                    setKReplaceRound(r === 1 ? null : r);
+                                                    setKReplaceFrom(''); setKReplaceTo('');
+                                                    setKReplaceFromCompany(''); setKReplaceToCompany('');
+                                                    setKReplaceProductMap({});
+                                                }}
+                                                className={`px-2 py-0.5 text-[10px] font-black rounded-md border transition-all ${activeRound === r ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' : 'bg-zinc-900 text-zinc-500 border-zinc-700 hover:text-zinc-300'}`}
+                                            >{r}차</button>
+                                        ))}
+                                    </div>
+                                )}
                                 {/* K열 교체 */}
                                 <select
                                     value={kReplaceFrom}
@@ -3711,9 +3715,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     const hdrs = ((masterOrderData![0] as any[]) || []).map((h: any) => String(h || '').trim());
                                     let optIdx = hdrs.findIndex((h: string) => h.includes('옵션정보'));
                                     if (optIdx === -1) optIdx = hdrs.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
-                                    // 마스터 데이터에서 실제로 매칭되는 a업체 품목 추출
+                                    // 선택된 차수 데이터에서 실제로 매칭되는 a업체 품목 추출
                                     const matchedFromSet = new Set<string>();
-                                    masterOrderData!.slice(1).forEach((r: any[]) => {
+                                    roundRows.forEach((r: any[]) => {
                                         if (String(r[10] || '').trim() !== kReplaceFrom) return;
                                         const rowL = String(r[11] || '').trim();
                                         const optVal = optIdx !== -1 ? String(r[optIdx] || '').trim() : '';
