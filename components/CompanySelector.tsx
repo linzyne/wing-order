@@ -1736,6 +1736,74 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             return next;
         });
         setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: hasProductMap ? { ...kReplaceProductMap } : undefined }]);
+
+        // Batch 세션(2차수+)에도 동일하게 K/L 교체 적용
+        if (kReplaceFromCompany && kReplaceToCompany) {
+            const fromBatchSessions = (companySessions[kReplaceFromCompany] || [])
+                .filter(s => !!batchFiles[s.id]);
+            if (fromBatchSessions.length > 0) {
+                const newCompanySessions = { ...companySessions };
+                const addedBatchFiles: Record<string, File> = {};
+                const addedBatchMasterRows: Record<string, any[][]> = {};
+                const addedBatchExpectedCounts: Record<string, number> = {};
+                const addedBatchPlatforms: Record<string, string> = {};
+                const removedIds = new Set<string>();
+                const newSelectedIds = new Set(selectedSessionIds);
+
+                for (const session of fromBatchSessions) {
+                    const oldRows = batchMasterRows[session.id] || [];
+                    const newRows = oldRows.map(row => {
+                        const currentK = String(row[10] || '').trim();
+                        if (currentK !== kReplaceFrom) return row;
+                        const newRow = [...row];
+                        newRow[10] = kReplaceTo;
+                        if (hasProductMap) {
+                            const rowL = String(row[11] || '').trim();
+                            const optionVal = optionColIdx !== -1 ? String(row[optionColIdx] || '').trim() : '';
+                            let rawPN = `${currentK} ${rowL}`.trim();
+                            if (optionVal) rawPN += ' ' + optionVal;
+                            const matchedFrom = matchProductSync(rawPN, fromProducts, currentK);
+                            if (matchedFrom && kReplaceProductMap[matchedFrom]) {
+                                newRow[11] = kReplaceProductMap[matchedFrom];
+                            }
+                        }
+                        return newRow;
+                    });
+
+                    const newSessionId = `${kReplaceToCompany}-batch-${session.round}-${Date.now()}`;
+                    const newSession: SessionData = { id: newSessionId, companyName: kReplaceToCompany, round: session.round };
+                    newCompanySessions[kReplaceToCompany] = [
+                        ...(newCompanySessions[kReplaceToCompany] || []).filter(s => s.round !== session.round),
+                        newSession,
+                    ];
+
+                    const headers = masterOrderData[0] || [];
+                    const ws2 = XLSX.utils.aoa_to_sheet([headers, ...newRows]);
+                    const wb2 = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb2, ws2, 'Sheet1');
+                    const buf2 = XLSX.write(wb2, { bookType: 'xlsx', type: 'array' });
+                    addedBatchFiles[newSessionId] = new File([buf2], `k교체_${kReplaceToCompany}_${session.round}차.xlsx`);
+                    addedBatchMasterRows[newSessionId] = newRows;
+                    addedBatchExpectedCounts[newSessionId] = newRows.length;
+                    addedBatchPlatforms[newSessionId] = batchPlatforms[session.id] || '쿠팡';
+
+                    removedIds.add(session.id);
+                    newSelectedIds.delete(session.id);
+                    newSelectedIds.add(newSessionId);
+                }
+
+                newCompanySessions[kReplaceFromCompany] = (newCompanySessions[kReplaceFromCompany] || []).filter(s => !removedIds.has(s.id));
+                if (newCompanySessions[kReplaceFromCompany].length === 0) delete newCompanySessions[kReplaceFromCompany];
+
+                setCompanySessions(newCompanySessions);
+                setSelectedSessionIds(newSelectedIds);
+                setBatchFiles(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchFiles }; });
+                setBatchMasterRows(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchMasterRows }; });
+                setBatchExpectedCounts(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchExpectedCounts }; });
+                setBatchPlatforms(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchPlatforms }; });
+            }
+        }
+
         setKReplaceFrom('');
         setKReplaceFromCompany('');
         setKReplaceTo('');
