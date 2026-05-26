@@ -493,7 +493,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);
-        const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
+        const hasFileChanged = masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
         const hasBatchFileChanged = batchFile && batchFile !== lastProcessedBatchRef.current;
         const hasFakeOrdersChanged = fakeOrderNumbers !== lastFakeOrdersRef.current;
         const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
