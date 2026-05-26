@@ -559,6 +559,55 @@ const CourierTemplateManager: React.FC<{
     );
 };
 
+// a업체 raw 주문명 → a업체 displayName 동기 매칭 (AI 없음)
+function matchProductSync(
+    rawProductName: string,
+    products: Record<string, import('../types').ProductPricing>,
+    groupColValue?: string
+): string | null {
+    const entries = Object.entries(products);
+    if (entries.length === 0) return null;
+    if (entries.length === 1) return entries[0][1].displayName;
+    // K열 기반 사전 필터
+    if (groupColValue) {
+        const uIdx = groupColValue.indexOf('_');
+        const pType = (uIdx !== -1 ? groupColValue.slice(uIdx + 1) : groupColValue).trim().toLowerCase();
+        if (pType) {
+            const typeMatched = entries.filter(([, p]) => p.siteProductName
+                ? pType.includes(p.siteProductName.toLowerCase())
+                : (p.displayName || '').toLowerCase().includes(pType));
+            if (typeMatched.length === 1) return typeMatched[0][1].displayName;
+        }
+    }
+    const lowerRaw = rawProductName.toLowerCase();
+    // siteProductName 매칭
+    const siteMatches: { dn: string; len: number }[] = [];
+    for (const [, p] of entries) {
+        if (p.siteProductName && lowerRaw.includes(p.siteProductName.toLowerCase()))
+            siteMatches.push({ dn: p.displayName, len: p.siteProductName.length });
+    }
+    if (siteMatches.length > 0) return siteMatches.reduce((a, b) => b.len > a.len ? b : a).dn;
+    // aliases 매칭
+    let bestAlias: { dn: string; len: number } | null = null;
+    for (const [, p] of entries) {
+        for (const alias of (p.aliases || [])) {
+            if (alias && lowerRaw.includes(alias.toLowerCase()) && (!bestAlias || alias.length > bestAlias.len))
+                bestAlias = { dn: p.displayName, len: alias.length };
+        }
+    }
+    if (bestAlias) return bestAlias.dn;
+    // normalize 매칭
+    const norm = (s: string) => s.toLowerCase().replace(/[★☆※,.\s]/g, '');
+    const normRaw = norm(rawProductName);
+    const normMatches: { dn: string; len: number }[] = [];
+    for (const [, p] of entries) {
+        const nd = norm(p.displayName);
+        if (nd && normRaw.includes(nd)) normMatches.push({ dn: p.displayName, len: nd.length });
+    }
+    if (normMatches.length > 0) return normMatches.reduce((a, b) => b.len > a.len ? b : a).dn;
+    return null;
+}
+
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false, isCurrent = false, onSaved }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
@@ -670,9 +719,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [rowPlatformSources, setRowPlatformSources] = useState<(string | null)[]>([]);
     // 등록상품명 교체 (K열 + L열 품목명 매칭)
     const [kReplaceFrom, setKReplaceFrom] = useState('');
+    const [kReplaceFromCompany, setKReplaceFromCompany] = useState(''); // kReplaceFrom이 속한 업체
     const [kReplaceTo, setKReplaceTo] = useState('');
     const [kReplaceToCompany, setKReplaceToCompany] = useState('');
-    const [kReplaceProductMap, setKReplaceProductMap] = useState<Record<string, string>>({}); // 원래L → 새품목명
+    const [kReplaceProductMap, setKReplaceProductMap] = useState<Record<string, string>>({}); // a업체 displayName → b업체 displayName
     const [kReplaceHistory, setKReplaceHistory] = useState<{ from: string; to: string; productMap?: Record<string, string> }[]>([]);
 
     // rowPlatformSources + masterOrderData → 주문번호→플랫폼 Map 생성
@@ -1625,23 +1675,40 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductMap({}); setKReplaceHistory([]); };
+    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceFromCompany(''); setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductMap({}); setKReplaceHistory([]); };
 
     const applyKValueReplacement = () => {
         if (!kReplaceFrom || !kReplaceTo || !masterOrderData || !masterOrderFile) return;
+        const fromProducts = kReplaceFromCompany ? (pricingConfig as import('../types').PricingConfig)[kReplaceFromCompany]?.products || {} : {};
+        const toProducts = kReplaceToCompany ? (pricingConfig as import('../types').PricingConfig)[kReplaceToCompany]?.products || {} : {};
+        const headers0 = ((masterOrderData[0] as any[]) || []).map((h: any) => String(h || '').trim());
+        let optionColIdx = headers0.findIndex((h: string) => h.includes('옵션정보'));
+        if (optionColIdx === -1) optionColIdx = headers0.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
+        const hasProductMap = Object.keys(kReplaceProductMap).length > 0;
+        clearProductMatchCache();
         const updated = masterOrderData.map((row, idx) => {
             if (idx === 0) return row;
             const currentK = String(row[10] || '').trim();
-            if (currentK === kReplaceFrom) {
-                const newRow = [...row];
-                newRow[10] = kReplaceTo;
-                const currentL = String(row[11] || '').trim();
-                if (kReplaceProductMap[currentL]) {
-                    newRow[11] = kReplaceProductMap[currentL];
+            if (currentK !== kReplaceFrom) return row;
+            const newRow = [...row];
+            newRow[10] = kReplaceTo;
+            if (hasProductMap) {
+                // a업체 displayName으로 역매칭 후 b업체 displayName으로 교체
+                const rowL = String(row[11] || '').trim();
+                const optionVal = optionColIdx !== -1 ? String(row[optionColIdx] || '').trim() : '';
+                let rawPN = `${currentK} ${rowL}`.trim();
+                if (optionVal) rawPN += ' ' + optionVal;
+                const matchedFrom = matchProductSync(rawPN, fromProducts, currentK);
+                if (matchedFrom && kReplaceProductMap[matchedFrom]) {
+                    const targetDisplayName = kReplaceProductMap[matchedFrom];
+                    newRow[11] = targetDisplayName;
+                    // b업체 품목 캐시 직접 주입
+                    const newRawPN = `${kReplaceTo} ${targetDisplayName}` + (optionVal ? ' ' + optionVal : '');
+                    const toEntry = Object.entries(toProducts).find(([, p]: [string, any]) => p.displayName === targetDisplayName);
+                    if (toEntry) preSetProductMatchCache(`${kReplaceToCompany}::${newRawPN}`, toEntry as [string, import('../types').ProductPricing]);
                 }
-                return newRow;
             }
-            return row;
+            return newRow;
         });
         setMasterOrderData(updated);
         // masterOrderFile도 교체된 데이터로 재생성해야 발주서 생성 시 반영됨
@@ -1650,39 +1717,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
         const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
         setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
-        clearProductMatchCache();
-        // 명시적으로 매핑한 품목은 캐시에 직접 주입 → 복잡한 매칭 파이프라인 우회
-        if (Object.keys(kReplaceProductMap).length > 0 && kReplaceToCompany) {
-            const targetProducts = (pricingConfig as import('../types').PricingConfig)[kReplaceToCompany]?.products || {};
-            const headers = ((updated[0] as any[]) || []).map((h: any) => String(h).trim());
-            let optionColIdx = headers.findIndex((h: string) => h.includes('옵션정보'));
-            if (optionColIdx === -1) optionColIdx = headers.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
-            console.log(`[K교체] ${kReplaceToCompany} 캐시 주입 시작. optionColIdx=${optionColIdx}, 매핑:`, kReplaceProductMap);
-            let injectedCount = 0;
-            for (let i = 1; i < updated.length; i++) {
-                const row = updated[i] as any[];
-                if (!row) continue;
-                const rowK = String(row[10] || '').trim();
-                if (rowK !== kReplaceTo) continue;
-                const rowL = String(row[11] || '').trim();
-                if (!rowL) continue;
-                let rawProductName = `${rowK} ${rowL}`.trim();
-                const optionVal = optionColIdx !== -1 ? String(row[optionColIdx] || '').trim() : '';
-                if (optionVal) rawProductName += ' ' + optionVal;
-                const productEntry = Object.entries(targetProducts).find(([, p]: [string, any]) => p.displayName === rowL);
-                if (productEntry) {
-                    const cacheKey = `${kReplaceToCompany}::${rawProductName}`;
-                    preSetProductMatchCache(cacheKey, productEntry as [string, import('../types').ProductPricing]);
-                    injectedCount++;
-                    if (injectedCount <= 3) console.log(`[K교체] 캐시 주입: "${cacheKey}" → "${productEntry[0]}"`);
-                } else {
-                    console.warn(`[K교체] L="${rowL}"에 매칭되는 ${kReplaceToCompany} 품목 없음. 사용가능 품목:`, Object.values(targetProducts).map((p: any) => p.displayName));
-                }
-            }
-            console.log(`[K교체] 총 ${injectedCount}건 캐시 주입 완료`);
-        }
-        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: Object.keys(kReplaceProductMap).length > 0 ? { ...kReplaceProductMap } : undefined }]);
+        setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: hasProductMap ? { ...kReplaceProductMap } : undefined }]);
         setKReplaceFrom('');
+        setKReplaceFromCompany('');
         setKReplaceTo('');
         setKReplaceToCompany('');
         setKReplaceProductMap({});
@@ -3542,7 +3579,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 {/* K열 교체 */}
                                 <select
                                     value={kReplaceFrom}
-                                    onChange={e => { setKReplaceFrom(e.target.value); setKReplaceProductMap({}); }}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        setKReplaceFrom(val);
+                                        setKReplaceProductMap({});
+                                        // K값 → 업체 역추적
+                                        const normVal = val.replace(/\s+/g, '').normalize('NFC');
+                                        let bestComp = ''; let bestPos = Infinity;
+                                        for (const [cName] of (Object.entries(pricingConfig) as [string, import('../types').CompanyConfig][])) {
+                                            for (const kw of getKeywordsForCompany(cName, pricingConfig)) {
+                                                const pos = normVal.indexOf(kw.replace(/\s+/g, '').normalize('NFC'));
+                                                if (pos !== -1 && pos < bestPos) { bestPos = pos; bestComp = cName; }
+                                            }
+                                        }
+                                        setKReplaceFromCompany(bestComp);
+                                    }}
                                     className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
                                 >
                                     <option value="">현재 K열 값 선택...</option>
@@ -3568,31 +3619,41 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <option key={`${company}::${kw}`} value={`${company}::${kw}`}>{kw} ({company})</option>
                                     ))}
                                 </select>
-                                {/* 품목명 매칭: K값 선택 후 전체 목록 표시 */}
-                                {kReplaceFrom && (() => {
-                                    const uniqueLValues = ([...new Set(
-                                        masterOrderData!.slice(1)
-                                            .filter((r: any[]) => String(r[10] || '').trim() === kReplaceFrom)
-                                            .map((r: any[]) => String(r[11] || '').trim())
-                                            .filter((v: string) => v.length > 0)
-                                    )] as string[]).sort((a, b) => a.localeCompare(b, 'ko'));
+                                {/* 품목 매핑: a업체 품목명 → b업체 품목명 */}
+                                {kReplaceFrom && kReplaceFromCompany && (() => {
+                                    const fromProducts = (pricingConfig as import('../types').PricingConfig)[kReplaceFromCompany]?.products || {};
+                                    const hdrs = ((masterOrderData![0] as any[]) || []).map((h: any) => String(h || '').trim());
+                                    let optIdx = hdrs.findIndex((h: string) => h.includes('옵션정보'));
+                                    if (optIdx === -1) optIdx = hdrs.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
+                                    // 마스터 데이터에서 실제로 매칭되는 a업체 품목 추출
+                                    const matchedFromSet = new Set<string>();
+                                    masterOrderData!.slice(1).forEach((r: any[]) => {
+                                        if (String(r[10] || '').trim() !== kReplaceFrom) return;
+                                        const rowL = String(r[11] || '').trim();
+                                        const optVal = optIdx !== -1 ? String(r[optIdx] || '').trim() : '';
+                                        let rpn = `${kReplaceFrom} ${rowL}`.trim();
+                                        if (optVal) rpn += ' ' + optVal;
+                                        const dn = matchProductSync(rpn, fromProducts, kReplaceFrom);
+                                        if (dn) matchedFromSet.add(dn);
+                                    });
+                                    const fromList = [...matchedFromSet].sort((a, b) => a.localeCompare(b, 'ko'));
                                     const targetProducts = kReplaceToCompany
                                         ? Object.values((pricingConfig[kReplaceToCompany] as import('../types').CompanyConfig | undefined)?.products || {}).map(p => p.displayName).sort((a, b) => a.localeCompare(b, 'ko'))
                                         : [];
-                                    if (uniqueLValues.length === 0) return null;
+                                    if (fromList.length === 0) return null;
                                     return (
                                         <>
                                             <div className="h-px bg-zinc-800 my-0.5" />
-                                            <span className="text-[9px] font-black text-zinc-600 uppercase tracking-wide">품목명 매칭 (선택)</span>
-                                            {uniqueLValues.map(lVal => (
-                                                <div key={lVal} className="flex flex-col gap-0.5">
-                                                    <span className="text-[10px] text-zinc-500 truncate">{lVal}</span>
+                                            <span className="text-[9px] font-black text-zinc-600 uppercase tracking-wide">품목 매핑 ({kReplaceFromCompany} → {kReplaceToCompany || '?'})</span>
+                                            {fromList.map(fromDN => (
+                                                <div key={fromDN} className="flex flex-col gap-0.5">
+                                                    <span className="text-[10px] text-zinc-500 truncate">{fromDN}</span>
                                                     <select
-                                                        value={kReplaceProductMap[lVal] || ''}
+                                                        value={kReplaceProductMap[fromDN] || ''}
                                                         onChange={e => setKReplaceProductMap(prev => {
                                                             const next = { ...prev };
-                                                            if (e.target.value) next[lVal] = e.target.value;
-                                                            else delete next[lVal];
+                                                            if (e.target.value) next[fromDN] = e.target.value;
+                                                            else delete next[fromDN];
                                                             return next;
                                                         })}
                                                         disabled={!kReplaceToCompany}
