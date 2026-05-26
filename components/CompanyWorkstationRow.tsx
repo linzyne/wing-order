@@ -500,6 +500,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // 마스터 파일이 바뀌었는데 이 업체가 더 이상 감지되지 않으면 이전 세션 자동 초기화
         const hasFileChangedButEvicted = isFirstSession && masterFile && !isDetected
             && lastProcessedMasterRef.current !== null && masterFile !== lastProcessedMasterRef.current;
+        if (companyName === '초록') {
+            console.log(`[DEBUG-초록] effect: isFirstSession=${isFirstSession} masterFile=${!!masterFile} isDetected=${isDetected} sameFile=${masterFile === lastProcessedMasterRef.current} hasFileChanged=${hasFileChanged} isProcessing=${isProcessingRef.current} pendingReprocess=${!!pendingReprocessFileRef.current}`);
+        }
 
         if (hasBatchFileChanged && batchFile) {
             // N차 일괄 업로드: 가구매 제외 포함하여 처리
