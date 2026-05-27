@@ -786,7 +786,7 @@ function resolveFieldValue(field: OrderFormFieldKey, row: any[], orderName: stri
         case 'deliveryMessage':  return String(row[30] || '');
         case 'productName':      return orderName;
         case 'qty':              return 1;
-        case 'orderNumber':      return String(row[2] || '');
+        case 'orderNumber':      return String(row[1] || '');
         case 'senderName':       return senderName;
         case 'senderPhone':      return senderPhone;
         case 'senderAddress':    return senderAddress;
@@ -837,14 +837,14 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
     } else if (companyName === '팜플로우') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(13).fill('');
-            or[0] = String(row[2] || ''); or[1] = rName; or[2] = String(row[27] || ''); or[3] = String(row[29] || '');
+            or[0] = String(row[1] || ''); or[1] = rName; or[2] = String(row[27] || ''); or[3] = String(row[29] || '');
             or[4] = String(row[30] || ''); or[5] = orderName; or[6] = perRowQty; or[7] = senderName; or[8] = senderPhone; or[9] = senderAddress;
             outputRows.push(or);
         }
     } else if (companyName === '웰그린') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(19).fill('');
-            or[1] = String(row[2] || ''); or[2] = '안군농원'; or[3] = String(row[11] || ''); or[4] = orderName; or[5] = perRowQty;
+            or[1] = String(row[1] || ''); or[2] = '안군농원'; or[3] = String(row[11] || ''); or[4] = orderName; or[5] = perRowQty;
             or[6] = String(row[30] || ''); or[9] = rName; or[10] = rName; or[11] = String(row[27] || '');
             or[12] = String(row[27] || ''); or[14] = String(row[28] || ''); or[15] = String(row[29] || ''); or[17] = '01042626343';
             outputRows.push(or);
@@ -852,13 +852,13 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
     } else if (companyName === '답도' || companyName === '한라봉_답도') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(11).fill('');
-            or[0] = String(row[2] || ''); or[2] = '안군농원'; or[3] = '01042626343'; or[4] = rName; or[5] = String(row[27] || ''); or[6] = String(row[29] || ''); or[7] = orderName; or[8] = perRowQty; or[9] = String(row[30] || '');
+            or[0] = String(row[1] || ''); or[2] = '안군농원'; or[3] = '01042626343'; or[4] = rName; or[5] = String(row[27] || ''); or[6] = String(row[29] || ''); or[7] = orderName; or[8] = perRowQty; or[9] = String(row[30] || '');
             outputRows.push(or);
         }
     } else if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) {
         for (let j = 0; j < qty; j++) {
             const or = new Array(15).fill('');
-            or[0] = String(row[2] || ''); // 주문번호
+            or[0] = String(row[1] || ''); // 묶음배송번호
             or[1] = '안군농원'; // 고객주문처명
             or[2] = rName; // 수취인명
             or[3] = String(row[28] || ''); // 우편번호
@@ -883,13 +883,13 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             or[5] = String(row[29] || '');      // 받는분주소
             or[6] = String(row[27] || '');      // 받는분연락처
             or[7] = String(row[30] || '');      // 배송메시지
-            or[8] = String(row[2] || '');       // 주문번호
+            or[8] = String(row[1] || '');       // 묶음배송번호
             outputRows.push(or);
         }
     } else if (companyName === '고랭지김치') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(18).fill('');
-            or[0] = String(row[2] || ''); // 주문번호
+            or[0] = String(row[1] || ''); // 묶음배송번호
             or[1] = '미래찬';
             or[2] = '070-5222-6543';
             or[3] = '070-5222-6543';
@@ -916,7 +916,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
         }
     } else {
         for (let j = 0; j < qty; j++) {
-            outputRows.push([rName, String(row[27] || ''), String(row[29] || ''), orderName, perRowQty, String(row[30] || ''), String(row[2] || '')]);
+            outputRows.push([rName, String(row[27] || ''), String(row[29] || ''), orderName, perRowQty, String(row[30] || ''), String(row[1] || '')]);
         }
     }
 }
