@@ -643,7 +643,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const newKey = vendorFiles.map(f => f.name + f.size).join('|');
         if (newKey && newKey !== vendorFilesKeyRef.current) {
             vendorFilesKeyRef.current = newKey;
-            const activeFile = localFile || masterFile;
+            const activeFile = localFile || batchFile || masterFile;
             if (activeFile && mergeStatus === 'idle') {
                 handleRunMerge();
             }
@@ -744,7 +744,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const handleRunMerge = () => {
-        const activeFile = localFile || masterFile;
+        // batchFile: localFile이 아직 null일 때(첫 렌더 타이밍) masterFile 대신 batchFile 사용
+        const activeFile = localFile || batchFile || masterFile;
         if (activeFile && vendorFiles.length > 0) {
             processFiles(vendorFiles, activeFile, companyName, false, pricingConfig, orderPlatformMap, platformConfigs, businessId);
         }
@@ -1434,7 +1435,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 {mergeStatus === 'error' && mergeError && (
                                     <div className="text-rose-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">{mergeError}</div>
                                 )}
-                                {vendorFiles.length > 0 && mergeStatus === 'idle' && !(localFile || masterFile) && (
+                                {vendorFiles.length > 0 && mergeStatus === 'idle' && !(localFile || batchFile || masterFile) && (
                                     <div className="text-pink-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">발주서를 먼저 업로드해주세요</div>
                                 )}
                             </div>
