@@ -6,7 +6,7 @@ import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, 
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
-    PlusCircleIcon, TrashIcon
+    PlusCircleIcon, TrashIcon, EyeIcon
 } from './icons';
 import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder, PlatformConfigs } from '../types';
 import { DragHandleContext } from './DragHandleContext';
@@ -150,6 +150,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [sessionMemo, setSessionMemo] = useState('');
     const [showConsolidationLog, setShowConsolidationLog] = useState(false);
     const [showSizeMismatch, setShowSizeMismatch] = useState(false);
+    const [showOrderPreview, setShowOrderPreview] = useState(false);
 
     // 사이즈 불일치 감지: 매칭된 품목 키의 kg와 원본 옵션명의 kg가 다른 항목
     const sizeMismatchItems = (() => {
@@ -1078,6 +1079,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="flex items-center justify-center gap-4">
                                         <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
+                                        <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
                                         <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
                                 ) : (
@@ -1099,6 +1101,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             <div className="h-5 w-px bg-zinc-700" />
                                             <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                             <div className="h-6 w-px bg-zinc-800" />
+                                            <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
                                             <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         </div>
                                     </div>
@@ -1708,6 +1711,62 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         </div>
                     </td>
                 </tr>
+            )}
+
+            {/* 발주서 미리보기 모달 */}
+            {showOrderPreview && localResult && createPortal(
+                <div
+                    style={{ position:'fixed', top:0, left:0, right:0, bottom:0, zIndex:99999, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.75)' }}
+                    onClick={() => setShowOrderPreview(false)}
+                >
+                    <div
+                        style={{ background:'#18181b', borderRadius:'16px', padding:'20px', width:'92vw', maxWidth:'1200px', maxHeight:'85vh', display:'flex', flexDirection:'column', border:'1px solid #3f3f46', boxShadow:'0 25px 60px rgba(0,0,0,0.6)' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexShrink:0 }}>
+                            <div>
+                                <div style={{ color:'#fff', fontWeight:800, fontSize:'14px' }}>{companyName} 발주서 미리보기</div>
+                                <div style={{ color:'#71717a', fontSize:'11px', marginTop:'2px' }}>{localResult.fileName} · {localResult.rows.length}건</div>
+                            </div>
+                            <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                                <button onClick={handleDownloadOrder} style={{ background:'#6366f1', color:'#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor:'pointer' }}>
+                                    다운로드
+                                </button>
+                                <button onClick={() => setShowOrderPreview(false)} style={{ background:'#27272a', color:'#a1a1aa', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'1px solid #3f3f46', cursor:'pointer' }}>
+                                    닫기
+                                </button>
+                            </div>
+                        </div>
+                        {(() => {
+                            const previewHeaders = getHeaderForCompany(companyName, pricingConfig[companyName] || {} as any);
+                            return (
+                                <div style={{ overflowX:'auto', overflowY:'auto', flex:1, borderRadius:'8px', border:'1px solid #27272a' }}>
+                                    <table style={{ borderCollapse:'collapse', fontSize:'11px', whiteSpace:'nowrap', width:'100%' }}>
+                                        <thead>
+                                            <tr style={{ background:'#27272a', position:'sticky', top:0 }}>
+                                                <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center', minWidth:'32px' }}>#</th>
+                                                {previewHeaders.map((h, i) => (
+                                                    <th key={i} style={{ padding:'6px 10px', color:'#a1a1aa', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'left' }}>{h}</th>
+                                                ))}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {localResult.rows.map((row, ri) => (
+                                                <tr key={ri} style={{ borderBottom:'1px solid #27272a', background: ri % 2 === 0 ? 'transparent' : 'rgba(39,39,42,0.4)' }}>
+                                                    <td style={{ padding:'5px 10px', color:'#52525b', textAlign:'center', borderRight:'1px solid #27272a' }}>{ri + 1}</td>
+                                                    {previewHeaders.map((_, ci) => (
+                                                        <td key={ci} style={{ padding:'5px 10px', color:'#e4e4e7', borderRight:'1px solid #27272a', maxWidth:'220px', overflow:'hidden', textOverflow:'ellipsis' }}>{row[ci] ?? ''}</td>
+                                                    ))}
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            );
+                        })()}
+                    </div>
+                </div>,
+                document.body
             )}
 
             {/* 수동발주 선택 모달 */}
