@@ -583,7 +583,7 @@ const generateWorkbookForCompany = async (
                 const row = json[i];
                 if (!row) continue;
                 const orderNumber = String(row[sourceOrderNumberIdx] || '').trim();
-                const recipientName = String(row[recipientNameCol] || '').trim();
+                const recipientName = stripDigits(String(row[recipientNameCol] || '').trim());
                 const productName = String(row[productColIdx] || '').trim();
                 const phone = String(row[recipientPhoneCol] || '').trim();
 
@@ -774,10 +774,12 @@ export function inferFieldFromHeader(h: string): OrderFormFieldKey {
     return 'empty';
 }
 
+function stripDigits(name: string): string { return name.replace(/\d/g, ''); }
+
 /** 일반 주문: 필드 키 → 값 변환 */
 function resolveFieldValue(field: OrderFormFieldKey, row: any[], orderName: string, senderName: string, senderPhone: string, senderAddress: string): any {
     switch (field) {
-        case 'recipientName':    return String(row[26] || '');
+        case 'recipientName':    return stripDigits(String(row[26] || ''));
         case 'recipientPhone':   return String(row[27] || '');
         case 'recipientZipcode': return String(row[28] || '');
         case 'recipientAddress': return String(row[29] || '');
@@ -795,7 +797,7 @@ function resolveFieldValue(field: OrderFormFieldKey, row: any[], orderName: stri
 /** 수동 주문: 필드 키 → 값 변환 */
 function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orderName: string, senderName: string, senderPhone: string, senderAddress: string): any {
     switch (field) {
-        case 'recipientName':    return mo.recipientName;
+        case 'recipientName':    return stripDigits(mo.recipientName);
         case 'recipientPhone':   return mo.phone;
         case 'recipientZipcode': return '';
         case 'recipientAddress': return mo.address;
@@ -812,6 +814,7 @@ function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orde
 
 async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', perRowQty: number = 1) {
     const orderName = config.orderFormName || config.displayName;
+    const rName = stripDigits(String(row[26] || ''));
     // 커스텀 헤더가 설정되어 있으면 하드코딩 분기를 건너뛰고 generic 경로 사용
     const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
     if (customHeaders.length > 0) {
@@ -834,7 +837,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
     } else if (companyName === '팜플로우') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(13).fill('');
-            or[0] = String(row[2] || ''); or[1] = String(row[26] || ''); or[2] = String(row[27] || ''); or[3] = String(row[29] || '');
+            or[0] = String(row[2] || ''); or[1] = rName; or[2] = String(row[27] || ''); or[3] = String(row[29] || '');
             or[4] = String(row[30] || ''); or[5] = orderName; or[6] = perRowQty; or[7] = senderName; or[8] = senderPhone; or[9] = senderAddress;
             outputRows.push(or);
         }
@@ -842,14 +845,14 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
         for (let j = 0; j < qty; j++) {
             const or = new Array(19).fill('');
             or[1] = String(row[2] || ''); or[2] = '안군농원'; or[3] = String(row[11] || ''); or[4] = orderName; or[5] = perRowQty;
-            or[6] = String(row[30] || ''); or[9] = String(row[26] || ''); or[10] = String(row[26] || ''); or[11] = String(row[27] || '');
+            or[6] = String(row[30] || ''); or[9] = rName; or[10] = rName; or[11] = String(row[27] || '');
             or[12] = String(row[27] || ''); or[14] = String(row[28] || ''); or[15] = String(row[29] || ''); or[17] = '01042626343';
             outputRows.push(or);
         }
     } else if (companyName === '답도' || companyName === '한라봉_답도') {
         for (let j = 0; j < qty; j++) {
             const or = new Array(11).fill('');
-            or[0] = String(row[2] || ''); or[2] = '안군농원'; or[3] = '01042626343'; or[4] = String(row[26] || ''); or[5] = String(row[27] || ''); or[6] = String(row[29] || ''); or[7] = orderName; or[8] = perRowQty; or[9] = String(row[30] || '');
+            or[0] = String(row[2] || ''); or[2] = '안군농원'; or[3] = '01042626343'; or[4] = rName; or[5] = String(row[27] || ''); or[6] = String(row[29] || ''); or[7] = orderName; or[8] = perRowQty; or[9] = String(row[30] || '');
             outputRows.push(or);
         }
     } else if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) {
@@ -857,7 +860,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             const or = new Array(15).fill('');
             or[0] = String(row[2] || ''); // 주문번호
             or[1] = '안군농원'; // 고객주문처명
-            or[2] = String(row[26] || ''); // 수취인명
+            or[2] = rName; // 수취인명
             or[3] = String(row[28] || ''); // 우편번호
             or[4] = String(row[29] || ''); // 주소
             or[5] = String(row[27] || ''); // 전화번호
@@ -876,7 +879,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             or[1] = senderAddress;             // 송하인주소
             or[2] = senderPhone;               // 송하인연락처
             or[3] = orderName;                 // 품목
-            or[4] = String(row[26] || '');      // 받는분성명
+            or[4] = rName;                       // 받는분성명
             or[5] = String(row[29] || '');      // 받는분주소
             or[6] = String(row[27] || '');      // 받는분연락처
             or[7] = String(row[30] || '');      // 배송메시지
@@ -892,7 +895,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             or[3] = '070-5222-6543';
             or[4] = '25346';
             or[5] = '강원 평창군 방림면 평창대로84-15';
-            or[6] = String(row[26] || ''); // 받는사람
+            or[6] = rName; // 받는사람
             or[7] = String(row[27] || ''); // 전화번호1
             or[8] = String(row[27] || ''); // 전화번호2
             or[9] = String(row[28] || ''); // 우편번호
@@ -913,7 +916,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
         }
     } else {
         for (let j = 0; j < qty; j++) {
-            outputRows.push([String(row[26] || ''), String(row[27] || ''), String(row[29] || ''), orderName, perRowQty, String(row[30] || ''), String(row[2] || '')]);
+            outputRows.push([rName, String(row[27] || ''), String(row[29] || ''), orderName, perRowQty, String(row[30] || ''), String(row[2] || '')]);
         }
     }
 }
@@ -921,6 +924,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
 async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', overrideQty?: number, perRowQty: number = 1) {
     const orderName = config.orderFormName || config.displayName;
     const rowQty = overrideQty ?? mo.qty;
+    const rName = stripDigits(mo.recipientName);
     // 커스텀 헤더가 설정되어 있으면 하드코딩 분기를 건너뛰고 generic 경로 사용
     const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
     if (customHeaders.length > 0) {
@@ -943,19 +947,19 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
     } else if (companyName === '팜플로우') {
         for (let j = 0; j < rowQty; j++) {
             const or = new Array(13).fill('');
-            or[0] = '수동'; or[1] = mo.recipientName; or[2] = mo.phone; or[3] = mo.address; or[4] = mo.memo || ''; or[5] = orderName; or[6] = perRowQty; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
+            or[0] = '수동'; or[1] = rName; or[2] = mo.phone; or[3] = mo.address; or[4] = mo.memo || ''; or[5] = orderName; or[6] = perRowQty; or[7] = '안군농원'; or[8] = '01042626343'; or[9] = '제주도';
             outputRows.push(or);
         }
     } else if (companyName === '웰그린') {
         for (let j = 0; j < rowQty; j++) {
             const or = new Array(19).fill('');
-            or[1] = '수동'; or[2] = '안군농원'; or[4] = orderName; or[5] = perRowQty; or[6] = mo.memo || ''; or[9] = mo.recipientName; or[10] = mo.recipientName; or[11] = mo.phone; or[12] = mo.phone; or[15] = mo.address; or[17] = '01042626343';
+            or[1] = '수동'; or[2] = '안군농원'; or[4] = orderName; or[5] = perRowQty; or[6] = mo.memo || ''; or[9] = rName; or[10] = rName; or[11] = mo.phone; or[12] = mo.phone; or[15] = mo.address; or[17] = '01042626343';
             outputRows.push(or);
         }
     } else if (companyName === '답도' || companyName === '한라봉_답도') {
         for (let j = 0; j < rowQty; j++) {
             const or = new Array(11).fill('');
-            or[0] = '수동'; or[2] = '안군농원'; or[3] = '01042626343'; or[4] = mo.recipientName; or[5] = mo.phone; or[6] = mo.address; or[7] = orderName; or[8] = perRowQty; or[9] = mo.memo || '';
+            or[0] = '수동'; or[2] = '안군농원'; or[3] = '01042626343'; or[4] = rName; or[5] = mo.phone; or[6] = mo.address; or[7] = orderName; or[8] = perRowQty; or[9] = mo.memo || '';
             outputRows.push(or);
         }
     } else if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName)) {
@@ -963,7 +967,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             const or = new Array(15).fill('');
             or[0] = '수동';
             or[1] = '안군농원';
-            or[2] = mo.recipientName;
+            or[2] = rName;
             or[4] = mo.address;
             or[5] = mo.phone;
             or[6] = mo.phone;
@@ -983,7 +987,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             or[3] = '070-5222-6543';
             or[4] = '25346';
             or[5] = '강원 평창군 방림면 평창대로84-15';
-            or[6] = mo.recipientName;
+            or[6] = rName;
             or[7] = mo.phone;
             or[8] = mo.phone;
             or[10] = mo.address;
@@ -1006,7 +1010,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             or[1] = senderAddress;       // 송하인주소
             or[2] = senderPhone;         // 송하인연락처
             or[3] = orderName;           // 품목
-            or[4] = mo.recipientName;    // 받는분성명
+            or[4] = rName;               // 받는분성명
             or[5] = mo.address;          // 받는분주소
             or[6] = mo.phone;            // 받는분연락처
             or[7] = mo.memo || '';       // 배송메시지
@@ -1015,7 +1019,7 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
         }
     } else {
         for (let j = 0; j < rowQty; j++) {
-            outputRows.push([mo.recipientName, mo.phone, mo.address, orderName, perRowQty, mo.memo || '', '수동']);
+            outputRows.push([rName, mo.phone, mo.address, orderName, perRowQty, mo.memo || '', '수동']);
         }
     }
 }
