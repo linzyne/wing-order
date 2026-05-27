@@ -169,6 +169,19 @@ export const upsertDailySales = async (
   await setDoc(docRef, serialized);
 };
 
+export const appendInvoiceRows = async (
+  date: string,
+  newRows: any[][],
+  businessId?: string
+): Promise<void> => {
+  const existing = await loadDailySales(date, businessId);
+  const merged = [...(existing?.invoiceRows || []), ...newRows];
+  const dailySales: DailySales = existing
+    ? { ...existing, invoiceRows: merged, savedAt: new Date().toISOString() }
+    : { date, records: [], totalAmount: 0, savedAt: new Date().toISOString(), invoiceRows: merged };
+  await upsertDailySales(dailySales, businessId);
+};
+
 export const deleteDailySalesFromFirestore = async (
   date: string,
   businessId?: string

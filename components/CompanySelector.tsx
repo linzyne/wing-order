@@ -3,6 +3,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom';
 import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
+import AutoWatcherPanel from './AutoWatcherPanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon } from './icons';
@@ -4592,6 +4593,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         ) : null;
                     })()}
                 </div>
+                <AutoWatcherPanel
+                    masterOrderFile={masterOrderFile}
+                    pricingConfig={pricingConfig}
+                    businessId={businessId}
+                    activeCompanies={
+                        Object.entries(companySessions)
+                            .filter(([, sessions]) => (sessions as SessionData[]).some(s => (allOrderRows[s.id] || []).length > 0))
+                            .map(([company]) => company)
+                    }
+                />
                 <div className="overflow-x-auto">
                     <DndContext
                         sensors={sensors}
