@@ -303,19 +303,15 @@ export const useInvoiceMerger = () => {
                 if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { headerIdx = i; break; }
             }
 
-            // 주문서의 주문번호 열 감지
-            // 고객주문번호(J열) 우선 → 주문번호(C열) → 묶음배송번호(B열) 순으로 탐색
+            // 주문서의 주문번호 열 감지: 항상 묶음배송번호(B열) 우선
             const orderHeader = orderAoa[headerIdx];
             let targetOrderIdx: number;
-            targetOrderIdx = findColIdx(orderHeader, ['고객주문번호']);
+            targetOrderIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
             if (targetOrderIdx === -1) {
                 targetOrderIdx = findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
             }
             if (targetOrderIdx === -1) {
-                targetOrderIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
-            }
-            if (targetOrderIdx === -1) {
-                targetOrderIdx = 2; // 기본 C열 폴백
+                targetOrderIdx = 1; // 기본 B열 폴백
             }
 
             // 매칭 키 설정 확인
@@ -396,44 +392,6 @@ export const useInvoiceMerger = () => {
                 let debugHits = 0;
                 for (const k of orderKeys) { if (invoiceMap.has(k)) { debugHits++; if (debugHits >= 5) break; } }
                 console.log(`[송장] 디버그 - 키 교차 매칭: ${debugHits}건`);
-            }
-
-            // 주문번호 매칭 0건이면 묶음배송번호(B열)로 재시도
-            if (!isHeaderBasedMatch && invoiceMap.size > 0 && orderKeys.size > 0) {
-                let primaryHits = 0;
-                for (const k of orderKeys) { if (invoiceMap.has(k)) { primaryHits++; break; } }
-                if (primaryHits === 0) {
-                    const bundleIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
-                    if (bundleIdx !== -1 && bundleIdx !== targetOrderIdx) {
-                        const bundleKeys = new Set<string>();
-                        for (let i = headerIdx + 1; i < orderAoa.length; i++) {
-                            const row = orderAoa[i]; if (!row) continue;
-                            if (!skipGroupCheck && !isRowMatchingCompany(row, targetKeywords)) continue;
-                            const bk = normalizeOrderNum(row[bundleIdx]);
-                            if (bk) bundleKeys.add(bk);
-                        }
-                        if (bundleKeys.size > 0) {
-                            const bundleInvoiceMap = new Map<string, string[]>();
-                            for (const vf of vendorFiles) {
-                                const vendorBuf2 = await vf.arrayBuffer();
-                                const pm = await buildInvoiceMap(vendorBuf2, companyName, pricingConfig, bundleKeys);
-                                for (const [k, v] of pm) {
-                                    const ex = bundleInvoiceMap.get(k) || [];
-                                    for (const val of v) { if (!ex.includes(val)) ex.push(val); }
-                                    bundleInvoiceMap.set(k, ex);
-                                }
-                            }
-                            let bundleHits = 0;
-                            for (const k of bundleKeys) { if (bundleInvoiceMap.has(k)) { bundleHits++; break; } }
-                            if (bundleHits > 0) {
-                                invoiceMap.clear();
-                                for (const [k, v] of bundleInvoiceMap) invoiceMap.set(k, v);
-                                targetOrderIdx = bundleIdx;
-                                console.log(`[송장] ✓ 묶음배송번호(B열) fallback 성공`);
-                            }
-                        }
-                    }
-                }
             }
 
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
