@@ -15,7 +15,7 @@ interface BatchInvoicePanelProps {
 const BatchInvoicePanel: React.FC<BatchInvoicePanelProps> = ({
     masterOrderFile, pricingConfig, activeCompanies, businessId, onInvoiceReady, onInvoiceDownloaded,
 }) => {
-    const { items, addFiles, downloadItem, clearCompleted, clearAll, isProcessing } = useBatchInvoice(
+    const { items, addFiles, downloadItem, downloadAll, clearCompleted, clearAll, isProcessing } = useBatchInvoice(
         masterOrderFile, pricingConfig, activeCompanies, businessId
     );
     const inputRef = useRef<HTMLInputElement>(null);
@@ -122,6 +122,19 @@ const BatchInvoicePanel: React.FC<BatchInvoicePanelProps> = ({
             {/* 완료 목록 */}
             {doneItems.length > 0 && (
                 <div className="mt-3 border-t border-zinc-800 pt-3 space-y-1.5">
+                    {doneItems.length > 1 && (
+                        <div className="flex items-center justify-between mb-2">
+                            <span className="text-[10px] text-zinc-500">
+                                총 {doneItems.reduce((s, i) => s + i.uploadCount, 0)}건
+                            </span>
+                            <button
+                                onClick={() => downloadAll((company) => onInvoiceDownloaded?.(company))}
+                                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black hover:bg-emerald-500 transition-all shadow-emerald-900/30 shadow-md"
+                            >
+                                통합 다운로드
+                            </button>
+                        </div>
+                    )}
                     {doneItems.map(item => (
                         <div key={item.id} className="flex items-center gap-2 text-[11px]">
                             <span className={item.downloaded ? 'text-zinc-600' : 'text-emerald-400'}>✓</span>

@@ -112,6 +112,35 @@ export const useBatchInvoice = (
         });
     }, []);
 
+    const downloadAll = useCallback((onDownloaded?: (companyName: string) => void) => {
+        setItems(prev => {
+            const doneItems = prev.filter(i => i.status === 'done' && i.workbook);
+            if (doneItems.length === 0) return prev;
+
+            let header: any[] | null = null;
+            const allRows: any[][] = [];
+            for (const item of doneItems) {
+                const ws = item.workbook.Sheets[item.workbook.SheetNames[0]];
+                const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                if (aoa.length < 1) continue;
+                if (!header) header = aoa[0];
+                for (let i = 1; i < aoa.length; i++) {
+                    if (aoa[i]?.some((c: any) => c != null && c !== '')) allRows.push(aoa[i]);
+                }
+            }
+            if (!header || allRows.length === 0) return prev;
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...allRows]), '업로드용');
+            const d = new Date();
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            XLSX.writeFile(wb, `${dateStr}_통합_업로드용.xlsx`);
+
+            doneItems.forEach(item => onDownloaded?.(item.companyName));
+            return prev.map(i => i.status === 'done' ? { ...i, downloaded: true } : i);
+        });
+    }, []);
+
     const clearCompleted = useCallback(() => {
         setItems(prev => prev.filter(i => i.status !== 'done' || !i.downloaded));
     }, []);
@@ -122,5 +151,5 @@ export const useBatchInvoice = (
         setIsProcessing(false);
     }, []);
 
-    return { items, addFiles, downloadItem, clearCompleted, clearAll, isProcessing };
+    return { items, addFiles, downloadItem, downloadAll, clearCompleted, clearAll, isProcessing };
 };
