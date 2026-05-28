@@ -104,7 +104,11 @@ const SortableDividerRow: React.FC<{
     onLabelChange: (oldId: string, newLabel: string) => void;
     onColorChange: (id: string, colorKey: string) => void;
     onDelete: (id: string) => void;
-}> = ({ id, label, colorKey, onLabelChange, onColorChange, onDelete }) => {
+    groupCompanies?: string[];
+    closedCompanies?: Set<string>;
+    onGroupClose?: (companies: string[]) => void;
+    onGroupDownloadOrders?: (companies: string[]) => void;
+}> = ({ id, label, colorKey, onLabelChange, onColorChange, onDelete, groupCompanies, closedCompanies, onGroupClose, onGroupDownloadOrders }) => {
     const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
     const [editing, setEditing] = React.useState(false);
     const [draft, setDraft] = React.useState(label);
@@ -116,6 +120,9 @@ const SortableDividerRow: React.FC<{
         onLabelChange(id, trimmed);
         setEditing(false);
     };
+
+    const hasGroup = groupCompanies && groupCompanies.length > 0;
+    const allClosed = hasGroup && closedCompanies && groupCompanies.every(c => closedCompanies.has(c));
 
     return (
         <tbody ref={setNodeRef} style={{ transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined, transition, opacity: isDragging ? 0.5 : 1 }}>
@@ -149,15 +156,34 @@ const SortableDividerRow: React.FC<{
                                     onChange={e => setDraft(e.target.value)}
                                     onBlur={commit}
                                     onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
-                                    className="text-[10px] font-black text-zinc-300 bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 w-28 focus:outline-none focus:border-rose-500/50"
+                                    className="text-sm font-black text-zinc-300 bg-zinc-800 border border-zinc-600 rounded px-2 py-0.5 w-36 focus:outline-none focus:border-rose-500/50"
                                 />
                             ) : (
-                                <button onClick={() => { setDraft(label); setEditing(true); }} className="text-[10px] font-black transition-colors px-1 whitespace-nowrap" style={{ color: colorKey !== 'none' ? color.accent : '#71717a' }}>
+                                <button onClick={() => { setDraft(label); setEditing(true); }} className="text-sm font-black transition-colors px-1 whitespace-nowrap" style={{ color: colorKey !== 'none' ? color.accent : '#71717a' }}>
                                     {label || '구분선'}
                                 </button>
                             )}
                             <div className="flex-1 border-t border-dashed" style={{ borderColor: colorKey !== 'none' ? color.accent + '80' : '#3f3f4660' }} />
                         </div>
+                        {/* 그룹 액션 버튼 */}
+                        {hasGroup && onGroupClose && (
+                            <button
+                                onClick={() => onGroupClose(groupCompanies)}
+                                className={`text-[10px] font-black px-2 py-0.5 rounded transition-colors border ${allClosed ? 'text-indigo-400 border-indigo-700 hover:text-indigo-300 hover:border-indigo-500' : 'text-zinc-500 border-zinc-700 hover:text-rose-400 hover:border-rose-700'}`}
+                                title={allClosed ? '그룹 마감 해제' : '그룹 전체 마감'}
+                            >
+                                {allClosed ? '마감해제' : '마감'}
+                            </button>
+                        )}
+                        {hasGroup && onGroupDownloadOrders && (
+                            <button
+                                onClick={() => onGroupDownloadOrders(groupCompanies)}
+                                className="text-[10px] font-black px-2 py-0.5 rounded transition-colors border text-zinc-500 border-zinc-700 hover:text-emerald-400 hover:border-emerald-700"
+                                title="그룹 내 모든 업체 발주서 다운로드"
+                            >
+                                발주서다운
+                            </button>
+                        )}
                         <button onClick={() => onDelete(id)} className="text-zinc-700 hover:text-rose-500 transition-colors opacity-0 group-hover/divider:opacity-100">
                             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                         </button>
@@ -2262,6 +2288,43 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             return next;
         });
+    };
+
+    const handleGroupClose = (companies: string[]) => {
+        setClosedCompanies(prev => {
+            const allClosed = companies.every(c => prev.has(c));
+            const next = new Set(prev);
+            if (allClosed) {
+                companies.forEach(c => next.delete(c));
+            } else {
+                companies.forEach(c => next.add(c));
+            }
+            return next;
+        });
+    };
+
+    const handleGroupDownloadOrders = (companies: string[]) => {
+        let downloaded = 0;
+        companies.forEach(companyName => {
+            const sessions = companySessions[companyName] || [];
+            const mergedRows: any[][] = [];
+            sessions.forEach(s => {
+                if (allOrderRows[s.id] && allOrderRows[s.id].length > 0) mergedRows.push(...allOrderRows[s.id]);
+            });
+            if (mergedRows.length === 0) return;
+            const companyConfig = pricingConfig[companyName];
+            if (!companyConfig) return;
+            const header = getHeaderForCompany(companyName, companyConfig);
+            const ws = XLSX.utils.aoa_to_sheet([header, ...mergedRows]);
+            ws['!cols'] = header.map(() => ({ wch: 15 }));
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '발주서');
+            const dateStr = new Date().toLocaleDateString('en-CA');
+            XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산발주서.xlsx`);
+            sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
+            downloaded++;
+        });
+        if (downloaded === 0) alert('다운받을 발주 데이터가 없습니다.');
     };
 
     const handleAddSession = (companyName: string) => {
@@ -4673,14 +4736,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             >
                                 {(() => {
                                     const orderedItems = companyOrder.filter(id => isDivider(id) || !!pricingConfig[id]);
-                                    // 업체별 그룹 배경색 사전 계산
+                                    // 업체별 그룹 배경색 사전 계산 + 구분선별 그룹 업체 목록 계산
                                     const companyGroupBg: Record<string, string> = {};
+                                    const dividerGroupCompanies: Record<string, string[]> = {};
                                     let curColorKey = 'none';
+                                    let currentDividerId: string | null = null;
                                     for (const id of orderedItems) {
                                         if (isDivider(id)) {
                                             curColorKey = dividerColors[id] || 'none';
-                                        } else if (curColorKey !== 'none') {
-                                            companyGroupBg[id] = getGroupColor(curColorKey).bg;
+                                            currentDividerId = id;
+                                            dividerGroupCompanies[id] = [];
+                                        } else {
+                                            if (curColorKey !== 'none') companyGroupBg[id] = getGroupColor(curColorKey).bg;
+                                            if (currentDividerId) dividerGroupCompanies[currentDividerId].push(id);
                                         }
                                     }
                                     return orderedItems.map(id => {
@@ -4694,6 +4762,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 onLabelChange={handleChangeDividerLabel}
                                                 onColorChange={handleChangeDividerColor}
                                                 onDelete={handleDeleteDivider}
+                                                groupCompanies={dividerGroupCompanies[id] || []}
+                                                closedCompanies={closedCompanies}
+                                                onGroupClose={handleGroupClose}
+                                                onGroupDownloadOrders={handleGroupDownloadOrders}
                                             />
                                         );
                                     }
