@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import AutoWatcherPanel from './AutoWatcherPanel';
+import BatchInvoicePanel from './BatchInvoicePanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon } from './icons';
@@ -672,6 +673,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allSummaries, setAllSummaries] = useState<Record<string, string>>({});
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
     const [checkedCompanies, setCheckedCompanies] = useState<Set<string>>(new Set());
+    // 불 켜기/끄기: 세션별 미다운로드 추적
+    const [orderLitSessions, setOrderLitSessions] = useState<Set<string>>(new Set());
+    const [invoiceLitSessions, setInvoiceLitSessions] = useState<Set<string>>(new Set());
+    const [batchInvoiceLit, setBatchInvoiceLit] = useState<Set<string>>(new Set()); // 업체명
     const [closedCompanies, setClosedCompanies] = useState<Set<string>>(new Set());
     const [recordedCompanies, setRecordedCompanies] = useState<Set<string>>(new Set());
     const [companyOverrides, setCompanyOverrides] = useState<Record<string, { deposit?: number; margin?: number }>>({});
@@ -693,6 +698,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllExcludedDetails({});
         setAllOrderRows({});
         setAllInvoiceRows({});
+        setOrderLitSessions(new Set());
+        setInvoiceLitSessions(new Set());
+        setBatchInvoiceLit(new Set());
         setAllUploadInvoiceRows({});
         setAllHeaders({});
         setAllSummaries({});
@@ -2364,7 +2372,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             };
             sendNotif(`${companyName} 발주서 생성`, `${newCount}건`);
+            // 발주서 불 켜기
+            setOrderLitSessions(prev => new Set([...prev, sessionId]));
         }
+        // 발주서 rows 삭제 시 불 끄기
+        if (newCount === 0) setOrderLitSessions(prev => { const s = new Set(prev); s.delete(sessionId); return s; });
         prevOrderRowsRef.current[sessionId] = newCount;
 
         setAllOrderRows(prev => ({ ...prev, [sessionId]: orderRows }));
@@ -2374,7 +2386,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (header || uploadInvoiceRows.length > 0 || orderRows.length === 0) {
             setAllInvoiceRows(prev => ({ ...prev, [sessionId]: invoiceRows }));
             setAllUploadInvoiceRows(prev => ({ ...prev, [sessionId]: uploadInvoiceRows }));
-            if (header) setAllHeaders(prev => ({ ...prev, [sessionId]: header }));
+            if (header) {
+                setAllHeaders(prev => ({ ...prev, [sessionId]: header }));
+                // 송장 처리 완료 → 불 켜기 (복원 시 억제)
+                if (Date.now() > toastSuppressUntilRef.current && invoiceRows.length > 0) {
+                    setInvoiceLitSessions(prev => new Set([...prev, sessionId]));
+                }
+            }
+            // 송장 rows 삭제 시 불 끄기
+            if (orderRows.length === 0) setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(sessionId); return s; });
         }
         setAllSummaries(prev => ({ ...prev, [sessionId]: summaryExcel }));
         if (registeredProductNames) setAllRegisteredNames(prev => ({ ...prev, [sessionId]: registeredProductNames }));
@@ -2415,6 +2435,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산발주서.xlsx`);
+        // 합산 발주서 다운로드 시 해당 업체 모든 세션 불 끄기
+        sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
     };
 
     // 업체별 가구매 택배 매칭 행 필터링
@@ -2461,6 +2483,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const dateStr = new Date().toLocaleDateString('en-CA');
         const label = type === 'mgmt' ? '기록용' : '업로드용';
         XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산송장_${label}.xlsx`);
+        // 합산 송장 다운로드 시 해당 업체 모든 세션 불 끄기
+        sessions.forEach(s => setInvoiceLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
     };
 
     const handleDownloadMergedUploadInvoices = () => {
@@ -4603,6 +4627,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             .map(([company]) => company)
                     }
                 />
+                <BatchInvoicePanel
+                    masterOrderFile={masterOrderFile}
+                    pricingConfig={pricingConfig}
+                    businessId={businessId}
+                    activeCompanies={
+                        Object.entries(companySessions)
+                            .filter(([, sessions]) => (sessions as SessionData[]).some(s => (allOrderRows[s.id] || []).length > 0))
+                            .map(([company]) => company)
+                    }
+                    onInvoiceReady={(company) => setBatchInvoiceLit(prev => new Set([...prev, company]))}
+                    onInvoiceDownloaded={(company) => setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; })}
+                />
                 <div className="overflow-x-auto">
                     <DndContext
                         sensors={sensors}
@@ -4782,6 +4818,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     sessionResults={sessionResults}
                                                     onSaveSessionResult={handleSaveSessionResult}
                                                     onDeleteSessionResult={handleDeleteSessionResult}
+                                                    pendingOrderLight={sIdx === 0 && orderLitSessions.has(session.id)}
+                                                    pendingInvoiceLight={sIdx === 0 && (invoiceLitSessions.has(session.id) || batchInvoiceLit.has(company))}
+                                                    onOrderDownloaded={() => setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; })}
+                                                    onInvoiceDownloaded={() => { setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; }); }}
                                                 />
                                             </React.Fragment>
                                         ) : null;

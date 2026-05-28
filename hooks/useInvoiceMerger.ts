@@ -304,13 +304,15 @@ export const useInvoiceMerger = () => {
             }
 
             // 주문서의 주문번호 열 감지
-            // 발주서 생성 시 sourceOrderNumberIdx=2(주문번호)를 사용하므로
-            // 송장 매칭도 묶음배송번호를 우선 사용 (주문번호는 폴백)
+            // 고객주문번호(J열) 우선 → 주문번호(C열) → 묶음배송번호(B열) 순으로 탐색
             const orderHeader = orderAoa[headerIdx];
             let targetOrderIdx: number;
-            targetOrderIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
+            targetOrderIdx = findColIdx(orderHeader, ['고객주문번호']);
             if (targetOrderIdx === -1) {
                 targetOrderIdx = findColIdx(orderHeader, ['주문번호', '주문정보', '오더번호', '접수번호']);
+            }
+            if (targetOrderIdx === -1) {
+                targetOrderIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
             }
             if (targetOrderIdx === -1) {
                 targetOrderIdx = 2; // 기본 C열 폴백

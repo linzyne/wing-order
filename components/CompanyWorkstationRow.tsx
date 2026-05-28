@@ -99,6 +99,10 @@ interface CompanyWorkstationRowProps {
     sessionResults: Record<string, SessionResultData> | null;
     onSaveSessionResult: (sessionId: string, data: SessionResultData) => void;
     onDeleteSessionResult: (sessionId: string) => void;
+    pendingOrderLight?: boolean;
+    pendingInvoiceLight?: boolean;
+    onOrderDownloaded?: () => void;
+    onInvoiceDownloaded?: () => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -119,6 +123,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     isClosed = false, onToggleClosed, isActive = true,
     onRecord,
     workspace, updateField, updateSessionField, sessionResults, onSaveSessionResult, onDeleteSessionResult,
+    pendingOrderLight = false, pendingInvoiceLight = false,
+    onOrderDownloaded, onInvoiceDownloaded,
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -783,7 +789,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const handleDownloadOrder = () => {
         if (fakeMismatch) alert('미매칭(수량)을 확인하세요.');
-        if (localResult) XLSX.writeFile(localResult.workbook, localResult.fileName);
+        if (localResult) { XLSX.writeFile(localResult.workbook, localResult.fileName); onOrderDownloaded?.(); }
     };
     const handleDownloadInvoice = (type: 'mgmt' | 'upload') => {
         if (!mergeResults) return;
@@ -797,6 +803,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             if (type === 'mgmt') XLSX.writeFile(mergeResults.mgmtWorkbook, mergeResults.mgmtFileName);
             else XLSX.writeFile(mergeResults.uploadWorkbook, mergeResults.uploadFileName);
         }
+        onInvoiceDownloaded?.();
     };
     const handleDownloadPlatformInvoice = (platformName: string) => {
         const pResult = mergeResults?.platformUploadWorkbooks?.[platformName];
@@ -891,6 +898,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     >
                                         {companyName}
                                     </div>
+                                    {pendingOrderLight && (
+                                        <span title="발주서 미다운로드" className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shadow-[0_0_6px_3px_rgba(251,191,36,0.5)] shrink-0" />
+                                    )}
+                                    {pendingInvoiceLight && (
+                                        <span title="송장 미다운로드" className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_3px_rgba(52,211,153,0.5)] shrink-0" />
+                                    )}
                                     <button
                                         onClick={onToggleClosed}
                                         title={isClosed ? '마감 해제' : '마감 처리'}

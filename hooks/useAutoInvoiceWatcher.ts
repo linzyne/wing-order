@@ -19,8 +19,8 @@ export interface WatchLogEntry {
 const normalizeNum = (val: any): string =>
     String(val ?? '').replace(/\.0$/, '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
 
-/** 업체 송장파일의 주문번호를 마스터 주문서 B열(묶음배송번호)과 매칭해 업체명 감지 */
-const detectCompanyName = async (
+/** 업체 송장파일의 주문번호를 마스터 주문서와 매칭해 업체명 감지 */
+export const detectCompanyName = async (
     vendorFile: File,
     masterOrderFile: File,
     activeCompanies: string[],
