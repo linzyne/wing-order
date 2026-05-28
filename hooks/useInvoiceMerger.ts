@@ -398,6 +398,44 @@ export const useInvoiceMerger = () => {
                 console.log(`[송장] 디버그 - 키 교차 매칭: ${debugHits}건`);
             }
 
+            // 주문번호 매칭 0건이면 묶음배송번호(B열)로 재시도
+            if (!isHeaderBasedMatch && invoiceMap.size > 0 && orderKeys.size > 0) {
+                let primaryHits = 0;
+                for (const k of orderKeys) { if (invoiceMap.has(k)) { primaryHits++; break; } }
+                if (primaryHits === 0) {
+                    const bundleIdx = findColIdx(orderHeader, ['묶음배송번호', '묶음배송']);
+                    if (bundleIdx !== -1 && bundleIdx !== targetOrderIdx) {
+                        const bundleKeys = new Set<string>();
+                        for (let i = headerIdx + 1; i < orderAoa.length; i++) {
+                            const row = orderAoa[i]; if (!row) continue;
+                            if (!skipGroupCheck && !isRowMatchingCompany(row, targetKeywords)) continue;
+                            const bk = normalizeOrderNum(row[bundleIdx]);
+                            if (bk) bundleKeys.add(bk);
+                        }
+                        if (bundleKeys.size > 0) {
+                            const bundleInvoiceMap = new Map<string, string[]>();
+                            for (const vf of vendorFiles) {
+                                const vendorBuf2 = await vf.arrayBuffer();
+                                const pm = await buildInvoiceMap(vendorBuf2, companyName, pricingConfig, bundleKeys);
+                                for (const [k, v] of pm) {
+                                    const ex = bundleInvoiceMap.get(k) || [];
+                                    for (const val of v) { if (!ex.includes(val)) ex.push(val); }
+                                    bundleInvoiceMap.set(k, ex);
+                                }
+                            }
+                            let bundleHits = 0;
+                            for (const k of bundleKeys) { if (bundleInvoiceMap.has(k)) { bundleHits++; break; } }
+                            if (bundleHits > 0) {
+                                invoiceMap.clear();
+                                for (const [k, v] of bundleInvoiceMap) invoiceMap.set(k, v);
+                                targetOrderIdx = bundleIdx;
+                                console.log(`[송장] ✓ 묶음배송번호(B열) fallback 성공`);
+                            }
+                        }
+                    }
+                }
+            }
+
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
             const companyConfig = pricingConfig?.[companyName];
             const useCustomInvoiceHeaders = companyConfig?.invoiceHeaders && companyConfig.invoiceHeaders.length > 0;
