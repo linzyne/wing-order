@@ -157,6 +157,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [showConsolidationLog, setShowConsolidationLog] = useState(false);
     const [showSizeMismatch, setShowSizeMismatch] = useState(false);
     const [showOrderPreview, setShowOrderPreview] = useState(false);
+    const [orderDownloaded, setOrderDownloaded] = useState(false);
+    const [mergedOrderDownloaded, setMergedOrderDownloaded] = useState(false);
+
+    useEffect(() => { setOrderDownloaded(false); setMergedOrderDownloaded(false); }, [localResult]);
 
     // 사이즈 불일치 감지: 매칭된 품목 키의 kg와 원본 옵션명의 kg가 다른 항목
     const sizeMismatchItems = (() => {
@@ -789,7 +793,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const handleDownloadOrder = () => {
         if (fakeMismatch) alert('미매칭(수량)을 확인하세요.');
-        if (localResult) { XLSX.writeFile(localResult.workbook, localResult.fileName); onOrderDownloaded?.(); }
+        if (localResult) { XLSX.writeFile(localResult.workbook, localResult.fileName); onOrderDownloaded?.(); setOrderDownloaded(true); }
     };
     const handleDownloadInvoice = (type: 'mgmt' | 'upload') => {
         if (!mergeResults) return;
@@ -1083,9 +1087,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="text-pink-400 font-black text-xl">{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         {onDownloadMergedOrder ? (
-                                            <button onClick={onDownloadMergedOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); }} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center transition-all ${mergedOrderDownloaded ? 'bg-zinc-800 text-zinc-600' : 'bg-emerald-700 text-white hover:bg-emerald-600 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         ) : (
-                                            <button onClick={handleDownloadOrder} className="bg-pink-500 text-white hover:bg-pink-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center transition-all ${orderDownloaded ? 'bg-zinc-800 text-zinc-600' : 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         )}
                                     </div>
                                 )}
@@ -1094,7 +1098,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
-                                        <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                        <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center transition-all ${orderDownloaded ? 'bg-zinc-800 text-zinc-600' : 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-2 w-full">
@@ -1116,7 +1120,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                             <div className="h-6 w-px bg-zinc-800" />
                                             <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
-                                            <button onClick={handleDownloadOrder} className="bg-indigo-500 text-white hover:bg-indigo-600 px-2 py-0.5 rounded font-black text-[9px] shadow-md flex items-center transition-all"><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center transition-all ${orderDownloaded ? 'bg-zinc-800 text-zinc-600' : 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         </div>
                                     </div>
                                 )}
