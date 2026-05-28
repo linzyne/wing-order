@@ -2359,20 +2359,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         // 새 발주서 생성 감지 → 토스트 (초기 복원 시 억제)
         const prevCount = prevOrderRowsRef.current[sessionId] || 0;
         const newCount = orderRows.length;
-        if (newCount > 0 && prevCount === 0 && Date.now() > toastSuppressUntilRef.current) {
+        if (newCount > 0 && Date.now() > toastSuppressUntilRef.current) {
             const companyName = sessionId.replace(/-\d+$/, '');
-            addToast(companyName, newCount, sessionId);
-            const sendNotif = (title: string, body: string) => {
-                if (Notification.permission === 'granted') {
-                    new Notification(title, { body });
-                } else if (Notification.permission !== 'denied') {
-                    Notification.requestPermission().then(p => {
-                        if (p === 'granted') new Notification(title, { body });
-                    });
-                }
-            };
-            sendNotif(`${companyName} 발주서 생성`, `${newCount}건`);
-            // 발주서 불 켜기
+            // 토스트·알림은 0→N 전환 시만
+            if (prevCount === 0) {
+                addToast(companyName, newCount, sessionId);
+                const sendNotif = (title: string, body: string) => {
+                    if (Notification.permission === 'granted') {
+                        new Notification(title, { body });
+                    } else if (Notification.permission !== 'denied') {
+                        Notification.requestPermission().then(p => {
+                            if (p === 'granted') new Notification(title, { body });
+                        });
+                    }
+                };
+                sendNotif(`${companyName} 발주서 생성`, `${newCount}건`);
+            }
+            // 발주서 불 켜기 (복원 억제 기간 이후 데이터가 있으면 항상 켬)
             setOrderLitSessions(prev => new Set([...prev, sessionId]));
         }
         // 발주서 rows 삭제 시 불 끄기
