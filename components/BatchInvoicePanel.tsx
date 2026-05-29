@@ -2,6 +2,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import type { PricingConfig } from '../types';
 import { useBatchInvoice } from '../hooks/useBatchInvoice';
+import { useBatchInvoiceHistory } from '../hooks/useBatchInvoiceHistory';
 
 interface BatchInvoicePanelProps {
     masterOrderFile: File | null;
@@ -18,8 +19,11 @@ const BatchInvoicePanel: React.FC<BatchInvoicePanelProps> = ({
     const { items, addFiles, downloadItem, downloadAll, clearCompleted, clearAll, isProcessing } = useBatchInvoice(
         masterOrderFile, pricingConfig, activeCompanies, businessId
     );
+    const { history, addRecord, removeRecord, clearHistory } = useBatchInvoiceHistory(businessId);
     const inputRef = useRef<HTMLInputElement>(null);
     const [dragging, setDragging] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+    const [justRecorded, setJustRecorded] = useState(false);
 
     const handleFiles = useCallback((files: FileList | null) => {
         if (!files) return;
@@ -52,6 +56,15 @@ const BatchInvoicePanel: React.FC<BatchInvoicePanelProps> = ({
         if (status === 'error') return <span className="text-red-400 text-[10px]">오류</span>;
         return null;
     };
+
+    const handleRecord = useCallback(() => {
+        const doneItems = items.filter(i => i.status === 'done');
+        if (doneItems.length === 0) return;
+        addRecord(doneItems.map(i => ({ companyName: i.companyName || '미감지', uploadCount: i.uploadCount })));
+        setJustRecorded(true);
+        setShowHistory(true);
+        setTimeout(() => setJustRecorded(false), 2000);
+    }, [items, addRecord]);
 
     const doneItems = items.filter(i => i.status === 'done');
     const pendingItems = items.filter(i => i.status !== 'done');
@@ -122,19 +135,31 @@ const BatchInvoicePanel: React.FC<BatchInvoicePanelProps> = ({
             {/* 완료 목록 */}
             {doneItems.length > 0 && (
                 <div className="mt-3 border-t border-zinc-800 pt-3 space-y-1.5">
-                    {doneItems.length > 1 && (
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-[10px] text-zinc-500">
-                                총 {doneItems.reduce((s, i) => s + i.uploadCount, 0)}건
-                            </span>
+                    <div className="flex items-center justify-between mb-2">
+                        <span className="text-[10px] text-zinc-500">
+                            총 {doneItems.reduce((s, i) => s + i.uploadCount, 0)}건
+                        </span>
+                        <div className="flex items-center gap-2">
                             <button
-                                onClick={() => downloadAll((company) => onInvoiceDownloaded?.(company))}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black hover:bg-emerald-500 transition-all shadow-emerald-900/30 shadow-md"
+                                onClick={handleRecord}
+                                className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all shadow-md ${
+                                    justRecorded
+                                        ? 'bg-zinc-600 text-zinc-300 shadow-zinc-900/30'
+                                        : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600 shadow-zinc-900/30'
+                                }`}
                             >
-                                통합 다운로드
+                                {justRecorded ? '기록됨' : '기록'}
                             </button>
+                            {doneItems.length > 1 && (
+                                <button
+                                    onClick={() => downloadAll((company) => onInvoiceDownloaded?.(company))}
+                                    className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black hover:bg-emerald-500 transition-all shadow-emerald-900/30 shadow-md"
+                                >
+                                    통합 다운로드
+                                </button>
+                            )}
                         </div>
-                    )}
+                    </div>
                     {doneItems.map(item => (
                         <div key={item.id} className="flex items-center gap-2 text-[11px]">
                             <span className={item.downloaded ? 'text-zinc-600' : 'text-emerald-400'}>✓</span>
@@ -163,6 +188,56 @@ const BatchInvoicePanel: React.FC<BatchInvoicePanelProps> = ({
                         <button onClick={clearCompleted} className="text-[10px] text-zinc-700 hover:text-zinc-500 transition-colors mt-1">
                             완료된 항목 지우기
                         </button>
+                    )}
+                </div>
+            )}
+
+            {/* 기록 내역 */}
+            {history.length > 0 && (
+                <div className="mt-3 border-t border-zinc-800 pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                        <button
+                            onClick={() => setShowHistory(v => !v)}
+                            className="text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors font-black flex items-center gap-1"
+                        >
+                            기록 내역 {history.length}건 {showHistory ? '▲' : '▼'}
+                        </button>
+                        {showHistory && (
+                            <button onClick={clearHistory} className="text-[10px] text-zinc-700 hover:text-zinc-500 transition-colors">
+                                전체 삭제
+                            </button>
+                        )}
+                    </div>
+                    {showHistory && (
+                        <div className="space-y-2">
+                            {history.map(record => {
+                                const d = new Date(record.recordedAt);
+                                const dateStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+                                return (
+                                    <div key={record.id} className="rounded-lg bg-zinc-800/50 px-3 py-2 text-[10px]">
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="text-zinc-400 font-black">{dateStr}</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-zinc-500">총 {record.totalCount}건</span>
+                                                <button
+                                                    onClick={() => removeRecord(record.id)}
+                                                    className="text-zinc-700 hover:text-zinc-500 transition-colors"
+                                                >
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                                            {record.entries.map((e, i) => (
+                                                <span key={i} className="text-zinc-500">
+                                                    <span className="text-zinc-300">{e.companyName}</span> {e.uploadCount}건
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
                     )}
                 </div>
             )}
