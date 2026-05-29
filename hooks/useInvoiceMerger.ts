@@ -290,13 +290,33 @@ export const useInvoiceMerger = () => {
         return invoiceMap;
     };
 
-    const processFiles = useCallback(async (vendorFileOrFiles: File | File[], orderFile: File, companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig, orderPlatformMap?: Map<string, string>, platformConfigs?: PlatformConfigs, businessId?: string) => {
+    const processFiles = useCallback(async (vendorFileOrFiles: File | File[], orderFile: File | File[], companyName: string, skipGroupCheck: boolean = true, pricingConfig?: PricingConfig, orderPlatformMap?: Map<string, string>, platformConfigs?: PlatformConfigs, businessId?: string) => {
         try {
             setStatus('processing'); setError(null);
             const vendorFiles = Array.isArray(vendorFileOrFiles) ? vendorFileOrFiles : [vendorFileOrFiles];
+            const orderFiles = Array.isArray(orderFile) ? orderFile : [orderFile];
             const bizShort = getBusinessInfo(businessId ?? '')?.shortName || '';
-            const orderWb = XLSX.read(await orderFile.arrayBuffer(), { type: 'array' });
-            const orderAoa: any[][] = XLSX.utils.sheet_to_json(orderWb.Sheets[orderWb.SheetNames[0]], { header: 1 });
+
+            // 모든 주문서 파일 병합: 첫 파일 기준 헤더, 이후 파일은 데이터 행만 추가
+            let orderAoa: any[][] = [];
+            for (const file of orderFiles) {
+                const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+                const aoa: any[][] = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+                if (orderAoa.length === 0) {
+                    orderAoa = aoa;
+                } else {
+                    // 이 파일의 헤더 행 감지 후 데이터 행만 추가
+                    let subHeaderIdx = 0;
+                    for (let i = 0; i < Math.min(aoa.length, 30); i++) {
+                        const rowStr = (aoa[i] || []).join('');
+                        if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { subHeaderIdx = i; break; }
+                    }
+                    for (let i = subHeaderIdx + 1; i < aoa.length; i++) {
+                        if (aoa[i]?.some((c: any) => c != null && c !== '')) orderAoa.push(aoa[i]);
+                    }
+                }
+            }
+
             let headerIdx = 0;
             for (let i = 0; i < Math.min(orderAoa.length, 30); i++) {
                 const rowStr = (orderAoa[i] || []).join('');

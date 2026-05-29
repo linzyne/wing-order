@@ -4728,6 +4728,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             .filter(([, sessions]) => (sessions as SessionData[]).some(s => (allOrderRows[s.id] || []).length > 0))
                             .map(([company]) => company)
                     }
+                    allOrderFiles={Object.values(batchFiles)}
                     onInvoiceReady={(company) => setBatchInvoiceLit(prev => new Set([...prev, company]))}
                     onInvoiceDownloaded={(company) => setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; })}
                 />

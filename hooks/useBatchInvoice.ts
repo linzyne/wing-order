@@ -23,7 +23,8 @@ export const useBatchInvoice = (
     masterOrderFile: File | null,
     pricingConfig: PricingConfig,
     activeCompanies: string[],
-    businessId?: string
+    businessId?: string,
+    allOrderFiles?: File[]
 ) => {
     const { processFiles, results, status: mergeStatus, error: mergeError, reset: resetMerger } = useInvoiceMerger();
     const [items, setItems] = useState<BatchInvoiceItem[]>([]);
@@ -48,7 +49,8 @@ export const useBatchInvoice = (
         try {
             const company = await detectCompanyName(next.file, masterOrderFile, activeCompanies, pricingConfig);
             setItems(prev => prev.map(i => i.id === next.id ? { ...i, status: 'processing', companyName: company } : i));
-            processFiles(next.file, masterOrderFile, company, true, pricingConfig);
+            const orderFiles: File[] = [masterOrderFile, ...(allOrderFiles || [])];
+            processFiles(next.file, orderFiles, company, true, pricingConfig);
         } catch {
             handlingRef.current = false;
             currentIdRef.current = null;

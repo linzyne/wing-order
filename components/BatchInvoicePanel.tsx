@@ -11,13 +11,14 @@ interface BatchInvoicePanelProps {
     businessId?: string;
     onInvoiceReady?: (companyName: string) => void;
     onInvoiceDownloaded?: (companyName: string) => void;
+    allOrderFiles?: File[];
 }
 
 const BatchInvoicePanel: React.FC<BatchInvoicePanelProps> = ({
-    masterOrderFile, pricingConfig, activeCompanies, businessId, onInvoiceReady, onInvoiceDownloaded,
+    masterOrderFile, pricingConfig, activeCompanies, businessId, onInvoiceReady, onInvoiceDownloaded, allOrderFiles,
 }) => {
     const { items, addFiles, downloadItem, downloadAll, clearCompleted, clearAll, isProcessing } = useBatchInvoice(
-        masterOrderFile, pricingConfig, activeCompanies, businessId
+        masterOrderFile, pricingConfig, activeCompanies, businessId, allOrderFiles
     );
     const { history, addRecord, removeRecord, clearHistory } = useBatchInvoiceHistory(businessId);
     const inputRef = useRef<HTMLInputElement>(null);
