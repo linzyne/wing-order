@@ -3,6 +3,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useInvoiceMerger } from './useInvoiceMerger';
 import { detectCompanyName } from './useAutoInvoiceWatcher';
 import type { PricingConfig } from '../types';
+import { getBusinessInfo } from '../types';
 
 declare var XLSX: any;
 
@@ -113,6 +114,7 @@ export const useBatchInvoice = (
     }, []);
 
     const downloadAll = useCallback((onDownloaded?: (companyName: string) => void) => {
+        const bizShort = getBusinessInfo(businessId ?? '')?.shortName || '';
         setItems(prev => {
             const doneItems = prev.filter(i => i.status === 'done' && i.workbook);
             if (doneItems.length === 0) return prev;
@@ -134,12 +136,12 @@ export const useBatchInvoice = (
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...allRows]), '업로드용');
             const d = new Date();
             const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-            XLSX.writeFile(wb, `${dateStr}_통합_업로드용.xlsx`);
+            XLSX.writeFile(wb, `${dateStr}_${bizShort ? bizShort + '_' : ''}통합[송장].xlsx`);
 
             doneItems.forEach(item => onDownloaded?.(item.companyName));
             return prev.map(i => i.status === 'done' ? { ...i, downloaded: true } : i);
         });
-    }, []);
+    }, [businessId]);
 
     const clearCompleted = useCallback(() => {
         setItems(prev => prev.filter(i => i.status !== 'done' || !i.downloaded));

@@ -2573,8 +2573,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         XLSX.utils.book_append_sheet(wb, ws, type === 'mgmt' ? '기록용' : '업로드용');
         const dateStr = new Date().toLocaleDateString('en-CA');
-        const label = type === 'mgmt' ? '기록용' : '업로드용';
-        XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산송장_${label}.xlsx`);
+        const label = type === 'mgmt' ? '기록용_' : '';
+        XLSX.writeFile(wb, `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}${companyName}[${label}합산_송장].xlsx`);
         // 합산 송장 다운로드 시 해당 업체 모든 세션 불 끄기
         sessions.forEach(s => setInvoiceLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
     };
@@ -2605,8 +2605,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         XLSX.utils.book_append_sheet(wb, ws, "병합송장");
         const dateStr = new Date().toLocaleDateString('en-CA');
-        const companiesStr = selectedCompanyNames.length > 3 ? `${selectedCompanyNames.slice(0, 3).join(', ')} 외 ${selectedCompanyNames.length - 3}곳` : selectedCompanyNames.join(', ');
-        XLSX.writeFile(wb, `${dateStr} [${businessPrefix ? businessPrefix + ' ' : ''}${companiesStr}] 업로드용_송장_병합.xlsx`);
+        const companiesStr = selectedCompanyNames.length > 3 ? `${selectedCompanyNames.slice(0, 3).join('_')} 외 ${selectedCompanyNames.length - 3}곳` : selectedCompanyNames.join('_');
+        XLSX.writeFile(wb, `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}${companiesStr}[병합_송장].xlsx`);
     };
 
     const handleDownloadDepositList = () => {
