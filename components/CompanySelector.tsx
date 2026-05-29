@@ -7,7 +7,7 @@ import AutoWatcherPanel from './AutoWatcherPanel';
 import BatchInvoicePanel from './BatchInvoicePanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo } from '../types';
-import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon } from './icons';
+import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
@@ -1712,7 +1712,31 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         } catch (error) { console.error("Master upload analysis failed:", error); }
     };
 
-    const clearMasterFile = () => { setMasterOrderFile(null); setMasterOrderData(null); setDetectedCompanies(new Set()); setUploadedPlatforms([]); setRowPlatformSources([]); setKReplaceFrom(''); setKReplaceFromCompany(''); setKReplaceTo(''); setKReplaceToCompany(''); setKReplaceProductMap({}); setKReplaceHistory([]); setKReplaceRound(null); };
+    const clearMasterFile = () => {
+        setMasterOrderFile(null);
+        setMasterOrderData(null);
+        setDetectedCompanies(new Set());
+        setUploadedPlatforms([]);
+        setRowPlatformSources([]);
+        setKReplaceFrom('');
+        setKReplaceFromCompany('');
+        setKReplaceTo('');
+        setKReplaceToCompany('');
+        setKReplaceProductMap({});
+        setKReplaceHistory([]);
+        setKReplaceRound(null);
+        setBatchFiles({});
+        setBatchExpectedCounts({});
+        setBatchMasterRows({});
+        setBatchPlatforms({});
+        setFakeMasterOrderFile(null);
+        setFakeMasterOrderData(null);
+        const initial: Record<string, SessionData[]> = {};
+        Object.keys(pricingConfig).forEach(name => {
+            initial[name] = [{ id: `${name}-1`, companyName: name, round: 1 }];
+        });
+        setCompanySessions(initial);
+    };
 
     const applyKValueReplacement = () => {
         if (!kReplaceFrom || !kReplaceTo) return;
@@ -3672,7 +3696,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <div className="bg-zinc-950 p-3 rounded-2xl border border-zinc-800 shadow-inner flex flex-col gap-2 animate-pop-in">
                             <div className="flex justify-between items-center">
                                 <h4 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest">Master File</h4>
-                                <button onClick={clearMasterFile} className="text-zinc-700 hover:text-rose-500 p-1"><ArrowPathIcon className="w-3.5 h-3.5" /></button>
+                                <button onClick={clearMasterFile} className="text-zinc-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg p-1 transition-all" title="업로드 취소 및 초기화"><XMarkIcon className="w-3.5 h-3.5" /></button>
                             </div>
                             <div className="text-white font-black text-xs truncate">{masterOrderFile.name}</div>
                             <div className="flex items-center gap-2">
