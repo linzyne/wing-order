@@ -703,6 +703,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [orderLitSessions, setOrderLitSessions] = useState<Set<string>>(new Set());
     const [invoiceLitSessions, setInvoiceLitSessions] = useState<Set<string>>(new Set());
     const [batchInvoiceLit, setBatchInvoiceLit] = useState<Set<string>>(new Set()); // 업체명
+    const [mergedDownloadedCompanies, setMergedDownloadedCompanies] = useState<Set<string>>(new Set());
     const [closedCompanies, setClosedCompanies] = useState<Set<string>>(new Set());
     const [recordedCompanies, setRecordedCompanies] = useState<Set<string>>(new Set());
     const [companyOverrides, setCompanyOverrides] = useState<Record<string, { deposit?: number; margin?: number }>>({});
@@ -2503,6 +2504,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산발주서.xlsx`);
         // 합산 발주서 다운로드 시 해당 업체 모든 세션 불 끄기
         sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
+        setMergedDownloadedCompanies(prev => { const n = new Set(prev); n.add(companyName); return n; });
     };
 
     // 업체별 가구매 택배 매칭 행 필터링
@@ -4897,6 +4899,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     pendingInvoiceLight={sIdx === 0 && (invoiceLitSessions.has(session.id) || batchInvoiceLit.has(company))}
                                                     onOrderDownloaded={() => setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; })}
                                                     onInvoiceDownloaded={() => { setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; }); }}
+                                                    mergedDownloaded={mergedDownloadedCompanies.has(company)}
                                                 />
                                             </React.Fragment>
                                         ) : null;
