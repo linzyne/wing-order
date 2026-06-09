@@ -34,6 +34,7 @@ export type ProcessedResult = {
     originalOrderCount?: number; // 합산 전 원본 주문 수 (autoConsolidate 사용 시)
     consolidationLog?: ConsolidationLogEntry[]; // 합산 변환 내역
     preConsolidationByGroup?: Record<string, number>; // 합산 전 groupName별 수량 (누락 비교용)
+    manualOrderCounts?: Record<string, number>; // 수동발주 수량 (productKey별) — 마진 계산에서 제외용
 };
 
 export interface ConsolidationLogEntry {
@@ -546,6 +547,7 @@ const generateWorkbookForCompany = async (
         const registeredProductNames: Record<string, string> = {};
         const orderItems: OrderItem[] = [];
         const includedOrderNumbers: string[] = [];
+        const manualOrderCounts: Record<string, number> = {};
         let originalOrderCount = 0;
         let consolidationLog: ConsolidationLogEntry[] = [];
         let preConsolidationByGroup: Record<string, number> = {};
@@ -696,6 +698,7 @@ const generateWorkbookForCompany = async (
             if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
             summary[productKey].count += mo.qty;
             summary[productKey].totalPrice += mo.qty * config.supplyPrice + moShipping;
+            manualOrderCounts[productKey] = (manualOrderCounts[productKey] || 0) + mo.qty;
 
             const moStatsName = config.orderFormName || config.displayName;
             if (moShipping > 0) {
@@ -722,7 +725,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

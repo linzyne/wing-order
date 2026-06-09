@@ -1682,18 +1682,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     const productConfig = pricingConfig[companyName]?.products?.[key];
                                                     const unitSupply = summary[key]?.totalPrice ? Math.round(summary[key].totalPrice / summary[key].count) : 0;
                                                     const unitMargin = (productConfig as any)?.margin || 0;
-                                                    const totalMargin = unitMargin * expectedCount;
+                                                    const manualCount = localResult?.manualOrderCounts?.[key] || 0;
+                                                    const marginCount = expectedCount - manualCount;
+                                                    const totalMargin = unitMargin * marginCount;
                                                     grandTotalMargin += totalMargin;
                                                     return (
                                                         <div key={idx}>
                                                             <div className="flex justify-between text-[12px] font-mono text-zinc-200 font-bold gap-2">
                                                                 <span className="shrink-0">{key}{unitSupply ? ` (${unitSupply.toLocaleString()})` : ''}</span>
                                                                 <div className="flex items-center gap-2 shrink-0">
-                                                                    {unitMargin > 0 && (
-                                                                        <span className="text-emerald-400 text-[10px] font-black">+{unitMargin.toLocaleString()} × {expectedCount} = {totalMargin.toLocaleString()}</span>
+                                                                    {unitMargin > 0 && marginCount > 0 && (
+                                                                        <span className="text-emerald-400 text-[10px] font-black">+{unitMargin.toLocaleString()} × {marginCount} = {totalMargin.toLocaleString()}</span>
                                                                     )}
-                                                                    {unitMargin < 0 && (
-                                                                        <span className="text-red-400 text-[10px] font-black">{unitMargin.toLocaleString()} × {expectedCount}</span>
+                                                                    {unitMargin < 0 && marginCount > 0 && (
+                                                                        <span className="text-red-400 text-[10px] font-black">{unitMargin.toLocaleString()} × {marginCount}</span>
                                                                     )}
                                                                     <span>{expectedCount}개</span>
                                                                 </div>
