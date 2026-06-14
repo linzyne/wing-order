@@ -10,36 +10,63 @@ const THEME_PRESETS = [
   { label: '다크 틸', themeColor: '#0a1a1a', buttonColor: '#14b8a6' },
 ];
 
+interface BusinessFormData {
+  id: string;
+  displayName: string;
+  shortName: string;
+  senderName: string;
+  phone: string;
+  address: string;
+  themeColor: string;
+  buttonColor: string;
+}
+
 interface AddBusinessModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (business: {
-    id: string;
-    displayName: string;
-    shortName: string;
-    senderName: string;
-    phone: string;
-    address: string;
-    themeColor: string;
-    buttonColor: string;
-  }, initialConfig?: PricingConfig) => Promise<void>;
+  onAdd: (business: BusinessFormData, initialConfig?: PricingConfig) => Promise<void>;
+  onEdit?: (businessId: string, updates: Partial<Omit<BusinessFormData, 'id'>>) => Promise<void>;
   existingIds: string[];
+  editingBusiness?: BusinessFormData;
 }
 
-const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, onAdd, existingIds }) => {
-  const [displayName, setDisplayName] = useState('');
-  const [shortName, setShortName] = useState('');
-  const [senderName, setSenderName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [selectedTheme, setSelectedTheme] = useState(0);
+const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, onAdd, onEdit, existingIds, editingBusiness }) => {
+  const isEditMode = !!editingBusiness;
+
+  const [displayName, setDisplayName] = useState(editingBusiness?.displayName || '');
+  const [shortName, setShortName] = useState(editingBusiness?.shortName || '');
+  const [senderName, setSenderName] = useState(editingBusiness?.senderName || '');
+  const [phone, setPhone] = useState(editingBusiness?.phone || '');
+  const [address, setAddress] = useState(editingBusiness?.address || '');
+  const [selectedTheme, setSelectedTheme] = useState(() => {
+    if (!editingBusiness) return 0;
+    const idx = THEME_PRESETS.findIndex(p => p.themeColor === editingBusiness.themeColor);
+    return idx >= 0 ? idx : 0;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  // 초기 업체 설정
+  // 초기 업체 설정 (추가 모드 전용)
   const [firstCompanyName, setFirstCompanyName] = useState('');
   const [firstProductName, setFirstProductName] = useState('');
   const [firstSupplyPrice, setFirstSupplyPrice] = useState('');
+
+  // editingBusiness 변경 시 폼 동기화
+  React.useEffect(() => {
+    if (editingBusiness) {
+      setDisplayName(editingBusiness.displayName);
+      setShortName(editingBusiness.shortName);
+      setSenderName(editingBusiness.senderName);
+      setPhone(editingBusiness.phone);
+      setAddress(editingBusiness.address);
+      const idx = THEME_PRESETS.findIndex(p => p.themeColor === editingBusiness.themeColor);
+      setSelectedTheme(idx >= 0 ? idx : 0);
+    } else {
+      setDisplayName(''); setShortName(''); setSenderName('');
+      setPhone(''); setAddress(''); setSelectedTheme(0);
+    }
+    setError('');
+  }, [editingBusiness]);
 
   if (!isOpen) return null;
 
@@ -62,23 +89,38 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
     if (!senderName.trim()) { setError('보내는사람명을 입력하세요.'); return; }
     if (!phone.trim()) { setError('전화번호를 입력하세요.'); return; }
 
-    const id = displayName.trim();
-    if (existingIds.includes(id)) {
-      setError('이미 존재하는 사업자명입니다.');
-      return;
-    }
-    if (/[\/\\.#$\[\]]/.test(id) || id === '.' || id === '..') {
-      setError('사업자명에 특수문자(/ \\ . # $ [ ])는 사용할 수 없습니다.');
-      return;
-    }
-
+    const theme = THEME_PRESETS[selectedTheme];
     setIsSubmitting(true);
     setError('');
 
     try {
-      const theme = THEME_PRESETS[selectedTheme];
-      let initialConfig: PricingConfig | undefined;
+      if (isEditMode && onEdit && editingBusiness) {
+        await onEdit(editingBusiness.id, {
+          displayName: displayName.trim(),
+          shortName: shortName.trim(),
+          senderName: senderName.trim(),
+          phone: phone.trim(),
+          address: address.trim(),
+          themeColor: theme.themeColor,
+          buttonColor: theme.buttonColor,
+        });
+        onClose();
+        return;
+      }
 
+      const id = displayName.trim();
+      if (existingIds.includes(id)) {
+        setError('이미 존재하는 사업자명입니다.');
+        setIsSubmitting(false);
+        return;
+      }
+      if (/[\/\\.#$\[\]]/.test(id) || id === '.' || id === '..') {
+        setError('사업자명에 특수문자(/ \\ . # $ [ ])는 사용할 수 없습니다.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      let initialConfig: PricingConfig | undefined;
       if (firstCompanyName.trim() && firstProductName.trim()) {
         initialConfig = {
           [firstCompanyName.trim()]: {
@@ -106,7 +148,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
       resetForm();
       onClose();
     } catch (e) {
-      setError('추가 중 오류가 발생했습니다.');
+      setError(isEditMode ? '저장 중 오류가 발생했습니다.' : '추가 중 오류가 발생했습니다.');
       console.error(e);
     } finally {
       setIsSubmitting(false);
@@ -117,8 +159,8 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => { resetForm(); onClose(); }}>
       <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="px-6 py-5 border-b border-zinc-800">
-          <h2 className="text-lg font-black text-white">사업자 추가</h2>
-          <p className="text-xs text-zinc-500 mt-1">새로운 사업자 정보를 입력하세요.</p>
+          <h2 className="text-lg font-black text-white">{isEditMode ? '사업자 편집' : '사업자 추가'}</h2>
+          <p className="text-xs text-zinc-500 mt-1">{isEditMode ? `${editingBusiness?.id} 정보를 수정하세요.` : '새로운 사업자 정보를 입력하세요.'}</p>
         </div>
 
         <div className="px-6 py-5 space-y-4">
@@ -202,8 +244,8 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
             </div>
           </div>
 
-          {/* 초기 업체 설정 */}
-          <div className="border-t border-zinc-800 pt-4">
+          {/* 초기 업체 설정 (추가 모드 전용) */}
+          {!isEditMode && <div className="border-t border-zinc-800 pt-4">
             <span className="text-xs font-bold text-zinc-400">초기 업체(공급사) 설정 <span className="text-zinc-600">(선택사항)</span></span>
             <p className="text-[10px] text-zinc-600 mt-1 mb-3">나중에 "품목/업체 설정" 탭에서 추가할 수도 있습니다.</p>
             <div className="space-y-2">
@@ -231,7 +273,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
                 />
               </div>
             </div>
-          </div>
+          </div>}
 
           {error && (
             <div className="text-red-400 text-xs font-bold bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</div>
@@ -251,7 +293,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
             className="px-5 py-2 text-sm font-black text-white rounded-lg transition-all disabled:opacity-50"
             style={{ backgroundColor: THEME_PRESETS[selectedTheme].buttonColor }}
           >
-            {isSubmitting ? '추가 중...' : '사업자 추가'}
+            {isSubmitting ? (isEditMode ? '저장 중...' : '추가 중...') : (isEditMode ? '저장' : '사업자 추가')}
           </button>
         </div>
       </div>

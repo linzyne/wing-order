@@ -560,6 +560,25 @@ export const loadDynamicBusinesses = async (): Promise<DynamicBusinessEntry[]> =
   }
 };
 
+// ===== Shared Supplier Library =====
+
+export const subscribeSharedSuppliers = (
+  callback: (config: PricingConfig | null) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', 'supplierLibrary');
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().data as PricingConfig) : null);
+  }, (error) => {
+    console.error('[Firestore] SharedSuppliers 구독 오류:', error);
+    callback(null);
+  });
+};
+
+export const saveSharedSuppliers = async (config: PricingConfig): Promise<void> => {
+  const docRef = doc(db, 'config', 'supplierLibrary');
+  await setDoc(docRef, { data: config, updatedAt: Timestamp.now() });
+};
+
 export const loadTodos = async (businessId?: string): Promise<TodoItem[] | null> => {
   try {
     const docRef = doc(db, 'config', getTodosDocId(businessId));

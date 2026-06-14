@@ -3,14 +3,16 @@ import CompanySelector from './CompanySelector';
 import PricingEditor from './PricingEditor';
 import SalesTracker from './SalesTracker';
 import { usePricingConfig, usePlatformConfigs } from '../hooks/useFirestore';
+import type { PricingConfig } from '../types';
 
 interface DynamicBusinessPanelProps {
   businessId: string;
   activeTab: string;
   isCurrentBusiness: boolean;
+  sharedSuppliers?: PricingConfig;
 }
 
-const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId, activeTab, isCurrentBusiness }) => {
+const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId, activeTab, isCurrentBusiness, sharedSuppliers }) => {
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
   const [salesRefreshTrigger, setSalesRefreshTrigger] = useState<{ date: string; n: number } | undefined>();
@@ -46,6 +48,7 @@ const DynamicBusinessPanel: React.FC<DynamicBusinessPanelProps> = ({ businessId,
           businessId={businessId}
           platformConfigs={platformConfigs}
           onPlatformConfigsChange={savePlatformConfig}
+          sharedSuppliers={sharedSuppliers}
         />
       </div>
       <div style={{ display: (activeTab === 'sales' && isCurrentBusiness) ? undefined : 'none' }}>

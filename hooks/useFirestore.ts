@@ -14,6 +14,8 @@ import {
   loadCourierTemplates,
   saveCourierTemplates as saveCourierTemplatesToFirestore,
   saveFakeCourierSettings as saveFakeCourierSettingsToFirestore,
+  subscribeSharedSuppliers,
+  saveSharedSuppliers,
   type DailyWorkspaceData,
   type FakeCourierSettings,
   DEFAULT_FAKE_COURIER_SETTINGS,
@@ -162,6 +164,31 @@ export const useDailyWorkspace = (businessId?: string) => {
   }, [businessId]);
 
   return { workspace, setWorkspace, updateField, updateSessionField, isReady };
+};
+
+// ===== Shared Supplier Library Hook =====
+export const useSharedSuppliers = () => {
+  const [config, setConfig] = useState<PricingConfig>({});
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = subscribeSharedSuppliers((cfg) => {
+      setConfig(cfg || {});
+      setIsLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const saveConfig = useCallback(async (newConfig: PricingConfig) => {
+    setConfig(newConfig);
+    try {
+      await saveSharedSuppliers(newConfig);
+    } catch (e) {
+      console.error('[SharedSuppliers] Firestore 저장 실패:', e);
+    }
+  }, []);
+
+  return { config, saveConfig, isLoading };
 };
 
 // ===== Todos Hook =====

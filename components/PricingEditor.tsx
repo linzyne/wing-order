@@ -632,25 +632,76 @@ const PlatformConfigDialog: React.FC<{
     );
 };
 
+// ===== 공급업체 라이브러리 피커 =====
+const SupplierPickerDialog: React.FC<{
+    suppliers: PricingConfig;
+    onSelect: (name: string, config: CompanyConfig) => void;
+    onCancel: () => void;
+}> = ({ suppliers, onSelect, onCancel }) => {
+    const entries = (Object.entries(suppliers) as [string, CompanyConfig][]).sort(([a], [b]) => a.localeCompare(b, 'ko'));
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-md shadow-2xl flex flex-col max-h-[70vh]">
+                <div className="px-6 pt-5 pb-3 flex items-center justify-between shrink-0">
+                    <p className="text-base font-black text-white">라이브러리에서 불러오기</p>
+                    <button onClick={onCancel} className="text-zinc-600 hover:text-zinc-400 transition-colors text-xl font-bold">✕</button>
+                </div>
+                <p className="px-6 pb-3 text-[11px] text-zinc-500 shrink-0">선택하면 현재 사업자에 복사됩니다. 이후 변경은 독립적으로 적용됩니다.</p>
+                <div className="overflow-y-auto flex-1 px-4 pb-4 space-y-2">
+                    {entries.length === 0 ? (
+                        <p className="text-center text-zinc-600 text-sm py-8">라이브러리에 등록된 공급업체가 없습니다</p>
+                    ) : entries.map(([name, cfg]) => (
+                        <button
+                            key={name}
+                            onClick={() => onSelect(name, cfg)}
+                            className="w-full text-left bg-zinc-950 border border-zinc-800 hover:border-rose-500/40 hover:bg-zinc-900 rounded-xl px-5 py-4 transition-all group"
+                        >
+                            <div className="flex items-center justify-between">
+                                <span className="font-black text-white group-hover:text-rose-400 transition-colors">{name}</span>
+                                <span className="text-[11px] text-zinc-600 font-bold">품목 {Object.keys(cfg.products).length}개</span>
+                            </div>
+                            {(cfg.phone || cfg.bankName) && (
+                                <p className="text-[11px] text-zinc-600 mt-1">
+                                    {[cfg.phone, cfg.bankName, cfg.accountNumber].filter(Boolean).join(' · ')}
+                                </p>
+                            )}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 interface PricingEditorProps {
     config: PricingConfig;
     onConfigChange: (newConfig: PricingConfig) => void;
     businessId?: string;
     platformConfigs?: PlatformConfigs;
     onPlatformConfigsChange?: (configs: PlatformConfigs) => void;
+    sharedSuppliers?: PricingConfig;
+    isLibraryMode?: boolean;
 }
 
-const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, platformConfigs = {}, onPlatformConfigsChange }) => {
+const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, platformConfigs = {}, onPlatformConfigsChange, sharedSuppliers, isLibraryMode }) => {
     const [dialog, setDialog] = useState<DialogType>(null);
     const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>(() => {
         return Object.keys(config).reduce((acc, key) => ({ ...acc, [key]: true }), {});
     });
     const [platformDialog, setPlatformDialog] = useState<{ editing: string | null } | null>(null);
     const [isPlatformExpanded, setIsPlatformExpanded] = useState(true);
+    const [showSupplierPicker, setShowSupplierPicker] = useState(false);
 
     // 항상 최신 config를 참조하기 위한 ref (렌더 시점에 동기적으로 갱신)
     const configRef = useRef(config);
     configRef.current = config;
+
+    // 이 인스턴스 내부에서만 카드 검색 (다른 PricingEditor 인스턴스와 id 충돌 방지)
+    const editorRef = useRef<HTMLDivElement>(null);
+    const scrollToCard = useCallback((name: string, delay = 0) => {
+        const run = () => editorRef.current?.querySelector<HTMLElement>(`[id="company-card-${name}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        delay > 0 ? setTimeout(run, delay) : run();
+    }, []);
 
     const handleUpdate = useCallback((newConfig: PricingConfig) => onConfigChange(newConfig), [onConfigChange]);
 
@@ -673,6 +724,22 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
             },
             onCancel: () => setDialog(null),
         });
+    };
+
+    const handleImportFromLibrary = (name: string, supplierConfig: CompanyConfig) => {
+        const cur = configRef.current;
+        let finalName = name;
+        if (cur[finalName]) {
+            let idx = 2;
+            while (cur[`${name}_${idx}`]) idx++;
+            finalName = `${name}_${idx}`;
+        }
+        const newConfig = JSON.parse(JSON.stringify(cur));
+        newConfig[finalName] = JSON.parse(JSON.stringify(supplierConfig));
+        onConfigChange(newConfig);
+        setExpandedCompanies(prev => ({ ...prev, [finalName]: true }));
+        setShowSupplierPicker(false);
+        scrollToCard(finalName, 100);
     };
 
     const handleDeleteCompany = (companyName: string) => {
@@ -922,9 +989,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
     };
 
     return (
-        <div className="space-y-8 pb-16">
-            {/* ===== 플랫폼 관리 섹션 ===== */}
-            <div className="bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-zinc-800 overflow-hidden">
+        <div ref={editorRef} className="space-y-8 pb-16">
+            {/* ===== 플랫폼 관리 섹션 (라이브러리 모드에서는 숨김) ===== */}
+            {!isLibraryMode && <div className="bg-zinc-900 rounded-[2.5rem] shadow-2xl border border-zinc-800 overflow-hidden">
                 <div
                     className="flex justify-between items-center p-6 cursor-pointer hover:bg-zinc-800/40 transition-all"
                     onClick={() => setIsPlatformExpanded(!isPlatformExpanded)}
@@ -984,16 +1051,26 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                         </div>
                     </div>
                 )}
-            </div>
+            </div>}
 
-            <div className="bg-zinc-900/50 p-5 rounded-full flex flex-wrap items-center justify-between gap-6 border border-zinc-800 shadow-2xl backdrop-blur-sm">
-                <div className="flex gap-3">
-                    <button onClick={expandAll} className="p-4 bg-zinc-800 hover:bg-zinc-700 rounded-full text-rose-400 transition-all shadow-lg border border-zinc-700"><ArrowsPointingOutIcon className="w-5 h-5" /></button>
-                    <button onClick={collapseAll} className="p-4 bg-zinc-800 hover:bg-zinc-700 rounded-full text-rose-400 transition-all shadow-lg border border-zinc-700"><ArrowsPointingInIcon className="w-5 h-5" /></button>
+            <div className="bg-zinc-900/50 px-4 py-3 rounded-2xl flex flex-wrap items-center justify-between gap-3 border border-zinc-800 shadow-2xl backdrop-blur-sm">
+                <div className="flex gap-2">
+                    <button onClick={expandAll} className="p-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-500 transition-all border border-zinc-700"><ArrowsPointingOutIcon className="w-4 h-4" /></button>
+                    <button onClick={collapseAll} className="p-2.5 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-zinc-500 transition-all border border-zinc-700"><ArrowsPointingInIcon className="w-4 h-4" /></button>
                 </div>
-                <button onClick={handleAddCompany} className="flex items-center gap-3 bg-rose-500 text-white font-black py-3.5 px-10 rounded-xl hover:bg-rose-600 transition-all shadow-xl shadow-rose-900/30 text-sm">
-                    <PlusCircleIcon className="w-6 h-6" /><span>새 그룹</span>
-                </button>
+                <div className="flex items-center gap-2">
+                    {!isLibraryMode && sharedSuppliers && Object.keys(sharedSuppliers).length > 0 && (
+                        <button
+                            onClick={() => setShowSupplierPicker(true)}
+                            className="flex items-center gap-2 bg-indigo-500/80 text-white font-black py-2 px-4 rounded-xl hover:bg-indigo-500 transition-all text-xs"
+                        >
+                            <span>📥</span><span>라이브러리에서 불러오기</span>
+                        </button>
+                    )}
+                    <button onClick={handleAddCompany} className="flex items-center gap-2 bg-zinc-700 text-white font-black py-2 px-5 rounded-xl hover:bg-zinc-600 transition-all text-xs">
+                        <PlusCircleIcon className="w-4 h-4" /><span>새 그룹</span>
+                    </button>
+                </div>
             </div>
 
             <div className="flex flex-col gap-3">
@@ -1008,10 +1085,11 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             <button
                                 key={name}
                                 onClick={() => {
-                                    const el = document.getElementById(`company-card-${name}`);
-                                    if (el) {
-                                        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                        if (!expandedCompanies[name]) setExpandedCompanies(prev => ({ ...prev, [name]: true }));
+                                    if (expandedCompanies[name] === false) {
+                                        setExpandedCompanies(prev => ({ ...prev, [name]: true }));
+                                        scrollToCard(name, 50);
+                                    } else {
+                                        scrollToCard(name);
                                     }
                                 }}
                                 className="px-3 py-1 text-[11px] font-black rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-rose-400 hover:border-rose-500/30 transition-all"
@@ -1077,11 +1155,18 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
             )}
 
             {dialog && <Dialog dialog={dialog} setDialog={setDialog} />}
-            {platformDialog && (
+            {!isLibraryMode && platformDialog && (
                 <PlatformConfigDialog
                     initial={platformDialog.editing ? platformConfigs[platformDialog.editing] : null}
                     onSave={handleSavePlatform}
                     onCancel={() => setPlatformDialog(null)}
+                />
+            )}
+            {showSupplierPicker && sharedSuppliers && (
+                <SupplierPickerDialog
+                    suppliers={sharedSuppliers}
+                    onSelect={handleImportFromLibrary}
+                    onCancel={() => setShowSupplierPicker(false)}
                 />
             )}
 

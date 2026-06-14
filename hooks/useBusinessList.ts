@@ -110,6 +110,26 @@ export const useBusinessList = () => {
     setDynamicBusinesses(updated);
   }, []);
 
+  const updateBusiness = useCallback(async (
+    businessId: string,
+    updates: Partial<Omit<DynamicBusinessEntry, 'id' | 'createdAt'>>
+  ) => {
+    const updated = dynamicBusinessesRef.current.map(b =>
+      b.id === businessId ? { ...b, ...updates } : b
+    );
+    await saveDynamicBusinesses(updated);
+    const entry = updated.find(b => b.id === businessId);
+    if (entry) {
+      registerDynamicBusiness(businessId, {
+        displayName: entry.displayName, shortName: entry.shortName,
+        senderName: entry.senderName, phone: entry.phone,
+        address: entry.address, themeColor: entry.themeColor, buttonColor: entry.buttonColor,
+      });
+    }
+    dynamicBusinessesRef.current = updated;
+    setDynamicBusinesses(updated);
+  }, []);
+
   return {
     businesses: allBusinesses,
     dynamicBusinesses: dynamicBusinesses.map(b => ({
@@ -119,5 +139,6 @@ export const useBusinessList = () => {
     isLoading,
     addBusiness,
     removeBusiness,
+    updateBusiness,
   };
 };

@@ -6,8 +6,9 @@ import SalesTracker from './components/SalesTracker';
 import TodoList from './components/TodoList';
 import DynamicBusinessPanel from './components/DynamicBusinessPanel';
 import AddBusinessModal from './components/AddBusinessModal';
-import { ChartBarIcon, WrenchScrewdriverIcon, Cog6ToothIcon, PlusCircleIcon } from './components/icons';
-import { usePricingConfig, usePlatformConfigs } from './hooks/useFirestore';
+import CoupangDownloader from './components/CoupangDownloader';
+import { ChartBarIcon, WrenchScrewdriverIcon, Cog6ToothIcon, PlusCircleIcon, PencilIcon } from './components/icons';
+import { usePricingConfig, usePlatformConfigs, useSharedSuppliers } from './hooks/useFirestore';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore, syncPricingFields } from './services/migration';
 import type { BusinessId, HardcodedBusinessId } from './types';
@@ -38,7 +39,8 @@ const App: React.FC = () => {
     return () => window.removeEventListener('firestore-quota-exceeded', handler);
   }, []);
 
-  const { businesses: allBusinesses, dynamicBusinesses, isLoading: businessListLoading, addBusiness, removeBusiness } = useBusinessList();
+  const { businesses: allBusinesses, dynamicBusinesses, isLoading: businessListLoading, addBusiness, removeBusiness, updateBusiness } = useBusinessList();
+  const [editingBusiness, setEditingBusiness] = useState<typeof allBusinesses[0] | null>(null);
 
   // 동적 사업자인지 판별
   const isDynamicBusiness = !HARDCODED_IDS.includes(currentBusiness);
@@ -72,6 +74,8 @@ const App: React.FC = () => {
       setCurrentBusiness('안군농원');
     }
   };
+
+  const sharedSuppliers = useSharedSuppliers();
 
   // 양쪽 하드코딩 사업자 설정을 동시에 로드 (사업자 전환 시 컴포넌트 파괴 방지)
   const pricing안군 = usePricingConfig('안군농원');
@@ -146,53 +150,44 @@ const App: React.FC = () => {
             <div className="relative p-3 rounded-2xl bg-zinc-800/60 border border-zinc-700/40">
               <ChartBarIcon className="w-7 h-7 text-zinc-400" />
             </div>
-            <div>
-              <h1 className="text-xl font-black text-white tracking-tight">
-                윙 <span className="text-zinc-300">발주매니저</span>
-              </h1>
-              <p className="text-zinc-600 font-bold text-[9px] mt-0.5 uppercase tracking-[0.2em]">Order Management</p>
-            </div>
-            <div className="flex items-center ml-3 p-0.5 glass rounded-xl gap-0.5">
-              {HARDCODED_OPTIONS.map(b => {
-                const isActive = currentBusiness === b.id;
-                return (
-                <button
-                  key={b.id}
-                  onClick={() => handleBusinessChange(b.id)}
-                  className={`px-3 py-1.5 text-[11px] font-black rounded-[10px] whitespace-nowrap transition-all duration-200 ${
-                    isActive
-                      ? 'text-white bg-zinc-700 shadow-lg shadow-zinc-900/50'
-                      : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
-                  }`}
-                >
-                  {b.label}
-                </button>
-                );
-              })}
-              {dynamicBusinesses.map(b => {
-                const isActive = currentBusiness === b.id;
-                return (
-                <div key={b.id} className="relative group">
+            <h1 className="text-xl font-black text-white tracking-tight">
+              윙
+            </h1>
+            <div className="flex items-center ml-3 gap-1.5">
+              <select
+                value={currentBusiness}
+                onChange={(e) => handleBusinessChange(e.target.value as BusinessId)}
+                className="bg-zinc-700 text-white text-[11px] font-black rounded-[10px] px-3 py-1.5 border-none outline-none cursor-pointer appearance-none pr-7"
+                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2371717a' stroke-width='2.5'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='m19 9-7 7-7-7'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', backgroundSize: '12px' }}
+              >
+                {HARDCODED_OPTIONS.map(b => (
+                  <option key={b.id} value={b.id}>{b.label}</option>
+                ))}
+                {dynamicBusinesses.map(b => (
+                  <option key={b.id} value={b.id}>{b.displayName}</option>
+                ))}
+              </select>
+              {isDynamicBusiness && (
+                <>
                   <button
-                    onClick={() => handleBusinessChange(b.id)}
-                    className={`px-3 py-1.5 text-[11px] font-black rounded-[10px] transition-all duration-200 ${
-                      isActive
-                        ? 'text-white bg-zinc-700 shadow-lg shadow-zinc-900/50'
-                        : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
-                    }`}
+                    onClick={() => {
+                      const entry = allBusinesses.find(b => b.id === currentBusiness);
+                      if (entry) setEditingBusiness(entry);
+                    }}
+                    className="w-5 h-5 flex items-center justify-center bg-zinc-700 hover:bg-zinc-500 rounded-full text-zinc-400 hover:text-white transition-colors"
+                    title="사업자 편집"
                   >
-                    {b.displayName}
+                    <PencilIcon className="w-2.5 h-2.5" />
                   </button>
                   <button
-                    onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleDeleteBusiness(b.id); }}
-                    className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-zinc-700 hover:bg-red-500 rounded-full items-center justify-center text-white hidden group-hover:flex transition-colors"
+                    onClick={() => handleDeleteBusiness(currentBusiness)}
+                    className="w-5 h-5 flex items-center justify-center bg-zinc-700 hover:bg-red-500 rounded-full text-zinc-400 hover:text-white transition-colors text-[10px] font-black"
                     title="사업자 삭제"
                   >
-                    <span className="text-[7px] font-black">×</span>
+                    ×
                   </button>
-                </div>
-                );
-              })}
+                </>
+              )}
               <button
                 onClick={() => setShowAddModal(true)}
                 className="px-1.5 py-1.5 text-zinc-600 hover:text-zinc-400 transition-colors"
@@ -237,6 +232,17 @@ const App: React.FC = () => {
               <ChartBarIcon className="w-3.5 h-3.5" />
               <span>매출현황</span>
             </button>
+            <button
+              onClick={() => handleTabChange('suppliers')}
+              className={`flex items-center gap-2 px-5 py-2 text-[12px] font-black rounded-xl whitespace-nowrap transition-all duration-200 ${
+                activeTab === 'suppliers'
+                  ? 'btn-accent'
+                  : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/40'
+              }`}
+            >
+              <Cog6ToothIcon className="w-3.5 h-3.5" />
+              <span>업체</span>
+            </button>
           </nav>
         </header>
 
@@ -247,6 +253,11 @@ const App: React.FC = () => {
         )}
 
         <main className="w-full">
+          {/* 쿠팡 주문서 다운로드 — converter 탭에서만 노출 */}
+          {activeTab === 'converter' && (
+            <CoupangDownloader businesses={allBusinesses.map(b => ({ id: b.id, displayName: b.displayName }))} />
+          )}
+
           {/* 하드코딩 사업자: CompanySelector 인스턴스 유지 (전환 시 파괴되지 않음) */}
           {HARDCODED_OPTIONS.map(b => (
             <div key={b.id} style={{ display: (activeTab === 'converter' && currentBusiness === b.id) ? undefined : 'none' }}>
@@ -261,11 +272,27 @@ const App: React.FC = () => {
               />
             </div>
           ))}
+          {/* 공급업체 라이브러리 탭 (사업자 무관) */}
+          <div style={{ display: activeTab === 'suppliers' ? undefined : 'none' }}>
+            <PricingEditor
+              config={sharedSuppliers.config}
+              onConfigChange={sharedSuppliers.saveConfig}
+              isLibraryMode
+            />
+          </div>
+
           {/* 하드코딩 사업자용 PricingEditor / SalesTracker */}
           {!isDynamicBusiness && pricingConfig && savePlatformConfig && (
             <>
               <div style={{ display: activeTab === 'pricing' ? undefined : 'none' }}>
-                <PricingEditor config={pricingConfig} onConfigChange={handleConfigChange} businessId={currentBusiness} platformConfigs={platformConfigs!} onPlatformConfigsChange={savePlatformConfig} />
+                <PricingEditor
+                  config={pricingConfig}
+                  onConfigChange={handleConfigChange}
+                  businessId={currentBusiness}
+                  platformConfigs={platformConfigs!}
+                  onPlatformConfigsChange={savePlatformConfig}
+                  sharedSuppliers={sharedSuppliers.config}
+                />
               </div>
               <div style={{ display: activeTab === 'sales' ? undefined : 'none' }}>
                 <SalesTracker key={currentBusiness} isActive={activeTab === 'sales'} businessId={currentBusiness} refreshTrigger={salesRefreshTrigger} />
@@ -279,6 +306,7 @@ const App: React.FC = () => {
               businessId={b.id}
               activeTab={activeTab}
               isCurrentBusiness={currentBusiness === b.id}
+              sharedSuppliers={sharedSuppliers.config}
             />
           ))}
         </main>
@@ -301,10 +329,12 @@ const App: React.FC = () => {
 
       {/* 사업자 추가 모달 */}
       <AddBusinessModal
-        isOpen={showAddModal}
-        onClose={() => setShowAddModal(false)}
+        isOpen={showAddModal || !!editingBusiness}
+        onClose={() => { setShowAddModal(false); setEditingBusiness(null); }}
         onAdd={addBusiness}
+        onEdit={async (id, updates) => { await updateBusiness(id, updates); setEditingBusiness(null); }}
         existingIds={allBusinesses.map(b => b.id)}
+        editingBusiness={editingBusiness ?? undefined}
       />
 
       {/* Firestore 한도 초과 팝업 */}
