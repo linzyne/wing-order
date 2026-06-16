@@ -1299,8 +1299,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         }
                     }
                 }
-                // col 10/11에서 못 찾으면 전체 행에서 키워드 재탐색 (토스 등 비표준 열 구조)
-                if (!bestCompany) {
+                // K열이 비어있을 때만 전체 행 폴백 (토스 등 비표준 열 구조)
+                // K열에 값이 있는데 매칭 실패 → 폴백 금지 (수취인 주소 등에서 키워드 우연 매칭 방지)
+                if (!bestCompany && !rawGroupName) {
                     const fullRowText = row.map((v: any) => String(v || '')).join(' ').replace(/\s+/g, '').normalize('NFC');
                     for (const [name, keywords] of companyKeywordsMap.entries()) {
                         for (const k of keywords) {
