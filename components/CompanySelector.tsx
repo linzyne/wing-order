@@ -436,18 +436,20 @@ const CourierTemplateManager: React.FC<{
                 </button>
             ) : (
                 <div className="bg-zinc-950/80 p-4 rounded-xl border border-zinc-800 space-y-3">
-                    <div className="flex gap-3">
-                        <div className="flex-1">
+                    <div className="space-y-2">
+                        <div>
                             <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배사 이름</label>
-                            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: CJ대한통운" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: CJ대한통운" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
                         </div>
-                        <div className="flex-1">
-                            <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">명칭 (구분용)</label>
-                            <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 과일용, 3kg박스" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
-                        </div>
-                        <div className="w-28">
-                            <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">건당 단가</label>
-                            <input value={newUnitPrice} onChange={(e) => setNewUnitPrice(e.target.value)} placeholder="2270" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                        <div className="flex gap-3">
+                            <div className="flex-1">
+                                <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">명칭 (구분용)</label>
+                                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 과일용, 3kg박스" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                            </div>
+                            <div className="w-32">
+                                <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">건당 단가</label>
+                                <input value={newUnitPrice} onChange={(e) => setNewUnitPrice(e.target.value)} placeholder="2270" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                            </div>
                         </div>
                     </div>
 
