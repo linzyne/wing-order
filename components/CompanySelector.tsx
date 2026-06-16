@@ -1337,11 +1337,33 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 companyOrderCounts[d.company] = (companyOrderCounts[d.company] || 0) + d.qty;
             }
         });
-        console.log(`[마스터검증] XLSX행수: ${masterOrderData.length - 1}, 데이터행: ${masterFileRowCount}, null행: ${nullRowCount}, masterRawTotalQty: ${masterRawTotalQty}, realTotal: ${realTotal}, fakeTotal: ${fakeTotal}, 합계: ${realTotal + fakeTotal}, skipped: ${skippedOrders.length}, unclaimed: ${unclaimedOrders.length}`);
+        // K열 값이 어느 업체 키워드에도 직접 포함되지 않는 등록상품명
+        // (full-row fallback으로만 라우팅됐거나 아예 미매칭 → 잘못된 발주서 생성 위험)
+        const allSeenGroupNames = new Set<string>();
+        allOrderDetails.forEach(d => { if (d.groupName) allSeenGroupNames.add(d.groupName); });
+        unclaimedOrders.forEach(u => { if (u.groupName) allSeenGroupNames.add(u.groupName); });
+        const unknownGroupNames: string[] = [];
+        for (const gn of allSeenGroupNames) {
+            if (!gn) continue;
+            const gnNorm = gn.replace(/\s+/g, '').normalize('NFC');
+            let directMatch = false;
+            for (const [, keywords] of companyKeywordsMap.entries()) {
+                for (const k of keywords) {
+                    if (gnNorm.includes(k.replace(/\s+/g, '').normalize('NFC'))) {
+                        directMatch = true;
+                        break;
+                    }
+                }
+                if (directMatch) break;
+            }
+            if (!directMatch) unknownGroupNames.push(gn);
+        }
+        console.log(`[마스터검증] XLSX행수: ${masterOrderData.length - 1}, 데이터행: ${masterFileRowCount}, null행: ${nullRowCount}, masterRawTotalQty: ${masterRawTotalQty}, realTotal: ${realTotal}, fakeTotal: ${fakeTotal}, 합계: ${realTotal + fakeTotal}, skipped: ${skippedOrders.length}, unclaimed: ${unclaimedOrders.length}, unknown: ${unknownGroupNames.length}`);
         console.log(`[마스터검증] companyOrderCounts:`, companyOrderCounts);
         if (unclaimedOrders.length > 0) console.log(`[마스터검증] unclaimedOrders:`, unclaimedOrders);
+        if (unknownGroupNames.length > 0) console.log(`[마스터검증] unknownGroupNames:`, unknownGroupNames);
         if (skippedOrders.length > 0) console.log(`[마스터검증] skippedOrders:`, skippedOrders);
-        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount };
+        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount, unknownGroupNames };
     }, [masterOrderData, fakeOrderInput, pricingConfig, rowPlatformSources]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
@@ -3707,8 +3729,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 const totalRecognized = masterProductSummary.realTotal + masterProductSummary.fakeTotal;
                                 const diff = totalMaster - totalRecognized;
                                 const hasUnclaimed = masterProductSummary.unclaimedOrders.length > 0;
-                                const isOk = diff === 0 && !hasUnclaimed;
+                                const hasUnknown = masterProductSummary.unknownGroupNames.length > 0;
+                                const isOk = diff === 0 && !hasUnclaimed && !hasUnknown;
                                 return (
+                                <>
                                 <div className={`rounded-lg px-2 py-1.5 text-[10px] font-black ${
                                     isOk ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                                         : 'bg-red-600/20 border-2 border-red-500/60 text-red-400'
@@ -3733,6 +3757,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         </div>
                                     )}
                                 </div>
+                                {hasUnknown && (
+                                    <div className="mt-1.5 rounded-lg px-2 py-2 bg-orange-500/15 border-2 border-orange-500/70 text-orange-300 text-[10px] font-black">
+                                        <div className="flex items-center gap-1 mb-1">
+                                            <span className="text-orange-400 text-[12px]">⚠</span>
+                                            <span className="text-orange-300 uppercase tracking-wide">미인식 등록상품명 — 발주서 오매칭 위험</span>
+                                        </div>
+                                        <div className="text-orange-200/80 text-[9px] mb-1 leading-relaxed">
+                                            아래 등록상품명이 어느 업체 키워드에도 없습니다. 잘못된 업체·품목으로 발주서가 생성될 수 있습니다.
+                                        </div>
+                                        <div className="flex flex-col gap-0.5">
+                                            {masterProductSummary.unknownGroupNames.map(gn => (
+                                                <span key={gn} className="px-1.5 py-0.5 bg-orange-500/20 rounded text-orange-200 text-[9px] font-mono break-all">{gn}</span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                </>
                                 );
                             })()}
                         </div>
