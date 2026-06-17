@@ -228,6 +228,16 @@ const COURIER_DATA_FIELDS = [
     { key: 'trackingNumber', label: '운송장번호' },
 ] as const;
 
+const SortableCourierItem: React.FC<{ id: string; children: React.ReactNode }> = ({ id, children }) => {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+    return (
+        <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 }} className="relative group/courier">
+            <span {...attributes} {...listeners} className="absolute left-1 top-1/2 -translate-y-1/2 z-10 text-zinc-700 hover:text-zinc-400 cursor-grab active:cursor-grabbing select-none text-sm leading-none px-0.5">⠿</span>
+            <div className="pl-4">{children}</div>
+        </div>
+    );
+};
+
 const CourierTemplateManager: React.FC<{
     templates: CourierTemplate[];
     onSave: (templates: CourierTemplate[]) => void;
@@ -2224,6 +2234,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
     };
 
+    const handleCourierTemplateDragEnd = (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id) return;
+        const oldIndex = courierTemplates.findIndex((t: CourierTemplate) => t.id === active.id);
+        const newIndex = courierTemplates.findIndex((t: CourierTemplate) => t.id === over.id);
+        if (oldIndex === -1 || newIndex === -1) return;
+        saveCourierTemplates(arrayMove(courierTemplates, oldIndex, newIndex));
+    };
+
     const handleAddManualOrder = (e: React.FormEvent) => {
         e.preventDefault();
         if (!manualInput.companyName || !manualInput.recipientName || !manualInput.productName) {
@@ -4145,77 +4164,79 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     택배 양식을 먼저 추가해주세요
                                 </div>
                             )}
-                            {[...courierTemplates].sort((a, b) => {
-                                const nameA = a.label ? `${a.name} (${a.label})` : a.name;
-                                const nameB = b.label ? `${b.name} (${b.label})` : b.name;
-                                const officeA = nameA.includes('사무실') ? 0 : nameA.includes('대행') ? 1 : 2;
-                                const officeB = nameB.includes('사무실') ? 0 : nameB.includes('대행') ? 1 : 2;
-                                return officeA - officeB;
-                            }).map((tmpl: CourierTemplate) => {
-                                const file = courierFiles[tmpl.id];
-                                const result = courierResults[tmpl.id];
-                                const matched = courierMatchedRows[tmpl.id];
-                                const fullName = tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name;
-                                const isOffice = fullName.includes('사무실');
-                                const isAgent = fullName.includes('대행');
-                                const cs = isOffice
-                                    ? { border: 'border-pink-500/30', bg: 'bg-amber-950/30', text: 'text-pink-400', hoverBg: 'hover:bg-amber-900/40', hoverBorder: 'hover:border-pink-500/50', activeBg: 'bg-amber-950/30 border-pink-500/30 text-pink-400', inactiveBorder: 'hover:border-pink-500/40 hover:text-pink-400' }
-                                    : isAgent
-                                    ? { border: 'border-cyan-500/30', bg: 'bg-cyan-950/30', text: 'text-cyan-400', hoverBg: 'hover:bg-cyan-900/40', hoverBorder: 'hover:border-cyan-500/50', activeBg: 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400', inactiveBorder: 'hover:border-cyan-500/40 hover:text-cyan-400' }
-                                    : { border: 'border-indigo-500/30', bg: 'bg-indigo-950/30', text: 'text-indigo-400', hoverBg: 'hover:bg-indigo-900/40', hoverBorder: 'hover:border-indigo-500/50', activeBg: 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400', inactiveBorder: 'hover:border-indigo-500/40 hover:text-indigo-400' };
-                                return (
-                                    <div key={tmpl.id} className={`space-y-1.5 p-2 rounded-xl border ${cs.border} bg-zinc-950/40`}>
-                                        <button
-                                            onClick={() => handleCourierDownload(tmpl)}
-                                            disabled={!(fakeMasterOrderFile || masterOrderFile) || fakeOrderAnalysis.inputNumbers.size === 0}
-                                            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed ${cs.bg} ${cs.border} ${cs.text} ${cs.hoverBg} ${cs.hoverBorder}`}
-                                        >
-                                            <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                                            <span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
-                                        </button>
-                                        <div className="flex items-center gap-1.5">
-                                            <label className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md overflow-hidden ${file ? cs.activeBg : `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}`}`}>
-                                                <ArrowUpTrayIcon className="w-3.5 h-3.5 shrink-0" />
-                                                <span className="truncate">{file ? file.name : (<span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} 운송장 업로드</span>)}</span>
-                                                <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); e.target.value = ''; }} />
-                                            </label>
-                                            {file && (
-                                                <button onClick={() => {
-                                                    setCourierFiles(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
-                                                    setCourierResults(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
-                                                    setCourierMatchedRows(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
-                                                }} className="p-1.5 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
-                                                    <ArrowPathIcon className="w-3 h-3" />
-                                                </button>
-                                            )}
-                                        </div>
-                                        {result && (
-                                            <div className="bg-zinc-950/80 p-2 rounded-xl border border-zinc-800 animate-fade-in space-y-1.5">
-                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {result.matched}건</span>
-                                                    <span className="text-zinc-500 text-[8px] font-black">/ 가구매 {result.total}건</span>
-                                                    {result.notFound.length > 0 && (
-                                                        <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {result.notFound.length}건</span>
+                            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleCourierTemplateDragEnd}>
+                                <SortableContext items={courierTemplates.map((t: CourierTemplate) => t.id)} strategy={verticalListSortingStrategy}>
+                                    <div className="space-y-2">
+                                    {courierTemplates.map((tmpl: CourierTemplate) => {
+                                        const file = courierFiles[tmpl.id];
+                                        const result = courierResults[tmpl.id];
+                                        const matched = courierMatchedRows[tmpl.id];
+                                        const fullName = tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name;
+                                        const isOffice = fullName.includes('사무실');
+                                        const isAgent = fullName.includes('대행');
+                                        const cs = isOffice
+                                            ? { border: 'border-pink-500/30', bg: 'bg-amber-950/30', text: 'text-pink-400', hoverBg: 'hover:bg-amber-900/40', hoverBorder: 'hover:border-pink-500/50', activeBg: 'bg-amber-950/30 border-pink-500/30 text-pink-400', inactiveBorder: 'hover:border-pink-500/40 hover:text-pink-400' }
+                                            : isAgent
+                                            ? { border: 'border-cyan-500/30', bg: 'bg-cyan-950/30', text: 'text-cyan-400', hoverBg: 'hover:bg-cyan-900/40', hoverBorder: 'hover:border-cyan-500/50', activeBg: 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400', inactiveBorder: 'hover:border-cyan-500/40 hover:text-cyan-400' }
+                                            : { border: 'border-indigo-500/30', bg: 'bg-indigo-950/30', text: 'text-indigo-400', hoverBg: 'hover:bg-indigo-900/40', hoverBorder: 'hover:border-indigo-500/50', activeBg: 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400', inactiveBorder: 'hover:border-indigo-500/40 hover:text-indigo-400' };
+                                        return (
+                                            <SortableCourierItem key={tmpl.id} id={tmpl.id}>
+                                                <div className={`space-y-1.5 p-2 rounded-xl border ${cs.border} bg-zinc-950/40`}>
+                                                    <button
+                                                        onClick={() => handleCourierDownload(tmpl)}
+                                                        disabled={!(fakeMasterOrderFile || masterOrderFile) || fakeOrderAnalysis.inputNumbers.size === 0}
+                                                        className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md disabled:opacity-30 disabled:cursor-not-allowed ${cs.bg} ${cs.border} ${cs.text} ${cs.hoverBg} ${cs.hoverBorder}`}
+                                                    >
+                                                        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                                        <span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} ({fakeOrderAnalysis.inputNumbers.size}건)</span>
+                                                    </button>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <label className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md overflow-hidden ${file ? cs.activeBg : `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}`}`}>
+                                                            <ArrowUpTrayIcon className="w-3.5 h-3.5 shrink-0" />
+                                                            <span className="truncate">{file ? file.name : (<span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} 운송장 업로드</span>)}</span>
+                                                            <input type="file" className="sr-only" accept=".xlsx,.xls" onChange={(e: any) => { const f = e.target.files?.[0]; if (f) handleCourierFileUpload(tmpl, f); e.target.value = ''; }} />
+                                                        </label>
+                                                        {file && (
+                                                            <button onClick={() => {
+                                                                setCourierFiles(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
+                                                                setCourierResults(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
+                                                                setCourierMatchedRows(prev => { const n = { ...prev }; delete n[tmpl.id]; return n; });
+                                                            }} className="p-1.5 bg-zinc-900 rounded-xl text-zinc-700 hover:text-rose-500 border border-zinc-800 transition-colors">
+                                                                <ArrowPathIcon className="w-3 h-3" />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {result && (
+                                                        <div className="bg-zinc-950/80 p-2 rounded-xl border border-zinc-800 animate-fade-in space-y-1.5">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {result.matched}건</span>
+                                                                <span className="text-zinc-500 text-[8px] font-black">/ 가구매 {result.total}건</span>
+                                                                {result.notFound.length > 0 && (
+                                                                    <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {result.notFound.length}건</span>
+                                                                )}
+                                                            </div>
+                                                            {result.notFound.length > 0 && (
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    {result.notFound.map((num: string) => (
+                                                                        <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded text-[8px] font-mono">{num}</span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {matched && (
+                                                                <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
+                                                                    <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                                                    운송장완료 다운로드 ({result.matched}건)
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </div>
-                                                {result.notFound.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1">
-                                                        {result.notFound.map((num: string) => (
-                                                            <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded text-[8px] font-mono">{num}</span>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                {matched && (
-                                                    <button onClick={() => handleCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
-                                                        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                                                        운송장완료 다운로드 ({result.matched}건)
-                                                    </button>
-                                                )}
-                                            </div>
-                                        )}
+                                            </SortableCourierItem>
+                                        );
+                                    })}
                                     </div>
-                                );
-                            })}
+                                </SortableContext>
+                            </DndContext>
                         </div>
                     </div>
                 </div>
