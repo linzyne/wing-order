@@ -3370,7 +3370,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
     const [saveError, setSaveError] = useState<string>('');
-    const [deleteStatus, setDeleteStatus] = useState<'idle' | 'deleting' | 'success' | 'error'>('idle');
 
     const handleSaveToSalesHistory = async (companyOverride?: Set<string>) => {
         const selectedCompanyNames = companyOverride ?? checkedCompanies;
@@ -3606,66 +3605,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     };
 
-    const handleDeleteTodayRecord = async (companyOverride?: Set<string>) => {
-        const today = new Date().toLocaleDateString('en-CA');
-        const selectedCompanyNames = companyOverride ?? checkedCompanies;
-        if (selectedCompanyNames.size === 0) { alert('삭제할 업체를 선택해주세요.'); return; }
-        const names = Array.from(selectedCompanyNames).join(', ');
-        if (!confirm(`오늘(${today}) [${names}] 기록을 삭제할까요?`)) return;
-
-        setDeleteStatus('deleting');
-        try {
-            const { loadDailySales, upsertDailySales, deleteDailySalesFromFirestore } = await import('../services/firestoreService');
-            const existing = await loadDailySales(today, businessId);
-            if (!existing) { setDeleteStatus('idle'); alert('오늘 기록이 없습니다.'); return; }
-
-            const remainingRecords = (existing.records || []).filter(r => !selectedCompanyNames.has(r.company));
-            const remainingMargins = (existing.marginRecords || []).filter(r => !r.company || !selectedCompanyNames.has(r.company));
-            const remainingDeposits = (existing.depositRecords || []).filter(d => d.company && !selectedCompanyNames.has(d.company));
-
-            // 업체별 발주/송장 행 삭제
-            const remainingCompanyOrderRows = { ...(existing.companyOrderRows || {}) };
-            const remainingCompanyInvoiceRows = { ...(existing.companyInvoiceRows || {}) };
-            selectedCompanyNames.forEach(name => {
-                delete remainingCompanyOrderRows[name];
-                delete remainingCompanyInvoiceRows[name];
-            });
-            const hasAnythingLeft = remainingRecords.length > 0 || remainingMargins.length > 0 || remainingDeposits.length > 0
-                || Object.keys(remainingCompanyOrderRows).length > 0;
-            if (!hasAnythingLeft) {
-                await deleteDailySalesFromFirestore(today, businessId);
-            } else {
-                const totalAmount = remainingRecords.reduce((s, r) => s + r.totalPrice, 0);
-                const marginTotal = remainingMargins.reduce((s, r) => s + r.totalMargin, 0);
-                const depositTotal = remainingDeposits.reduce((s, r) => s + r.amount, 0);
-                await upsertDailySales({
-                    ...existing,
-                    records: remainingRecords, totalAmount,
-                    marginRecords: remainingMargins.length > 0 ? remainingMargins : undefined,
-                    marginTotal: marginTotal > 0 ? marginTotal : undefined,
-                    depositRecords: remainingDeposits.length > 0 ? remainingDeposits : undefined,
-                    depositTotal: depositTotal > 0 ? depositTotal : undefined,
-                    companyOrderRows: Object.keys(remainingCompanyOrderRows).length > 0 ? remainingCompanyOrderRows : undefined,
-                    companyInvoiceRows: Object.keys(remainingCompanyInvoiceRows).length > 0 ? remainingCompanyInvoiceRows : undefined,
-                    orderRows: undefined,
-                    invoiceRows: undefined,
-                }, businessId);
-            }
-            setDeleteStatus('success');
-            setRecordedCompanies(prev => { const next = new Set(prev); selectedCompanyNames.forEach(n => next.delete(n)); return next; });
-            onSaved?.(today);
-            setTimeout(() => setDeleteStatus('idle'), 2000);
-        } catch {
-            setDeleteStatus('error');
-            setTimeout(() => setDeleteStatus('idle'), 3000);
-        }
-    };
-
     toggleCompanyClosedRef.current = handleToggleClosed;
     toggleCompanyRecordRef.current = (companyName: string) => {
-        recordedCompanies.has(companyName)
-            ? handleDeleteTodayRecord(new Set([companyName]))
-            : handleSaveToSalesHistory(new Set([companyName]));
+        handleSaveToSalesHistory(new Set([companyName]));
     };
 
     const grandTotal = (Object.values(totalsMap) as number[]).reduce((a: number, b: number) => a + b, 0) +
@@ -5602,7 +5544,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     fakeMismatch={fakeMismatch}
                                                     companyChecked={isChecked}
                                                     isRecorded={recordedCompanies.has(company)}
-                                                    onRecord={sIdx === 0 ? () => recordedCompanies.has(company) ? handleDeleteTodayRecord(new Set([company])) : handleSaveToSalesHistory(new Set([company])) : undefined}
+                                                    onRecord={sIdx === 0 ? () => handleSaveToSalesHistory(new Set([company])) : undefined}
                                                     workspace={workspace}
                                                     updateField={updateField}
                                                     updateSessionField={updateWorkspaceSessionField}
