@@ -3112,6 +3112,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const handleDownloadDepositList = () => {
         const depositRows: any[][] = [];
+        const bizDisplayName = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
         const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
@@ -3119,11 +3120,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
             if (sessionAmounts.length === 0) return;
             const companyTotal = sessionAmounts.reduce((sum, s) => sum + s.amount, 0);
-            const roundDetail = sessionAmounts.length > 1 ? sessionAmounts.map(s => `${s.round}차 ${s.amount.toLocaleString()}`).join(' / ') : '';
-            const label = roundDetail ? `${name} (${roundDetail})` : name;
-            depositRows.push([config?.bankName || '', config?.accountNumber || '', companyTotal, label]);
+            const label = name;
+            depositRows.push([config?.bankName || '', config?.accountNumber || '', companyTotal, label, bizDisplayName]);
         });
-        manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label || '']); });
+        manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label || '', bizDisplayName ? `${bizDisplayName} 환불` : '']); });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
             const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
             depositRows.push([fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, `${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
@@ -3149,8 +3149,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
         chunks.forEach((chunk, idx) => {
             const wb = XLSX.utils.book_new();
-            const chunkTotal = chunk.reduce((s: number, r: any[]) => s + (Number(r[2]) || 0), 0);
-            const sheetRows = [...chunk, ['', '합계', chunkTotal, '']];
+            const sheetRows = [...chunk];
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetRows), "입금내역");
             const suffix = chunks.length > 1 ? `_${idx + 1}` : '';
             XLSX.writeFile(wb, `${dateStr}_${businessPrefix}_입금목록${suffix}.xlsx`);
