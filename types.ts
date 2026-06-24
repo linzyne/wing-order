@@ -10,6 +10,7 @@ export interface BusinessInfo {
   address: string;
   themeColor?: string;
   buttonColor?: string;
+  bank?: string; // 'woori' | 'hana'
 }
 
 export const BUSINESS_INFO: Record<HardcodedBusinessId, BusinessInfo> = {

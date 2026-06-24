@@ -2,12 +2,21 @@ import React, { useState } from 'react';
 import type { PricingConfig } from '../types';
 
 const THEME_PRESETS = [
-  { label: '다크 퍼플', themeColor: '#0f0a1a', buttonColor: '#8b5cf6' },
-  { label: '다크 블루', themeColor: '#0a0f1a', buttonColor: '#3b82f6' },
-  { label: '다크 그린', themeColor: '#0a1a0f', buttonColor: '#22c55e' },
-  { label: '다크 오렌지', themeColor: '#1a130a', buttonColor: '#f97316' },
-  { label: '다크 핑크', themeColor: '#1a0a13', buttonColor: '#ec4899' },
-  { label: '다크 틸', themeColor: '#0a1a1a', buttonColor: '#14b8a6' },
+  { label: '기본', themeColor: '#09090b', buttonColor: '#52525b' },
+  { label: '핑크', themeColor: '#f472b6', buttonColor: '#ec4899' },
+  { label: '로즈', themeColor: '#fb7185', buttonColor: '#f43f5e' },
+  { label: '레드', themeColor: '#f87171', buttonColor: '#ef4444' },
+  { label: '오렌지', themeColor: '#fb923c', buttonColor: '#f97316' },
+  { label: '앰버', themeColor: '#fbbf24', buttonColor: '#f59e0b' },
+  { label: '옐로우', themeColor: '#facc15', buttonColor: '#eab308' },
+  { label: '라임', themeColor: '#a3e635', buttonColor: '#84cc16' },
+  { label: '그린', themeColor: '#4ade80', buttonColor: '#22c55e' },
+  { label: '에메랄드', themeColor: '#34d399', buttonColor: '#10b981' },
+  { label: '시안', themeColor: '#22d3ee', buttonColor: '#06b6d4' },
+  { label: '블루', themeColor: '#60a5fa', buttonColor: '#3b82f6' },
+  { label: '바이올렛', themeColor: '#818cf8', buttonColor: '#6366f1' },
+  { label: '퍼플', themeColor: '#c084fc', buttonColor: '#a855f7' },
+  { label: '푸시아', themeColor: '#e879f9', buttonColor: '#d946ef' },
 ];
 
 interface BusinessFormData {
@@ -19,6 +28,7 @@ interface BusinessFormData {
   address: string;
   themeColor: string;
   buttonColor: string;
+  bank?: string;
 }
 
 interface AddBusinessModalProps {
@@ -43,6 +53,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
     const idx = THEME_PRESETS.findIndex(p => p.themeColor === editingBusiness.themeColor);
     return idx >= 0 ? idx : 0;
   });
+  const [bank, setBank] = useState(editingBusiness?.bank || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -63,7 +74,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
       setSelectedTheme(idx >= 0 ? idx : 0);
     } else {
       setDisplayName(''); setShortName(''); setSenderName('');
-      setPhone(''); setAddress(''); setSelectedTheme(0);
+      setPhone(''); setAddress(''); setSelectedTheme(0); setBank('');
     }
     setError('');
   }, [editingBusiness]);
@@ -77,6 +88,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
     setPhone('');
     setAddress('');
     setSelectedTheme(0);
+    setBank('');
     setFirstCompanyName('');
     setFirstProductName('');
     setFirstSupplyPrice('');
@@ -103,6 +115,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
           address: address.trim(),
           themeColor: theme.themeColor,
           buttonColor: theme.buttonColor,
+          bank: bank || undefined,
         });
         onClose();
         return;
@@ -143,6 +156,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
         address: address.trim(),
         themeColor: theme.themeColor,
         buttonColor: theme.buttonColor,
+        bank: bank || undefined,
       }, initialConfig);
 
       resetForm();
@@ -222,6 +236,35 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
             </div>
           </div>
 
+          {/* 입금 은행 */}
+          <div>
+            <span className="text-xs font-bold text-zinc-400">입금 은행 <span className="text-zinc-600">(선택)</span></span>
+            <div className="flex gap-2 mt-2">
+              {[
+                { value: '', label: '없음' },
+                { value: 'woori', label: '우리은행' },
+                { value: 'hana', label: '하나은행' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setBank(opt.value)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                    bank === opt.value
+                      ? opt.value === 'woori'
+                        ? 'bg-blue-600 border-blue-500 text-white'
+                        : opt.value === 'hana'
+                        ? 'bg-teal-600 border-teal-500 text-white'
+                        : 'bg-zinc-600 border-zinc-500 text-white'
+                      : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:border-zinc-500'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* 테마 색상 */}
           <div>
             <span className="text-xs font-bold text-zinc-400">테마 색상</span>
@@ -234,10 +277,7 @@ const AddBusinessModal: React.FC<AddBusinessModalProps> = ({ isOpen, onClose, on
                     selectedTheme === i ? 'border-white bg-zinc-800' : 'border-zinc-800 hover:border-zinc-600'
                   }`}
                 >
-                  <div className="flex gap-1">
-                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: preset.themeColor, border: '1px solid #444' }} />
-                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: preset.buttonColor }} />
-                  </div>
+                  <div className="w-6 h-6 rounded-full border border-zinc-600" style={{ backgroundColor: preset.themeColor }} />
                   <span className="text-[9px] text-zinc-500">{preset.label}</span>
                 </button>
               ))}

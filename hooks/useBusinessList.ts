@@ -10,6 +10,21 @@ import {
 import type { DynamicBusinessEntry } from '../services/firestoreService';
 import type { PricingConfig } from '../types';
 
+const BUSINESSES_BACKUP_KEY = 'dynamicBusinesses_backup';
+
+const saveBusinessesBackup = (businesses: DynamicBusinessEntry[]) => {
+  try {
+    localStorage.setItem(BUSINESSES_BACKUP_KEY, JSON.stringify(businesses));
+  } catch {}
+};
+
+const loadBusinessesBackup = (): DynamicBusinessEntry[] | null => {
+  try {
+    const raw = localStorage.getItem(BUSINESSES_BACKUP_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+};
+
 export interface BusinessEntry {
   id: string;
   displayName: string;
@@ -20,6 +35,7 @@ export interface BusinessEntry {
   themeColor: string;
   buttonColor: string;
   isDynamic: boolean;
+  bank?: string;
 }
 
 // 하드코딩 사업자를 BusinessEntry 형태로 변환
@@ -44,9 +60,46 @@ export const useBusinessList = () => {
   const dynamicBusinessesRef = useRef<DynamicBusinessEntry[]>([]);
 
   useEffect(() => {
-    loadDynamicBusinesses().then(businesses => {
+    loadDynamicBusinesses().then(async (businesses) => {
+      // 사업자가 1개 미만이면 Firestore 로드 실패로 간주 → 시딩 금지
+      // (정상적으로는 최소 '안군농원', '조에' 2개 이상 존재)
+      if (businesses.length === 0) {
+        const backup = loadBusinessesBackup();
+        if (backup && backup.length > 0) {
+          console.warn('[BusinessList] Firestore 빈 결과 → 로컬 백업으로 복원');
+          businesses = backup;
+        } else {
+          console.warn('[BusinessList] Firestore 빈 결과, 백업 없음 → 시딩 없이 종료');
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // 하드코딩 사업자가 Firestore에 없으면 앞에 시딩
+      const hardcodedIds: HardcodedBusinessId[] = ['안군농원', '조에'];
+      const toSeed: DynamicBusinessEntry[] = [];
+      for (const hId of hardcodedIds) {
+        if (!businesses.find(b => b.id === hId)) {
+          const info = BUSINESS_INFO[hId];
+          toSeed.push({
+            id: hId,
+            displayName: info.displayName,
+            shortName: info.shortName,
+            senderName: info.senderName,
+            phone: info.phone,
+            address: info.address,
+            themeColor: hId === '조에' ? '#f472b6' : '#09090b',
+            buttonColor: hId === '조에' ? '#f472b6' : '#f43f5e',
+            createdAt: Timestamp.now(),
+          });
+        }
+      }
+      const allEntries = [...toSeed, ...businesses];
+      if (toSeed.length > 0) await saveDynamicBusinesses(allEntries);
+      saveBusinessesBackup(allEntries);
+
       registeredIdsRef.current.forEach(id => unregisterDynamicBusiness(id));
-      businesses.forEach((b: DynamicBusinessEntry) => registerDynamicBusiness(b.id, {
+      allEntries.forEach((b: DynamicBusinessEntry) => registerDynamicBusiness(b.id, {
         displayName: b.displayName,
         shortName: b.shortName,
         senderName: b.senderName,
@@ -55,9 +108,11 @@ export const useBusinessList = () => {
         themeColor: b.themeColor,
         buttonColor: b.buttonColor,
       }));
-      registeredIdsRef.current = businesses.map(b => b.id);
-      dynamicBusinessesRef.current = businesses;
-      setDynamicBusinesses(businesses);
+      registeredIdsRef.current = allEntries.map(b => b.id);
+      dynamicBusinessesRef.current = allEntries;
+      setDynamicBusinesses(allEntries);
+      setIsLoading(false);
+    }).catch(() => {
       setIsLoading(false);
     });
     return () => {
@@ -66,8 +121,9 @@ export const useBusinessList = () => {
     };
   }, []);
 
+  const dynamicIds = new Set(dynamicBusinesses.map(b => b.id));
   const allBusinesses: BusinessEntry[] = [
-    ...HARDCODED_ENTRIES,
+    ...HARDCODED_ENTRIES.filter(h => !dynamicIds.has(h.id)),
     ...dynamicBusinesses.map(b => ({
       id: b.id,
       displayName: b.displayName,
@@ -78,6 +134,7 @@ export const useBusinessList = () => {
       themeColor: b.themeColor || '#09090b',
       buttonColor: b.buttonColor || '#8b5cf6',
       isDynamic: true,
+      bank: b.bank,
     })),
   ];
 

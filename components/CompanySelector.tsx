@@ -38,13 +38,25 @@ interface ManualTransfer {
     id: string; label: string; bankName: string; accountNumber: string; amount: number; isAdjustment?: boolean; companyName?: string;
 }
 
+const FAKE_INPUT_TTL = 48 * 60 * 60 * 1000;
+function lsFakeKey(businessId?: string) { return `fakeOrderInput_${businessId || 'default'}`; }
+function lsFakeTsKey(businessId?: string) { return `fakeOrderInputTs_${businessId || 'default'}`; }
+function loadFakeInput(businessId?: string): string {
+  try {
+    const saved = localStorage.getItem(lsFakeKey(businessId));
+    const ts = localStorage.getItem(lsFakeTsKey(businessId));
+    if (saved && ts && Date.now() - Number(ts) < FAKE_INPUT_TTL) return saved;
+  } catch {}
+  return '';
+}
+
 interface SessionData {
     id: string;
     companyName: string;
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => void; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -446,18 +458,20 @@ const CourierTemplateManager: React.FC<{
                 </button>
             ) : (
                 <div className="bg-zinc-950/80 p-4 rounded-xl border border-zinc-800 space-y-3">
-                    <div className="flex gap-3">
-                        <div className="flex-1">
+                    <div className="space-y-2">
+                        <div>
                             <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배사 이름</label>
-                            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: CJ대한통운" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="예: CJ대한통운" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
                         </div>
-                        <div className="flex-1">
-                            <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">명칭 (구분용)</label>
-                            <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 과일용, 3kg박스" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
-                        </div>
-                        <div className="w-28">
-                            <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">건당 단가</label>
-                            <input value={newUnitPrice} onChange={(e) => setNewUnitPrice(e.target.value)} placeholder="2270" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                        <div className="flex gap-3">
+                            <div className="flex-1">
+                                <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">명칭 (구분용)</label>
+                                <input value={newLabel} onChange={(e) => setNewLabel(e.target.value)} placeholder="예: 과일용, 3kg박스" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                            </div>
+                            <div className="w-32">
+                                <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">건당 단가</label>
+                                <input value={newUnitPrice} onChange={(e) => setNewUnitPrice(e.target.value)} placeholder="2270" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                            </div>
                         </div>
                     </div>
 
@@ -646,7 +660,7 @@ function matchProductSync(
     return null;
 }
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false, isCurrent = false, onSaved }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
     const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
@@ -669,7 +683,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         await deleteSessionResult(sessionId, businessId);
     }, [businessId]);
-    const { courierTemplates, saveTemplates: saveCourierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates(businessId);
+    const { courierTemplates, saveTemplates: saveCourierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates();
 
     // 새로고침 시 워크스테이션 데이터 초기화 (마운트 = 새로고침에서만 발생, 사업자 전환 시에는 display:none으로 유지)
     // 다른 탭이 이미 세션 데이터를 보유 중일 수 있으므로, 기존 데이터가 없을 때만 초기화
@@ -697,6 +711,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         return initial;
     });
+    const [workstationResetKey, setWorkstationResetKey] = useState(0);
 
     const [vendorFiles, setVendorFiles] = useState<Record<string, File[]>>({});
     const [totalsMap, setTotalsMap] = useState<Record<string, number>>({});
@@ -719,10 +734,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [companyOverrides, setCompanyOverrides] = useState<Record<string, { deposit?: number; margin?: number }>>({});
     const [editingCell, setEditingCell] = useState<{ company: string; field: 'deposit' | 'margin' } | null>(null);
     const [editingValue, setEditingValue] = useState('');
+    const [showDepositModal, setShowDepositModal] = useState(false);
+    const [depositBaseRows, setDepositBaseRows] = useState<any[][]>([]);
+    const [depositExtraRows, setDepositExtraRows] = useState<{ bankName: string; accountNumber: string; amount: string; label: string }[]>([]);
 
-    // 워크스테이션 수동 초기화 함수
-    const handleResetWorkstations = useCallback(() => {
-        if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
+    // 워크스테이션 초기화 공통 로직 (confirm 없음)
+    const doResetWorkstation = useCallback(() => {
         setSessionResults(null);
         Promise.all([
             clearSessionResults(businessId),
@@ -746,9 +763,28 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllRegisteredNames({});
         setAllPreConsolidationByGroup({});
         setCompanyOverrides({});
-    }, [updateField]);
+        clearMasterFile();
+        onWorkstationReset?.();
+    }, [updateField, onWorkstationReset]);
+
+    const onRegisterResetRef = useRef(onRegisterReset);
+    onRegisterResetRef.current = onRegisterReset;
+    const doResetWorkstationRef = useRef(doResetWorkstation);
+    doResetWorkstationRef.current = doResetWorkstation;
+    useEffect(() => {
+        onRegisterResetRef.current?.(() => doResetWorkstationRef.current());
+    // 마운트 시 1회만 실행 - ref로 최신 함수 유지
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // 워크스테이션 수동 초기화 함수
+    const handleResetWorkstations = useCallback(() => {
+        if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
+        doResetWorkstation();
+    }, [doResetWorkstation]);
 
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
+    const masterOrderFileRef = useRef<File | null>(null); // React 재렌더 전에도 getNextRound가 최신값 읽도록 동기 추적
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [fakeMasterOrderFile, setFakeMasterOrderFile] = useState<File | null>(null);
     const [fakeMasterOrderData, setFakeMasterOrderData] = useState<any[][] | null>(null);
@@ -757,6 +793,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [batchExpectedCounts, setBatchExpectedCounts] = useState<Record<string, number>>({});
     const [batchMasterRows, setBatchMasterRows] = useState<Record<string, any[][]>>({});
     const [batchPlatforms, setBatchPlatforms] = useState<Record<string, string>>({}); // sessionId → 플랫폼명
+    // React state 재렌더 대기 없이 즉시 갱신되는 배치 차수 카운터
+    const nextBatchRoundRef = useRef(0);
     const batchFileInputRef = useRef<HTMLInputElement>(null);
     const fakeMasterFileInputRef = useRef<HTMLInputElement>(null);
     // 멀티 플랫폼: 업로드된 플랫폼 목록 + 건수
@@ -830,6 +868,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 업체 순서 변경 → Firestore에 저장 (Firestore 로드 완료 후에만)
     useEffect(() => {
         if (!firestoreOrderLoaded) return;
+        // pricingConfig 로딩 전에 실행되면 모든 업체가 "삭제됨"으로 오인식되어 순서가 리셋됨
+        if (!isPricingConfigLoaded) return;
         const companies = Object.keys(pricingConfig);
         if (companyOrder.length === 0) {
             // Firestore에 저장된 순서가 없으면 기본 순서 생성
@@ -867,7 +907,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         console.log(`[CompanyOrder:${businessId}] 드래그 순서 저장:`, companyOrder.slice(0, 5));
         lastWrittenCompanyOrderRef.current = currentStr;
         saveCompanyOrder(companyOrder, businessId).catch(e => console.error('[Firestore] 업체 순서 저장 실패:', e));
-    }, [companyOrder, pricingConfig, businessId, firestoreOrderLoaded]);
+    }, [companyOrder, pricingConfig, businessId, firestoreOrderLoaded, isPricingConfigLoaded]);
 
     // pricingConfig에 새 업체 추가 시 companySessions에 자동 반영 (새로고침 없이 실시간 반영)
     useEffect(() => {
@@ -963,7 +1003,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
     const [showSelectedSummaryModal, setShowSelectedSummaryModal] = useState(false);
 
-    const [fakeOrderInput, setFakeOrderInput] = useState('');
+    const [fakeOrderInput, setFakeOrderInput] = useState(() => loadFakeInput(businessId));
+    const effectiveFakeInput = globalFakeOrderInput?.trim() ? globalFakeOrderInput : fakeOrderInput;
+    const [unsentOrderInput, setUnsentOrderInput] = useState('');
+    const effectiveUnsentInput = globalUnsentOrderInput?.trim() ? globalUnsentOrderInput : unsentOrderInput;
     const [showFakeDetail, setShowFakeDetail] = useState(false);
 
     const [courierFiles, setCourierFiles] = useState<Record<string, File>>({});
@@ -1096,6 +1139,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     // Firestore 동기화 - 값 비교로 에코 방지
     const lastWrittenFakeRef = useRef('');
+    const lastWrittenUnsentRef = useRef('');
     const lastWrittenTransfersRef = useRef('[]');
     const lastWrittenExpensesRef = useRef('[]');
     // 저장 중 구독 업데이트 차단 (stale snapshot이 로컬 변경을 덮어쓰는 것 방지)
@@ -1111,6 +1155,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (now >= (savingFieldsUntil.current['fakeOrderInput'] || 0)) {
                 setFakeOrderInput(workspace.fakeOrderInput);
                 lastWrittenFakeRef.current = workspace.fakeOrderInput;
+            }
+        }
+        if (workspace.unsentOrderInput !== undefined && workspace.unsentOrderInput !== lastWrittenUnsentRef.current) {
+            if (now >= (savingFieldsUntil.current['unsentOrderInput'] || 0)) {
+                setUnsentOrderInput(workspace.unsentOrderInput);
+                lastWrittenUnsentRef.current = workspace.unsentOrderInput;
             }
         }
         if (workspace.manualTransfers !== undefined) {
@@ -1149,6 +1199,30 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return () => { if (fakeOrderDebounceRef.current) clearTimeout(fakeOrderDebounceRef.current); };
     }, [fakeOrderInput, updateField]);
 
+    // fakeOrderInput 변경 → localStorage에 저장 (48시간 TTL)
+    useEffect(() => {
+        try {
+            localStorage.setItem(lsFakeKey(businessId), fakeOrderInput);
+            localStorage.setItem(lsFakeTsKey(businessId), String(Date.now()));
+        } catch {}
+    }, [fakeOrderInput, businessId]);
+
+    // unsentOrderInput 변경 → Firestore에 debounce로 저장
+    const unsentOrderDebounceRef = useRef<ReturnType<typeof setTimeout>>();
+    useEffect(() => {
+        if (!isReadyRef.current) return;
+        if (unsentOrderInput === lastWrittenUnsentRef.current) return;
+        if (unsentOrderDebounceRef.current) clearTimeout(unsentOrderDebounceRef.current);
+        unsentOrderDebounceRef.current = setTimeout(() => {
+            savingFieldsUntil.current['unsentOrderInput'] = Date.now() + 30000;
+            lastWrittenUnsentRef.current = unsentOrderInput;
+            updateField('unsentOrderInput', unsentOrderInput)
+                .then(() => { setTimeout(() => { savingFieldsUntil.current['unsentOrderInput'] = 0; }, 1500); })
+                .catch(e => { savingFieldsUntil.current['unsentOrderInput'] = 0; console.error('[Firestore] unsentOrderInput 저장 실패:', e); });
+        }, 300);
+        return () => { if (unsentOrderDebounceRef.current) clearTimeout(unsentOrderDebounceRef.current); };
+    }, [unsentOrderInput, updateField]);
+
     // manualTransfers 변경 → Firestore에 저장
     useEffect(() => {
         if (!isReadyRef.current) return;
@@ -1182,7 +1256,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const numberToNames = new Map<string, string[]>();
         let inputLineCount = 0;
 
-        fakeOrderInput.split('\n').forEach(line => {
+        effectiveFakeInput.split('\n').forEach(line => {
             const trimmed = line.trim();
             if (!trimmed) return;
             inputLineCount++;
@@ -1236,7 +1310,61 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         );
 
         return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates };
-    }, [fakeOrderInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
+    }, [effectiveFakeInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
+
+    // 미발송 명단 분석 (입력된 번호 vs 실제 발견된 번호)
+    const unsentOrderAnalysis = useMemo(() => {
+        if (!effectiveUnsentInput.trim()) return { inputLineCount: 0, matched: [] as string[], missing: [] as string[], nameMap: {} as Record<string, string> };
+        const inputNumbers = new Set<string>();
+        const nameMap: Record<string, string> = {};
+        let inputLineCount = 0;
+        effectiveUnsentInput.split('\n').forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed) return;
+            inputLineCount++;
+            const matches = trimmed.match(/[A-Za-z0-9-]{5,}/g);
+            if (matches) {
+                let namepart = trimmed;
+                matches.forEach(m => { namepart = namepart.replace(m, ''); });
+                const name = namepart.trim();
+                matches.forEach(m => { inputNumbers.add(m.trim()); if (name) nameMap[m.trim()] = name; });
+            }
+        });
+        const foundDetails: Record<string, ExcludedOrder> = {};
+        (Object.values(allExcludedDetails).flat() as ExcludedOrder[]).forEach(ex => {
+            const cleanNum = ex.orderNumber.replace(' (제외)', '').trim();
+            foundDetails[cleanNum] = ex;
+        });
+        const effectiveMasterData = fakeMasterOrderData ?? masterOrderData;
+        const masterOrderNumbers = new Set<string>();
+        if (effectiveMasterData && effectiveMasterData.length > 1) {
+            for (let i = 1; i < effectiveMasterData.length; i++) {
+                const row = effectiveMasterData[i];
+                if (!row) continue;
+                const orderNum = String(row[2] || '').trim();
+                if (orderNum) masterOrderNumbers.add(orderNum);
+            }
+        }
+        const matched = Array.from(inputNumbers).filter(num => foundDetails[num] || masterOrderNumbers.has(num));
+        const missing = Array.from(inputNumbers).filter(num => !foundDetails[num] && !masterOrderNumbers.has(num));
+        return { inputLineCount, matched, missing, nameMap };
+    }, [effectiveUnsentInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
+
+    // 전체 가구매 명단 박스에 매칭 결과 콜백
+    useEffect(() => {
+        if (onGlobalFakeMatch && globalFakeOrderInput) {
+            onGlobalFakeMatch(fakeOrderAnalysis.matched);
+        }
+    }, [fakeOrderAnalysis.matched, onGlobalFakeMatch, globalFakeOrderInput]);
+
+    // 공통 택배 기능용: 주문 행 데이터를 App.tsx로 전달
+    useEffect(() => {
+        if (!onExposeOrderRows) return;
+        const header = masterOrderData?.[0] ?? null;
+        const dataRows: any[][] = masterOrderData ? [...masterOrderData.slice(1)] : [];
+        (Object.values(batchMasterRows) as any[][][]).forEach(batchRows => { dataRows.push(...batchRows); });
+        onExposeOrderRows(header, dataRows);
+    }, [masterOrderData, batchMasterRows, onExposeOrderRows]);
 
     // 가구매 수량 미매칭 여부: 명단 주문번호 수 vs 실제 제외된 주문번호 수
     const fakeMismatch = useMemo(() => {
@@ -1254,7 +1382,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 마스터 주문서 품목별 건수 분석 (가구매 제외 / 가구매 분리)
     const masterProductSummary = useMemo(() => {
         if (!masterOrderData || masterOrderData.length < 2) return null;
-        const fakeNums = resolveFakeOrderNumbers(fakeOrderInput);
+        const fakeNums = resolveFakeOrderNumbers(effectiveFakeInput);
         // 헤더에서 수량 열 동적 탐색 (W열 = index 22가 아닐 수 있음)
         const headers = masterOrderData[0] || [];
         let qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('수량'));
@@ -1375,7 +1503,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (unknownGroupNames.length > 0) console.log(`[마스터검증] unknownGroupNames:`, unknownGroupNames);
         if (skippedOrders.length > 0) console.log(`[마스터검증] skippedOrders:`, skippedOrders);
         return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount, unknownGroupNames };
-    }, [masterOrderData, fakeOrderInput, pricingConfig, rowPlatformSources]);
+    }, [masterOrderData, effectiveFakeInput, pricingConfig, rowPlatformSources]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
     // 차수별로 분리: [2차, 3차, 4차, ...] — 데이터 없는 차수는 0으로 채움
@@ -1398,7 +1526,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         let hasData = false;
 
         const fakeNums = new Set<string>();
-        fakeOrderInput.split('\n').forEach(line => {
+        effectiveFakeInput.split('\n').forEach(line => {
             const matches = line.trim().match(/[A-Za-z0-9-]{5,}/g);
             if (matches) matches.forEach(m => fakeNums.add(m.trim()));
         });
@@ -1454,7 +1582,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const realTotal = rounds.reduce((s, b) => s + b.realTotal, 0);
         const fakeTotal = rounds.reduce((s, b) => s + b.fakeTotal, 0);
         return { rounds, groupToCompany, realTotal, fakeTotal };
-    }, [companySessions, allOrderRows, fakeOrderInput, batchMasterRows, batchPlatforms]);
+    }, [companySessions, allOrderRows, effectiveFakeInput, batchMasterRows, batchPlatforms]);
 
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배사별)
     const allExpenses = useMemo(() => {
@@ -1633,6 +1761,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         console.log('🚀 [파일 업로드] 시작:', file.name);
         console.log('🚀 [platformConfigs]:', platformConfigs);
         if (fakeMismatch) alert('미매칭(수량)을 확인해주세요.');
+        masterOrderFileRef.current = file; // 공통 패널의 getNextRound가 React 재렌더 전에도 올바른 값을 읽도록
         setMasterOrderFile(file);
         try {
             const data = await file.arrayBuffer();
@@ -1679,14 +1808,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const normalizedWb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(normalizedWb, normalizedSheet, 'Sheet1');
                 const normalizedBuffer = XLSX.write(normalizedWb, { bookType: 'xlsx', type: 'array' });
-                setMasterOrderFile(new File([normalizedBuffer], file.name, {
+                const normalizedFile = new File([normalizedBuffer], file.name, {
                     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                }));
+                });
+                masterOrderFileRef.current = normalizedFile;
+                setMasterOrderFile(normalizedFile);
 
                 console.log(`✅ [Platform] "${platformName}" 감지됨 (${Math.round(detectedPlatform.score * 100)}% 일치)${detectedPlatform.columnRemap ? ' [열 리맵]' : ''}, 헤더행=${detectedPlatform.actualHeaderRowIdx}, 데이터시작=${dataStart}: ${json.length - 1}건 정규화`);
             } else {
                 setUploadedPlatforms([{ name: '쿠팡', count: json.length - 1 }]);
                 setRowPlatformSources([]);
+                const stdFile = new File([data], file.name, {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                });
+                masterOrderFileRef.current = stdFile;
+                setMasterOrderFile(stdFile);
             }
 
             const groupColIdx = 10;
@@ -1746,6 +1882,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const clearMasterFile = () => {
+        masterOrderFileRef.current = null;
+        nextBatchRoundRef.current = 0;
         setMasterOrderFile(null);
         setMasterOrderData(null);
         setDetectedCompanies(new Set());
@@ -1769,6 +1907,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             initial[name] = [{ id: `${name}-1`, companyName: name, round: 1 }];
         });
         setCompanySessions(initial);
+        setWorkstationResetKey(prev => prev + 1);
     };
 
     const applyKValueReplacement = () => {
@@ -1918,6 +2057,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 setFakeMasterOrderFile(new File([normalizedBuffer], file.name, {
                     type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                 }));
+            } else {
+                setFakeMasterOrderFile(new File([data], file.name, {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                }));
             }
             setFakeMasterOrderData(json);
         } catch (error) { console.error("Fake master upload failed:", error); }
@@ -1931,7 +2074,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.read(data, { type: 'array' });
             const ws = wb.Sheets[wb.SheetNames[0]];
             let json = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-            if (!json || json.length < 2) { alert('유효한 주문서가 아닙니다.'); return; }
+            if (!json || json.length < 2) { throw new Error('유효한 주문서가 아닙니다.'); }
 
             // 플랫폼 감지 및 정규화 (마스터 업로드와 동일)
             const detectedPlatform = detectPlatform(json);
@@ -2012,23 +2155,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (bestCompany) companyRowCounts[bestCompany] = (companyRowCounts[bestCompany] || 0) + 1;
             }
             const companiesInFile = new Set(Object.keys(companyRowCounts));
-            if (companiesInFile.size === 0) { alert('주문서에서 매칭되는 업체를 찾지 못했습니다.'); return; }
-            let maxRound = 0;
-            (Object.values(companySessions) as SessionData[][]).forEach(sessions => {
-                sessions.forEach(s => { if (s.round > maxRound) maxRound = s.round; });
-            });
-            const nextRound = maxRound + 1;
+            if (companiesInFile.size === 0) { throw new Error('주문서에서 매칭되는 업체를 찾지 못했습니다. (키워드 확인 필요)'); }
+            const nextRound = nextBatchRoundRef.current + 2;
+            nextBatchRoundRef.current += 1;
             const newBatchFiles: Record<string, File> = {};
             const newExpectedCounts: Record<string, number> = {};
             const newBatchMasterRows: Record<string, any[][]> = {};
-            const newSessions: Record<string, SessionData[]> = { ...companySessions };
-            const newSelectedIds = new Set(selectedSessionIds);
+            // 이번 배치에서 추가할 세션 목록 (업체명 → 세션)
+            const newSessionsByCompany: [string, SessionData][] = [];
             for (const companyName of companiesInFile) {
                 if (closedCompanies.has(companyName)) continue;
                 const newSessionId = `${companyName}-batch-${nextRound}-${Date.now()}`;
                 const newSession: SessionData = { id: newSessionId, companyName, round: nextRound };
-                newSessions[companyName] = [...(newSessions[companyName] || []), newSession];
-                newSelectedIds.add(newSessionId);
+                newSessionsByCompany.push([companyName, newSession]);
                 newBatchFiles[newSessionId] = processedFile;
                 newExpectedCounts[newSessionId] = companyRowCounts[companyName] || 0;
                 // 이 업체에 해당하는 마스터-포맷 행만 필터해서 저장
@@ -2049,8 +2188,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
                 newBatchMasterRows[newSessionId] = companyRows;
             }
-            setCompanySessions(newSessions);
-            setSelectedSessionIds(newSelectedIds);
+            // functional update로 이전 배치 세션 덮어쓰기 방지
+            setCompanySessions(prev => {
+                const n = { ...prev };
+                for (const [companyName, session] of newSessionsByCompany) {
+                    n[companyName] = [...(n[companyName] || []), session];
+                }
+                return n;
+            });
+            setSelectedSessionIds(prev => {
+                const next = new Set(prev);
+                for (const [, session] of newSessionsByCompany) next.add(session.id);
+                return next;
+            });
             setBatchFiles(prev => ({ ...prev, ...newBatchFiles }));
             setBatchExpectedCounts(prev => ({ ...prev, ...newExpectedCounts }));
             setBatchMasterRows(prev => ({ ...prev, ...newBatchMasterRows }));
@@ -2063,9 +2213,118 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setBatchPlatforms(prev => ({ ...prev, ...newBatchPlatforms }));
         } catch (error) {
             console.error("Batch upload failed:", error);
-            alert('파일 처리 중 오류가 발생했습니다.');
+            throw error;
         }
     };
+
+    // 공통 업로드 핸들러 등록 — ref 선언 (current 할당은 아래 각 함수 선언 이후)
+    const masterUploadRef = useRef<(file: File) => Promise<void>>(async () => {});
+    const batchUploadRef = useRef<(file: File) => Promise<void>>(async () => {});
+    const getNextRoundRef = useRef<() => number>(() => 1);
+    const deleteBatchRoundRef = useRef<(round: number) => boolean>(() => false);
+    const clearMasterRef = useRef<() => void>(() => {});
+    const getOrderStateRef = useRef<() => { name: string; rounds: { round: number; hasData: boolean }[] }[]>(() => []);
+    const companyLastSettlementRef = useRef<Record<string, { kakaoText: string; excelText: string }>>({});
+    const getLastSettlementSummariesRef = useRef<() => { companyName: string; kakaoText: string; excelText: string }[]>(() => []);
+    const downloadCompanyMergedRef = useRef<(companyName: string) => void>(() => {});
+    const downloadCompanyRoundRef = useRef<(companyName: string, round: number) => void>(() => {});
+    const getCompanyClosedRef = useRef<(companyName: string) => boolean>(() => false);
+    const getCompanyRecordedRef = useRef<(companyName: string) => boolean>(() => false);
+    const toggleCompanyClosedRef = useRef<(companyName: string) => void>(() => {});
+    const toggleCompanyRecordRef = useRef<(companyName: string) => void>(() => {});
+    const downloadAllCompaniesRef = useRef<() => void>(() => {});
+    const uploadVendorInvoiceRef = useRef((_files: File[]) => {});
+    const getInvoiceStateRef = useRef(() => [] as { name: string; uploadCount: number }[]);
+    const downloadAllInvoicesRef = useRef(() => {});
+    const getInvoiceWorkbookFileRef = useRef<() => File | null>(() => null);
+    // 배치 차수 카운터: React state 재렌더 대기 없이 즉시 갱신하는 ref
+    masterUploadRef.current = handleMasterUpload;
+    batchUploadRef.current = handleBatchUpload;
+    getNextRoundRef.current = () => {
+        if (!masterOrderFileRef.current) return 1;
+        return nextBatchRoundRef.current + 2;
+    };
+    clearMasterRef.current = clearMasterFile;
+    getOrderStateRef.current = () => {
+        const orderedNames = companyOrder.filter(id => !isDivider(id) && id in companySessions);
+        const unordered = Object.keys(companySessions).filter(n => !orderedNames.includes(n));
+        return [...orderedNames, ...unordered]
+            .map(companyName => ({
+                name: companyName,
+                rounds: (companySessions[companyName] as SessionData[]).map(s => ({
+                    round: s.round,
+                    hasData: (allOrderRows[s.id]?.length || 0) > 0,
+                    count: allOrderRows[s.id]?.length || 0,
+                })),
+            }))
+            .filter(c => c.rounds.some(r => r.hasData));
+    };
+    getLastSettlementSummariesRef.current = () => {
+        const orderedNames = companyOrder.filter(id => !isDivider(id) && id in companySessions);
+        const unordered = Object.keys(companySessions).filter(n => !orderedNames.includes(n));
+        return [...orderedNames, ...unordered]
+            .filter(name => companyLastSettlementRef.current[name])
+            .map(name => ({
+                companyName: name,
+                kakaoText: companyLastSettlementRef.current[name].kakaoText,
+                excelText: companyLastSettlementRef.current[name].excelText,
+            }));
+    };
+    downloadCompanyMergedRef.current = (companyName: string) => {
+        handleDownloadMergedOrder(companyName);
+    };
+    downloadCompanyRoundRef.current = (companyName: string, round: number) => {
+        const sessions = companySessions[companyName] || [];
+        const session = (sessions as SessionData[]).find(s => s.round === round);
+        if (!session) return;
+        const rows = allOrderRows[session.id];
+        if (!rows || rows.length === 0) { alert('해당 차수 발주 데이터가 없습니다.'); return; }
+        const companyConfig = pricingConfig[companyName];
+        if (!companyConfig) return;
+        const header = getHeaderForCompany(companyName, companyConfig);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        ws['!cols'] = header.map(() => ({ wch: 15 }));
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, '발주서');
+        const dateStr = new Date().toLocaleDateString('en-CA');
+        XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} ${round}차발주서.xlsx`);
+    };
+    downloadAllCompaniesRef.current = () => {
+        const allCompanies = Object.keys(companySessions).filter(name =>
+            (companySessions[name] as SessionData[]).some(s => (allOrderRows[s.id]?.length || 0) > 0)
+        );
+        handleGroupDownloadOrders(allCompanies);
+    };
+    getCompanyClosedRef.current = (companyName: string) => closedCompanies.has(companyName);
+    getCompanyRecordedRef.current = (companyName: string) => recordedCompanies.has(companyName);
+    // deleteBatchRoundRef.current 는 handleDeleteBatchRound 선언 이후에 할당
+    const onRegisterMasterUploadRef = useRef(onRegisterMasterUpload);
+    onRegisterMasterUploadRef.current = onRegisterMasterUpload;
+    useEffect(() => {
+        onRegisterMasterUploadRef.current?.({
+            uploadMaster: (file) => masterUploadRef.current(file),
+            uploadBatch: (file) => batchUploadRef.current(file),
+            getNextRound: () => getNextRoundRef.current(),
+            deleteBatchRound: (round) => deleteBatchRoundRef.current(round),
+            clearMaster: () => clearMasterRef.current(),
+            getOrderState: () => getOrderStateRef.current(),
+            downloadCompanyMerged: (companyName) => downloadCompanyMergedRef.current(companyName),
+            downloadCompanyRound: (companyName, round) => downloadCompanyRoundRef.current(companyName, round),
+            downloadAllCompanies: () => downloadAllCompaniesRef.current(),
+            getCompanyClosed: (companyName) => getCompanyClosedRef.current(companyName),
+            getCompanyRecorded: (companyName) => getCompanyRecordedRef.current(companyName),
+            toggleCompanyClosed: (companyName) => toggleCompanyClosedRef.current(companyName),
+            toggleCompanyRecord: (companyName) => toggleCompanyRecordRef.current(companyName),
+            uploadVendorInvoice: (files) => uploadVendorInvoiceRef.current(files),
+            getInvoiceState: () => getInvoiceStateRef.current(),
+            downloadInvoice: (companyName) => wsInvoiceDownloadRef.current(companyName),
+            downloadAllInvoices: () => downloadAllInvoicesRef.current(),
+            getInvoiceWorkbookFile: () => getInvoiceWorkbookFileRef.current(),
+            getLastSettlementSummaries: () => getLastSettlementSummariesRef.current(),
+        });
+    // 마운트 시 1회만 실행 - onRegisterMasterUpload dep 변경 시 재실행하면 루프 발생
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // 범용 택배 양식 다운로드: 템플릿 매핑에 따라 주문 데이터 채워서 다운로드
     const handleCourierDownload = async (template: CourierTemplate) => {
@@ -2079,7 +2338,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
 
-            const fakeOrderNums = resolveFakeOrderNumbers(fakeOrderInput, { normalize: true });
+            const fakeOrderNums = resolveFakeOrderNumbers(effectiveFakeInput, { normalize: true });
             if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
 
             // 2차+ 배치 파일 행도 합치기
@@ -2175,7 +2434,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
 
-            const fakeOrderNums = resolveFakeOrderNumbers(fakeOrderInput, { normalize: true });
+            const fakeOrderNums = resolveFakeOrderNumbers(effectiveFakeInput, { normalize: true });
             if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
             console.log(`[가구매송장] 가구매 주문번호: ${fakeOrderNums.size}건`);
 
@@ -2394,6 +2653,204 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (downloaded === 0) alert('다운받을 발주 데이터가 없습니다.');
     };
 
+    // 세션별 경고 집계 → 부모에게 전달
+    const [sessionWarningsMap, setSessionWarningsMap] = useState<Record<string, boolean>>({});
+    const handleSessionWarningUpdate = useCallback((sessionId: string, hasWarning: boolean) => {
+        setSessionWarningsMap(prev => {
+            if (prev[sessionId] === hasWarning) return prev;
+            return { ...prev, [sessionId]: hasWarning };
+        });
+    }, []);
+    const onHasWarningsRef = useRef(onHasWarnings);
+    onHasWarningsRef.current = onHasWarnings;
+    useEffect(() => {
+        onHasWarningsRef.current?.(Object.values(sessionWarningsMap).some(Boolean));
+    }, [sessionWarningsMap]);
+
+    // 빠른 다운로드 바: 부모에게 미다운로드 업체 수와 다운로드 함수 전달
+    const onStatusUpdateRef = useRef(onStatusUpdate);
+    useEffect(() => { onStatusUpdateRef.current = onStatusUpdate; });
+    const handleGroupDownloadOrdersRef = useRef(handleGroupDownloadOrders);
+    useEffect(() => { handleGroupDownloadOrdersRef.current = handleGroupDownloadOrders; });
+    const pricingConfigRef = useRef(pricingConfig);
+    useEffect(() => { pricingConfigRef.current = pricingConfig; });
+
+    useEffect(() => {
+        const litCompanies = [...new Set(
+            [...orderLitSessions].flatMap(sid => {
+                for (const [name, sessions] of Object.entries(companySessions) as [string, SessionData[]][]) {
+                    if (sessions.some((s: SessionData) => s.id === sid)) return [name];
+                }
+                return [];
+            })
+        )];
+        onStatusUpdateRef.current?.({
+            litCount: litCompanies.length,
+            downloadAll: () => handleGroupDownloadOrdersRef.current(
+                litCompanies.length > 0 ? litCompanies : Object.keys(pricingConfigRef.current)
+            ),
+        });
+    }, [orderLitSessions, companySessions]);
+
+    uploadVendorInvoiceRef.current = (files: File[]) => {
+        const allCompanies = Object.keys(companySessions);
+        setVendorFiles(prev => {
+            const next = { ...prev };
+            allCompanies.forEach(c => { next[c] = files; });
+            return next;
+        });
+    };
+    getInvoiceStateRef.current = () => {
+        const result: { name: string; uploadCount: number }[] = [];
+        (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([name, sessions]) => {
+            let count = 0;
+            sessions.forEach(s => {
+                const mem = allUploadInvoiceRows[s.id];
+                if (mem && mem.length > 0) { count += mem.length; return; }
+                const saved = sessionResults?.[s.id];
+                if (saved) {
+                    const rows = typeof saved.uploadInvoiceRows === 'string' ? JSON.parse(saved.uploadInvoiceRows) : (saved.uploadInvoiceRows || []);
+                    count += rows.length;
+                }
+            });
+            if (count > 0) result.push({ name, uploadCount: count });
+        });
+
+        // 가구매 항목: 명단 주문번호와 매칭되는 upload invoice 행 수
+        if (effectiveFakeInput.trim()) {
+            const fakeNums = resolveFakeOrderNumbers(effectiveFakeInput, { normalize: true });
+            if (fakeNums.size > 0) {
+                let fakeCount = 0;
+                (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([, sessions]) => {
+                    sessions.forEach(s => {
+                        const rows = allUploadInvoiceRows[s.id];
+                        if (rows && rows.length > 0) {
+                            rows.forEach(row => {
+                                const num = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                                if (fakeNums.has(num)) fakeCount++;
+                            });
+                            return;
+                        }
+                        const saved = sessionResults?.[s.id];
+                        if (saved) {
+                            const savedRows: any[][] = typeof saved.uploadInvoiceRows === 'string' ? JSON.parse(saved.uploadInvoiceRows) : (saved.uploadInvoiceRows || []);
+                            savedRows.forEach(row => {
+                                const num = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                                if (fakeNums.has(num)) fakeCount++;
+                            });
+                        }
+                    });
+                });
+                if (fakeCount > 0) result.push({ name: '가구매', uploadCount: fakeCount });
+            }
+        }
+
+        return result;
+    };
+
+    // 항상 최신 state를 참조하는 ref 기반 다운로드 함수 (stale closure 방지)
+    const wsInvoiceDownloadRef = useRef((_companyName: string) => {});
+    wsInvoiceDownloadRef.current = (companyName: string) => {
+        // 가구매 전용 다운로드: 명단 주문번호와 매칭되는 행만 추출
+        if (companyName === '가구매') {
+            const fakeNums = resolveFakeOrderNumbers(effectiveFakeInput, { normalize: true });
+            if (fakeNums.size === 0) { alert('가구매 명단이 비어있습니다.'); return; }
+            const mergedRows: any[][] = [];
+            let headerRow: any[] = [];
+            (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([, sessions]) => {
+                (sessions as SessionData[]).forEach(s => {
+                    let rows: any[][] = allUploadInvoiceRows[s.id] || [];
+                    let hdr: any[] | undefined = allHeaders[s.id];
+                    if (rows.length === 0 && sessionResults?.[s.id]) {
+                        const saved = sessionResults[s.id];
+                        rows = typeof saved.uploadInvoiceRows === 'string' ? JSON.parse(saved.uploadInvoiceRows) : (saved.uploadInvoiceRows || []);
+                        hdr = saved.header;
+                    }
+                    if (rows.length > 0) {
+                        if (!headerRow.length && hdr?.length) headerRow = hdr;
+                        rows.forEach(row => {
+                            const num = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                            if (fakeNums.has(num)) mergedRows.push(row);
+                        });
+                    }
+                });
+            });
+            if (!mergedRows.length) { alert('가구매 매칭된 송장 데이터가 없습니다.'); return; }
+            const wb = XLSX.utils.book_new();
+            const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '업로드용');
+            const dateStr = new Date().toLocaleDateString('en-CA');
+            XLSX.writeFile(wb, `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}가구매[업로드용_송장].xlsx`);
+            return;
+        }
+
+        const sessions = (companySessions[companyName] || []) as SessionData[];
+        const mergedRows: any[][] = [];
+        let headerRow: any[] = [];
+        sessions.forEach(s => {
+            // 인메모리(현재 세션) 우선
+            let rows: any[][] = allUploadInvoiceRows[s.id] || [];
+            let hdr: any[] | undefined = allHeaders[s.id];
+            // Firestore 데이터 fallback (페이지 리로드 후 등)
+            if (rows.length === 0 && sessionResults?.[s.id]) {
+                const saved = sessionResults[s.id];
+                rows = typeof saved.uploadInvoiceRows === 'string' ? JSON.parse(saved.uploadInvoiceRows) : (saved.uploadInvoiceRows || []);
+                hdr = saved.header;
+            }
+            if (rows.length > 0) {
+                if (!headerRow.length && hdr?.length) headerRow = hdr;
+                mergedRows.push(...rows);
+            }
+        });
+        if (!mergedRows.length) { alert('다운로드할 송장 데이터가 없습니다.'); return; }
+        const wb = XLSX.utils.book_new();
+        const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '업로드용');
+        const dateStr = new Date().toLocaleDateString('en-CA');
+        XLSX.writeFile(wb, `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}${companyName}[업로드용_송장].xlsx`);
+    };
+
+
+    const buildInvoiceWorkbook = (): { wb: any; fileName: string } | null => {
+        const mergedRows: any[][] = [];
+        let headerRow: any[] = [];
+        (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([, sessions]) => {
+            (sessions as SessionData[]).forEach(s => {
+                let rows: any[][] = allUploadInvoiceRows[s.id] || [];
+                let hdr: any[] | undefined = allHeaders[s.id];
+                if (rows.length === 0 && sessionResults?.[s.id]) {
+                    const saved = sessionResults[s.id];
+                    rows = typeof saved.uploadInvoiceRows === 'string' ? JSON.parse(saved.uploadInvoiceRows) : (saved.uploadInvoiceRows || []);
+                    hdr = saved.header;
+                }
+                if (rows.length > 0) {
+                    if (!headerRow.length && hdr?.length) headerRow = hdr;
+                    mergedRows.push(...rows);
+                }
+            });
+        });
+        if (mergedRows.length === 0) return null;
+        const wb = XLSX.utils.book_new();
+        const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '업로드용');
+        const dateStr = new Date().toLocaleDateString('en-CA');
+        const fileName = `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}통합[업로드용_송장].xlsx`;
+        return { wb, fileName };
+    };
+
+    downloadAllInvoicesRef.current = () => {
+        const result = buildInvoiceWorkbook();
+        if (!result) { alert('다운로드할 송장 데이터가 없습니다.'); return; }
+        XLSX.writeFile(result.wb, result.fileName);
+    };
+
+    getInvoiceWorkbookFileRef.current = () => {
+        const result = buildInvoiceWorkbook();
+        if (!result) return null;
+        const binary: ArrayBuffer = XLSX.write(result.wb, { bookType: 'xlsx', type: 'array' });
+        return new File([binary], result.fileName, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    };
+
     const handleAddSession = (companyName: string) => {
         if (closedCompanies.has(companyName)) return;
         const newSessionId = `${companyName}-${Date.now()}`;
@@ -2415,8 +2872,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setSelectedSessionIds(prev => { const next = new Set(prev); next.delete(sessionId); return next; });
     };
 
-    const handleDeleteBatchRound = (round: number) => {
-        if (!confirm(`${round}차 주문서를 삭제하시겠습니까?\n워크스테이션의 ${round}차 발주서도 함께 사라집니다.`)) return;
+    const handleDeleteBatchRound = (round: number): boolean => {
+        if (!confirm(`${round}차 주문서를 삭제하시겠습니까?\n워크스테이션의 ${round}차 발주서도 함께 사라집니다.`)) return false;
         const sessionIds = Object.keys(batchFiles).filter(id => id.match(new RegExp(`-batch-${round}-`)));
         setBatchFiles(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
         setBatchExpectedCounts(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
@@ -2431,7 +2888,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setExcludedCountsMap(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
         setAllExcludedDetails(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
         setSelectedSessionIds(prev => { const next = new Set(prev); sessionIds.forEach(id => next.delete(id)); return next; });
+        return true;
     };
+    deleteBatchRoundRef.current = handleDeleteBatchRound;
 
     const handleVendorFileChange = (companyName: string, files: File[]) => {
         setVendorFiles(prev => {
@@ -2652,9 +3111,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const handleDownloadDepositList = () => {
-        const wb = XLSX.utils.book_new();
         const depositRows: any[][] = [];
-        let total = 0;
         const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
@@ -2665,18 +3122,41 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const roundDetail = sessionAmounts.length > 1 ? sessionAmounts.map(s => `${s.round}차 ${s.amount.toLocaleString()}`).join(' / ') : '';
             const label = roundDetail ? `${name} (${roundDetail})` : name;
             depositRows.push([config?.bankName || '', config?.accountNumber || '', companyTotal, label]);
-            total += companyTotal;
         });
-        manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label || '']); total += t.amount; });
+        manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label || '']); });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
             const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
             depositRows.push([fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, `${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
-            total += deliveryFee;
         }
-        if (depositRows.length === 0) { alert('선택된 업체 중 입금할 내역이 없습니다.'); return; }
-        depositRows.push(['', '합계', total, '']);
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(depositRows), "입금내역");
-        XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_${businessPrefix}_입금목록.xlsx`);
+        setDepositBaseRows(depositRows);
+        setDepositExtraRows([{ bankName: '', accountNumber: '', amount: '', label: '' }]);
+        setShowDepositModal(true);
+    };
+
+    const handleDepositModalDownload = () => {
+        const ROWS_PER_FILE = 15;
+        const extraRows: any[][] = depositExtraRows
+            .filter(r => r.bankName || r.accountNumber || r.amount)
+            .map(r => [r.bankName, r.accountNumber, Number(r.amount) || 0, r.label]);
+        const allRows = [...depositBaseRows, ...extraRows];
+        if (allRows.length === 0) { alert('입금할 내역이 없습니다.'); return; }
+
+        const dateStr = new Date().toLocaleDateString('en-CA');
+        const chunks: any[][][] = [];
+        for (let i = 0; i < allRows.length; i += ROWS_PER_FILE) {
+            chunks.push(allRows.slice(i, i + ROWS_PER_FILE));
+        }
+
+        chunks.forEach((chunk, idx) => {
+            const wb = XLSX.utils.book_new();
+            const chunkTotal = chunk.reduce((s: number, r: any[]) => s + (Number(r[2]) || 0), 0);
+            const sheetRows = [...chunk, ['', '합계', chunkTotal, '']];
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetRows), "입금내역");
+            const suffix = chunks.length > 1 ? `_${idx + 1}` : '';
+            XLSX.writeFile(wb, `${dateStr}_${businessPrefix}_입금목록${suffix}.xlsx`);
+        });
+
+        setShowDepositModal(false);
     };
 
     const handleDownloadWorkLog = () => {
@@ -2843,6 +3323,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const todayDate = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${todayDate}_${businessPrefix}_업무일지.xlsx`);
     };
+
+    const depositListFnRef = useRef<() => void>(() => {});
+    depositListFnRef.current = handleDownloadDepositList;
+    const workLogFnRef = useRef<() => void>(() => {});
+    workLogFnRef.current = handleDownloadWorkLog;
+    const onRegisterActionsRef = useRef(onRegisterActions);
+    onRegisterActionsRef.current = onRegisterActions;
+    useEffect(() => {
+        onRegisterActionsRef.current?.({
+            downloadDepositList: () => depositListFnRef.current(),
+            downloadWorkLog: () => workLogFnRef.current(),
+        });
+    // 마운트 시 1회만 실행 - onRegisterActions dep 변경 시 재실행하면 setActions 루프 발생
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleDownloadOrderSummary = (data: { company: string; orderCount: number; deposit: number; margin: number }[]) => {
         if (data.length === 0) return;
@@ -3166,6 +3661,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     };
 
+    toggleCompanyClosedRef.current = handleToggleClosed;
+    toggleCompanyRecordRef.current = (companyName: string) => {
+        recordedCompanies.has(companyName)
+            ? handleDeleteTodayRecord(new Set([companyName]))
+            : handleSaveToSalesHistory(new Set([companyName]));
+    };
+
     const grandTotal = (Object.values(totalsMap) as number[]).reduce((a: number, b: number) => a + b, 0) +
                        manualTransfers.reduce((a: number, b: ManualTransfer) => a + b.amount, 0);
 
@@ -3323,6 +3825,161 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     return (
         <div className="space-y-6 animate-fade-in">
+            {/* 입금목록 추가 입력 모달 */}
+            {showDepositModal && createPortal(
+                <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowDepositModal(false); }}>
+                    <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+                            <div>
+                                <h3 className="text-white font-black text-sm">입금목록 다운로드</h3>
+                                <p className="text-zinc-500 text-[11px] mt-0.5">추가 행을 입력하고 다운로드하세요. 15행 초과 시 파일이 분할됩니다.</p>
+                            </div>
+                            <button onClick={() => setShowDepositModal(false)} className="text-zinc-500 hover:text-white transition-colors p-1">
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+                            {/* 기존 행 (삭제 가능) */}
+                            {depositBaseRows.length > 0 && (
+                                <div>
+                                    <p className="text-zinc-500 text-[11px] font-black uppercase tracking-widest mb-2">기존 입금 항목 ({depositBaseRows.length}건)</p>
+                                    <div className="bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden">
+                                        <table className="w-full text-xs">
+                                            <thead>
+                                                <tr className="text-zinc-600 text-[10px] font-black border-b border-zinc-800">
+                                                    <th className="px-3 py-2 text-left">은행</th>
+                                                    <th className="px-3 py-2 text-left">계좌번호</th>
+                                                    <th className="px-3 py-2 text-right">금액</th>
+                                                    <th className="px-3 py-2 text-left">비고</th>
+                                                    <th className="px-3 py-2 w-6" />
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-zinc-900">
+                                                {depositBaseRows.map((r, i) => (
+                                                    <tr key={i} className="text-zinc-400 group">
+                                                        <td className="px-3 py-1.5">{r[0]}</td>
+                                                        <td className="px-3 py-1.5 font-mono">{r[1]}</td>
+                                                        <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400">{Number(r[2]).toLocaleString()}</td>
+                                                        <td className="px-3 py-1.5 text-zinc-500">{r[3]}</td>
+                                                        <td className="px-3 py-1.5">
+                                                            <button
+                                                                onClick={() => setDepositBaseRows(prev => prev.filter((_, j) => j !== i))}
+                                                                className="text-zinc-700 hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100"
+                                                            >
+                                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                            {/* 추가 행 입력 */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <p className="text-zinc-500 text-[11px] font-black uppercase tracking-widest">추가 입력</p>
+                                    <button
+                                        onClick={() => setDepositExtraRows(prev => [...prev, { bankName: '', accountNumber: '', amount: '', label: '' }])}
+                                        className="text-[11px] font-bold text-violet-400 hover:text-violet-300 transition-colors px-2 py-1 rounded-lg bg-violet-500/10 hover:bg-violet-500/20"
+                                    >
+                                        + 행 추가
+                                    </button>
+                                </div>
+                                <div className="space-y-2">
+                                    {depositExtraRows.map((row, idx) => (
+                                        <div key={idx} className="flex gap-2 items-center">
+                                            <input
+                                                type="text"
+                                                placeholder="은행"
+                                                value={row.bankName}
+                                                onChange={e => setDepositExtraRows(prev => prev.map((r, i) => i === idx ? { ...r, bankName: e.target.value } : r))}
+                                                className="w-20 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-white placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 outline-none"
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="계좌번호"
+                                                value={row.accountNumber}
+                                                onChange={e => setDepositExtraRows(prev => prev.map((r, i) => i === idx ? { ...r, accountNumber: e.target.value } : r))}
+                                                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-white font-mono placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 outline-none"
+                                            />
+                                            <input
+                                                type="number"
+                                                placeholder="금액"
+                                                value={row.amount}
+                                                onChange={e => setDepositExtraRows(prev => prev.map((r, i) => i === idx ? { ...r, amount: e.target.value } : r))}
+                                                className="w-28 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-white placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 outline-none"
+                                            />
+                                            <input
+                                                type="text"
+                                                placeholder="비고"
+                                                value={row.label}
+                                                onChange={e => setDepositExtraRows(prev => prev.map((r, i) => i === idx ? { ...r, label: e.target.value } : r))}
+                                                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-2 py-1.5 text-xs text-white placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 outline-none"
+                                            />
+                                            <button
+                                                onClick={() => setDepositExtraRows(prev => prev.filter((_, i) => i !== idx))}
+                                                className="text-zinc-600 hover:text-rose-400 transition-colors p-1 flex-shrink-0"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                {/* 벌크 붙여넣기 */}
+                                <div className="mt-3">
+                                    <p className="text-zinc-600 text-[10px] font-bold mb-1.5">엑셀에서 복사 후 여기에 붙여넣기 (열 순서: 은행 / 계좌번호 / 금액 / 비고)</p>
+                                    <textarea
+                                        rows={3}
+                                        placeholder={"우리\t1002-123-456789\t500000\t업체명\n하나\t111-222-333333\t300000\t다른업체"}
+                                        className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-zinc-300 font-mono placeholder-zinc-700 focus:ring-1 focus:ring-violet-500/30 outline-none resize-none"
+                                        onPaste={e => {
+                                            e.preventDefault();
+                                            const text = e.clipboardData.getData('text');
+                                            const newRows = text.trim().split('\n').flatMap(line => {
+                                                const cols = line.split('\t');
+                                                if (cols.length < 2) return [];
+                                                return [{ bankName: cols[0]?.trim() || '', accountNumber: cols[1]?.trim() || '', amount: cols[2]?.trim() || '', label: cols[3]?.trim() || '' }];
+                                            });
+                                            if (newRows.length > 0) setDepositExtraRows(prev => [...prev.filter(r => r.bankName || r.accountNumber || r.amount), ...newRows]);
+                                        }}
+                                    />
+                                </div>
+                            </div>
+                            {/* 총합 미리보기 */}
+                            {(() => {
+                                const extraValid = depositExtraRows.filter(r => r.bankName || r.accountNumber || r.amount);
+                                const totalRows = depositBaseRows.length + extraValid.length;
+                                const totalAmount = depositBaseRows.reduce((s, r) => s + (Number(r[2]) || 0), 0)
+                                    + extraValid.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+                                const fileCount = Math.ceil(totalRows / 15) || 1;
+                                return (
+                                    <div className="bg-zinc-800/50 rounded-xl px-4 py-3 flex items-center justify-between">
+                                        <div className="flex items-center gap-4 text-[11px]">
+                                            <span className="text-zinc-500 font-bold">총 <span className="text-white">{totalRows}건</span></span>
+                                            <span className="text-zinc-500 font-bold">합계 <span className="text-emerald-400 font-black">{totalAmount.toLocaleString()}원</span></span>
+                                        </div>
+                                        {fileCount > 1 && (
+                                            <span className="text-amber-400 text-[11px] font-black">{fileCount}개 파일로 분할</span>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+                        <div className="px-6 py-4 border-t border-zinc-800 flex justify-end gap-2">
+                            <button onClick={() => setShowDepositModal(false)} className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all">
+                                취소
+                            </button>
+                            <button onClick={handleDepositModalDownload} className="flex items-center gap-2 px-5 py-2 text-xs font-black text-white bg-violet-600 hover:bg-violet-500 rounded-xl transition-all">
+                                <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                다운로드
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            , document.body)}
+
             <div>
                 <section className="glass rounded-[1.8rem] p-6 shadow-xl">
                     <div className="flex flex-col gap-6">
@@ -3330,223 +3987,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 </section>
             </div>
 
-            {masterOrderFile && masterProductSummary && (
-                <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 shadow-inner animate-pop-in">
-                    {(() => {
-                        const add = additionalRoundsSummary;
-                        const has2 = !!add && add.rounds.length > 0;
-                        const rounds = add?.rounds || [];
-                        // 1차 플랫폼 약어
-                        const masterPlatform = uploadedPlatforms.length > 0 ? uploadedPlatforms[0].name : '쿠팡';
-                        const roundPlatforms = [masterPlatform, ...rounds.map(r => r.platform || '쿠팡')];
-                        // 플랫폼 약어 매핑
-                        const platformAbbr = (p: string) => {
-                            const n = p.replace(/\s/g, '');
-                            if (n === '쿠팡') return 'C';
-                            if (n.startsWith('토스') || n === 'toss') return 'T';
-                            if (n.startsWith('지마켓') || n === 'gmarket') return 'G';
-                            if (n.startsWith('옥션') || n === 'auction') return 'A';
-                            if (n.startsWith('네이버') || n === 'naver') return 'N';
-                            if (n.startsWith('11번가') || n === '11st') return '11';
-                            if (n.startsWith('위메프') || n === 'wemakeprice') return 'W';
-                            if (n.startsWith('인터파크') || n === 'interpark') return 'I';
-                            return p.charAt(0).toUpperCase();
-                        };
-                        const platformColor = (p: string) => {
-                            const n = p.replace(/\s/g, '');
-                            if (n === '쿠팡') return 'text-rose-400';
-                            if (n.startsWith('토스') || n === 'toss') return 'text-blue-400';
-                            if (n.startsWith('지마켓') || n === 'gmarket') return 'text-green-400';
-                            return 'text-purple-400';
-                        };
-                        const fmtTotal = (base: number, extras: number[]) =>
-                            has2 ? `${platformAbbr(roundPlatforms[0])}${base}건${extras.map((e, i) => `+${platformAbbr(roundPlatforms[i + 1])}${e}건`).join('')}` : `${platformAbbr(roundPlatforms[0])}${base}건`;
-                        const renderExtras = (extras: number[]) => extras.map((e, i) => (
-                            <span key={i} className={e > 0 ? 'text-cyan-400' : 'text-zinc-700'}>+<span className={e > 0 ? platformColor(roundPlatforms[i + 1]) : 'text-zinc-700'}>{platformAbbr(roundPlatforms[i + 1])}</span>{e}건</span>
-                        ));
-                        const fmtCountFromExtras = (base: number, extras: number[]) => {
-                            const baseColor = base > 0 ? platformColor(roundPlatforms[0]) : 'text-zinc-700';
-                            if (!has2) return <span className="font-black ml-1"><span className={baseColor}>{platformAbbr(roundPlatforms[0])}</span>{base}건</span>;
-                            return <span className="font-black ml-1"><span className={baseColor}>{platformAbbr(roundPlatforms[0])}</span>{base}건{renderExtras(extras)}</span>;
-                        };
-                        const realExtrasFor = (name: string) => rounds.map(r => r.realByGroup[name] || 0);
-                        const fakeExtrasFor = (name: string) => rounds.map(r => r.fakeByGroup[name] || 0);
-                        const masterExtrasFor = (name: string) => rounds.map(r => (r.realByGroup[name] || 0) + (r.fakeByGroup[name] || 0));
-                        const realTotalExtras = rounds.map(r => r.realTotal);
-                        const fakeTotalExtras = rounds.map(r => r.fakeTotal);
-                        const masterTotalExtras = rounds.map(r => r.realTotal + r.fakeTotal);
-                        // 2차+에만 존재하는 품목 수집
-                        const extraOnlyGroups = new Set<string>();
-                        if (has2) {
-                            rounds.forEach(r => {
-                                Object.keys(r.realByGroup).forEach(g => {
-                                    if (!masterProductSummary.realOrders[g] && !masterProductSummary.fakeOrders[g]) extraOnlyGroups.add(g);
-                                });
-                                Object.keys(r.fakeByGroup).forEach(g => {
-                                    if (!masterProductSummary.realOrders[g] && !masterProductSummary.fakeOrders[g]) extraOnlyGroups.add(g);
-                                });
-                            });
-                        }
-                        const extraGroupCompany = (g: string) => add?.groupToCompany?.[g] || masterProductSummary.productToCompany[g] || '기타';
-                        return (
-                        <div className="flex gap-6 items-start">
-                            <div className="flex-1 min-w-0">
-                                <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({fmtTotal(masterProductSummary.masterRawTotalQty, masterTotalExtras)})</div>
-                                <div>
-                                    {(() => {
-                                        const qtyByProduct: Record<string, number> = {};
-                                        masterProductSummary.allOrderDetails.forEach((d: any) => {
-                                            if (d.groupName) qtyByProduct[d.groupName] = (qtyByProduct[d.groupName] || 0) + d.qty;
-                                        });
-                                        const grouped: Record<string, [string, number][]> = {};
-                                        Object.entries(qtyByProduct).forEach(([name, qty]) => {
-                                            const company = masterProductSummary.productToCompany[name] || '기타';
-                                            if (!grouped[company]) grouped[company] = [];
-                                            grouped[company].push([name, qty]);
-                                        });
-                                        // 2차+에만 있는 품목 추가
-                                        extraOnlyGroups.forEach(g => {
-                                            const company = extraGroupCompany(g);
-                                            if (!grouped[company]) grouped[company] = [];
-                                            grouped[company].push([g, 0]);
-                                        });
-                                        const masterFmtCount = (base: number, groupName: string) => fmtCountFromExtras(base, masterExtrasFor(groupName));
-                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
-                                            <div key={company}>
-                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
-                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, qty]) => (
-                                                    <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
-                                                        <span className="text-zinc-400">{name}</span>
-                                                        <span className="text-sky-300">{masterFmtCount(qty, name)}</span>
-                                                                                                            </div>
-                                                ))}
-                                            </div>
-                                        ));
-                                    })()}
-                                </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, realTotalExtras)})</div>
-                                <div>
-                                    {(() => {
-                                        const grouped: Record<string, [string, number][]> = {};
-                                        Object.entries(masterProductSummary.realOrders).forEach(([name, count]) => {
-                                            const company = masterProductSummary.productToCompany[name] || '기타';
-                                            if (!grouped[company]) grouped[company] = [];
-                                            grouped[company].push([name, count as number]);
-                                        });
-                                        // 2차+에만 있는 품목 추가 (1차 실제구매 0건)
-                                        extraOnlyGroups.forEach(g => {
-                                            const company = extraGroupCompany(g);
-                                            if (!grouped[company]) grouped[company] = [];
-                                            grouped[company].push([g, 0]);
-                                        });
-                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
-                                            <div key={company}>
-                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
-                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
-                                                    <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
-                                                        <span className="text-zinc-400">{name}</span>
-                                                        <span className="text-white font-black">{fmtCountFromExtras(count, realExtrasFor(name))}</span>
-                                                                                                            </div>
-                                                ))}
-                                            </div>
-                                        ));
-                                    })()}
-                                </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <div className="text-xs font-black text-pink-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, fakeTotalExtras)})</div>
-                                <div>
-                                    {(() => {
-                                        const grouped: Record<string, [string, number][]> = {};
-                                        Object.entries(masterProductSummary.realOrders).forEach(([name]) => {
-                                            const company = masterProductSummary.productToCompany[name] || '기타';
-                                            if (!grouped[company]) grouped[company] = [];
-                                            const fakeCount = (masterProductSummary.fakeOrders[name] as number) || 0;
-                                            grouped[company].push([name, fakeCount]);
-                                        });
-                                        Object.entries(masterProductSummary.fakeOrders).forEach(([name, cnt]) => {
-                                            if (!masterProductSummary.realOrders[name]) {
-                                                const company = masterProductSummary.productToCompany[name] || '기타';
-                                                if (!grouped[company]) grouped[company] = [];
-                                                grouped[company].push([name, cnt as number]);
-                                            }
-                                        });
-                                        // 2차+에만 있는 품목 추가 (1차 가구매 0건)
-                                        extraOnlyGroups.forEach(g => {
-                                            const company = extraGroupCompany(g);
-                                            if (!grouped[company]) grouped[company] = [];
-                                            // 실제구매에서 이미 추가한 경우 중복 방지
-                                            if (!grouped[company].some(([n]) => n === g)) {
-                                                grouped[company].push([g, 0]);
-                                            }
-                                        });
-                                        return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
-                                            <div key={company}>
-                                                <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
-                                                {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
-                                                    <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
-                                                        <span className="text-zinc-400">{name}</span>
-                                                        <span className={`font-black ${count > 0 ? 'text-pink-400' : 'text-zinc-700'}`}>{fmtCountFromExtras(count, fakeExtrasFor(name))}</span>
-                                                                                                            </div>
-                                                ))}
-                                            </div>
-                                        ));
-                                    })()}
-                                </div>
-                            </div>
-                        </div>
-                        );
-                    })()}
-                    {masterProductSummary.allOrderDetails.length > 0 && (
-                        <details className="mt-3">
-                            <summary className="text-[10px] font-black text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors select-none">
-                                ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal}건` : ''})
-                            </summary>
-                            <div className="mt-1 max-h-[300px] overflow-auto custom-scrollbar space-y-2 bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
-                                {(() => {
-                                    const details = masterProductSummary.allOrderDetails;
-                                    const grouped: Record<string, typeof details> = {};
-                                    details.forEach(d => {
-                                        const key = d.company || '미매칭';
-                                        if (!grouped[key]) grouped[key] = [];
-                                        grouped[key].push(d);
-                                    });
-                                    return Object.entries(grouped)
-                                        .sort(([a], [b]) => a === '미매칭' ? 1 : b === '미매칭' ? -1 : b.localeCompare(a))
-                                        .map(([company, orders]) => {
-                                        const realCount = orders.filter(o => !o.isFake).reduce((s, o) => s + o.qty, 0);
-                                        const fakeCount = orders.filter(o => o.isFake).reduce((s, o) => s + o.qty, 0);
-                                        return (
-                                            <div key={company}>
-                                                <div className="text-[11px] font-black text-zinc-300 flex items-center gap-2">
-                                                    <span className={company === '미매칭' ? 'text-red-400' : ''}>{company}</span>
-                                                    <span className="text-zinc-600">{realCount}건{fakeCount > 0 ? ` + 가구매 ${fakeCount}건` : ''}</span>
-                                                </div>
-                                                <div className="space-y-0.5 mt-0.5">
-                                                    {orders.map((o, idx) => (
-                                                        <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-pink-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
-                                                            <span className="min-w-[50px]">{o.recipientName}</span>
-                                                            <span className="text-zinc-600">{o.groupName}</span>
-                                                            <span className="truncate">{o.productName}</span>
-                                                            {o.qty > 1 && <span className="text-white font-bold">x{o.qty}</span>}
-                                                            {o.isFake && <span className="text-pink-500/50 text-[8px]">가구매</span>}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        );
-                                    });
-                                })()}
-                            </div>
-                        </details>
-                    )}
-                </div>
-            )}
-
             {/* 사이드바 포탈: 수동 발주 + 발주서 업로드 + 가구매 명단 */}
-            {isCurrent && document.getElementById('manual-order-portal') && createPortal(
+            {isCurrent && document.getElementById(portalId || 'manual-order-portal') && createPortal(
                 <>
                 {/* 1) 수동 발주 추가 */}
                 <details className="glass-light rounded-2xl mb-3 group/manual">
@@ -3801,7 +4243,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     {masterOrderFile && masterOrderData && (() => {
                         // 차수별 K값 소스 계산
                         const batchRounds = [...new Set(
-                            Object.values(companySessions).flat()
+                            (Object.values(companySessions).flat() as SessionData[])
                                 .filter(s => !!batchFiles[s.id])
                                 .map(s => s.round)
                         )].sort((a, b) => a - b);
@@ -3809,7 +4251,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         const activeRound = kReplaceRound ?? 1;
                         const roundRows: any[][] = activeRound === 1
                             ? masterOrderData.slice(1)
-                            : Object.values(companySessions).flat()
+                            : (Object.values(companySessions).flat() as SessionData[])
                                 .filter(s => s.round === activeRound && !!batchFiles[s.id])
                                 .flatMap(s => batchMasterRows[s.id] || []);
                         const uniqueKValues = ([...new Set(
@@ -3972,7 +4414,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <div className="bg-zinc-950 rounded-2xl border border-dashed border-zinc-700 hover:border-rose-500/50 transition-all overflow-hidden">
                             {(() => {
                                 const roundMap = new Map<number, string>();
-                                Object.entries(batchFiles).forEach(([sessionId, file]) => {
+                                (Object.entries(batchFiles) as [string, File][]).forEach(([sessionId, file]) => {
                                     const match = sessionId.match(/-batch-(\d+)-/);
                                     if (match) {
                                         const round = parseInt(match[1]);
@@ -3992,7 +4434,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     </div>
                                 ) : null;
                             })()}
-                            <input ref={batchFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleBatchUpload(f); e.target.value = ''; } }} />
+                            <input ref={batchFileInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleBatchUpload(f).catch(err => alert(err?.message || '배치 업로드 오류')); e.target.value = ''; } }} />
                             <button onClick={() => batchFileInputRef.current?.click()} className="w-full flex items-center justify-center gap-2 py-1.5 text-[10px] font-black text-zinc-500 hover:text-rose-400 transition-colors">
                                 <PlusCircleIcon className="w-3.5 h-3.5" />
                                 <span>{(() => { let max = 0; (Object.values(companySessions) as SessionData[][]).forEach(ss => ss.forEach(s => { if (s.round > max) max = s.round; })); return `${max + 1}차 주문서 일괄 업로드`; })()}</span>
@@ -4008,14 +4450,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <div className="bg-violet-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-violet-400" /></div>
                             <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-1.5">
                                 가구매 명단 설정
+                                {globalFakeOrderInput?.trim() && (
+                                    <span className="text-[9px] bg-violet-900/40 text-violet-400 border border-violet-500/30 px-1.5 py-0.5 rounded-full font-black">전역</span>
+                                )}
                                 {fakeOrderAnalysis.inputLineCount > 0 && (
                                     <div className="flex gap-1 flex-wrap">
                                         <span className="bg-zinc-800 text-zinc-400 text-[11px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700 font-black">
                                             총 {fakeOrderAnalysis.inputLineCount}명
                                         </span>
-                                        <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                            매칭 {fakeOrderAnalysis.matched.length}
-                                        </span>
+                                        {fakeOrderAnalysis.matched.length > 0 && (
+                                            <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
+                                                매칭 {fakeOrderAnalysis.matched.length}
+                                            </span>
+                                        )}
                                         {fakeOrderAnalysis.missing.length > 0 && (
                                             <span className="bg-rose-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
                                                 미발견 {fakeOrderAnalysis.missing.length}
@@ -4153,11 +4600,42 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     )}
 
                     <div className="flex flex-col gap-3">
-                        <textarea
-                            value={fakeOrderInput} onChange={(e: any) => setFakeOrderInput(e.target.value)}
-                            placeholder="예: 홍길동 20231010-00001"
-                            className="w-full min-h-[80px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar"
-                        />
+                        <div className="flex flex-col gap-1">
+                            <span className="text-[9px] text-violet-400 font-black uppercase tracking-widest">가구매 명단</span>
+                            <textarea
+                                value={effectiveFakeInput}
+                                onChange={(e: any) => { if (!globalFakeOrderInput?.trim()) setFakeOrderInput(e.target.value); }}
+                                readOnly={!!globalFakeOrderInput?.trim()}
+                                placeholder="예: 홍길동 20231010-00001"
+                                className={`w-full min-h-[80px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar ${globalFakeOrderInput?.trim() ? 'opacity-70 cursor-default' : ''}`}
+                            />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-[9px] text-amber-400 font-black uppercase tracking-widest">미발송 명단</span>
+                                {unsentOrderAnalysis.inputLineCount > 0 && (
+                                    <>
+                                        {unsentOrderAnalysis.matched.length > 0 && (
+                                            <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black animate-pop-in">
+                                                매칭 {unsentOrderAnalysis.matched.length}
+                                            </span>
+                                        )}
+                                        {unsentOrderAnalysis.missing.length > 0 && (
+                                            <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black animate-pop-in">
+                                                미발견 {unsentOrderAnalysis.missing.length}
+                                            </span>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                            <textarea
+                                value={effectiveUnsentInput}
+                                onChange={(e: any) => { if (!globalUnsentOrderInput?.trim()) setUnsentOrderInput(e.target.value); }}
+                                readOnly={!!globalUnsentOrderInput?.trim()}
+                                placeholder="예: 홍길동 20231010-00001"
+                                className={`w-full min-h-[80px] bg-zinc-950 border border-amber-900/30 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-amber-500/50 resize-none custom-scrollbar ${globalUnsentOrderInput?.trim() ? 'opacity-70 cursor-default' : ''}`}
+                            />
+                        </div>
                         <div className="space-y-2">
                             {courierTemplates.length === 0 && (
                                 <div className="text-center py-2 text-zinc-600 text-[9px] font-black border border-dashed border-zinc-800 rounded-xl cursor-pointer hover:border-pink-500/30 hover:text-pink-500 transition-colors" onClick={() => setShowTemplateManager(true)}>
@@ -4610,84 +5088,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     )}
                 </div>
                 </>,
-                document.getElementById('manual-order-portal')!
+                document.getElementById(portalId || 'manual-order-portal')!
             )}
 
             <div className="sticky top-0 z-30 rounded-2xl px-4 py-2.5 shadow-2xl backdrop-blur-2xl bg-zinc-950/70 border border-zinc-800/40">
                 <div className="flex flex-wrap items-center gap-2">
-                    <button onClick={handleDownloadMergedUploadInvoices} disabled={selectedSessionIds.size === 0} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95 disabled:opacity-25 disabled:cursor-not-allowed">
-                        <BoltIcon className="w-3.5 h-3.5" /><span>송장 병합</span>{selectedSessionIds.size > 0 && <span className="bg-zinc-700/60 text-[10px] px-1.5 py-0.5 rounded-full">{selectedSessionIds.size}</span>}
-                    </button>
-                    <button
-                        onClick={() => setShowSelectedSummaryModal(true)}
-                        disabled={selectedSessionIds.size === 0}
-                        className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95 disabled:opacity-25 disabled:cursor-not-allowed"
-                    >
-                        <ChartBarIcon className="w-3.5 h-3.5" /><span>정산요약</span>{selectedSessionIds.size > 0 && <span className="bg-zinc-700/60 text-[10px] px-1.5 py-0.5 rounded-full">{selectedSessionIds.size}</span>}
-                    </button>
                     <button onClick={handleDownloadDepositList} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95">
                         <ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>입금목록</span>
                     </button>
                     <button onClick={handleDownloadWorkLog} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95">
                         <ClipboardDocumentCheckIcon className="w-3.5 h-3.5" /><span>업무일지</span>
                     </button>
-                    {companySummaryData.length > 0 && <>
-                        <button onClick={() => handleCopyOrderSummary(companySummaryData)} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95" title="업체별 현황 엑셀용 복사">
-                            <DocumentCheckIcon className="w-3.5 h-3.5" /><span>복사</span>
-                        </button>
-                        <button onClick={() => handleDownloadOrderSummary(companySummaryData)} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95" title="업체별 현황 엑셀 다운로드">
-                            <ArrowDownTrayIcon className="w-3.5 h-3.5" /><span>요약</span>
-                        </button>
-                    </>}
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={handleDeleteTodayRecord}
-                            disabled={deleteStatus === 'deleting' || saveStatus === 'saving'}
-                            className={`group flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 active:scale-95 border ${
-                                deleteStatus === 'success'
-                                    ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                                    : deleteStatus === 'error'
-                                    ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                                    : deleteStatus === 'deleting'
-                                    ? 'bg-zinc-800/60 text-zinc-500 border-zinc-700/30 cursor-wait'
-                                    : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/30 hover:text-red-400 hover:border-red-500/30 hover:bg-red-500/10'
-                            }`}
-                        >
-                            <TrashIcon className="w-3.5 h-3.5" />
-                            <span>{
-                                deleteStatus === 'deleting' ? '삭제 중...'
-                                : deleteStatus === 'success' ? '삭제 완료!'
-                                : deleteStatus === 'error' ? '삭제 실패'
-                                : '기록 삭제'
-                            }</span>
-                        </button>
-                        <div className="flex flex-col items-end gap-1">
-                            <button
-                                onClick={handleSaveToSalesHistory}
-                                disabled={saveStatus === 'saving'}
-                                className={`group flex items-center gap-2 px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 active:scale-95 border ${
-                                    saveStatus === 'success'
-                                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                                        : saveStatus === 'error'
-                                        ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                                        : saveStatus === 'saving'
-                                        ? 'bg-zinc-800/60 text-zinc-500 border-zinc-700/30 cursor-wait'
-                                        : 'bg-zinc-800/60 text-zinc-400 border-zinc-700/30 hover:text-white hover:border-zinc-600 hover:bg-zinc-700/60'
-                                }`}
-                            >
-                                <ChartBarIcon className="w-3.5 h-3.5" />
-                                <span>{
-                                    saveStatus === 'saving' ? '저장 중...'
-                                    : saveStatus === 'success' ? '기록 완료!'
-                                    : saveStatus === 'error' ? '저장 실패'
-                                    : '기록하기'
-                                }</span>
-                            </button>
-                            {saveStatus === 'error' && saveError && (
-                                <span className="text-red-400 text-[10px] font-bold max-w-[200px] text-right">{saveError}</span>
-                            )}
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -4772,6 +5183,221 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         ) : null;
                     })()}
                 </div>
+                {masterOrderFile && masterProductSummary && (
+                    <div className="bg-zinc-950 p-4 rounded-2xl border border-zinc-800 shadow-inner animate-pop-in">
+                        {(() => {
+                            const add = additionalRoundsSummary;
+                            const has2 = !!add && add.rounds.length > 0;
+                            const rounds = add?.rounds || [];
+                            // 1차 플랫폼 약어
+                            const masterPlatform = uploadedPlatforms.length > 0 ? uploadedPlatforms[0].name : '쿠팡';
+                            const roundPlatforms = [masterPlatform, ...rounds.map(r => r.platform || '쿠팡')];
+                            // 플랫폼 약어 매핑
+                            const platformAbbr = (p: string) => {
+                                const n = p.replace(/\s/g, '');
+                                if (n === '쿠팡') return 'C';
+                                if (n.startsWith('토스') || n === 'toss') return 'T';
+                                if (n.startsWith('지마켓') || n === 'gmarket') return 'G';
+                                if (n.startsWith('옥션') || n === 'auction') return 'A';
+                                if (n.startsWith('네이버') || n === 'naver') return 'N';
+                                if (n.startsWith('11번가') || n === '11st') return '11';
+                                if (n.startsWith('위메프') || n === 'wemakeprice') return 'W';
+                                if (n.startsWith('인터파크') || n === 'interpark') return 'I';
+                                return p.charAt(0).toUpperCase();
+                            };
+                            const platformColor = (p: string) => {
+                                const n = p.replace(/\s/g, '');
+                                if (n === '쿠팡') return 'text-rose-400';
+                                if (n.startsWith('토스') || n === 'toss') return 'text-blue-400';
+                                if (n.startsWith('지마켓') || n === 'gmarket') return 'text-green-400';
+                                return 'text-purple-400';
+                            };
+                            const fmtTotal = (base: number, extras: number[]) =>
+                                has2 ? `${platformAbbr(roundPlatforms[0])}${base}건${extras.map((e, i) => `+${platformAbbr(roundPlatforms[i + 1])}${e}건`).join('')}` : `${platformAbbr(roundPlatforms[0])}${base}건`;
+                            const renderExtras = (extras: number[]) => extras.map((e, i) => (
+                                <span key={i} className={e > 0 ? 'text-cyan-400' : 'text-zinc-700'}>+<span className={e > 0 ? platformColor(roundPlatforms[i + 1]) : 'text-zinc-700'}>{platformAbbr(roundPlatforms[i + 1])}</span>{e}건</span>
+                            ));
+                            const fmtCountFromExtras = (base: number, extras: number[]) => {
+                                const baseColor = base > 0 ? platformColor(roundPlatforms[0]) : 'text-zinc-700';
+                                if (!has2) return <span className="font-black ml-1"><span className={baseColor}>{platformAbbr(roundPlatforms[0])}</span>{base}건</span>;
+                                return <span className="font-black ml-1"><span className={baseColor}>{platformAbbr(roundPlatforms[0])}</span>{base}건{renderExtras(extras)}</span>;
+                            };
+                            const realExtrasFor = (name: string) => rounds.map(r => r.realByGroup[name] || 0);
+                            const fakeExtrasFor = (name: string) => rounds.map(r => r.fakeByGroup[name] || 0);
+                            const masterExtrasFor = (name: string) => rounds.map(r => (r.realByGroup[name] || 0) + (r.fakeByGroup[name] || 0));
+                            const realTotalExtras = rounds.map(r => r.realTotal);
+                            const fakeTotalExtras = rounds.map(r => r.fakeTotal);
+                            const masterTotalExtras = rounds.map(r => r.realTotal + r.fakeTotal);
+                            // 2차+에만 존재하는 품목 수집
+                            const extraOnlyGroups = new Set<string>();
+                            if (has2) {
+                                rounds.forEach(r => {
+                                    Object.keys(r.realByGroup).forEach(g => {
+                                        if (!masterProductSummary.realOrders[g] && !masterProductSummary.fakeOrders[g]) extraOnlyGroups.add(g);
+                                    });
+                                    Object.keys(r.fakeByGroup).forEach(g => {
+                                        if (!masterProductSummary.realOrders[g] && !masterProductSummary.fakeOrders[g]) extraOnlyGroups.add(g);
+                                    });
+                                });
+                            }
+                            const extraGroupCompany = (g: string) => add?.groupToCompany?.[g] || masterProductSummary.productToCompany[g] || '기타';
+                            return (
+                            <div className="flex gap-6 items-start">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-black text-sky-400 uppercase tracking-widest mb-1">마스터 구매수량 ({fmtTotal(masterProductSummary.masterRawTotalQty, masterTotalExtras)})</div>
+                                    <div>
+                                        {(() => {
+                                            const qtyByProduct: Record<string, number> = {};
+                                            masterProductSummary.allOrderDetails.forEach((d: any) => {
+                                                if (d.groupName) qtyByProduct[d.groupName] = (qtyByProduct[d.groupName] || 0) + d.qty;
+                                            });
+                                            const grouped: Record<string, [string, number][]> = {};
+                                            Object.entries(qtyByProduct).forEach(([name, qty]) => {
+                                                const company = masterProductSummary.productToCompany[name] || '기타';
+                                                if (!grouped[company]) grouped[company] = [];
+                                                grouped[company].push([name, qty]);
+                                            });
+                                            // 2차+에만 있는 품목 추가
+                                            extraOnlyGroups.forEach(g => {
+                                                const company = extraGroupCompany(g);
+                                                if (!grouped[company]) grouped[company] = [];
+                                                grouped[company].push([g, 0]);
+                                            });
+                                            const masterFmtCount = (base: number, groupName: string) => fmtCountFromExtras(base, masterExtrasFor(groupName));
+                                            return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
+                                                <div key={company}>
+                                                    <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
+                                                    {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, qty]) => (
+                                                        <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
+                                                            <span className="text-zinc-400">{name}</span>
+                                                            <span className="text-sky-300">{masterFmtCount(qty, name)}</span>
+                                                                                                                </div>
+                                                    ))}
+                                                </div>
+                                            ));
+                                        })()}
+                                    </div>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-black text-emerald-400 uppercase tracking-widest mb-1">실제 구매 ({fmtTotal(masterProductSummary.realTotal, realTotalExtras)})</div>
+                                    <div>
+                                        {(() => {
+                                            const grouped: Record<string, [string, number][]> = {};
+                                            Object.entries(masterProductSummary.realOrders).forEach(([name, count]) => {
+                                                const company = masterProductSummary.productToCompany[name] || '기타';
+                                                if (!grouped[company]) grouped[company] = [];
+                                                grouped[company].push([name, count as number]);
+                                            });
+                                            // 2차+에만 있는 품목 추가 (1차 실제구매 0건)
+                                            extraOnlyGroups.forEach(g => {
+                                                const company = extraGroupCompany(g);
+                                                if (!grouped[company]) grouped[company] = [];
+                                                grouped[company].push([g, 0]);
+                                            });
+                                            return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
+                                                <div key={company}>
+                                                    <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
+                                                    {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
+                                                        <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
+                                                            <span className="text-zinc-400">{name}</span>
+                                                            <span className="text-white font-black">{fmtCountFromExtras(count, realExtrasFor(name))}</span>
+                                                                                                                </div>
+                                                    ))}
+                                                </div>
+                                            ));
+                                        })()}
+                                    </div>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-xs font-black text-pink-400 uppercase tracking-widest mb-1">가구매 ({fmtTotal(masterProductSummary.fakeTotal, fakeTotalExtras)})</div>
+                                    <div>
+                                        {(() => {
+                                            const grouped: Record<string, [string, number][]> = {};
+                                            Object.entries(masterProductSummary.realOrders).forEach(([name]) => {
+                                                const company = masterProductSummary.productToCompany[name] || '기타';
+                                                if (!grouped[company]) grouped[company] = [];
+                                                const fakeCount = (masterProductSummary.fakeOrders[name] as number) || 0;
+                                                grouped[company].push([name, fakeCount]);
+                                            });
+                                            Object.entries(masterProductSummary.fakeOrders).forEach(([name, cnt]) => {
+                                                if (!masterProductSummary.realOrders[name]) {
+                                                    const company = masterProductSummary.productToCompany[name] || '기타';
+                                                    if (!grouped[company]) grouped[company] = [];
+                                                    grouped[company].push([name, cnt as number]);
+                                                }
+                                            });
+                                            // 2차+에만 있는 품목 추가 (1차 가구매 0건)
+                                            extraOnlyGroups.forEach(g => {
+                                                const company = extraGroupCompany(g);
+                                                if (!grouped[company]) grouped[company] = [];
+                                                // 실제구매에서 이미 추가한 경우 중복 방지
+                                                if (!grouped[company].some(([n]) => n === g)) {
+                                                    grouped[company].push([g, 0]);
+                                                }
+                                            });
+                                            return Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([company, items]) => (
+                                                <div key={company}>
+                                                    <div className="text-[11px] text-zinc-500 font-black mt-1">{company}</div>
+                                                    {items.sort(([a], [b]) => a.localeCompare(b, 'ko')).map(([name, count]) => (
+                                                        <div key={name} className="flex text-sm gap-1 pl-2 items-baseline">
+                                                            <span className="text-zinc-400">{name}</span>
+                                                            <span className={`font-black ${count > 0 ? 'text-pink-400' : 'text-zinc-700'}`}>{fmtCountFromExtras(count, fakeExtrasFor(name))}</span>
+                                                                                                                </div>
+                                                    ))}
+                                                </div>
+                                            ));
+                                        })()}
+                                    </div>
+                                </div>
+                            </div>
+                            );
+                        })()}
+                        {masterProductSummary.allOrderDetails.length > 0 && (
+                            <details className="mt-3">
+                                <summary className="text-[10px] font-black text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors select-none">
+                                    ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal}건` : ''})
+                                </summary>
+                                <div className="mt-1 max-h-[300px] overflow-auto custom-scrollbar space-y-2 bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
+                                    {(() => {
+                                        const details = masterProductSummary.allOrderDetails;
+                                        const grouped: Record<string, typeof details> = {};
+                                        details.forEach(d => {
+                                            const key = d.company || '미매칭';
+                                            if (!grouped[key]) grouped[key] = [];
+                                            grouped[key].push(d);
+                                        });
+                                        return Object.entries(grouped)
+                                            .sort(([a], [b]) => a === '미매칭' ? 1 : b === '미매칭' ? -1 : b.localeCompare(a))
+                                            .map(([company, orders]) => {
+                                            const realCount = orders.filter(o => !o.isFake).reduce((s, o) => s + o.qty, 0);
+                                            const fakeCount = orders.filter(o => o.isFake).reduce((s, o) => s + o.qty, 0);
+                                            return (
+                                                <div key={company}>
+                                                    <div className="text-[11px] font-black text-zinc-300 flex items-center gap-2">
+                                                        <span className={company === '미매칭' ? 'text-red-400' : ''}>{company}</span>
+                                                        <span className="text-zinc-600">{realCount}건{fakeCount > 0 ? ` + 가구매 ${fakeCount}건` : ''}</span>
+                                                    </div>
+                                                    <div className="space-y-0.5 mt-0.5">
+                                                        {orders.map((o, idx) => (
+                                                            <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-pink-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
+                                                                <span className="min-w-[50px]">{o.recipientName}</span>
+                                                                <span className="text-zinc-600">{o.groupName}</span>
+                                                                <span className="truncate">{o.productName}</span>
+                                                                {o.qty > 1 && <span className="text-white font-bold">x{o.qty}</span>}
+                                                                {o.isFake && <span className="text-pink-500/50 text-[8px]">가구매</span>}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </details>
+                        )}
+                    </div>
+                )}
+
                 <AutoWatcherPanel
                     masterOrderFile={masterOrderFile}
                     pricingConfig={pricingConfig}
@@ -4902,7 +5528,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         const isEditingDeposit = editingCell?.company === company && editingCell?.field === 'deposit';
                                         const isEditingMargin = editingCell?.company === company && editingCell?.field === 'margin';
                                         return workstationsReady ? (
-                                            <React.Fragment key={session.id}>
+                                            <React.Fragment key={`${session.id}-${workstationResetKey}`}>
                                                 <CompanyWorkstationRow
                                                     sessionId={session.id} companyName={company} roundNumber={session.round} isFirstSession={sIdx === 0} isLastSession={sIdx === (companySessions[company] || []).length - 1} pricingConfig={pricingConfig}
                                                     companySummaryBar={sIdx === 0 && showStats ? (
@@ -4948,7 +5574,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             </div>
                                                         </div>
                                                     ) : undefined}
-                                                    vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={fakeOrderInput}
+                                                    vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={[effectiveFakeInput, effectiveUnsentInput].filter(s => s.trim()).join('\n')}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}
@@ -4988,6 +5614,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     onOrderDownloaded={() => setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; })}
                                                     onInvoiceDownloaded={() => { setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; }); }}
                                                     mergedDownloaded={mergedDownloadedCompanies.has(company)}
+                                                    onWarningUpdate={handleSessionWarningUpdate}
+                                                    onEffectiveTextChange={sIdx === (companySessions[company] || []).length - 1 ? (kakaoText, excelText) => { companyLastSettlementRef.current[company] = { kakaoText, excelText }; } : undefined}
                                                 />
                                             </React.Fragment>
                                         ) : null;

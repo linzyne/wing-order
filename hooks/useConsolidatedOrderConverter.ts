@@ -713,6 +713,12 @@ const generateWorkbookForCompany = async (
         headerRow = getHeaderForCompany(companyName, companyConfig);
 
         if (outputRows.length === 0 && Object.keys(summary).length === 0) return [companyName, null];
+
+        const sortColIdx = headerRow.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'productName');
+        if (sortColIdx !== -1) {
+            outputRows.sort((a, b) => String(a[sortColIdx] || '').localeCompare(String(b[sortColIdx] || ''), 'ko'));
+        }
+
         const ws = XLSX.utils.aoa_to_sheet([headerRow, ...outputRows]);
         ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: headerRow.length - 1, r: 0 } }) };
         ws['!cols'] = headerRow.map(() => ({ wch: 15 }));
@@ -750,8 +756,8 @@ export function inferVendorInvoiceField(h: string): VendorInvoiceFieldKey {
     const lower = h.toLowerCase().replace(/\s+/g, '');
     if (lower.includes('주문번호') || lower.includes('관리번호') || lower.includes('오더번호') || lower.includes('오더넘버') || lower.includes('접수번호') || lower.includes('고객주문번호') || lower === 'id') return 'orderNumber';
     if (lower.includes('송장') || lower.includes('운송장') || lower.includes('등기') || lower.includes('배송번호') || lower.includes('화물추적') || lower.includes('트래킹') || lower.includes('tracking') || lower.includes('invoice')) return 'trackingNumber';
-    // 받는분 (전화/주소 키워드보다 먼저 체크하여 '받는분전화' 등과 구분)
-    if ((lower.includes('받는') && lower.includes('분') && !lower.includes('전화') && !lower.includes('연락') && !lower.includes('주소')) || lower.includes('수취인') || lower.includes('수령인') || lower.includes('고객명') || lower.includes('수신자')) return 'recipientName';
+    // 받는분 (전화/연락처 포함 시 제외 - '수령인연락처1' 등이 recipientName으로 잘못 분류되는 것 방지)
+    if ((lower.includes('받는') && lower.includes('분') && !lower.includes('전화') && !lower.includes('연락') && !lower.includes('주소')) || ((lower.includes('수취인') || lower.includes('수령인') || lower.includes('고객명') || lower.includes('수신자')) && !lower.includes('연락') && !lower.includes('전화'))) return 'recipientName';
     if (lower.includes('전화') || lower.includes('연락처') || lower.includes('핸드폰') || lower.includes('휴대폰') || lower.includes('hp') || lower.includes('phone') || lower.includes('mobile')) return 'recipientPhone';
     if (lower.includes('상품명') || lower.includes('품목명') || lower.includes('제품명') || lower.includes('품명')) return 'productName';
     return 'empty';
@@ -1062,15 +1068,28 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
                         const rawGroup = String(row[groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
                         // groupName이 없으면 productName(11열)으로 폴백
                         const groupVal = rawGroup || String(row[11] || '').replace(/\s+/g, '').normalize('NFC');
-                        // 모든 회사 중 키워드가 가장 앞에 매칭되는 회사 찾기
+                        // K열이 있으면 등록상품명과 완전일치만 허용 (부분일치 금지)
+                        // K열이 없으면 L열에서 부분일치 허용 (기존 동작)
                         let bestCompany = '';
                         let bestPos = Infinity;
-                        for (const [name, keywords] of allCompanyKeywords.entries()) {
-                            for (const k of keywords) {
-                                const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
-                                if (pos !== -1 && pos < bestPos) {
-                                    bestPos = pos;
-                                    bestCompany = name;
+                        if (rawGroup) {
+                            for (const [name, keywords] of allCompanyKeywords.entries()) {
+                                for (const k of keywords) {
+                                    if (rawGroup === k.replace(/\s+/g, '').normalize('NFC')) {
+                                        bestCompany = name;
+                                        break;
+                                    }
+                                }
+                                if (bestCompany) break;
+                            }
+                        } else {
+                            for (const [name, keywords] of allCompanyKeywords.entries()) {
+                                for (const k of keywords) {
+                                    const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
+                                    if (pos !== -1 && pos < bestPos) {
+                                        bestPos = pos;
+                                        bestCompany = name;
+                                    }
                                 }
                             }
                         }

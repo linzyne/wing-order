@@ -104,6 +104,8 @@ interface CompanyWorkstationRowProps {
     onOrderDownloaded?: () => void;
     onInvoiceDownloaded?: () => void;
     mergedDownloaded?: boolean;
+    onWarningUpdate?: (sessionId: string, hasWarning: boolean) => void;
+    onEffectiveTextChange?: (kakaoText: string, excelText: string) => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -127,6 +129,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     pendingOrderLight = false, pendingInvoiceLight = false,
     onOrderDownloaded, onInvoiceDownloaded,
     mergedDownloaded = false,
+    onWarningUpdate,
+    onEffectiveTextChange,
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -390,6 +394,28 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         return included.filter(n => fakeNums.has(n));
     })();
 
+    const hasWarning = (() => {
+        if (fakeOrderWarnings.length > 0) return true;
+        if (unmatchedList.length > 0) return true;
+        if (sizeMismatchItems.length > 0) return true;
+        if (missingItems.length > 0) return true;
+        if (masterExpectedCount > 0) {
+            const processedCount = (localResult as any)?.originalOrderCount
+                || Object.values(localResult?.summary || {}).reduce((a: number, b: any) => a + b.count, 0) as number
+                || (syncedData?.orderCount ?? 0);
+            const exQty = excludedList.reduce((s: number, e: any) => s + (e.qty || 1), 0);
+            const unQty = unmatchedList.reduce((s: number, u: any) => s + (u.qty || 1), 0);
+            if (masterExpectedCount > processedCount + exQty + unQty) return true;
+        }
+        return false;
+    })();
+
+    const onWarningUpdateRef = useRef(onWarningUpdate);
+    onWarningUpdateRef.current = onWarningUpdate;
+    useEffect(() => {
+        onWarningUpdateRef.current?.(sessionId, hasWarning);
+    }, [sessionId, hasWarning]);
+
     // 누적 표시 시 이전 세션 포함 전체 조정 내역 (반품/차감이 1차에 있어도 2차+ 정산요약에 반영)
     const isCumulativeView = cumulativeDepositText !== null;
     const allSessionAdjustments: typeof sessionAdjustments = isCumulativeView && previousSessionIds.length > 0
@@ -413,6 +439,24 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
         return localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel || '';
     })();
+
+    const onEffectiveTextChangeRef = useRef(onEffectiveTextChange);
+    onEffectiveTextChangeRef.current = onEffectiveTextChange;
+    useEffect(() => {
+        if (!effectiveDisplayText) return;
+        const baseTotal = isCumulativeView
+            ? Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0)
+            : Object.values((summaryOverride || localResult?.summary || syncedData?.itemSummary || {}) as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
+        const adjTotal = allSessionAdjustments.reduce((a, b) => a + b.amount, 0);
+        let kakaoText = effectiveDisplayText;
+        if (allSessionAdjustments.length > 0) {
+            const adjRows = allSessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
+            kakaoText = effectiveDisplayText
+                .replace('총 합계', `[추가/차감 내역]\n${adjRows}\n\n총 합계`)
+                .replace(/(총 합계\s+)([\d,]+)(원)/, (_m, p1, _p2, p3) => `${p1}${(baseTotal + adjTotal).toLocaleString()}${p3}`);
+        }
+        onEffectiveTextChangeRef.current?.(kakaoText, effectiveDisplayExcelText);
+    }, [effectiveDisplayText, effectiveDisplayExcelText, allSessionAdjustments]);
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig, businessId);
@@ -927,8 +971,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             title={isRecorded ? '다시 기록하기' : `${companyName} 기록하기`}
                                             className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight border transition-all ${
                                                 isRecorded
-                                                    ? 'bg-violet-500/15 text-violet-400 border-violet-500/40'
-                                                    : 'bg-transparent text-zinc-600 border-zinc-700 hover:border-violet-500/40 hover:text-violet-400'
+                                                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                                                    : 'bg-transparent text-zinc-600 border-zinc-700 hover:text-zinc-500 hover:border-zinc-600'
                                             }`}
                                         >
                                             기록
@@ -1086,21 +1130,21 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                                 {isFirstSession && (
                                     <div className="flex items-center justify-center gap-4">
-                                        <div className="text-pink-400 font-black text-xl">{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                        <div className={`font-black text-xl ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-pink-400'}`}>{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         {onDownloadMergedOrder ? (
-                                            <button onClick={() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); }} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center transition-all ${mergedOrderDownloaded ? 'bg-zinc-800 text-zinc-600' : 'bg-pink-500 text-white hover:bg-pink-600 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); }} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${mergedOrderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-cyan-900/50 text-cyan-300 hover:bg-cyan-800/70 hover:text-cyan-100 border-cyan-700/50 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         ) : (
-                                            <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center transition-all ${orderDownloaded ? 'bg-zinc-800 text-zinc-600' : 'bg-pink-500 text-white hover:bg-pink-600 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${orderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         )}
                                     </div>
                                 )}
                                 {isFirstSession ? (
                                     <div className="flex items-center justify-center gap-4">
-                                        <div className="font-black text-indigo-400 text-base">{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                        <div className={`font-black text-base ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-indigo-400'}`}>{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
-                                        <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center transition-all ${(orderDownloaded || mergedOrderDownloaded) ? 'bg-zinc-800 text-zinc-600' : 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                        <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${(orderDownloaded || mergedOrderDownloaded) ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-2 w-full">
@@ -1119,10 +1163,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="ml-auto flex items-center gap-2">
                                             <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                             <div className="h-5 w-px bg-zinc-700" />
-                                            <div className="font-black text-indigo-400 text-base">+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            <div className={`font-black text-base ${(orderDownloaded || mergedDownloaded) ? 'text-zinc-700' : 'text-indigo-400'}`}>+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                             <div className="h-6 w-px bg-zinc-800" />
                                             <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
-                                            <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center transition-all ${(orderDownloaded || mergedDownloaded) ? 'bg-zinc-800 text-zinc-600' : 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${(orderDownloaded || mergedDownloaded) ? 'bg-zinc-800 text-zinc-600 border-transparent' : roundNumber === 1 ? 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md' : roundNumber === 2 ? 'bg-sky-900/40 text-sky-300 hover:bg-sky-800/60 hover:text-sky-100 border-sky-700/40 shadow-md' : roundNumber === 3 ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 hover:text-emerald-100 border-emerald-700/40 shadow-md' : roundNumber === 4 ? 'bg-amber-900/40 text-amber-300 hover:bg-amber-800/60 hover:text-amber-100 border-amber-700/40 shadow-md' : 'bg-rose-900/40 text-rose-300 hover:bg-rose-800/60 hover:text-rose-100 border-rose-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         </div>
                                     </div>
                                 )}

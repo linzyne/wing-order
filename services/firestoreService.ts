@@ -40,8 +40,7 @@ const getCompanyOrderDocId = (businessId?: string): string =>
 // 플랫폼 감지 설정(헤더 매칭 등)은 사업자 공통이므로 항상 같은 문서 사용
 const getPlatformConfigsDocId = (_businessId?: string): string => 'platformConfigs';
 
-const getCourierTemplatesDocId = (businessId?: string): string =>
-  (!businessId || businessId === '안군농원') ? 'courierTemplates' : `courierTemplates_${businessId}`;
+const getCourierTemplatesDocId = (): string => 'courierTemplates';
 
 const getTodosDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'todos' : `todos_${businessId}`;
@@ -53,16 +52,36 @@ export const subscribePricingConfig = (
   businessId?: string
 ): Unsubscribe => {
   const docRef = doc(db, 'config', getConfigDocId(businessId));
-  return onSnapshot(docRef, (snapshot) => {
-    if (snapshot.exists()) {
-      callback(snapshot.data().data as PricingConfig, true);
-    } else {
-      callback(null, true); // 문서 없음 (초기화 필요)
-    }
-  }, (error) => {
-    console.error('[Firestore] PricingConfig 구독 오류:', error);
-    callback(null, false); // 에러 - 덮어쓰기 금지
-  });
+  let active = true;
+  let currentUnsub: Unsubscribe;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const subscribe = () => {
+    currentUnsub = onSnapshot(docRef, (snapshot) => {
+      if (!active) return;
+      if (snapshot.exists()) {
+        callback(snapshot.data().data as PricingConfig, true);
+      } else {
+        callback(null, true);
+      }
+    }, (error) => {
+      if (!active) return;
+      console.error('[Firestore] PricingConfig 구독 오류:', error);
+      callback(null, false);
+      // 구독이 종료됐으므로 2초 후 재구독 (failed-precondition 등 일시적 오류 복구)
+      retryTimer = setTimeout(() => {
+        if (active) subscribe();
+      }, 2000);
+    });
+  };
+
+  subscribe();
+
+  return () => {
+    active = false;
+    if (retryTimer) clearTimeout(retryTimer);
+    currentUnsub?.();
+  };
 };
 
 export const loadPricingConfig = async (
@@ -421,11 +440,9 @@ export const DEFAULT_FAKE_COURIER_SETTINGS: FakeCourierSettings = {
   accountNumber: '3333-18-8744855',
 };
 
-export const loadCourierTemplates = async (
-  businessId?: string
-): Promise<{ templates: CourierTemplate[]; fakeCourierSettings: FakeCourierSettings }> => {
+export const loadCourierTemplates = async (): Promise<{ templates: CourierTemplate[]; fakeCourierSettings: FakeCourierSettings }> => {
   try {
-    const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
+    const docRef = doc(db, 'config', getCourierTemplatesDocId());
     const snapshot = await getDoc(docRef);
     if (snapshot.exists()) {
       const data = snapshot.data();
@@ -440,13 +457,13 @@ export const loadCourierTemplates = async (
   return { templates: [], fakeCourierSettings: DEFAULT_FAKE_COURIER_SETTINGS };
 };
 
-export const saveCourierTemplates = async (templates: CourierTemplate[], businessId?: string): Promise<void> => {
-  const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
+export const saveCourierTemplates = async (templates: CourierTemplate[]): Promise<void> => {
+  const docRef = doc(db, 'config', getCourierTemplatesDocId());
   await setDoc(docRef, { templates, updatedAt: Timestamp.now() }, { merge: true });
 };
 
-export const saveFakeCourierSettings = async (settings: FakeCourierSettings, businessId?: string): Promise<void> => {
-  const docRef = doc(db, 'config', getCourierTemplatesDocId(businessId));
+export const saveFakeCourierSettings = async (settings: FakeCourierSettings): Promise<void> => {
+  const docRef = doc(db, 'config', getCourierTemplatesDocId());
   await setDoc(docRef, { fakeCourierSettings: settings, updatedAt: Timestamp.now() }, { merge: true });
 };
 
@@ -552,11 +569,15 @@ export const saveDynamicBusinesses = async (
 export const loadDynamicBusinesses = async (): Promise<DynamicBusinessEntry[]> => {
   try {
     const docRef = doc(db, 'config', 'dynamicBusinesses');
-    const snapshot = await getDoc(docRef);
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('firestore-timeout')), 8000)
+    );
+    const snapshot = await Promise.race([getDoc(docRef), timeout]);
     return snapshot.exists() ? ((snapshot.data().businesses || []) as DynamicBusinessEntry[]) : [];
   } catch (e) {
     if (isQuotaError(e)) notifyQuotaExceeded();
-    return [];
+    console.warn('[Firestore] loadDynamicBusinesses 실패/타임아웃, 시딩 없이 종료');
+    throw e; // 빈 배열 반환 대신 throw → 시딩 코드가 Firestore를 덮어쓰는 것을 방지
   }
 };
 

@@ -81,7 +81,7 @@ export interface ProcessedResult {
 /** 매칭 키용 정규화: 공백/특수문자 제거 후 대문자화 */
 const normalizeMatchValue = (val: any): string => {
     if (val == null) return '';
-    return String(val).replace(/\s+/g, '').trim().toUpperCase();
+    return String(val).replace(/[\s\-]/g, '').trim().toUpperCase();
 };
 
 /** vendorAoa + 특정 열 인덱스로 invoiceMap을 빌드하는 순수 함수 */
