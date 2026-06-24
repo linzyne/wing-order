@@ -700,7 +700,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (newKey && newKey !== vendorFilesKeyRef.current) {
             vendorFilesKeyRef.current = newKey;
             const activeFile = localFile || batchFile || masterFile;
-            if (activeFile && mergeStatus === 'idle') {
+            if (activeFile && mergeStatus !== 'processing') {
                 handleRunMerge();
             }
         }

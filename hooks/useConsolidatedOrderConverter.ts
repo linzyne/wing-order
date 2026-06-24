@@ -824,6 +824,38 @@ function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orde
 async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', perRowQty: number = 1) {
     const orderName = config.orderFormName || config.displayName;
     const rName = stripDigits(String(row[26] || ''));
+    // 고랭지김치는 A/B타입 로직이 있어 customHeaders 체크보다 먼저 처리
+    if (companyName === '고랭지김치') {
+        for (let j = 0; j < qty; j++) {
+            const or = new Array(18).fill('');
+            or[0] = String(row[1] || ''); // 묶음배송번호
+            or[1] = '미래찬';
+            or[2] = '070-5222-6543';
+            or[3] = '070-5222-6543';
+            or[4] = '25346';
+            or[5] = '강원 평창군 방림면 평창대로84-15';
+            or[6] = rName; // 받는사람
+            or[7] = String(row[27] || ''); // 전화번호1
+            or[8] = String(row[27] || ''); // 전화번호2
+            or[9] = String(row[28] || ''); // 우편번호
+            or[10] = String(row[29] || ''); // 주소
+            or[11] = orderName; // 상품명1
+            or[12] = orderName; // 상품상세1
+
+            // 수량 분류 규칙 (A타입 / B타입)
+            const prodName = config.displayName.toLowerCase();
+            if (prodName.includes('7kg') || prodName.includes('10kg')) {
+                or[14] = perRowQty; // 수량(B타입)
+            } else {
+                or[13] = perRowQty; // 수량(A타입)
+            }
+
+            or[15] = String(row[30] || ''); // 배송메시지
+            outputRows.push(or);
+        }
+        return;
+    }
+
     // 커스텀 헤더가 설정되어 있으면 하드코딩 분기를 건너뛰고 generic 경로 사용
     const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
     if (customHeaders.length > 0) {
@@ -895,34 +927,6 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
             or[8] = String(row[1] || '');       // 묶음배송번호
             outputRows.push(or);
         }
-    } else if (companyName === '고랭지김치') {
-        for (let j = 0; j < qty; j++) {
-            const or = new Array(18).fill('');
-            or[0] = String(row[1] || ''); // 묶음배송번호
-            or[1] = '미래찬';
-            or[2] = '070-5222-6543';
-            or[3] = '070-5222-6543';
-            or[4] = '25346';
-            or[5] = '강원 평창군 방림면 평창대로84-15';
-            or[6] = rName; // 받는사람
-            or[7] = String(row[27] || ''); // 전화번호1
-            or[8] = String(row[27] || ''); // 전화번호2
-            or[9] = String(row[28] || ''); // 우편번호
-            or[10] = String(row[29] || ''); // 주소
-            or[11] = orderName; // 상품명1
-            or[12] = orderName; // 상품상세1
-
-            // 수량 분류 규칙 (A타입 / B타입)
-            const prodName = config.displayName.toLowerCase();
-            if (prodName.includes('7kg') || prodName.includes('10kg')) {
-                or[14] = perRowQty; // 수량(B타입)
-            } else {
-                or[13] = perRowQty; // 수량(A타입) - 기본값 포함
-            }
-
-            or[15] = String(row[30] || ''); // 배송메시지
-            outputRows.push(or);
-        }
     } else {
         for (let j = 0; j < qty; j++) {
             outputRows.push([rName, String(row[27] || ''), String(row[29] || ''), orderName, perRowQty, String(row[30] || ''), String(row[1] || '')]);
@@ -934,6 +938,34 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
     const orderName = config.orderFormName || config.displayName;
     const rowQty = overrideQty ?? mo.qty;
     const rName = stripDigits(mo.recipientName);
+    // 고랭지김치는 A/B타입 로직이 있어 customHeaders 체크보다 먼저 처리
+    if (companyName === '고랭지김치') {
+        for (let j = 0; j < rowQty; j++) {
+            const or = new Array(18).fill('');
+            or[0] = '수동';
+            or[1] = '미래찬';
+            or[2] = '070-5222-6543';
+            or[3] = '070-5222-6543';
+            or[4] = '25346';
+            or[5] = '강원 평창군 방림면 평창대로84-15';
+            or[6] = rName;
+            or[7] = mo.phone;
+            or[8] = mo.phone;
+            or[10] = mo.address;
+            or[11] = orderName;
+            or[12] = orderName;
+
+            const prodName = config.displayName.toLowerCase();
+            if (prodName.includes('7kg') || prodName.includes('10kg')) {
+                or[14] = perRowQty; // 수량(B타입)
+            } else {
+                or[13] = perRowQty; // 수량(A타입)
+            }
+            or[15] = mo.memo || '';
+            outputRows.push(or);
+        }
+        return;
+    }
     // 커스텀 헤더가 설정되어 있으면 하드코딩 분기를 건너뛰고 generic 경로 사용
     const customHeaders = pricingConfig[companyName]?.orderFormHeaders || [];
     if (customHeaders.length > 0) {
@@ -985,31 +1017,6 @@ async function pushManualToOutputRows(companyName: string, outputRows: any[][], 
             or[9] = mo.memo || '';
             or[11] = perRowQty;
             or[12] = perRowQty;
-            outputRows.push(or);
-        }
-    } else if (companyName === '고랭지김치') {
-        for (let j = 0; j < rowQty; j++) {
-            const or = new Array(18).fill('');
-            or[0] = '수동';
-            or[1] = '미래찬';
-            or[2] = '070-5222-6543';
-            or[3] = '070-5222-6543';
-            or[4] = '25346';
-            or[5] = '강원 평창군 방림면 평창대로84-15';
-            or[6] = rName;
-            or[7] = mo.phone;
-            or[8] = mo.phone;
-            or[10] = mo.address;
-            or[11] = orderName;
-            or[12] = orderName;
-
-            const prodName = config.displayName.toLowerCase();
-            if (prodName.includes('7kg') || prodName.includes('10kg')) {
-                or[14] = perRowQty; // 수량(B타입)
-            } else {
-                or[13] = perRowQty; // 수량(A타입)
-            }
-            or[15] = mo.memo || '';
             outputRows.push(or);
         }
     } else if (companyName === '제이제이' || companyName === '귤_제이') {
