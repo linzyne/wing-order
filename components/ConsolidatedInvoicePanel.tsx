@@ -72,6 +72,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
   const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; uploadCount: number }[] }[]>([]);
   const [invoiceCountMap, setInvoiceCountMap] = useState<Record<string, number>>({});
   const [courierBizPicker, setCourierBizPicker] = useState<string | null>(null);
+  const [coupangStates, setCoupangStates] = useState<Record<string, 'idle' | 'loading' | 'success'>>({});
 
   const refreshInvoiceCounts = useCallback(() => {
     const map: Record<string, number> = {};
@@ -325,11 +326,30 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                   </button>
                   {onDirectCoupangUpload && (
                     <button
-                      onClick={() => onDirectCoupangUpload(biz.businessId)}
-                      className="px-3 py-1 text-[11px] font-black rounded-lg bg-sky-700 text-white hover:bg-sky-600 transition-colors border border-sky-600 shrink-0"
+                      onClick={async () => {
+                        setCoupangStates(prev => ({ ...prev, [biz.businessId]: 'loading' }));
+                        try {
+                          await onDirectCoupangUpload(biz.businessId);
+                          setCoupangStates(prev => ({ ...prev, [biz.businessId]: 'success' }));
+                          setTimeout(() => setCoupangStates(prev => ({ ...prev, [biz.businessId]: 'idle' })), 3000);
+                        } catch (e: any) {
+                          alert(e.message ?? '업로드 실패');
+                          setCoupangStates(prev => ({ ...prev, [biz.businessId]: 'idle' }));
+                        }
+                      }}
+                      disabled={coupangStates[biz.businessId] === 'loading'}
+                      className={`px-3 py-1 text-[11px] font-black rounded-lg transition-colors border shrink-0 ${
+                        coupangStates[biz.businessId] === 'loading'
+                          ? 'bg-sky-900 text-zinc-400 cursor-wait border-sky-800'
+                          : coupangStates[biz.businessId] === 'success'
+                          ? 'bg-emerald-700 text-white border-emerald-600'
+                          : 'bg-sky-700 text-white hover:bg-sky-600 border-sky-600'
+                      }`}
                       title="쿠팡 Wing에 송장 바로 업로드"
                     >
-                      쿠팡 ↑
+                      {coupangStates[biz.businessId] === 'loading' ? '업로드 중...'
+                        : coupangStates[biz.businessId] === 'success' ? '✓ 완료'
+                        : '쿠팡 ↑'}
                     </button>
                   )}
                 </div>

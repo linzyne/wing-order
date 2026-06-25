@@ -798,8 +798,9 @@ const App: React.FC = () => {
               onCourierDirectCoupangUpload={handleCourierDirectCoupangUpload}
               onDirectCoupangUpload={async (businessId) => {
                 const file = uploadFnsRef.current[businessId]?.getInvoiceWorkbookFile?.();
-                if (!file) { alert('송장 데이터가 없습니다. 먼저 송장 파일을 업로드해주세요.'); return; }
-                await directCoupangUploadRef.current?.(businessId, file);
+                if (!file) throw new Error('송장 데이터가 없습니다. 먼저 송장 파일을 업로드해주세요.');
+                if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
+                await directCoupangUploadRef.current(businessId, file);
               }}
             />
           </div>

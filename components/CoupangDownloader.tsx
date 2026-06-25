@@ -125,8 +125,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     const business = businessesRef.current.find(b => b.id === businessId);
     const creds = credentialsRef.current[businessId];
     if (!business || !creds) {
-      alert(`${businessId} 사업자의 Wing 로그인 정보가 없습니다. 쿠팡 주문 패널에서 설정해주세요.`);
-      return;
+      throw new Error(`${business?.displayName ?? businessId} 사업자의 Wing 로그인 정보가 없습니다. 쿠팡 주문 패널에서 설정해주세요.`);
     }
     setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: true, error: null } }));
     try {
@@ -150,6 +149,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
       setTimeout(() => setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: null, success: false } })), 3000);
     } catch (e: any) {
       setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: e.message ?? '오류' } }));
+      throw e;
     }
   }, []);
 
@@ -168,7 +168,11 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     if (!file || !activeUploadId) return;
     const businessId = activeUploadId;
     setActiveUploadId(null);
-    await uploadInvoiceDirectly(businessId, file);
+    try {
+      await uploadInvoiceDirectly(businessId, file);
+    } catch (err: any) {
+      alert(err.message ?? '업로드 실패');
+    }
   };
 
   const openEdit = (id: string) => {
