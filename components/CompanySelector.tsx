@@ -3135,9 +3135,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const handleDepositModalDownload = () => {
         const ROWS_PER_FILE = 15;
+        const bizDisplayName = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
         const extraRows: any[][] = depositExtraRows
             .filter(r => r.bankName || r.accountNumber || r.amount)
-            .map(r => [r.bankName, r.accountNumber, Number(r.amount) || 0, r.label]);
+            .map(r => [r.bankName, r.accountNumber, Number(r.amount) || 0, r.label, bizDisplayName ? `${bizDisplayName} 환불` : '']);
         const allRows = [...depositBaseRows, ...extraRows];
         if (allRows.length === 0) { alert('입금할 내역이 없습니다.'); return; }
 
