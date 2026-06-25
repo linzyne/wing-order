@@ -286,7 +286,8 @@ const App: React.FC = () => {
 
   const handleCourierDirectCoupangUpload = useCallback(async (templateId: string, businessId: string) => {
     const rows = globalCourierMatchedRows[templateId];
-    if (!rows) return;
+    if (!rows) throw new Error('운송장 매칭 데이터가 없습니다. 먼저 운송장을 업로드해주세요.');
+    if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
     const tmpl = courierTemplates.find(t => t.id === templateId);
     const tmplDisplayName = tmpl ? (tmpl.label ? `${tmpl.name}_${tmpl.label}` : tmpl.name) : '택배';
     const fileName = `${new Date().toLocaleDateString('en-CA')}_공통_가구매_${tmplDisplayName}_운송장완료.xlsx`;
@@ -295,7 +296,7 @@ const App: React.FC = () => {
     XLSX.utils.book_append_sheet(wb, ws, '주문서');
     const binary: ArrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const file = new File([binary], fileName, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    await directCoupangUploadRef.current?.(businessId, file);
+    await directCoupangUploadRef.current(businessId, file);
   }, [globalCourierMatchedRows, courierTemplates]);
 
   const courierItemsForPanel = useMemo<CourierItem[]>(() =>

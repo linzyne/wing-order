@@ -73,6 +73,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
   const [invoiceCountMap, setInvoiceCountMap] = useState<Record<string, number>>({});
   const [courierBizPicker, setCourierBizPicker] = useState<string | null>(null);
   const [coupangStates, setCoupangStates] = useState<Record<string, 'idle' | 'loading' | 'success'>>({});
+  const [courierCoupangStates, setCourierCoupangStates] = useState<Record<string, 'idle' | 'loading' | 'success'>>({});
 
   const refreshInvoiceCounts = useCallback(() => {
     const map: Record<string, number> = {};
@@ -429,17 +430,34 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                           </button>
                           {onCourierDirectCoupangUpload && (
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 if (businesses.length === 1) {
-                                  onCourierDirectCoupangUpload(c.id, businesses[0].id);
+                                  setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'loading' }));
+                                  try {
+                                    await onCourierDirectCoupangUpload(c.id, businesses[0].id);
+                                    setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'success' }));
+                                    setTimeout(() => setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'idle' })), 3000);
+                                  } catch (e: any) {
+                                    alert(e.message ?? '업로드 실패');
+                                    setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'idle' }));
+                                  }
                                 } else {
                                   setCourierBizPicker(prev => prev === c.id ? null : c.id);
                                 }
                               }}
-                              className="px-3 py-1.5 text-[10px] font-black rounded-xl bg-sky-700 text-white hover:bg-sky-600 transition-colors border border-sky-600 shrink-0"
+                              disabled={courierCoupangStates[c.id] === 'loading'}
+                              className={`px-3 py-1.5 text-[10px] font-black rounded-xl transition-colors border border-sky-600 shrink-0 ${
+                                courierCoupangStates[c.id] === 'loading'
+                                  ? 'bg-sky-900 text-zinc-400 cursor-wait border-sky-800'
+                                  : courierCoupangStates[c.id] === 'success'
+                                  ? 'bg-emerald-700 text-white border-emerald-600'
+                                  : 'bg-sky-700 text-white hover:bg-sky-600'
+                              }`}
                               title="쿠팡 Wing에 운송장 바로 업로드"
                             >
-                              쿠팡 ↑
+                              {courierCoupangStates[c.id] === 'loading' ? '업로드 중...'
+                                : courierCoupangStates[c.id] === 'success' ? '✓ 완료'
+                                : '쿠팡 ↑'}
                             </button>
                           )}
                         </div>
@@ -449,7 +467,18 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                           {businesses.map(b => (
                             <button
                               key={b.id}
-                              onClick={() => { onCourierDirectCoupangUpload?.(c.id, b.id); setCourierBizPicker(null); }}
+                              onClick={async () => {
+                                setCourierBizPicker(null);
+                                setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'loading' }));
+                                try {
+                                  await onCourierDirectCoupangUpload!(c.id, b.id);
+                                  setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'success' }));
+                                  setTimeout(() => setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'idle' })), 3000);
+                                } catch (e: any) {
+                                  alert(e.message ?? '업로드 실패');
+                                  setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'idle' }));
+                                }
+                              }}
                               className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-sky-900/60 text-sky-300 hover:bg-sky-700 hover:text-white transition-colors border border-sky-700/50"
                             >
                               {b.displayName}

@@ -1624,7 +1624,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="space-y-1.5 mb-3">
                                             {(Object.entries(editValues) as [string, { count: string; totalPrice: string }][]).map(([key, val]) => (
                                                 <div key={key} className="flex items-center gap-2">
-                                                    <span className="text-zinc-300 font-mono text-[12px] w-16 shrink-0">{key}</span>
+                                                    <span className="text-zinc-300 font-mono text-[12px] min-w-0 shrink-0 max-w-[160px] truncate" title={key}>{resolveProductDisplayName(key)}</span>
                                                     <div className="flex items-center gap-1">
                                                         <input
                                                             type="number"
@@ -1733,7 +1733,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     return (
                                                         <div key={idx}>
                                                             <div className="flex justify-between text-[12px] font-mono text-zinc-200 font-bold gap-2">
-                                                                <span className="shrink-0">{key}{unitSupply ? ` (${unitSupply.toLocaleString()})` : ''}</span>
+                                                                <span className="shrink-0">{resolveProductDisplayName(key)}{unitSupply ? ` (${unitSupply.toLocaleString()})` : ''}</span>
                                                                 <div className="flex items-center gap-2 shrink-0">
                                                                     {unitMargin > 0 && marginCount > 0 && (
                                                                         <span className="text-emerald-400 text-[10px] font-black">+{unitMargin.toLocaleString()} × {marginCount} = {totalMargin.toLocaleString()}</span>
