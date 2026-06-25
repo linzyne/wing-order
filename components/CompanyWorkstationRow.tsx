@@ -93,6 +93,7 @@ interface CompanyWorkstationRowProps {
     companyChecked?: boolean;
     isRecorded?: boolean;
     onRecord?: () => void;
+    workDate?: string;
     workspace: DailyWorkspaceData | null;
     updateField: (field: string, value: any) => Promise<void>;
     updateSessionField: (dotPath: string, value: any) => Promise<void>;
@@ -125,6 +126,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     isRecorded = false,
     isClosed = false, onToggleClosed, isActive = true,
     onRecord,
+    workDate,
     workspace, updateField, updateSessionField, sessionResults, onSaveSessionResult, onDeleteSessionResult,
     pendingOrderLight = false, pendingInvoiceLight = false,
     onOrderDownloaded, onInvoiceDownloaded,
@@ -242,7 +244,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // 합산 정산 텍스트
     const combinedDepositText = (() => {
         if (Object.keys(combinedSummary).length === 0) return '';
-        const today = new Date();
+        const today = workDate ? new Date(workDate + 'T00:00:00') : new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
         const entries = Object.entries(combinedSummary) as [string, { count: number; totalPrice: number }][];
@@ -278,7 +280,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // 최종 차수 정산 요약용 누적 텍스트
     const cumulativeDepositText = (() => {
         if (!isLastSession || previousRoundItems.length === 0 || Object.keys(combinedSummary).length === 0) return null;
-        const today = new Date();
+        const today = workDate ? new Date(workDate + 'T00:00:00') : new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
         const entries = Object.entries(combinedSummary) as [string, { count: number; totalPrice: number }][];
@@ -302,7 +304,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const cumulativeDepositExcelText = (() => {
         if (!isLastSession || previousRoundItems.length === 0 || Object.keys(combinedSummary).length === 0) return null;
-        const today = new Date();
+        const today = workDate ? new Date(workDate + 'T00:00:00') : new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
         const entries = Object.entries(combinedSummary).sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true })) as [string, { count: number; totalPrice: number }][];

@@ -724,6 +724,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allSummaries, setAllSummaries] = useState<Record<string, string>>({});
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
     const [checkedCompanies, setCheckedCompanies] = useState<Set<string>>(new Set());
+    const [workDate, setWorkDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
     // 불 켜기/끄기: 세션별 미다운로드 추적
     const [orderLitSessions, setOrderLitSessions] = useState<Set<string>>(new Set());
     const [invoiceLitSessions, setInvoiceLitSessions] = useState<Set<string>>(new Set());
@@ -3320,8 +3321,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnSheetData), "품목별비용");
         }
 
-        const todayDate = new Date().toLocaleDateString('en-CA');
-        XLSX.writeFile(wb, `${todayDate}_${businessPrefix}_업무일지.xlsx`);
+        XLSX.writeFile(wb, `${workDate}_${businessPrefix}_업무일지.xlsx`);
     };
 
     const depositListFnRef = useRef<() => void>(() => {});
@@ -3375,7 +3375,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const selectedCompanyNames = companyOverride ?? checkedCompanies;
         if (selectedCompanyNames.size === 0) { alert('기록할 업체를 선택해주세요.'); return; }
         // 마스터파일 이름에서 날짜 파싱 (예: "0309_주문목록.xlsx" → "2026-03-09")
-        let recordDate = new Date().toLocaleDateString('en-CA');
+        let recordDate = workDate;
         if (masterOrderFile) {
             const fname = masterOrderFile.name;
             const fullMatch = fname.match(/(\d{4})-(\d{2})-(\d{2})/);
@@ -3386,7 +3386,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const mm = parseInt(shortMatch[1]);
                 const dd = parseInt(shortMatch[2]);
                 if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-                    recordDate = `${new Date().getFullYear()}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                    recordDate = `${new Date(workDate).getFullYear()}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
                 }
             }
         }
@@ -5041,6 +5041,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     <button onClick={handleDownloadWorkLog} className="group flex items-center gap-2 bg-zinc-800/60 text-zinc-400 hover:text-white px-4 py-2 rounded-full text-[11px] font-bold tracking-wide transition-all duration-200 border border-zinc-700/30 hover:border-zinc-600 hover:bg-zinc-700/60 active:scale-95">
                         <ClipboardDocumentCheckIcon className="w-3.5 h-3.5" /><span>업무일지</span>
                     </button>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                        <span className="text-zinc-600 text-[10px] font-bold tracking-wide">작업날짜</span>
+                        <input
+                            type="date"
+                            value={workDate}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWorkDate(e.target.value)}
+                            className="bg-zinc-900 text-zinc-300 border border-zinc-700 rounded-lg px-2 py-1 text-[11px] font-bold focus:outline-none focus:border-indigo-500 transition-colors"
+                        />
+                    </div>
                 </div>
             </div>
 
@@ -5545,6 +5554,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     companyChecked={isChecked}
                                                     isRecorded={recordedCompanies.has(company)}
                                                     onRecord={sIdx === 0 ? () => handleSaveToSalesHistory(new Set([company])) : undefined}
+                                                    workDate={workDate}
                                                     workspace={workspace}
                                                     updateField={updateField}
                                                     updateSessionField={updateWorkspaceSessionField}
