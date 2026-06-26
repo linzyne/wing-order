@@ -170,6 +170,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               pricingConfig={config}
               onConfigChange={saveConfig}
               businessId={businessId}
+              businessDisplayName={displayName}
               platformConfigs={platformConfigs}
               isActive={activeTab === 'converter'}
               isCurrent={true}
