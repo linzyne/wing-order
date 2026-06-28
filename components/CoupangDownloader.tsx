@@ -97,7 +97,8 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
         body: JSON.stringify({ id: creds.id, password: creds.password, status: getStatus(business.id), businessName: business.displayName, timeLabel }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: '서버 오류' }));
+        if (res.status === 404) throw new Error('브라우저 자동화는 로컬(npm run dev)에서만 사용 가능합니다. API 모드를 이용해주세요.');
+        const err = await res.json().catch(() => ({ error: `서버 오류 (${res.status})` }));
         throw new Error(err.error ?? '다운로드 실패');
       }
       const blob = await res.blob();
@@ -142,7 +143,8 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
         body: JSON.stringify({ id: creds.id, password: creds.password, fileBase64, fileName: file.name, businessName: business.displayName }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: '서버 오류' }));
+        if (res.status === 404) throw new Error('브라우저 자동화는 로컬(npm run dev)에서만 사용 가능합니다.');
+        const err = await res.json().catch(() => ({ error: `서버 오류 (${res.status})` }));
         throw new Error(err.error ?? '업로드 실패');
       }
       setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: null, success: true } }));

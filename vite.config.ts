@@ -196,64 +196,54 @@ async function runWingInvoiceUpload(
   }
 }
 
-// Vite dev 서버 미들웨어 플러그인
+// Wing 자동화 미들웨어 등록 (dev/preview 공통)
+function registerWingMiddlewares(middlewares: any) {
+  middlewares.use('/api/wing-download', (req: any, res: any) => {
+    if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+    let body = '';
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    req.on('end', async () => {
+      try {
+        const { id, password, status, businessName, timeLabel } = JSON.parse(body);
+        const { filePath, fileName } = await runWingDownload({ id, password }, status, businessName, timeLabel);
+        const fileBuffer = await fsp.readFile(filePath);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+        res.end(fileBuffer);
+        fsp.unlink(filePath).catch(() => {});
+      } catch (e: any) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: e.message ?? '자동화 오류' }));
+      }
+    });
+  });
+
+  middlewares.use('/api/wing-invoice-upload', (req: any, res: any) => {
+    if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
+    let body = '';
+    req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+    req.on('end', async () => {
+      try {
+        const { id, password, fileBase64, fileName, businessName } = JSON.parse(body);
+        const fileBuffer = Buffer.from(fileBase64, 'base64');
+        await runWingInvoiceUpload({ id, password }, fileBuffer, fileName, businessName);
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ success: true }));
+      } catch (e: any) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: e.message ?? '자동화 오류' }));
+      }
+    });
+  });
+}
+
 function wingAutomationPlugin(): Plugin {
   return {
     name: 'wing-automation',
-    configureServer(server) {
-      server.middlewares.use('/api/wing-download', (req, res) => {
-        if (req.method !== 'POST') {
-          res.statusCode = 405;
-          res.end();
-          return;
-        }
-
-        let body = '';
-        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-        req.on('end', async () => {
-          try {
-            const { id, password, status, businessName, timeLabel } = JSON.parse(body);
-            const { filePath, fileName } = await runWingDownload({ id, password }, status, businessName, timeLabel);
-
-            const fileBuffer = await fsp.readFile(filePath);
-            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-            res.end(fileBuffer);
-
-            fsp.unlink(filePath).catch(() => {});
-          } catch (e: any) {
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: e.message ?? '자동화 오류' }));
-          }
-        });
-      });
-
-      server.middlewares.use('/api/wing-invoice-upload', (req, res) => {
-        if (req.method !== 'POST') {
-          res.statusCode = 405;
-          res.end();
-          return;
-        }
-
-        let body = '';
-        req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-        req.on('end', async () => {
-          try {
-            const { id, password, fileBase64, fileName, businessName } = JSON.parse(body);
-            const fileBuffer = Buffer.from(fileBase64, 'base64');
-            await runWingInvoiceUpload({ id, password }, fileBuffer, fileName, businessName);
-
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ success: true }));
-          } catch (e: any) {
-            res.statusCode = 500;
-            res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: e.message ?? '자동화 오류' }));
-          }
-        });
-      });
-    },
+    configureServer(server) { registerWingMiddlewares(server.middlewares); },
+    configurePreviewServer(server) { registerWingMiddlewares(server.middlewares); },
   };
 }
 
@@ -261,6 +251,17 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   return {
     server: {
+      port: 3000,
+      host: '0.0.0.0',
+      proxy: {
+        '/coupang-api': {
+          target: 'https://api-gateway.coupang.com',
+          changeOrigin: true,
+          rewrite: (p: string) => p.replace(/^\/coupang-api/, ''),
+        },
+      },
+    },
+    preview: {
       port: 3000,
       host: '0.0.0.0',
       proxy: {

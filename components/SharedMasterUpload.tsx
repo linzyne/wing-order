@@ -499,6 +499,8 @@ interface SettlementPopupProps {
 }
 
 const SettlementPopup: React.FC<SettlementPopupProps> = ({ companyName, businesses, uploadFns, copiedId, onCopy, onClose }) => {
+  const [isInterim, setIsInterim] = useState(false);
+
   // 해당 업체의 사업자별 정산 수집
   const bizList: { businessId: string; displayName: string; kakaoText: string; excelText: string }[] = [];
   for (const b of businesses) {
@@ -512,6 +514,8 @@ const SettlementPopup: React.FC<SettlementPopupProps> = ({ companyName, business
   const SEP = '==============';
   const combinedKakao = bizList.map(b => `${SEP}\n${b.kakaoText}`).join('\n\n\n');
   const combinedExcel = bizList.map(b => b.excelText).join('\n');
+
+  const kakaoTextToCopy = isInterim ? `[중간집계]\n${combinedKakao}` : combinedKakao;
 
   return (
     <div
@@ -533,9 +537,13 @@ const SettlementPopup: React.FC<SettlementPopupProps> = ({ companyName, business
         ) : (
           <>
             {/* 공통 버튼: 전체 사업자 합산 복사 */}
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '14px', flexShrink: 0, flexWrap: 'wrap' }}>
               <button
-                onClick={() => onCopy(`${companyName}_kakao`, combinedKakao)}
+                onClick={() => setIsInterim(v => !v)}
+                style={{ padding: '6px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 900, border: `1px solid ${isInterim ? '#f59e0b' : '#3f3f46'}`, background: isInterim ? '#78350f' : '#27272a', color: isInterim ? '#fcd34d' : '#71717a', cursor: 'pointer', transition: 'all 0.15s' }}
+              >중간집계</button>
+              <button
+                onClick={() => onCopy(`${companyName}_kakao`, kakaoTextToCopy)}
                 style={{ padding: '6px 14px', borderRadius: '8px', fontSize: '11px', fontWeight: 900, border: `1px solid ${copiedId === `${companyName}_kakao` ? '#10b981' : '#3f3f46'}`, background: copiedId === `${companyName}_kakao` ? '#10b981' : '#27272a', color: copiedId === `${companyName}_kakao` ? '#fff' : '#f472b6', cursor: 'pointer', transition: 'all 0.15s' }}
               >{copiedId === `${companyName}_kakao` ? '복사됨!' : '카톡용'}</button>
               <button
@@ -551,6 +559,9 @@ const SettlementPopup: React.FC<SettlementPopupProps> = ({ companyName, business
 
             {/* 전체 정산 내용 한 번에 표시 */}
             <div style={{ overflowY: 'auto' }}>
+              {isInterim && (
+                <div style={{ color: '#fcd34d', fontWeight: 900, fontSize: '13px', fontFamily: 'monospace', marginBottom: '6px' }}>[중간집계]</div>
+              )}
               <pre style={{ color: '#e4e4e7', fontSize: '13px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', lineHeight: 1.7, margin: 0 }}>{combinedKakao}</pre>
             </div>
           </>
