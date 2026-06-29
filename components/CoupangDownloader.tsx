@@ -34,6 +34,9 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
   const [invoiceStates, setInvoiceStates] = useState<Record<string, DownloadState>>({});
   const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
   const invoiceInputRef = useRef<HTMLInputElement>(null);
+  const bulkInvoiceInputRef = useRef<HTMLInputElement>(null);
+  const [bulkDownloadLoading, setBulkDownloadLoading] = useState(false);
+  const [bulkInvoiceLoading, setBulkInvoiceLoading] = useState(false);
 
   // 모달
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -115,8 +118,49 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
   };
 
   const handleDownload = (business: Business) => {
-    if (getMethod(business.id) === 'api') handleApiDownload(business);
-    else handleBrowserDownload(business);
+    if (getMethod(business.id) === 'api') return handleApiDownload(business);
+    else return handleBrowserDownload(business);
+  };
+
+  const handleBulkDownload = async () => {
+    if (bulkDownloadLoading) return;
+    const targets = businesses.filter(b => isConfigured(b.id));
+    if (targets.length === 0) return;
+    setBulkDownloadLoading(true);
+    for (const b of targets) {
+      await handleDownload(b);
+    }
+    setBulkDownloadLoading(false);
+  };
+
+  const handleBulkInvoiceFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files: File[] = e.target.files ? Array.from(e.target.files) : [];
+    e.target.value = '';
+    if (files.length === 0) return;
+    const browserBusinesses = businesses.filter(b => getMethod(b.id) === 'browser' && !!credentials[b.id]?.id);
+    const unmatched: string[] = [];
+    const matched: { business: Business; file: File }[] = [];
+    for (const file of files) {
+      const found = browserBusinesses.find(b => file.name.includes(b.displayName));
+      if (found) matched.push({ business: found, file });
+      else unmatched.push(file.name);
+    }
+    if (matched.length === 0) {
+      alert(`매칭된 사업자가 없습니다.\n파일명에 사업자 이름(${browserBusinesses.map(b => b.displayName).join(', ')})이 포함되어야 합니다.`);
+      return;
+    }
+    setBulkInvoiceLoading(true);
+    for (const { business, file } of matched) {
+      try {
+        await uploadInvoiceDirectly(business.id, file);
+      } catch {
+        // 개별 오류는 invoiceStates에 표시됨, 다음 사업자 계속
+      }
+    }
+    setBulkInvoiceLoading(false);
+    if (unmatched.length > 0) {
+      alert(`업로드 완료.\n다음 파일은 매칭 실패:\n${unmatched.join('\n')}`);
+    }
   };
 
   const credentialsRef = useRef(credentials);
@@ -238,6 +282,14 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
         className="hidden"
         onChange={handleInvoiceFileChange}
       />
+      <input
+        ref={bulkInvoiceInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        multiple
+        className="hidden"
+        onChange={handleBulkInvoiceFileChange}
+      />
       <div className="mb-4 rounded-xl border border-zinc-700/40 bg-zinc-900/60 overflow-hidden">
         <button
           onClick={() => setIsExpanded(v => { localStorage.setItem('coupang_dl_expanded', String(!v)); return !v; })}
@@ -275,6 +327,40 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
               />
               {timeLabel && (
                 <span className="text-[9px] text-zinc-500 truncate">→ 파일명: 날짜_{timeLabel}.xlsx</span>
+              )}
+            </div>
+
+            {/* 일괄 버튼 */}
+            <div className="flex gap-2 pt-0.5">
+              <button
+                onClick={handleBulkDownload}
+                disabled={bulkDownloadLoading || businesses.every(b => !isConfigured(b.id))}
+                className={`flex items-center gap-1 px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${
+                  bulkDownloadLoading || businesses.every(b => !isConfigured(b.id))
+                    ? 'bg-zinc-700/40 text-zinc-600 cursor-not-allowed'
+                    : 'bg-sky-900/70 hover:bg-sky-800 text-sky-300 shadow'
+                }`}
+              >
+                {bulkDownloadLoading
+                  ? <span className="w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
+                  : <ArrowDownTrayIcon className="w-3 h-3" />}
+                {bulkDownloadLoading ? '일괄 다운로드 중...' : '일괄 다운로드'}
+              </button>
+              {businesses.some(b => getMethod(b.id) === 'browser' && !!credentials[b.id]?.id) && (
+                <button
+                  onClick={() => bulkInvoiceInputRef.current?.click()}
+                  disabled={bulkInvoiceLoading}
+                  className={`flex items-center gap-1 px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${
+                    bulkInvoiceLoading
+                      ? 'bg-emerald-900 text-zinc-400 cursor-wait'
+                      : 'bg-emerald-900/60 hover:bg-emerald-800/80 text-emerald-300 shadow'
+                  }`}
+                >
+                  {bulkInvoiceLoading
+                    ? <span className="w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
+                    : <ArrowUpTrayIcon className="w-3 h-3" />}
+                  {bulkInvoiceLoading ? '일괄 송장 중...' : '일괄 송장'}
+                </button>
               )}
             </div>
 

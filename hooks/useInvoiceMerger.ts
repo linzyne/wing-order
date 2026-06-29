@@ -295,7 +295,7 @@ export const useInvoiceMerger = () => {
             setStatus('processing'); setError(null);
             const vendorFiles = Array.isArray(vendorFileOrFiles) ? vendorFileOrFiles : [vendorFileOrFiles];
             const orderFiles = Array.isArray(orderFile) ? orderFile : [orderFile];
-            const bizShort = getBusinessInfo(businessId ?? '')?.shortName || '';
+            const bizShort = getBusinessInfo(businessId ?? '')?.displayName || '';
 
             // 모든 주문서 파일 병합: 첫 파일 기준 헤더, 이후 파일은 데이터 행만 추가
             let orderAoa: any[][] = [];

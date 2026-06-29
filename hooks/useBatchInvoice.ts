@@ -116,7 +116,7 @@ export const useBatchInvoice = (
     }, []);
 
     const downloadAll = useCallback((onDownloaded?: (companyName: string) => void) => {
-        const bizShort = getBusinessInfo(businessId ?? '')?.shortName || '';
+        const bizShort = getBusinessInfo(businessId ?? '')?.displayName || '';
         setItems(prev => {
             const doneItems = prev.filter(i => i.status === 'done' && i.workbook);
             if (doneItems.length === 0) return prev;

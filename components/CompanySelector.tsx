@@ -661,7 +661,7 @@ function matchProductSync(
 }
 
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings }) => {
-    const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
+    const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
     const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
 
@@ -764,7 +764,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllRegisteredNames({});
         setAllPreConsolidationByGroup({});
         setCompanyOverrides({});
-        clearMasterFile();
+        clearMasterRef.current();
         onWorkstationReset?.();
     }, [updateField, onWorkstationReset]);
 

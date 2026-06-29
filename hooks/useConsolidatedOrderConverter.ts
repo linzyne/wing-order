@@ -726,7 +726,7 @@ const generateWorkbookForCompany = async (
         const newWb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(newWb, ws, `발주서`);
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
-        const bizShort = getBusinessInfo(businessId || '')?.shortName || '';
+        const bizShort = getBusinessInfo(businessId || '')?.displayName || '';
         const summaryTitle = bizShort ? `${dateTitle} (${companyName}) ${bizShort}` : `${dateTitle} (${companyName})`;
         const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
