@@ -86,7 +86,7 @@ const App: React.FC = () => {
   const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; }>>({});
   const directCoupangUploadRef = useRef<((businessId: string, file: File) => Promise<void>) | null>(null);
   const resetFnsRef = useRef<Record<string, () => void>>({});
-  const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void }>>({});
+  const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }>>({});
 
   const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; }) => {
     uploadFnsRef.current[businessId] = handlers;
@@ -97,15 +97,18 @@ const App: React.FC = () => {
   }, []);
 
 
-  const handleRegisterDownloadActions = useCallback((businessId: string, actions: { downloadDepositList: () => void; downloadWorkLog: () => void }) => {
+  const handleRegisterDownloadActions = useCallback((businessId: string, actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => {
     downloadActionsRef.current[businessId] = actions;
   }, []);
 
-  const handleDownloadAll = useCallback(() => {
-    const actions: { downloadDepositList: () => void; downloadWorkLog: () => void }[] = Object.values(downloadActionsRef.current);
+  const handleBulkWorkLog = useCallback(() => {
+    const actions = Object.values(downloadActionsRef.current) as { downloadWorkLog: () => void }[];
     if (actions.length === 0) { alert('다운로드 가능한 사업자 데이터가 없습니다.'); return; }
-    actions.forEach(a => { a.downloadDepositList(); a.downloadWorkLog(); });
+    actions.forEach(a => a.downloadWorkLog());
   }, []);
+
+  const [showBulkDepositModal, setShowBulkDepositModal] = useState(false);
+  const [bulkPasteText, setBulkPasteText] = useState('');
 
   useEffect(() => {
     const handler = () => setQuotaExceeded(true);
@@ -479,12 +482,20 @@ const App: React.FC = () => {
 
         <div className="flex-1" />
 
-        {/* 마감 — 모든 사업자 입금목록 + 업무일지 일괄 다운로드 */}
+        {/* 일괄 입금목록 */}
         <button
-          onClick={handleDownloadAll}
-          className="px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border text-rose-400 border-rose-500/50 hover:bg-rose-900/30 hover:border-rose-400 active:scale-95"
+          onClick={() => { setShowBulkDepositModal(true); setBulkPasteText(''); }}
+          className="px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border text-emerald-400 border-emerald-500/50 hover:bg-emerald-900/30 hover:border-emerald-400 active:scale-95"
         >
-          마감
+          일괄 입금목록
+        </button>
+
+        {/* 일괄 업무일지 */}
+        <button
+          onClick={handleBulkWorkLog}
+          className="px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border text-violet-400 border-violet-500/50 hover:bg-violet-900/30 hover:border-violet-400 active:scale-95"
+        >
+          일괄 업무일지
         </button>
 
         {/* 전체 가구매 명단 */}
@@ -877,6 +888,92 @@ const App: React.FC = () => {
           ))}
         </div>
       )}
+
+      {/* 일괄 입금목록 모달 */}
+      {showBulkDepositModal && (() => {
+        type ExtraRow = { bankName: string; accountNumber: string; amount: string; label: string };
+        const lines = bulkPasteText.trim().split('\n').filter(l => l.trim());
+        const grouped: Record<string, ExtraRow[]> = {};
+        const unmatched: string[] = [];
+        lines.forEach(line => {
+          const cols = line.split('\t');
+          if (cols.length < 3) { unmatched.push(line); return; }
+          const bankName = cols[0]?.trim() || '';
+          const accountNumber = cols[1]?.trim() || '';
+          const amount = cols[2]?.trim() || '';
+          const label = cols[3]?.trim() || '';
+          const bizRaw = (cols[4]?.trim() || cols[3]?.trim() || '').replace(/\s*환불$/, '').trim();
+          const matched = allBusinesses.find(b => b.displayName === bizRaw || b.id === bizRaw || b.displayName.includes(bizRaw) || (bizRaw.length > 1 && bizRaw.includes(b.displayName)));
+          if (matched) {
+            if (!grouped[matched.id]) grouped[matched.id] = [];
+            grouped[matched.id].push({ bankName, accountNumber, amount, label });
+          } else {
+            unmatched.push(line);
+          }
+        });
+        const matchedIds = Object.keys(grouped);
+        const handleDownload = () => {
+          if (matchedIds.length === 0) { alert('매칭된 사업자가 없습니다.'); return; }
+          matchedIds.forEach(id => {
+            downloadActionsRef.current[id]?.downloadDepositListWithExtra(grouped[id]);
+          });
+          setShowBulkDepositModal(false);
+        };
+        return (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowBulkDepositModal(false); }}>
+            <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+                <div>
+                  <h3 className="text-white font-black text-sm">일괄 입금목록</h3>
+                  <p className="text-zinc-500 text-[11px] mt-0.5">붙여넣기 — 열 순서: 은행 / 계좌번호 / 금액 / 이름 / 사업자명 환불</p>
+                </div>
+                <button onClick={() => setShowBulkDepositModal(false)} className="text-zinc-500 hover:text-white transition-colors p-1">
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
+                <textarea
+                  rows={6}
+                  value={bulkPasteText}
+                  onChange={e => setBulkPasteText(e.target.value)}
+                  placeholder={"기업\t490-048665-01-021\t17400\t장혜옥\t안군농원 환불\n기업\t490-048665-01-021\t12000\t홍길동\t조에 환불"}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-zinc-300 font-mono placeholder-zinc-700 focus:ring-1 focus:ring-emerald-500/30 outline-none resize-none"
+                />
+                {lines.length > 0 && (
+                  <div className="space-y-2">
+                    {matchedIds.map(id => {
+                      const biz = allBusinesses.find(b => b.id === id);
+                      return (
+                        <div key={id} className="bg-zinc-950 rounded-xl border border-zinc-800 px-4 py-2.5">
+                          <p className="text-[11px] font-black text-emerald-400 mb-1.5">{biz?.displayName || id} <span className="text-zinc-600 font-normal">{grouped[id].length}건</span></p>
+                          <div className="space-y-0.5">
+                            {grouped[id].map((r, i) => (
+                              <p key={i} className="text-[11px] text-zinc-400 font-mono">{r.bankName} · {r.accountNumber} · <span className="text-emerald-400">{Number(r.amount).toLocaleString()}원</span></p>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {unmatched.length > 0 && (
+                      <div className="bg-zinc-950 rounded-xl border border-rose-500/30 px-4 py-2.5">
+                        <p className="text-[11px] font-black text-rose-400 mb-1.5">미매칭 {unmatched.length}건</p>
+                        {unmatched.map((l, i) => <p key={i} className="text-[11px] text-zinc-500 font-mono truncate">{l}</p>)}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="px-6 py-4 border-t border-zinc-800 flex justify-end gap-2">
+                <button onClick={() => setShowBulkDepositModal(false)} className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all">취소</button>
+                <button onClick={handleDownload} disabled={matchedIds.length === 0} className="flex items-center gap-2 px-5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all">
+                  <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                  {matchedIds.length > 0 ? `${matchedIds.length}개 사업자 다운로드` : '다운로드'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 사업자 추가/편집 모달 */}
       <AddBusinessModal
