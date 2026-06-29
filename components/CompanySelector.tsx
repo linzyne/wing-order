@@ -56,7 +56,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => void; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => void; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -3160,6 +3160,44 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setShowDepositModal(false);
     };
 
+    const getDepositBaseRows = (): any[][] => {
+        const depositRows: any[][] = [];
+        const bizDisplayName = businessDisplayName || (businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '');
+        const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
+        sortedCompanyNames.forEach(name => {
+            const sessions = companySessions[name] || [];
+            const cfg = pricingConfig[name];
+            const total = (sessions as any[]).reduce((sum: number, s: any) => sum + (totalsMap[s.id] || 0), 0);
+            if (total === 0) return;
+            depositRows.push([cfg?.bankName || '', cfg?.accountNumber || '', total, name, bizDisplayName]);
+        });
+        manualTransfers.forEach((t: any) => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label || '', bizDisplayName ? `${bizDisplayName} 환불` : '']); });
+        if (fakeOrderAnalysis.inputNumbers.size > 0) {
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
+            depositRows.push([fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, `${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
+        }
+        return depositRows;
+    };
+
+    const downloadDepositListDirect = (baseRows: any[][], injectedExtra: { bankName: string; accountNumber: string; amount: string; label: string }[]) => {
+        const ROWS_PER_FILE = 15;
+        const bizDisplayName = businessDisplayName || (businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '');
+        const extraFormatted: any[][] = injectedExtra
+            .filter(r => r.bankName || r.accountNumber || r.amount)
+            .map(r => [r.bankName, r.accountNumber, Number(r.amount) || 0, r.label, bizDisplayName ? `${bizDisplayName} 환불` : '']);
+        const allRows = [...baseRows, ...extraFormatted];
+        if (allRows.length === 0) return;
+        const dateStr = new Date().toLocaleDateString('en-CA');
+        const chunks: any[][][] = [];
+        for (let i = 0; i < allRows.length; i += ROWS_PER_FILE) chunks.push(allRows.slice(i, i + ROWS_PER_FILE));
+        chunks.forEach((chunk, idx) => {
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunk), "입금내역");
+            const suffix = chunks.length > 1 ? `_${idx + 1}` : '';
+            XLSX.writeFile(wb, `${dateStr}_${businessPrefix}_입금목록${suffix}.xlsx`);
+        });
+    };
+
     const handleDownloadDepositListWithExtra = (injectedExtra: { bankName: string; accountNumber: string; amount: string; label: string }[]) => {
         const ROWS_PER_FILE = 15;
         const bizDisplayName = businessDisplayName || (businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '');
@@ -3364,6 +3402,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     workLogFnRef.current = handleDownloadWorkLog;
     const depositListWithExtraFnRef = useRef<(rows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void>(() => {});
     depositListWithExtraFnRef.current = handleDownloadDepositListWithExtra;
+    const getDepositBaseRowsFnRef = useRef<() => any[][]>(() => []);
+    getDepositBaseRowsFnRef.current = getDepositBaseRows;
+    const downloadDepositListDirectFnRef = useRef<(baseRows: any[][], rows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void>(() => {});
+    downloadDepositListDirectFnRef.current = downloadDepositListDirect;
     const onRegisterActionsRef = useRef(onRegisterActions);
     onRegisterActionsRef.current = onRegisterActions;
     useEffect(() => {
@@ -3371,6 +3413,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             downloadDepositList: () => depositListFnRef.current(),
             downloadWorkLog: () => workLogFnRef.current(),
             downloadDepositListWithExtra: (rows) => depositListWithExtraFnRef.current(rows),
+            getDepositBaseRows: () => getDepositBaseRowsFnRef.current(),
+            downloadDepositListDirect: (baseRows, rows) => downloadDepositListDirectFnRef.current(baseRows, rows),
         });
     // 마운트 시 1회만 실행 - onRegisterActions dep 변경 시 재실행하면 setActions 루프 발생
     // eslint-disable-next-line react-hooks/exhaustive-deps

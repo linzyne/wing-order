@@ -86,7 +86,8 @@ const App: React.FC = () => {
   const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; }>>({});
   const directCoupangUploadRef = useRef<((businessId: string, file: File) => Promise<void>) | null>(null);
   const resetFnsRef = useRef<Record<string, () => void>>({});
-  const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }>>({});
+  type DepositExtraRow = { bankName: string; accountNumber: string; amount: string; label: string };
+  const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void }>>({});
 
   const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; }) => {
     uploadFnsRef.current[businessId] = handlers;
@@ -97,7 +98,7 @@ const App: React.FC = () => {
   }, []);
 
 
-  const handleRegisterDownloadActions = useCallback((businessId: string, actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => {
+  const handleRegisterDownloadActions = useCallback((businessId: string, actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void }) => {
     downloadActionsRef.current[businessId] = actions;
   }, []);
 
@@ -109,6 +110,7 @@ const App: React.FC = () => {
 
   const [showBulkDepositModal, setShowBulkDepositModal] = useState(false);
   const [bulkPasteText, setBulkPasteText] = useState('');
+  const [bulkBaseRowsMap, setBulkBaseRowsMap] = useState<Record<string, any[][]>>({});
 
   useEffect(() => {
     const handler = () => setQuotaExceeded(true);
@@ -123,6 +125,17 @@ const App: React.FC = () => {
   }, []);
 
   const { businesses: allBusinesses, isLoading: businessListLoading, addBusiness, removeBusiness, updateBusiness } = useBusinessList();
+
+  const openBulkDepositModal = useCallback(() => {
+    const loaded: Record<string, any[][]> = {};
+    allBusinesses.forEach(b => {
+      const rows = downloadActionsRef.current[b.id]?.getDepositBaseRows?.() ?? [];
+      if (rows.length > 0) loaded[b.id] = rows;
+    });
+    setBulkBaseRowsMap(loaded);
+    setBulkPasteText('');
+    setShowBulkDepositModal(true);
+  }, [allBusinesses]);
   const sharedSuppliers = useSharedSuppliers();
   const { courierTemplates } = useCourierTemplates();
 
@@ -484,7 +497,7 @@ const App: React.FC = () => {
 
         {/* 일괄 입금목록 */}
         <button
-          onClick={() => { setShowBulkDepositModal(true); setBulkPasteText(''); }}
+          onClick={openBulkDepositModal}
           className="px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border text-emerald-400 border-emerald-500/50 hover:bg-emerald-900/30 hover:border-emerald-400 active:scale-95"
         >
           일괄 입금목록
@@ -891,9 +904,8 @@ const App: React.FC = () => {
 
       {/* 일괄 입금목록 모달 */}
       {showBulkDepositModal && (() => {
-        type ExtraRow = { bankName: string; accountNumber: string; amount: string; label: string };
         const lines = bulkPasteText.trim().split('\n').filter(l => l.trim());
-        const grouped: Record<string, ExtraRow[]> = {};
+        const grouped: Record<string, DepositExtraRow[]> = {};
         const unmatched: string[] = [];
         lines.forEach(line => {
           const cols = line.split('\t');
@@ -902,7 +914,7 @@ const App: React.FC = () => {
           const accountNumber = cols[1]?.trim() || '';
           const amount = cols[2]?.trim() || '';
           const label = cols[3]?.trim() || '';
-          const bizRaw = (cols[4]?.trim() || cols[3]?.trim() || '').replace(/\s*환불$/, '').trim();
+          const bizRaw = (cols[4]?.trim() || '').replace(/\s*환불$/, '').trim();
           const matched = allBusinesses.find(b => b.displayName === bizRaw || b.id === bizRaw || b.displayName.includes(bizRaw) || (bizRaw.length > 1 && bizRaw.includes(b.displayName)));
           if (matched) {
             if (!grouped[matched.id]) grouped[matched.id] = [];
@@ -911,11 +923,19 @@ const App: React.FC = () => {
             unmatched.push(line);
           }
         });
-        const matchedIds = Object.keys(grouped);
+        // 기존 행이 있거나 붙여넣기 매칭된 사업자 모두 표시
+        const allRelevantIds = [...new Set([
+          ...Object.keys(bulkBaseRowsMap).filter(id => (bulkBaseRowsMap[id]?.length ?? 0) > 0),
+          ...Object.keys(grouped),
+        ])];
         const handleDownload = () => {
-          if (matchedIds.length === 0) { alert('매칭된 사업자가 없습니다.'); return; }
-          matchedIds.forEach(id => {
-            downloadActionsRef.current[id]?.downloadDepositListWithExtra(grouped[id]);
+          if (allRelevantIds.length === 0) { alert('다운로드할 내역이 없습니다.'); return; }
+          allRelevantIds.forEach(id => {
+            const base = bulkBaseRowsMap[id] ?? [];
+            const extra = grouped[id] ?? [];
+            if (base.length > 0 || extra.length > 0) {
+              downloadActionsRef.current[id]?.downloadDepositListDirect(base, extra);
+            }
           });
           setShowBulkDepositModal(false);
         };
@@ -932,42 +952,82 @@ const App: React.FC = () => {
                 </button>
               </div>
               <div className="overflow-y-auto flex-1 px-6 py-4 space-y-4">
-                <textarea
-                  rows={6}
-                  value={bulkPasteText}
-                  onChange={e => setBulkPasteText(e.target.value)}
-                  placeholder={"기업\t490-048665-01-021\t17400\t장혜옥\t안군농원 환불\n기업\t490-048665-01-021\t12000\t홍길동\t조에 환불"}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-zinc-300 font-mono placeholder-zinc-700 focus:ring-1 focus:ring-emerald-500/30 outline-none resize-none"
-                />
-                {lines.length > 0 && (
-                  <div className="space-y-2">
-                    {matchedIds.map(id => {
-                      const biz = allBusinesses.find(b => b.id === id);
-                      return (
-                        <div key={id} className="bg-zinc-950 rounded-xl border border-zinc-800 px-4 py-2.5">
-                          <p className="text-[11px] font-black text-emerald-400 mb-1.5">{biz?.displayName || id} <span className="text-zinc-600 font-normal">{grouped[id].length}건</span></p>
-                          <div className="space-y-0.5">
-                            {grouped[id].map((r, i) => (
-                              <p key={i} className="text-[11px] text-zinc-400 font-mono">{r.bankName} · {r.accountNumber} · <span className="text-emerald-400">{Number(r.amount).toLocaleString()}원</span></p>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {unmatched.length > 0 && (
-                      <div className="bg-zinc-950 rounded-xl border border-rose-500/30 px-4 py-2.5">
-                        <p className="text-[11px] font-black text-rose-400 mb-1.5">미매칭 {unmatched.length}건</p>
-                        {unmatched.map((l, i) => <p key={i} className="text-[11px] text-zinc-500 font-mono truncate">{l}</p>)}
+                {/* 사업자별 기존 입금 항목 + 붙여넣기 매칭 행 */}
+                {allRelevantIds.map(id => {
+                  const biz = allBusinesses.find(b => b.id === id);
+                  const baseRows = bulkBaseRowsMap[id] ?? [];
+                  const extraRows = grouped[id] ?? [];
+                  const totalCount = baseRows.length + extraRows.length;
+                  return (
+                    <div key={id} className="bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden">
+                      <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
+                        <p className="text-[11px] font-black text-white">{biz?.displayName || id}</p>
+                        <span className="text-zinc-600 text-[10px] font-bold">{totalCount}건</span>
                       </div>
-                    )}
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-zinc-600 text-[10px] font-black border-b border-zinc-800">
+                            <th className="px-3 py-1.5 text-left">은행</th>
+                            <th className="px-3 py-1.5 text-left">계좌번호</th>
+                            <th className="px-3 py-1.5 text-right">금액</th>
+                            <th className="px-3 py-1.5 text-left">비고</th>
+                            <th className="px-3 py-1.5 w-6" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-900">
+                          {baseRows.map((r, i) => (
+                            <tr key={`base-${i}`} className="text-zinc-400 group">
+                              <td className="px-3 py-1.5">{r[0]}</td>
+                              <td className="px-3 py-1.5 font-mono">{r[1]}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400">{Number(r[2]).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-zinc-500">{r[3]}</td>
+                              <td className="px-3 py-1.5">
+                                <button
+                                  onClick={() => setBulkBaseRowsMap(prev => ({ ...prev, [id]: (prev[id] ?? []).filter((_, j) => j !== i) }))}
+                                  className="text-zinc-700 hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {extraRows.map((r, i) => (
+                            <tr key={`extra-${i}`} className="text-zinc-500 bg-emerald-950/20">
+                              <td className="px-3 py-1.5">{r.bankName}</td>
+                              <td className="px-3 py-1.5 font-mono">{r.accountNumber}</td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400">{Number(r.amount).toLocaleString()}</td>
+                              <td className="px-3 py-1.5 text-zinc-600">{r.label}</td>
+                              <td className="px-3 py-1.5" />
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+                {/* 붙여넣기 영역 */}
+                <div>
+                  <p className="text-zinc-600 text-[10px] font-bold mb-1.5">엑셀에서 복사 후 붙여넣기 (열 순서: 은행 / 계좌번호 / 금액 / 이름 / 사업자명 환불)</p>
+                  <textarea
+                    rows={4}
+                    value={bulkPasteText}
+                    onChange={e => setBulkPasteText(e.target.value)}
+                    placeholder={"기업\t490-048665-01-021\t17400\t장혜옥\t안군농원 환불\n기업\t490-048665-01-021\t12000\t홍길동\t조에 환불"}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-zinc-300 font-mono placeholder-zinc-700 focus:ring-1 focus:ring-emerald-500/30 outline-none resize-none"
+                  />
+                </div>
+                {unmatched.length > 0 && (
+                  <div className="bg-zinc-950 rounded-xl border border-rose-500/30 px-4 py-2.5">
+                    <p className="text-[11px] font-black text-rose-400 mb-1.5">미매칭 {unmatched.length}건</p>
+                    {unmatched.map((l, i) => <p key={i} className="text-[11px] text-zinc-500 font-mono truncate">{l}</p>)}
                   </div>
                 )}
               </div>
               <div className="px-6 py-4 border-t border-zinc-800 flex justify-end gap-2">
                 <button onClick={() => setShowBulkDepositModal(false)} className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all">취소</button>
-                <button onClick={handleDownload} disabled={matchedIds.length === 0} className="flex items-center gap-2 px-5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all">
+                <button onClick={handleDownload} disabled={allRelevantIds.length === 0} className="flex items-center gap-2 px-5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all">
                   <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                  {matchedIds.length > 0 ? `${matchedIds.length}개 사업자 다운로드` : '다운로드'}
+                  {allRelevantIds.length > 0 ? `${allRelevantIds.length}개 사업자 다운로드` : '다운로드'}
                 </button>
               </div>
             </div>

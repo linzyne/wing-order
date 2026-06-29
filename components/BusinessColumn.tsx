@@ -12,7 +12,7 @@ const HARDCODED_IDS = ['안군농원', '조에'];
 
 interface MasterUploadHandlers { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; downloadAllCompanies?: () => void; getCompanyClosed?: (companyName: string) => boolean; getCompanyRecorded?: (companyName: string) => boolean; toggleCompanyClosed?: (companyName: string) => void; toggleCompanyRecord?: (companyName: string) => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; getLastSettlementSummaries?: () => { companyName: string; kakaoText: string; excelText: string }[]; }
 
-interface DownloadActions { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; }
+interface DownloadActions { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; }
 
 const BANK_URLS: Record<string, string> = {
   woori: 'https://nbi.wooribank.com/nbi/woori?withyou=BITRS0029',
@@ -51,7 +51,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
   const [salesRefreshTrigger, setSalesRefreshTrigger] = useState<{ date: string; n: number } | undefined>();
-  const [actions, setActions] = useState<{ downloadDepositList?: () => void; downloadWorkLog?: () => void; downloadDepositListWithExtra?: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }>({});
+  const [actions, setActions] = useState<Partial<DownloadActions>>({});
 
   // 인라인 함수로 넘기면 매 렌더마다 새 참조 → CompanySelector useEffect 무한루프 발생
   // useCallback으로 안정화
