@@ -117,6 +117,63 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     return snapshot;
   }, [businesses, uploadFns]);
 
+  const handleBulkToggleClosed = () => {
+    const snapshot = refreshDownloadSnapshot();
+    const entries = snapshot.flatMap(biz =>
+      biz.companies.map(c => ({ bizId: biz.businessId, companyName: c.name }))
+    );
+    const freshMap: Record<string, boolean> = {};
+    entries.forEach(({ bizId, companyName }) => {
+      freshMap[`${bizId}_${companyName}`] = uploadFns[bizId]?.getCompanyClosed?.(companyName) ?? false;
+    });
+    const allClosed = entries.length > 0 && entries.every(({ bizId, companyName }) => freshMap[`${bizId}_${companyName}`]);
+    const next = !allClosed;
+    entries.forEach(({ bizId, companyName }) => {
+      if ((freshMap[`${bizId}_${companyName}`] ?? false) !== next)
+        uploadFns[bizId]?.toggleCompanyClosed?.(companyName);
+    });
+    setCompanyClosedMap(prev => {
+      const u = { ...prev, ...freshMap };
+      entries.forEach(({ bizId, companyName }) => { u[`${bizId}_${companyName}`] = next; });
+      return u;
+    });
+  };
+
+  const handleBulkToggleRecorded = () => {
+    const snapshot = refreshDownloadSnapshot();
+    const entries = snapshot.flatMap(biz =>
+      biz.companies.map(c => ({ bizId: biz.businessId, companyName: c.name }))
+    );
+    const freshMap: Record<string, boolean> = {};
+    entries.forEach(({ bizId, companyName }) => {
+      freshMap[`${bizId}_${companyName}`] = uploadFns[bizId]?.getCompanyRecorded?.(companyName) ?? false;
+    });
+    const allRecorded = entries.length > 0 && entries.every(({ bizId, companyName }) => freshMap[`${bizId}_${companyName}`]);
+    const next = !allRecorded;
+    entries.forEach(({ bizId, companyName }) => {
+      if ((freshMap[`${bizId}_${companyName}`] ?? false) !== next)
+        uploadFns[bizId]?.toggleCompanyRecord?.(companyName);
+    });
+    setCompanyRecordedMap(prev => {
+      const u = { ...prev, ...freshMap };
+      entries.forEach(({ bizId, companyName }) => { u[`${bizId}_${companyName}`] = next; });
+      return u;
+    });
+  };
+
+  const bulkAllClosed = (() => {
+    const entries = downloadSnapshot.flatMap(biz =>
+      biz.companies.map(c => `${biz.businessId}_${c.name}`)
+    );
+    return entries.length > 0 && entries.every(k => companyClosedMap[k] ?? false);
+  })();
+  const bulkAllRecorded = (() => {
+    const entries = downloadSnapshot.flatMap(biz =>
+      biz.companies.map(c => `${biz.businessId}_${c.name}`)
+    );
+    return entries.length > 0 && entries.every(k => companyRecordedMap[k] ?? false);
+  })();
+
   const handleToggleDownload = () => {
     if (!showDownload) {
       const snapshot = refreshDownloadSnapshot();
@@ -226,7 +283,31 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     <div className="p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-xs font-black text-zinc-300">공통 주문서 업로드</span>
-        <button onClick={onClose} className="text-zinc-500 hover:text-white text-sm font-black">×</button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleBulkToggleClosed}
+            title={bulkAllClosed ? '전체 마감 해제' : '전체 업체 마감 처리'}
+            className={`px-2 py-0.5 rounded text-[10px] font-black tracking-tight border transition-all ${
+              bulkAllClosed
+                ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                : 'bg-transparent text-zinc-600 border-zinc-700 hover:text-zinc-400 hover:border-zinc-500'
+            }`}
+          >
+            마감
+          </button>
+          <button
+            onClick={handleBulkToggleRecorded}
+            title={bulkAllRecorded ? '전체 기록 해제' : '전체 업체 기록하기'}
+            className={`px-2 py-0.5 rounded text-[10px] font-black tracking-tight border transition-all ${
+              bulkAllRecorded
+                ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                : 'bg-transparent text-zinc-600 border-zinc-700 hover:text-zinc-400 hover:border-zinc-500'
+            }`}
+          >
+            기록
+          </button>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white text-sm font-black">×</button>
+        </div>
       </div>
 
       {/* 업체별 현재 차수 상태 배지 */}
