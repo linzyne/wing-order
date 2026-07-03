@@ -265,7 +265,7 @@ export const useInvoiceMerger = () => {
                     if (ci === vOrderIdx || ci === vInvIdx) continue;
                     // 이 열의 값들이 주문번호 집합과 겹치는지 빠르게 체크
                     let colHits = 0;
-                    for (let ri = 1; ri < Math.min(vendorAoa.length, 50); ri++) {
+                    for (let ri = 1; ri < vendorAoa.length; ri++) {
                         const row = vendorAoa[ri];
                         if (!row) continue;
                         const key = normalizeOrderNum(row[ci]);
