@@ -191,34 +191,45 @@ const findBestMatchForProduct = async (
                 return (p.displayName || '').toLowerCase().includes(lowerType);
             });
 
-            if (typeMatched.length === 1) {
-                // 후보가 하나면 바로 확정
-                const result: [string, ProductPricing] = [typeMatched[0][0], typeMatched[0][1]];
-                cache.set(cacheKey, result);
-                return result;
-            }
+            // rawProductName이 typeMatched 밖의 다른 품목 키워드를 직접 포함하면 K열 좁히기가 오도적 → fallthrough
+            const lowerRawForGroupCheck = rawProductName.toLowerCase();
+            const hasDirectOutsideMatch = availableEntries.some(([key, p]) => {
+                if (typeMatched.some(([k]) => k === key)) return false;
+                const names = [p.displayName, p.siteProductName, ...(p.aliases || [])].filter(Boolean) as string[];
+                return names.some(n => lowerRawForGroupCheck.includes(n.toLowerCase()));
+            });
 
-            if (typeMatched.length > 1) {
-                // 후보가 여럿이면 옵션명 + 품목 키로 kg 매칭
-                const optionText = `${regOptionValue || ''} ${rawProductName}`;
-                const kgInOption = (optionText.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []).map((m: string) => m.replace(/\s/g, '').toLowerCase());
-
-                if (kgInOption.length > 0) {
-                    const kgMatched = typeMatched.filter(([key, p]) => {
-                        const kg = [...(p.displayName.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []), ...(key.match(/(\d+(?:\.\d+)?)\s*kg/gi) || [])]
-                            .map(m => m.replace(/\s/g, '').toLowerCase());
-                        return kg.some(k => kgInOption.includes(k));
-                    });
-                    if (kgMatched.length > 0) {
-                        const result: [string, ProductPricing] = [kgMatched[0][0], kgMatched[0][1]];
-                        cache.set(cacheKey, result);
-                        return result;
-                    }
+            if (!hasDirectOutsideMatch) {
+                if (typeMatched.length === 1) {
+                    // 후보가 하나면 바로 확정
+                    const result: [string, ProductPricing] = [typeMatched[0][0], typeMatched[0][1]];
+                    cache.set(cacheKey, result);
+                    return result;
                 }
 
-                // kg 매칭 실패 — typeMatched로 좁히지 않고 기존 매칭으로 fallthrough
-                // (typeMatched에 없는 키워드 미설정 품목이 정답일 수 있음)
+                if (typeMatched.length > 1) {
+                    // 후보가 여럿이면 옵션명 + 품목 키로 kg 매칭
+                    const optionText = `${regOptionValue || ''} ${rawProductName}`;
+                    const kgInOption = (optionText.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []).map((m: string) => m.replace(/\s/g, '').toLowerCase());
+
+                    if (kgInOption.length > 0) {
+                        const kgMatched = typeMatched.filter(([key, p]) => {
+                            const kg = [...(p.displayName.match(/(\d+(?:\.\d+)?)\s*kg/gi) || []), ...(key.match(/(\d+(?:\.\d+)?)\s*kg/gi) || [])]
+                                .map(m => m.replace(/\s/g, '').toLowerCase());
+                            return kg.some(k => kgInOption.includes(k));
+                        });
+                        if (kgMatched.length > 0) {
+                            const result: [string, ProductPricing] = [kgMatched[0][0], kgMatched[0][1]];
+                            cache.set(cacheKey, result);
+                            return result;
+                        }
+                    }
+
+                    // kg 매칭 실패 — typeMatched로 좁히지 않고 기존 매칭으로 fallthrough
+                    // (typeMatched에 없는 키워드 미설정 품목이 정답일 수 있음)
+                }
             }
+            // hasDirectOutsideMatch: rawProductName이 K열 좁히기 결과 밖의 품목 키워드와 직접 일치 → K열 결과 무시하고 fallthrough
             // typeMatched가 0이면 기존 availableEntries 그대로 사용
         }
     }

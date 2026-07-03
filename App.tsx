@@ -143,7 +143,7 @@ const App: React.FC = () => {
   const globalMasterRowsRef = useRef<Record<string, { header: any[]; dataRows: any[][] }>>({} as Record<string, { header: any[]; dataRows: any[][] }>);
   const globalCourierFilesRef = useRef<Record<string, File[]>>({});
   const [globalCourierFiles, setGlobalCourierFiles] = useState<Record<string, File[]>>({});
-  const [globalCourierResults, setGlobalCourierResults] = useState<Record<string, { matched: number; total: number; notFound: string[] }>>({});
+  const [globalCourierResults, setGlobalCourierResults] = useState<Record<string, { matched: number; total: number; notFound: string[]; bizIds: string[] }>>({});
   const [globalCourierMatchedRows, setGlobalCourierMatchedRows] = useState<Record<string, any[][]>>({});
 
   const handleExposeOrderRows = useCallback((businessId: string, header: any[] | null, dataRows: any[][]) => {
@@ -151,13 +151,12 @@ const App: React.FC = () => {
   }, []);
 
   const handleGlobalCourierDownload = useCallback(async (template: CourierTemplate) => {
-    const allDataRows = (Object.values(globalMasterRowsRef.current) as { header: any[]; dataRows: any[][] }[]).flatMap(b => b.dataRows);
-    if (allDataRows.length === 0) { alert('각 사업자 탭에 주문서를 먼저 업로드해주세요.'); return; }
+    const bizEntries = Object.entries(globalMasterRowsRef.current as Record<string, { header: any[]; dataRows: any[][] }>);
+    if (bizEntries.every(([, b]) => b.dataRows.length === 0)) { alert('각 사업자 탭에 주문서를 먼저 업로드해주세요.'); return; }
 
     const fakeOrderNums = new Set<string>();
     globalFakeOrderInputRef.current.split('\n').forEach(line => {
-      const trimmed = line.trim();
-      const parts = trimmed.split('_');
+      const parts = line.trim().split('_');
       if (parts.length >= 3) {
         const orderNum = parts[parts.length - 1].replace(/[^A-Z0-9]/gi, '').toUpperCase();
         if (orderNum) fakeOrderNums.add(orderNum);
@@ -168,44 +167,55 @@ const App: React.FC = () => {
     const rows: any[][] = [[...template.headers]];
     const notFoundOrders: string[] = [];
     const seenOrderNums = new Set<string>();
+    const matchedBizIds = new Set<string>();
     const { mapping, fixedValues } = template;
 
-    for (const row of allDataRows) {
-      if (!row) continue;
-      const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      if (!fakeOrderNums.has(orderNum)) continue;
-      if (seenOrderNums.has(orderNum)) continue;
-      seenOrderNums.add(orderNum);
+    for (const [bizId, { dataRows }] of bizEntries) {
+      for (const row of dataRows) {
+        if (!row) continue;
+        const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        if (!fakeOrderNums.has(orderNum)) continue;
+        if (seenOrderNums.has(orderNum)) continue;
+        seenOrderNums.add(orderNum);
+        matchedBizIds.add(bizId);
 
-      const recipientName = String(row[26] || '').trim();
-      const phone = String(row[27] || '').trim();
-      const address = String(row[29] || '').trim();
-      const originalOrderNum = String(row[2] || '').trim();
-      if (!recipientName) notFoundOrders.push(originalOrderNum);
+        const recipientName = String(row[26] || '').trim();
+        const phone = String(row[27] || '').trim();
+        const address = String(row[29] || '').trim();
+        const originalOrderNum = String(row[2] || '').trim();
+        if (!recipientName) notFoundOrders.push(originalOrderNum);
 
-      const newRow = new Array(template.headers.length).fill('');
-      newRow[mapping.orderNumber] = originalOrderNum;
-      newRow[mapping.recipientName] = recipientName;
-      newRow[mapping.recipientPhone] = phone;
-      newRow[mapping.recipientAddress] = address;
-      Object.entries(fixedValues).forEach(([colIdx, value]) => { newRow[Number(colIdx)] = value; });
-      rows.push(newRow);
+        const newRow = new Array(template.headers.length).fill('');
+        newRow[mapping.orderNumber] = originalOrderNum;
+        newRow[mapping.recipientName] = recipientName;
+        newRow[mapping.recipientPhone] = phone;
+        newRow[mapping.recipientAddress] = address;
+        Object.entries(fixedValues).forEach(([colIdx, value]) => { newRow[Number(colIdx)] = value; });
+        rows.push(newRow);
+      }
     }
 
     const matchedCount = rows.length - 1;
     if (matchedCount === 0) { alert('주문서에서 가구매 명단과 매칭되는 주문을 찾지 못했습니다.'); return; }
 
+    const senderName = [...matchedBizIds]
+      .map(id => allBusinesses.find(b => b.id === id)?.displayName || id)
+      .join('+') || '공통';
+    for (let i = 1; i < rows.length; i++) rows[i][13] = senderName;
+
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-    const tmplDisplayName = template.label ? `${template.name}_${template.label}` : template.name;
-    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_공통_${tmplDisplayName}.xlsx`);
+    const fullTmplName = template.label ? `${template.name} (${template.label})` : template.name;
+    const tmplSuffix = fullTmplName.includes('사무실') ? '사무실' : fullTmplName.includes('대행') ? '택배대행' : fullTmplName;
+    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${senderName} ${tmplSuffix}.xlsx`);
     if (notFoundOrders.length > 0) alert(`${template.name} ${matchedCount}건 다운로드!\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
-  }, []);
+  }, [allBusinesses]);
 
   const processGlobalCourierFiles = useCallback(async (template: CourierTemplate, files: File[]) => {
     const allBusiness = globalMasterRowsRef.current as Record<string, { header: any[]; dataRows: any[][] }>;
-    const allDataRows = Object.values(allBusiness).flatMap(b => b.dataRows);
+    const bizEntries = Object.entries(allBusiness);
+    const allDataRows = bizEntries.flatMap(([, b]) => b.dataRows);
     if (allDataRows.length === 0) { alert('각 사업자 탭에 주문서를 먼저 업로드해주세요.'); return; }
 
     setGlobalCourierResults(prev => { const n = { ...prev }; delete n[template.id]; return n; });
@@ -242,31 +252,35 @@ const App: React.FC = () => {
       });
       if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
 
-      const header = Object.values(allBusiness).find(b => b.header.length > 0)?.header ?? [];
+      const header = bizEntries.find(([, b]) => b.header.length > 0)?.[1].header ?? [];
       const matchedRows: any[][] = [header];
       const notFoundOrders: string[] = [];
       const seenOrderNums = new Set<string>();
+      const matchedBizIds = new Set<string>();
 
-      for (const row of allDataRows) {
-        if (!row) continue;
-        const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
-        if (!fakeOrderNums.has(orderNum)) continue;
-        if (seenOrderNums.has(orderNum)) continue;
-        seenOrderNums.add(orderNum);
-        const tracking = trackingMap.get(orderNum);
-        if (tracking) {
-          const newRow = [...row];
-          while (newRow.length <= 4) newRow.push('');
-          newRow[3] = template.name;
-          newRow[4] = tracking;
-          matchedRows.push(newRow);
-        } else {
-          notFoundOrders.push(String(row[2] || ''));
+      for (const [bizId, { dataRows }] of bizEntries) {
+        for (const row of dataRows) {
+          if (!row) continue;
+          const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          if (!fakeOrderNums.has(orderNum)) continue;
+          if (seenOrderNums.has(orderNum)) continue;
+          seenOrderNums.add(orderNum);
+          matchedBizIds.add(bizId);
+          const tracking = trackingMap.get(orderNum);
+          if (tracking) {
+            const newRow = [...row];
+            while (newRow.length <= 4) newRow.push('');
+            newRow[3] = template.name;
+            newRow[4] = tracking;
+            matchedRows.push(newRow);
+          } else {
+            notFoundOrders.push(String(row[2] || ''));
+          }
         }
       }
 
       const matchedCount = matchedRows.length - 1;
-      setGlobalCourierResults(prev => ({ ...prev, [template.id]: { matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders } }));
+      setGlobalCourierResults(prev => ({ ...prev, [template.id]: { matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders, bizIds: [...matchedBizIds] } }));
       if (matchedCount > 0) setGlobalCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
     } catch (err: any) {
       alert(`${template.name} 운송장 처리 중 오류: ` + err.message);
@@ -293,27 +307,33 @@ const App: React.FC = () => {
     const rows = globalCourierMatchedRows[templateId];
     if (!rows) return;
     const tmpl = courierTemplates.find(t => t.id === templateId);
-    const tmplDisplayName = tmpl ? (tmpl.label ? `${tmpl.name}_${tmpl.label}` : tmpl.name) : '택배';
+    const fullTmplName = tmpl ? (tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name) : '택배';
+    const tmplSuffix = fullTmplName.includes('사무실') ? '사무실' : fullTmplName.includes('대행') ? '택배대행' : fullTmplName;
+    const bizIds = globalCourierResults[templateId]?.bizIds ?? [];
+    const senderName = bizIds.map(id => allBusinesses.find(b => b.id === id)?.displayName || id).join('+') || '공통';
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '주문서');
-    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_공통_가구매_${tmplDisplayName}_운송장완료.xlsx`);
-  }, [globalCourierMatchedRows, courierTemplates]);
+    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${senderName} ${tmplSuffix} 운송장완료.xlsx`);
+  }, [globalCourierMatchedRows, globalCourierResults, courierTemplates, allBusinesses]);
 
   const handleCourierDirectCoupangUpload = useCallback(async (templateId: string, businessId: string) => {
     const rows = globalCourierMatchedRows[templateId];
     if (!rows) throw new Error('운송장 매칭 데이터가 없습니다. 먼저 운송장을 업로드해주세요.');
     if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
     const tmpl = courierTemplates.find(t => t.id === templateId);
-    const tmplDisplayName = tmpl ? (tmpl.label ? `${tmpl.name}_${tmpl.label}` : tmpl.name) : '택배';
-    const fileName = `${new Date().toLocaleDateString('en-CA')}_공통_가구매_${tmplDisplayName}_운송장완료.xlsx`;
+    const fullTmplName2 = tmpl ? (tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name) : '택배';
+    const tmplSuffix2 = fullTmplName2.includes('사무실') ? '사무실' : fullTmplName2.includes('대행') ? '택배대행' : fullTmplName2;
+    const bizIds = globalCourierResults[templateId]?.bizIds ?? [];
+    const senderName = bizIds.map(id => allBusinesses.find(b => b.id === id)?.displayName || id).join('+') || '공통';
+    const fileName = `${new Date().toLocaleDateString('en-CA')} ${senderName} ${tmplSuffix2} 운송장완료.xlsx`;
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '주문서');
     const binary: ArrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const file = new File([binary], fileName, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     await directCoupangUploadRef.current(businessId, file);
-  }, [globalCourierMatchedRows, courierTemplates]);
+  }, [globalCourierMatchedRows, globalCourierResults, courierTemplates, allBusinesses]);
 
   const courierItemsForPanel = useMemo<CourierItem[]>(() =>
     courierTemplates.map(t => ({

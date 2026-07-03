@@ -93,11 +93,14 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     const creds = credentials[business.id];
     if (!creds) return;
     setDownloadStates(prev => ({ ...prev, [business.id]: { loading: true, error: null } }));
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5분 타임아웃
     try {
       const res = await fetch('/api/wing-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: creds.id, password: creds.password, status: getStatus(business.id), businessName: business.displayName, timeLabel }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         if (res.status === 404) throw new Error('브라우저 자동화는 로컬(npm run dev)에서만 사용 가능합니다. API 모드를 이용해주세요.');
@@ -109,11 +112,18 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
       const fileName = match ? decodeURIComponent(match[1]) : `orders-${business.id}.xlsx`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = fileName; a.click();
-      URL.revokeObjectURL(url);
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
       setDownloadStates(prev => ({ ...prev, [business.id]: { loading: false, error: null } }));
     } catch (e: any) {
-      setDownloadStates(prev => ({ ...prev, [business.id]: { loading: false, error: e.message ?? '오류' } }));
+      const msg = e?.name === 'AbortError' ? '타임아웃: 브라우저 자동화가 5분 내에 완료되지 않았습니다.' : (e.message ?? '오류');
+      setDownloadStates(prev => ({ ...prev, [business.id]: { loading: false, error: msg } }));
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
@@ -127,9 +137,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     const targets = businesses.filter(b => isConfigured(b.id));
     if (targets.length === 0) return;
     setBulkDownloadLoading(true);
-    for (const b of targets) {
-      await handleDownload(b);
-    }
+    await Promise.all(targets.map(b => handleDownload(b)));
     setBulkDownloadLoading(false);
   };
 
@@ -173,6 +181,8 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
       throw new Error(`${business?.displayName ?? businessId} 사업자의 Wing 로그인 정보가 없습니다. 쿠팡 주문 패널에서 설정해주세요.`);
     }
     setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: true, error: null } }));
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5분 타임아웃
     try {
       const arrayBuffer = await file.arrayBuffer();
       const uint8 = new Uint8Array(arrayBuffer);
@@ -185,6 +195,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: creds.id, password: creds.password, fileBase64, fileName: file.name, businessName: business.displayName }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         if (res.status === 404) throw new Error('브라우저 자동화는 로컬(npm run dev)에서만 사용 가능합니다.');
@@ -194,8 +205,11 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
       setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: null, success: true } }));
       setTimeout(() => setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: null, success: false } })), 3000);
     } catch (e: any) {
-      setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: e.message ?? '오류' } }));
+      const msg = e?.name === 'AbortError' ? '타임아웃: 브라우저 자동화가 5분 내에 완료되지 않았습니다.' : (e.message ?? '오류');
+      setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: msg } }));
       throw e;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }, []);
 

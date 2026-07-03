@@ -2386,8 +2386,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const ws = XLSX.utils.aoa_to_sheet(rows);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-            const tmplDisplayName = template.label ? `${template.name}_${template.label}` : template.name;
-            XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_${businessPrefix}_${tmplDisplayName}.xlsx`);
+            const fullTmplName = template.label ? `${template.name} (${template.label})` : template.name;
+            const tmplSuffix = fullTmplName.includes('사무실') ? '사무실' : fullTmplName.includes('대행') ? '택배대행' : fullTmplName;
+            XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${businessPrefix} ${tmplSuffix}.xlsx`);
 
             if (notFoundOrders.length > 0) {
                 alert(`${template.name} ${matchedCount}건 다운로드 완료!\n\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
@@ -2487,11 +2488,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const rows = courierMatchedRows[templateId];
         if (!rows) return;
         const tmpl = courierTemplates.find((t: CourierTemplate) => t.id === templateId);
-        const tmplDisplayName = tmpl ? (tmpl.label ? `${tmpl.name}_${tmpl.label}` : tmpl.name) : '택배';
+        const fullTmplName = tmpl ? (tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name) : '택배';
+        const tmplSuffix = fullTmplName.includes('사무실') ? '사무실' : fullTmplName.includes('대행') ? '택배대행' : fullTmplName;
         const ws = XLSX.utils.aoa_to_sheet(rows);
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '주문서');
-        XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')}_${businessPrefix}_가구매_${tmplDisplayName}_운송장완료.xlsx`);
+        XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${businessPrefix} ${tmplSuffix} 운송장완료.xlsx`);
     };
 
     const handleCourierTemplateDragEnd = (event: DragEndEvent) => {

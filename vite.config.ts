@@ -206,11 +206,12 @@ function registerWingMiddlewares(middlewares: any) {
       try {
         const { id, password, status, businessName, timeLabel } = JSON.parse(body);
         const { filePath, fileName } = await runWingDownload({ id, password }, status, businessName, timeLabel);
-        const fileBuffer = await fsp.readFile(filePath);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`);
-        res.end(fileBuffer);
-        fsp.unlink(filePath).catch(() => {});
+        const { createReadStream } = await import('fs');
+        const stream = createReadStream(filePath);
+        stream.pipe(res);
+        stream.on('end', () => fsp.unlink(filePath).catch(() => {}));
       } catch (e: any) {
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json');
