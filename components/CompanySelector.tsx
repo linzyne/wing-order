@@ -3688,9 +3688,54 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     };
 
+    const handleDeleteCompanyFromSalesHistory = async (companyName: string) => {
+        let recordDate = workDate;
+        if (masterOrderFile) {
+            const fname = masterOrderFile.name;
+            const fullMatch = fname.match(/(\d{4})-(\d{2})-(\d{2})/);
+            const shortMatch = fname.match(/(\d{2})(\d{2})/);
+            if (fullMatch) {
+                recordDate = `${fullMatch[1]}-${fullMatch[2]}-${fullMatch[3]}`;
+            } else if (shortMatch) {
+                const mm = parseInt(shortMatch[1]);
+                const dd = parseInt(shortMatch[2]);
+                if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+                    recordDate = `${new Date(workDate).getFullYear()}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+                }
+            }
+        }
+        try {
+            const { loadDailySales } = await import('../services/firestoreService');
+            const existing = await loadDailySales(recordDate, businessId);
+            if (!existing) return;
+            const updated = {
+                ...existing,
+                records: (existing.records || []).filter(r => r.company !== companyName),
+                marginRecords: (existing.marginRecords || []).filter(r => !r.company || r.company !== companyName),
+                depositRecords: (existing.depositRecords || []).filter(d => !d.company || d.company !== companyName),
+                companyOrderRows: Object.fromEntries(Object.entries(existing.companyOrderRows || {}).filter(([k]) => k !== companyName)),
+                companyInvoiceRows: Object.fromEntries(Object.entries(existing.companyInvoiceRows || {}).filter(([k]) => k !== companyName)),
+            };
+            updated.totalAmount = (updated.records || []).reduce((s: number, r: any) => s + r.totalPrice, 0);
+            updated.marginTotal = (updated.marginRecords || []).reduce((s: number, r: any) => s + r.totalMargin, 0) || undefined;
+            updated.depositTotal = (updated.depositRecords || []).reduce((s: number, d: any) => s + d.amount, 0) || undefined;
+            if (!Object.keys(updated.companyOrderRows).length) delete (updated as any).companyOrderRows;
+            if (!Object.keys(updated.companyInvoiceRows).length) delete (updated as any).companyInvoiceRows;
+            await upsertDailySales(updated, businessId);
+            setRecordedCompanies((prev: Set<string>) => { const next = new Set(prev); next.delete(companyName); return next; });
+            onSaved?.(recordDate);
+        } catch (err) {
+            console.error('매출 기록 삭제 실패:', err);
+        }
+    };
+
     toggleCompanyClosedRef.current = handleToggleClosed;
     toggleCompanyRecordRef.current = (companyName: string) => {
-        handleSaveToSalesHistory(new Set([companyName]));
+        if (recordedCompanies.has(companyName)) {
+            handleDeleteCompanyFromSalesHistory(companyName);
+        } else {
+            handleSaveToSalesHistory(new Set([companyName]));
+        }
     };
 
     const grandTotal = (Object.values(totalsMap) as number[]).reduce((a: number, b: number) => a + b, 0) +
@@ -5636,7 +5681,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     fakeMismatch={fakeMismatch}
                                                     companyChecked={isChecked}
                                                     isRecorded={recordedCompanies.has(company)}
-                                                    onRecord={sIdx === 0 ? () => handleSaveToSalesHistory(new Set([company])) : undefined}
+                                                    onRecord={sIdx === 0 ? () => { if (recordedCompanies.has(company)) { handleDeleteCompanyFromSalesHistory(company); } else { handleSaveToSalesHistory(new Set([company])); } } : undefined}
                                                     workDate={workDate}
                                                     workspace={workspace}
                                                     updateField={updateField}

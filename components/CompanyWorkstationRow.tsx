@@ -466,7 +466,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // Firestore 동기화 - 값 비교로 에코 방지
     const lastFirestoreWorkflowRef = useRef('');
     const lastFirestoreAdjRef = useRef('');
-    const lastFirestoreMemoRef = useRef('');
     const lastFirestoreOverrideRef = useRef('');
 
     useEffect(() => {
@@ -485,13 +484,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 lastFirestoreAdjRef.current = wsStr;
             }
         }
-        if (typeof workspace.sessionMemos?.[sessionId] === 'string') {
-            const memoStr = workspace.sessionMemos[sessionId];
-            if (memoStr !== lastFirestoreMemoRef.current) {
-                setSessionMemo(memoStr);
-                lastFirestoreMemoRef.current = memoStr;
-            }
-        }
         if (workspace.summaryOverrides?.[sessionId]) {
             const overrideStr = JSON.stringify(workspace.summaryOverrides[sessionId]);
             if (overrideStr !== lastFirestoreOverrideRef.current) {
@@ -500,6 +492,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             }
         }
     }, [workspace, sessionId]);
+
+    // pricingConfig에서 메모 초기화 (한 번만, isFirstSession만)
+    const memoInitializedRef = useRef(false);
+    useEffect(() => {
+        if (!isFirstSession || memoInitializedRef.current) return;
+        const saved = pricingConfig[companyName]?.memo;
+        if (saved !== undefined) {
+            memoInitializedRef.current = true;
+            setSessionMemo(saved);
+        }
+    }, [pricingConfig, companyName, isFirstSession]);
 
     // workflow 변경 → Firestore에 저장
     const isInitialWorkflowLoad = useRef(true);
@@ -521,20 +524,26 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         updateSessionField(`sessionAdjustments.${sessionId}`, sessionAdjustments);
     }, [sessionAdjustments, sessionId, updateSessionField]);
 
-    // sessionMemo 변경 → Firestore에 디바운스 저장 (타이핑 중 write 폭증 방지)
-    const isInitialMemoLoad = useRef(true);
+    // sessionMemo 변경 → pricingConfig에 디바운스 저장 (영구 유지, 삭제 전까지 유지)
     const memoDebounceRef = useRef<ReturnType<typeof setTimeout>>();
     useEffect(() => {
-        if (isInitialMemoLoad.current) { isInitialMemoLoad.current = false; return; }
-        if (sessionMemo === lastFirestoreMemoRef.current) return;
+        if (!isFirstSession || !memoInitializedRef.current) return;
         if (memoDebounceRef.current) clearTimeout(memoDebounceRef.current);
         memoDebounceRef.current = setTimeout(() => {
-            if (sessionMemo === lastFirestoreMemoRef.current) return;
-            lastFirestoreMemoRef.current = sessionMemo;
-            updateSessionField(`sessionMemos.${sessionId}`, sessionMemo);
+            const cfg = pricingConfigRef.current;
+            if (!cfg[companyName]) return;
+            const saved = cfg[companyName].memo || '';
+            if (sessionMemo.trim() === saved.trim()) return;
+            const newConfig = JSON.parse(JSON.stringify(cfg));
+            if (sessionMemo.trim()) {
+                newConfig[companyName].memo = sessionMemo;
+            } else {
+                delete newConfig[companyName].memo;
+            }
+            onConfigChange(newConfig);
         }, 1000);
         return () => { if (memoDebounceRef.current) clearTimeout(memoDebounceRef.current); };
-    }, [sessionMemo, sessionId, updateSessionField]);
+    }, [sessionMemo, companyName, isFirstSession]);
 
     // summaryOverride 변경 → Firestore에 저장
     const isInitialOverrideLoad = useRef(true);
@@ -873,6 +882,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
     const [showPlatformDropdown, setShowPlatformDropdown] = useState(false);
     const platformDropdownRef = useRef<HTMLDivElement>(null);
+
+    // 발주서 다운로드 전 메모 팝업
+    const [pendingDownloadAction, setPendingDownloadAction] = useState<(() => void) | null>(null);
+
+    const triggerDownloadWithMemoCheck = (action: () => void) => {
+        if (sessionMemo.trim()) {
+            setPendingDownloadAction(() => action);
+        } else {
+            action();
+        }
+    };
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
             if (platformDropdownRef.current && !platformDropdownRef.current.contains(e.target as Node)) {
@@ -1135,9 +1155,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className={`font-black text-xl ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-pink-400'}`}>{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         {onDownloadMergedOrder ? (
-                                            <button onClick={() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); }} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${mergedOrderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-cyan-900/50 text-cyan-300 hover:bg-cyan-800/70 hover:text-cyan-100 border-cyan-700/50 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={() => triggerDownloadWithMemoCheck(() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); })} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${mergedOrderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-cyan-900/50 text-cyan-300 hover:bg-cyan-800/70 hover:text-cyan-100 border-cyan-700/50 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         ) : (
-                                            <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${orderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={() => triggerDownloadWithMemoCheck(handleDownloadOrder)} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${orderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         )}
                                     </div>
                                 )}
@@ -1146,7 +1166,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className={`font-black text-base ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-indigo-400'}`}>{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
-                                        <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${(orderDownloaded || mergedOrderDownloaded) ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                        <button onClick={() => triggerDownloadWithMemoCheck(handleDownloadOrder)} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${(orderDownloaded || mergedOrderDownloaded) ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-2 w-full">
@@ -1168,7 +1188,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             <div className={`font-black text-base ${(orderDownloaded || mergedDownloaded) ? 'text-zinc-700' : 'text-indigo-400'}`}>+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
                                             <div className="h-6 w-px bg-zinc-800" />
                                             <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
-                                            <button onClick={handleDownloadOrder} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${(orderDownloaded || mergedDownloaded) ? 'bg-zinc-800 text-zinc-600 border-transparent' : roundNumber === 1 ? 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md' : roundNumber === 2 ? 'bg-sky-900/40 text-sky-300 hover:bg-sky-800/60 hover:text-sky-100 border-sky-700/40 shadow-md' : roundNumber === 3 ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 hover:text-emerald-100 border-emerald-700/40 shadow-md' : roundNumber === 4 ? 'bg-amber-900/40 text-amber-300 hover:bg-amber-800/60 hover:text-amber-100 border-amber-700/40 shadow-md' : 'bg-rose-900/40 text-rose-300 hover:bg-rose-800/60 hover:text-rose-100 border-rose-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
+                                            <button onClick={() => triggerDownloadWithMemoCheck(handleDownloadOrder)} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${(orderDownloaded || mergedDownloaded) ? 'bg-zinc-800 text-zinc-600 border-transparent' : roundNumber === 1 ? 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md' : roundNumber === 2 ? 'bg-sky-900/40 text-sky-300 hover:bg-sky-800/60 hover:text-sky-100 border-sky-700/40 shadow-md' : roundNumber === 3 ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 hover:text-emerald-100 border-emerald-700/40 shadow-md' : roundNumber === 4 ? 'bg-amber-900/40 text-amber-300 hover:bg-amber-800/60 hover:text-amber-100 border-amber-700/40 shadow-md' : 'bg-rose-900/40 text-rose-300 hover:bg-rose-800/60 hover:text-rose-100 border-rose-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         </div>
                                     </div>
                                 )}
@@ -1832,6 +1852,41 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 </div>
                             );
                         })()}
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* 업체 영구 메모 팝업 (발주서 다운로드 전 확인) */}
+            {pendingDownloadAction && createPortal(
+                <div
+                    style={{ position:'fixed', top:0, left:0, right:0, bottom:0, zIndex:99999, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.75)' }}
+                    onClick={() => setPendingDownloadAction(null)}
+                >
+                    <div
+                        style={{ background:'#1c1c1e', borderRadius:'16px', padding:'28px 28px 20px', maxWidth:'420px', width:'90%', border:'2px solid rgba(251,146,60,0.5)', boxShadow:'0 25px 60px rgba(0,0,0,0.6)' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ color:'#fb923c', fontWeight:900, fontSize:'11px', letterSpacing:'0.08em', textTransform:'uppercase', marginBottom:'6px', opacity:0.7 }}>
+                            [{companyName}] 업체 메모
+                        </div>
+                        <pre style={{ color:'#fed7aa', fontSize:'14px', fontWeight:600, whiteSpace:'pre-wrap', lineHeight:1.6, margin:'0 0 20px', fontFamily:'inherit' }}>
+                            {sessionMemo}
+                        </pre>
+                        <div style={{ display:'flex', gap:'10px' }}>
+                            <button
+                                onClick={() => { const action = pendingDownloadAction; setPendingDownloadAction(null); action(); }}
+                                style={{ flex:1, background:'rgba(251,146,60,0.2)', color:'#fb923c', fontWeight:900, fontSize:'12px', padding:'10px', borderRadius:'10px', border:'1px solid rgba(251,146,60,0.4)', cursor:'pointer' }}
+                            >
+                                확인 후 다운로드
+                            </button>
+                            <button
+                                onClick={() => setPendingDownloadAction(null)}
+                                style={{ padding:'10px 18px', color:'#71717a', fontSize:'12px', fontWeight:700, background:'transparent', border:'none', cursor:'pointer' }}
+                            >
+                                취소
+                            </button>
+                        </div>
                     </div>
                 </div>,
                 document.body

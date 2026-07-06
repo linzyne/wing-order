@@ -105,6 +105,7 @@ export interface CompanyConfig {
   deadline?: string; // 마감 시간 (예: "09:00")
   autoConsolidate?: boolean; // 주문 자동 합산 (같은 수취인의 소량 주문을 큰 단위로 변환)
   keywords?: string[]; // 매칭 키워드 (엑셀 그룹컬럼 매칭용)
+  memo?: string; // 업체 영구 메모 (발주서 다운로드 시 팝업으로 표시)
   products: {
     [productKey: string]: ProductPricing;
   };
