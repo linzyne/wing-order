@@ -201,7 +201,6 @@ const App: React.FC = () => {
     const senderName = [...matchedBizIds]
       .map(id => allBusinesses.find(b => b.id === id)?.displayName || id)
       .join('+') || '공통';
-    for (let i = 1; i < rows.length; i++) rows[i][13] = senderName;
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     const wb = XLSX.utils.book_new();
