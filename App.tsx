@@ -40,6 +40,9 @@ function loadPersistedFakeOrder(): string {
 }
 
 // "사업자_이름_주문번호" 형식 파싱 (이름에 _가 있어도 마지막 _로 분리)
+const SPECIAL_MATCH_KEYWORDS = ['실배'];
+const isSpecialMatchOrderNum = (orderNum: string) => SPECIAL_MATCH_KEYWORDS.some(kw => orderNum.includes(kw));
+
 function parseGlobalFakeLine(line: string, businesses: { id: string; displayName: string }[]) {
   const trimmed = line.trim();
   if (!trimmed) return null;
@@ -430,17 +433,37 @@ const App: React.FC = () => {
     return all;
   }, [matchedFakeNums]);
 
+  // 사업자별 특수 키워드(실배 등) 자동 매칭 건수
+  const perBusinessSpecialMatchCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    globalFakeOrderInput.split('\n').forEach(line => {
+      const parsed = parseGlobalFakeLine(line, allBusinesses);
+      if (!parsed?.businessId || !parsed.orderNum) return;
+      if (isSpecialMatchOrderNum(parsed.orderNum)) {
+        counts[parsed.businessId] = (counts[parsed.businessId] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [globalFakeOrderInput, allBusinesses]);
+
+  // 전체 특수 키워드 자동 매칭 건수 합계
+  const globalSpecialMatchTotal = useMemo(() => {
+    let total = 0;
+    (Object.values(perBusinessSpecialMatchCounts) as number[]).forEach(n => { total += n; });
+    return total;
+  }, [perBusinessSpecialMatchCounts]);
+
   // 사업자별 가구매 매칭/미발견 통계
   const perBusinessFakeStats = useMemo(() => {
     const stats: Record<string, { total: number; matched: number }> = {};
     allBusinesses.forEach(b => {
       const input = perBusinessFakeInput[b.id] || '';
       const total = input.trim() ? input.trim().split('\n').filter(Boolean).length : 0;
-      const matched = matchedFakeNums[b.id]?.length ?? 0;
+      const matched = (matchedFakeNums[b.id]?.length ?? 0) + (perBusinessSpecialMatchCounts[b.id] ?? 0);
       if (total > 0) stats[b.id] = { total, matched };
     });
     return stats;
-  }, [perBusinessFakeInput, matchedFakeNums, allBusinesses]);
+  }, [perBusinessFakeInput, matchedFakeNums, perBusinessSpecialMatchCounts, allBusinesses]);
 
   const handleGlobalFakeMatch = useCallback((businessId: string, matched: string[]) => {
     setMatchedFakeNums(prev => {
@@ -542,7 +565,7 @@ const App: React.FC = () => {
                 : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
             }`}
           >
-            가구매 명단{globalFakeOrderInput.trim() ? ` (${globalFakeOrderInput.trim().split('\n').filter(Boolean).length}${allMatchedFakeNums.size > 0 ? `/${allMatchedFakeNums.size}` : ''})` : ''}
+            가구매 명단{globalFakeOrderInput.trim() ? ` (${globalFakeOrderInput.trim().split('\n').filter(Boolean).length}${(allMatchedFakeNums.size + globalSpecialMatchTotal) > 0 ? `/${allMatchedFakeNums.size + globalSpecialMatchTotal}` : ''})` : ''}
           </button>
           {showGlobalFake && (
             <div className="absolute right-0 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
@@ -578,7 +601,7 @@ const App: React.FC = () => {
                   >
                     {globalFakeOrderInput.split('\n').map((line, i) => {
                       const parsed = parseGlobalFakeLine(line, allBusinesses);
-                      const isMatched = parsed?.orderNum ? allMatchedFakeNums.has(parsed.orderNum) : false;
+                      const isMatched = parsed?.orderNum ? (allMatchedFakeNums.has(parsed.orderNum) || isSpecialMatchOrderNum(parsed.orderNum)) : false;
                       const isValid = !!parsed?.businessId;
                       const isEmpty = !line.trim();
                       return (
@@ -604,14 +627,17 @@ const App: React.FC = () => {
                       <span className="text-[10px] text-zinc-500 font-black">
                         총 {globalFakeOrderInput.trim().split('\n').filter(Boolean).length}명
                       </span>
-                      {allMatchedFakeNums.size > 0 && (
-                        <span className="text-[10px] text-emerald-400 font-black">
-                          매칭 {allMatchedFakeNums.size}
-                        </span>
-                      )}
+                      {(() => {
+                        const globalSpecialCount = globalSpecialMatchTotal;
+                        const totalMatched = allMatchedFakeNums.size + globalSpecialCount;
+                        return totalMatched > 0 ? (
+                          <span className="text-[10px] text-emerald-400 font-black">매칭 {totalMatched}</span>
+                        ) : null;
+                      })()}
                       {(() => {
                         const total = globalFakeOrderInput.trim().split('\n').filter(Boolean).length;
-                        const unmatched = total - allMatchedFakeNums.size;
+                        const globalSpecialCount = globalSpecialMatchTotal;
+                        const unmatched = total - allMatchedFakeNums.size - globalSpecialCount;
                         return unmatched > 0 ? (
                           <span className="text-[10px] text-rose-400 font-black">미매칭 {unmatched}</span>
                         ) : null;
@@ -641,6 +667,7 @@ const App: React.FC = () => {
                         if (!line.trim()) return false;
                         const parsed = parseGlobalFakeLine(line, allBusinesses);
                         if (!parsed?.orderNum) return true;
+                        if (isSpecialMatchOrderNum(parsed.orderNum)) return false;
                         return !allMatchedFakeNums.has(parsed.orderNum);
                       });
                       if (unmatchedLines.length === 0) return null;
