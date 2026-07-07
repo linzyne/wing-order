@@ -1257,6 +1257,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const numberToNames = new Map<string, string[]>();
         let inputLineCount = 0;
 
+        const lineData: { line: string; name: string; nums: string[] }[] = [];
+
         effectiveFakeInput.split('\n').forEach(line => {
             const trimmed = line.trim();
             if (!trimmed) return;
@@ -1266,9 +1268,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 let namepart = trimmed;
                 matches.forEach(m => { namepart = namepart.replace(m, ''); });
                 const name = namepart.trim();
+                const nums: string[] = [];
                 matches.forEach(m => {
                     const num = m.trim();
                     inputNumbers.add(num);
+                    nums.push(num);
                     if (name) {
                         nameMap[num] = name;
                         const existing = numberToNames.get(num) || [];
@@ -1276,6 +1280,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         numberToNames.set(num, existing);
                     }
                 });
+                lineData.push({ line: trimmed, name, nums });
+            } else {
+                lineData.push({ line: trimmed, name: trimmed, nums: [] });
             }
         });
 
@@ -1310,7 +1317,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             !foundDetails[num] && !masterOrderNumbers.has(num)
         );
 
-        return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates };
+        // 주문번호 없이도 유효한 특수 키워드 (예: 실배 = 실물배송)
+        const SPECIAL_MATCH_KEYWORDS = ['실배'];
+        const isSpecialMatch = (line: string) => SPECIAL_MATCH_KEYWORDS.some(kw => line.includes(kw));
+
+        // 매칭되지 않은 라인: 주문번호 없는 라인 + 주문번호가 있지만 미발견 라인 (특수 키워드 제외)
+        const matchedSet = new Set(matched);
+        const specialMatchLines = lineData.filter(ld => isSpecialMatch(ld.line));
+        const unmatchedLines = lineData.filter(ld =>
+            !isSpecialMatch(ld.line) &&
+            (ld.nums.length === 0 || ld.nums.every(n => !matchedSet.has(n)))
+        );
+
+        return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates, unmatchedLines, specialMatchLines };
     }, [effectiveFakeInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
 
     // 미발송 명단 분석 (입력된 번호 vs 실제 발견된 번호)
@@ -4528,14 +4547,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <span className="bg-zinc-800 text-zinc-400 text-[11px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700 font-black">
                                             총 {fakeOrderAnalysis.inputLineCount}명
                                         </span>
-                                        {fakeOrderAnalysis.matched.length > 0 && (
+                                        {(fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchLines.length) > 0 && (
                                             <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                                매칭 {fakeOrderAnalysis.matched.length}
+                                                매칭 {fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchLines.length}
                                             </span>
                                         )}
-                                        {fakeOrderAnalysis.missing.length > 0 && (
+                                        {fakeOrderAnalysis.unmatchedLines.length > 0 && (
                                             <span className="bg-rose-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                                미발견 {fakeOrderAnalysis.missing.length}
+                                                미매칭 {fakeOrderAnalysis.unmatchedLines.length}
                                             </span>
                                         )}
                                         {fakeOrderAnalysis.duplicates.length > 0 && (
@@ -4600,6 +4619,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     </div>
                                                 );
                                             })}
+                                        </div>
+                                    </div>
+                                )}
+                                {fakeOrderAnalysis.specialMatchLines.length > 0 && (
+                                    <div>
+                                        <h4 className="text-emerald-400 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
+                                            <span className="w-2 h-2 bg-emerald-400 rounded-full" />
+                                            실배 등 자동 매칭 ({fakeOrderAnalysis.specialMatchLines.length}건)
+                                        </h4>
+                                        <div className="space-y-1">
+                                            {fakeOrderAnalysis.specialMatchLines.map((ld, idx) => (
+                                                <div key={idx} className="flex items-center gap-2 bg-emerald-950/30 border border-emerald-500/20 px-2.5 py-1.5 rounded-lg">
+                                                    <span className="text-[11px] font-black text-emerald-300">{ld.line}</span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}
@@ -4679,6 +4713,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 placeholder="예: 홍길동 20231010-00001"
                                 className={`w-full min-h-[80px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-rose-500/50 resize-none custom-scrollbar ${globalFakeOrderInput?.trim() ? 'opacity-70 cursor-default' : ''}`}
                             />
+                            {fakeOrderAnalysis.unmatchedLines.length > 0 && (
+                                <div className="mt-1.5 bg-rose-950/30 border border-rose-500/20 rounded-xl px-3 py-2 space-y-0.5">
+                                    <p className="text-[9px] text-rose-400 font-black uppercase tracking-widest mb-1">미매칭 명단</p>
+                                    {fakeOrderAnalysis.unmatchedLines.map((ld, idx) => (
+                                        <div key={idx} className="flex items-center gap-2">
+                                            <span className="text-[10px] font-mono text-rose-300">{ld.line}</span>
+                                            {ld.nums.length === 0 && <span className="text-[8px] text-rose-500/70 font-black">주문번호 없음</span>}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                         <div className="flex flex-col gap-1">
                             <div className="flex items-center gap-1.5 flex-wrap">

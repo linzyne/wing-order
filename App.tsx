@@ -588,7 +588,7 @@ const App: React.FC = () => {
                             isEmpty ? '' :
                             isMatched ? 'text-emerald-400' :
                             isValid ? 'text-zinc-400' :
-                            'text-zinc-600'
+                            'text-rose-400'
                           }`}
                         >
                           {line || ' '}
@@ -612,8 +612,8 @@ const App: React.FC = () => {
                       {(() => {
                         const total = globalFakeOrderInput.trim().split('\n').filter(Boolean).length;
                         const unmatched = total - allMatchedFakeNums.size;
-                        return unmatched > 0 && allMatchedFakeNums.size > 0 ? (
-                          <span className="text-[10px] text-zinc-600 font-black">미발견 {unmatched}</span>
+                        return unmatched > 0 ? (
+                          <span className="text-[10px] text-rose-400 font-black">미매칭 {unmatched}</span>
                         ) : null;
                       })()}
                     </div>
@@ -630,12 +630,29 @@ const App: React.FC = () => {
                               <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {s.matched}</span>
                             )}
                             {missing > 0 && (
-                              <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미발견 {missing}</span>
+                              <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {missing}</span>
                             )}
                           </div>
                         );
                       })
                     }
+                    {(() => {
+                      const unmatchedLines = globalFakeOrderInput.trim().split('\n').filter(line => {
+                        if (!line.trim()) return false;
+                        const parsed = parseGlobalFakeLine(line, allBusinesses);
+                        if (!parsed?.orderNum) return true;
+                        return !allMatchedFakeNums.has(parsed.orderNum);
+                      });
+                      if (unmatchedLines.length === 0) return null;
+                      return (
+                        <div className="mt-1 bg-rose-950/30 border border-rose-500/20 rounded-xl px-3 py-2 space-y-0.5">
+                          <p className="text-[9px] text-rose-400 font-black uppercase tracking-widest mb-1">미매칭 명단</p>
+                          {unmatchedLines.map((line, i) => (
+                            <div key={i} className="text-[10px] font-mono text-rose-300">{line}</div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
