@@ -672,7 +672,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const handleSaveSessionResult = useCallback(async (sessionId: string, data: SessionResultData) => {
         setSessionResults(prev => ({ ...(prev || {}), [sessionId]: data }));
-        await saveSessionResult(sessionId, data, businessId);
+        try {
+            await saveSessionResult(sessionId, data, businessId);
+        } catch (e: any) {
+            console.error('[Firestore] 세션 결과 저장 실패:', e);
+            alert('⚠️ Firestore 저장 실패: 정산 데이터가 저장되지 않았습니다. Firebase 용량 초과 여부를 확인해주세요.');
+        }
     }, [businessId]);
 
     const handleDeleteSessionResult = useCallback(async (sessionId: string) => {

@@ -241,6 +241,29 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         return product?.orderFormName || product?.displayName || key;
     };
 
+    // depositSummaryExcel 텍스트를 파싱해 itemSummary(productKey→{count,totalPrice}) 재구성
+    // stale Firestore itemSummary 대신 항상 최신 표시 텍스트 기반으로 복원하기 위한 역변환
+    const parseSummaryFromExcelText = (excelText: string): Record<string, { count: number; totalPrice: number }> => {
+        const result: Record<string, { count: number; totalPrice: number }> = {};
+        if (!excelText) return result;
+        const companyProducts = pricingConfig[companyName]?.products || {};
+        for (const line of excelText.split('\n')) {
+            const parts = line.split('\t');
+            const displayName = parts[1]?.trim();
+            const countMatch = parts[2]?.trim().match(/^(\d+)개$/);
+            if (!displayName || !countMatch) continue;
+            const count = parseInt(countMatch[1]);
+            if (!count) continue;
+            const totalPrice = parseInt(parts[3]?.replace(/,/g, '') || '0') || 0;
+            // displayName(orderFormName||displayName||key) → productKey 역추적
+            const entry = Object.entries(companyProducts).find(
+                ([k, p]: [string, any]) => (p.orderFormName || p.displayName || k) === displayName
+            );
+            result[entry?.[0] || displayName] = { count, totalPrice };
+        }
+        return result;
+    };
+
     // 합산 정산 텍스트
     const combinedDepositText = (() => {
         if (Object.keys(combinedSummary).length === 0) return '';
@@ -638,7 +661,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
         onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
         const effectiveExcel = summaryOverride ? buildDepositExcelFromSummary(summaryOverride, localResult.depositSummaryExcel) : localResult.depositSummaryExcel || '';
-        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, effectiveSummary, localResult.orderItems, localResult.preConsolidationByGroup);
+        // 정산내역 텍스트를 역파싱해 itemSummary 도출 (공통 업로드 경로의 매칭 오류 방지)
+        const parsedFromExcel = parseSummaryFromExcelText(effectiveExcel);
+        const itemSummaryForUpdate = Object.keys(parsedFromExcel).length > 0 ? parsedFromExcel : effectiveSummary;
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, itemSummaryForUpdate, localResult.orderItems, localResult.preConsolidationByGroup);
     }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments, summaryOverride]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
@@ -668,7 +694,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 excludedCount: excludedList.length,
                 excludedDetails: excludedList,
                 orderCount: (Object.values(effectiveSummary) as any[]).reduce((a: number, b: any) => a + (b.count || 0), 0),
-                itemSummary: effectiveSummary as any,
+                itemSummary: (() => { const p = parseSummaryFromExcelText(effectiveDepositExcel); return Object.keys(p).length > 0 ? p : effectiveSummary; })() as any,
                 registeredProductNames: localResult.registeredProductNames || {},
                 orderItems: localResult.orderItems || [],
                 includedOrderNumbers: localResult.includedOrderNumbers || [],
@@ -685,10 +711,19 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     // Synced data → parent 콜백 (디바이스 2: Firestore에서 로드)
     const lastSyncedCallbackRef = useRef('');
+    // localResult 처리 후 이 ref에 itemSummary를 보관 → 리셋 후 Firestore가 덮어쓰지 않도록
+    const localResultItemSummaryRef = useRef<Record<string, { count: number; totalPrice: number }> | null>(null);
     useEffect(() => {
-        if (localResult) { lastSyncedCallbackRef.current = ''; return; }
+        if (localResult) {
+            // localResult 처리 완료 시 itemSummary 보관 (리셋 후 Firestore 덮어쓰기 방지용)
+            const effectiveSummary = summaryOverride || localResult.summary;
+            if (effectiveSummary && Object.keys(effectiveSummary).length > 0) {
+                localResultItemSummaryRef.current = effectiveSummary;
+            }
+            return;
+        }
         if (!syncedData) return;
-        const key = `${syncedData.totalPrice}-${syncedData.orderCount}-${syncedData.excludedCount}`;
+        const key = `${syncedData.totalPrice}-${syncedData.orderCount}-${syncedData.excludedCount}-${syncedData.summaryExcel?.slice(0, 80) || ''}`;
         if (key === lastSyncedCallbackRef.current) return;
         lastSyncedCallbackRef.current = key;
         onResultUpdate(sessionId, syncedData.totalPrice, syncedData.excludedCount, syncedData.excludedDetails);
@@ -700,7 +735,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (syncedUploadRows.length > 0 || syncedInvoiceRows.length > 0) {
             lastGoodMergeRef.current = { rows: syncedInvoiceRows, uploadRows: syncedUploadRows, header: syncedHeader };
         }
-        onDataUpdate(sessionId, parseRows(syncedData.orderRows), syncedInvoiceRows, syncedUploadRows, syncedData.summaryExcel, syncedHeader.length > 0 ? syncedHeader : undefined, syncedData.registeredProductNames, syncedData.itemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup);
+        // localResult 처리 결과 → 없으면 depositSummaryExcel 파싱 → 그것도 없으면 Firestore itemSummary
+        // (Firestore itemSummary는 품목 추가 전 저장된 스테일 데이터일 수 있음)
+        const effectiveItemSummary = (() => {
+            if (localResultItemSummaryRef.current) return localResultItemSummaryRef.current;
+            const parsed = parseSummaryFromExcelText(syncedData.depositSummaryExcel || syncedData.summaryExcel || '');
+            if (Object.keys(parsed).length > 0) return parsed;
+            return syncedData.itemSummary;
+        })();
+        onDataUpdate(sessionId, parseRows(syncedData.orderRows), syncedInvoiceRows, syncedUploadRows, syncedData.summaryExcel, syncedHeader.length > 0 ? syncedHeader : undefined, syncedData.registeredProductNames, effectiveItemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup);
         if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 
@@ -1621,7 +1664,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                 <button onClick={() => handleCopy(sessionId, effectiveDisplayExcelText, 'excel')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedExcelId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-indigo-400 border-zinc-700 hover:text-white'}`}>{copiedExcelId === sessionId ? '복사됨!' : '엑셀용'}</button>
                                                 <button
                                                     onClick={() => {
-                                                        const currentSummary = summaryOverride || localResult?.summary || syncedData?.itemSummary || {};
+                                                        // summaryOverride > localResult.summary > 표시텍스트 파싱 > Firestore itemSummary(스테일 가능성)
+                                                        const currentSummary = summaryOverride || localResult?.summary || (() => {
+                                                            const parsed = parseSummaryFromExcelText(effectiveDisplayExcelText);
+                                                            if (Object.keys(parsed).length > 0) return parsed;
+                                                            return syncedData?.itemSummary || {};
+                                                        })();
                                                         const vals: Record<string, { count: string; totalPrice: string }> = {};
                                                         Object.entries(currentSummary).forEach(([key, stat]: [string, any]) => {
                                                             vals[key] = { count: String(stat.count), totalPrice: String(stat.totalPrice) };
