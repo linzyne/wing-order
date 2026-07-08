@@ -36,12 +36,14 @@ async function runWingDownload(
 
   try {
     // 1. 로그인
+    console.log(`[Wing:${businessName}] Wing 접속 중...`);
     await page.goto('https://wing.coupang.com');
     await page.waitForLoadState('domcontentloaded');
 
     const needsLogin = await page.locator('input[type="password"]').isVisible().catch(() => false);
     if (needsLogin) {
       // 아이디/비번 자동 입력 후 로그인 버튼은 사용자가 직접 클릭
+      console.log(`[Wing:${businessName}] 로그인 필요 → 자격증명 입력 중...`);
       const idField = page.locator('input[type="text"], input[type="email"]').first();
       const pwField = page.locator('input[type="password"]').first();
       await idField.waitFor({ state: 'visible', timeout: 10_000 });
@@ -54,20 +56,28 @@ async function runWingDownload(
         url => !url.toString().includes('login') && !url.toString().includes('xauth'),
         { timeout: 120_000 }
       );
+      console.log(`[Wing:${businessName}] 로그인 완료`);
+    } else {
+      console.log(`[Wing:${businessName}] 이미 로그인 상태`);
     }
 
     // 2. 주문배송관리 이동
+    console.log(`[Wing:${businessName}] 주문배송관리 페이지 이동 중...`);
     await page.goto('https://wing.coupang.com/tenants/sfl-portal/delivery/management');
     await page.waitForLoadState('domcontentloaded');
 
     // 3. 배송상태 라디오 클릭 (exact match로 카드의 "상품준비중 12"와 구분)
+    console.log(`[Wing:${businessName}] "${statusLabel}" 탭 클릭 중...`);
     await page.getByText(statusLabel, { exact: true }).first().click();
     await page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => {});
 
     // 배송사 선택 팝업 처리 헬퍼 (사유 입력 → 다운로드 버튼 클릭)
     const handleCarrierPopup = async () => {
+      console.log(`[Wing:${businessName}] 배송사 팝업 처리 중...`);
       const reasonField = page.locator('textarea[placeholder*="사유"], textarea[placeholder*="기재"]').first();
+      console.log(`[Wing:${businessName}] 사유 textarea 대기 중...`);
       await reasonField.waitFor({ state: 'visible', timeout: 10_000 });
+      console.log(`[Wing:${businessName}] 사유 textarea 발견 → 입력 중...`);
       await reasonField.fill('ㅇㅇㅇㅇㅇ');
       // textarea와 같은 팝업 안의 다운로드 버튼만 선택 (페이지에 #submitConfirm 여러 개 존재)
       const popup = page.locator('div').filter({
@@ -76,33 +86,40 @@ async function runWingDownload(
         has: page.locator('[id="submitConfirm"]'),
       }).last();
       const dlBtn = popup.locator('[id="submitConfirm"]').filter({ hasText: '다운로드' });
+      console.log(`[Wing:${businessName}] 다운로드 버튼 대기 중...`);
       await dlBtn.waitFor({ timeout: 5_000 });
+      console.log(`[Wing:${businessName}] 다운로드 버튼 클릭`);
       await dlBtn.click({ force: true });
+      console.log(`[Wing:${businessName}] 다운로드 버튼 클릭 완료 → 파일 다운로드 이벤트 대기 중...`);
     };
 
     let download: any;
 
     if (status === 'ACCEPT') {
       // 결제완료: 발주확인 처리 → 배송사 선택 팝업
+      console.log(`[Wing:${businessName}] "발주확인 처리" 버튼 대기 중...`);
       const confirmOrderBtn = page.locator('button:has-text("발주확인 처리")').first();
       await confirmOrderBtn.waitFor({ state: 'visible', timeout: 10_000 });
+      console.log(`[Wing:${businessName}] 발주확인 처리 클릭 → 다운로드 대기 중...`);
       [download] = await Promise.all([
-        page.waitForEvent('download'),
+        page.waitForEvent('download', { timeout: 60_000 }),
         (async () => { await confirmOrderBtn.click(); await handleCarrierPopup(); })(),
       ]);
     } else {
       // 상품준비중: 엑셀 다운 → 배송사 선택 팝업
+      console.log(`[Wing:${businessName}] "엑셀 다운" 버튼 대기 중...`);
       const excelBtn = page.locator('button:has-text("엑셀 다운"), a:has-text("엑셀 다운")').first();
       await excelBtn.waitFor({ timeout: 10_000 });
+      console.log(`[Wing:${businessName}] 엑셀 다운 클릭 → 다운로드 대기 중...`);
       [download] = await Promise.all([
-        page.waitForEvent('download'),
+        page.waitForEvent('download', { timeout: 60_000 }),
         (async () => { await excelBtn.click({ force: true }); await handleCarrierPopup(); })(),
       ]);
     }
 
     const d = new Date();
     const dateStr = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
-    const fileName = `${dateStr}_${businessName}${timeLabel ? '_' + timeLabel : ''}.xlsx`;
+    const fileName = `${dateStr}_${businessName}${timeLabel ? '_' + timeLabel : ''}_${statusLabel}.xlsx`;
     const filePath = path.join(tmpDir, fileName);
     await download.saveAs(filePath);
 

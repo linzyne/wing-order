@@ -137,7 +137,9 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     const targets = businesses.filter(b => isConfigured(b.id));
     if (targets.length === 0) return;
     setBulkDownloadLoading(true);
-    await Promise.all(targets.map(b => handleDownload(b)));
+    for (const b of targets) {
+      await handleDownload(b);
+    }
     setBulkDownloadLoading(false);
   };
 

@@ -218,6 +218,7 @@ export interface CourierTemplate {
     trackingNumber: number;   // 운송장번호 열 index
   };
   fixedValues: Record<number, string>; // 열 index → 고정값 (보내는사람, 상품명 등)
+  senderNameColumn?: number; // 보내는사람 열 index (다운로드 시 사업자명 자동 입력)
   unitPrice: number;      // 건당 단가 (물류비 계산용)
   returnHeaders?: string[];   // 운송장 완료 파일(택배사→우리) 헤더
   returnMapping?: {

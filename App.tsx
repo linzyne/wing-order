@@ -174,6 +174,7 @@ const App: React.FC = () => {
     const { mapping, fixedValues } = template;
 
     for (const [bizId, { dataRows }] of bizEntries) {
+      const bizDisplayName = allBusinesses.find(b => b.id === bizId)?.displayName || bizId;
       for (const row of dataRows) {
         if (!row) continue;
         const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
@@ -194,6 +195,10 @@ const App: React.FC = () => {
         newRow[mapping.recipientPhone] = phone;
         newRow[mapping.recipientAddress] = address;
         Object.entries(fixedValues).forEach(([colIdx, value]) => { newRow[Number(colIdx)] = value; });
+        // 보내는사람 열에 해당 사업자명 자동 입력
+        if (template.senderNameColumn !== undefined) {
+          newRow[template.senderNameColumn] = bizDisplayName;
+        }
         rows.push(newRow);
       }
     }

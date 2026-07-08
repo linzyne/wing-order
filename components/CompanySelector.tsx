@@ -260,10 +260,18 @@ const CourierTemplateManager: React.FC<{
     const [newHeaders, setNewHeaders] = useState<string[]>([]);
     const [newMapping, setNewMapping] = useState<Record<string, number>>({});
     const [newFixedValues, setNewFixedValues] = useState<Record<number, string>>({});
+    const [newSenderNameColumn, setNewSenderNameColumn] = useState<number | null>(null);
     const [newReturnHeaders, setNewReturnHeaders] = useState<string[]>([]);
     const [newReturnMapping, setNewReturnMapping] = useState<Record<string, number>>({});
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const formRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        if (showAddForm) {
+            setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+        }
+    }, [showAddForm]);
 
     const resetForm = () => {
         setNewName('');
@@ -272,6 +280,7 @@ const CourierTemplateManager: React.FC<{
         setNewHeaders([]);
         setNewMapping({});
         setNewFixedValues({});
+        setNewSenderNameColumn(null);
         setNewReturnHeaders([]);
         setNewReturnMapping({});
         setEditingId(null);
@@ -286,6 +295,7 @@ const CourierTemplateManager: React.FC<{
         setNewHeaders(tmpl.headers);
         setNewMapping({ ...tmpl.mapping } as Record<string, number>);
         setNewFixedValues({ ...tmpl.fixedValues });
+        setNewSenderNameColumn(tmpl.senderNameColumn !== undefined ? tmpl.senderNameColumn : null);
         setNewReturnHeaders(tmpl.returnHeaders || []);
         setNewReturnMapping(tmpl.returnMapping ? { ...tmpl.returnMapping } as Record<string, number> : {});
         setShowAddForm(true);
@@ -396,6 +406,7 @@ const CourierTemplateManager: React.FC<{
                 trackingNumber: newMapping.trackingNumber,
             },
             fixedValues: newFixedValues,
+            senderNameColumn: newSenderNameColumn !== null ? newSenderNameColumn : undefined,
             unitPrice: Number(newUnitPrice) || 2270,
             returnHeaders: newReturnHeaders.length > 0 ? newReturnHeaders : undefined,
             returnMapping: (newReturnMapping.orderNumber !== undefined && newReturnMapping.trackingNumber !== undefined)
@@ -416,8 +427,9 @@ const CourierTemplateManager: React.FC<{
         onSave(templates.filter((t: CourierTemplate) => t.id !== id));
     };
 
-    // 매핑에 사용된 열 인덱스 Set
+    // 매핑에 사용된 열 인덱스 Set (고정값 목록에서 제외하기 위해)
     const mappedIndices = new Set(Object.values(newMapping));
+    if (newSenderNameColumn !== null) mappedIndices.add(newSenderNameColumn);
 
     return (
         <div className="mb-4 bg-zinc-900/50 p-4 rounded-xl border border-pink-500/20 animate-fade-in space-y-4">
@@ -432,6 +444,11 @@ const CourierTemplateManager: React.FC<{
                         <span className="text-[9px] text-zinc-500 font-mono">
                             {COURIER_DATA_FIELDS.map(f => `${f.label}:${colIndexToLetter(tmpl.mapping[f.key])}`).join('  ')}
                         </span>
+                        {tmpl.senderNameColumn !== undefined && (
+                            <span className="text-[9px] text-violet-400/80 font-mono">
+                                보내는사람:{colIndexToLetter(tmpl.senderNameColumn)}
+                            </span>
+                        )}
                         {tmpl.returnMapping && (
                             <span className="text-[9px] text-emerald-500/70 font-mono">
                                 운송장: 주문번호:{colIndexToLetter(tmpl.returnMapping.orderNumber)} 송장:{colIndexToLetter(tmpl.returnMapping.trackingNumber)}
@@ -457,7 +474,7 @@ const CourierTemplateManager: React.FC<{
                     새 양식 추가
                 </button>
             ) : (
-                <div className="bg-zinc-950/80 p-4 rounded-xl border border-zinc-800 space-y-3">
+                <div ref={formRef} className="bg-zinc-950/80 p-4 rounded-xl border border-zinc-800 space-y-3">
                     <div className="space-y-2">
                         <div>
                             <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">택배사 이름</label>
@@ -510,6 +527,22 @@ const CourierTemplateManager: React.FC<{
                                         </select>
                                     </div>
                                 ))}
+                            </div>
+
+                            {/* 보내는사람 열 (사업자명 자동입력) */}
+                            <div className="mt-2 pt-2 border-t border-zinc-800">
+                                <label className="text-[9px] text-violet-400 font-black uppercase tracking-widest mb-1.5 block">보내는사람 열 (사업자명 자동입력)</label>
+                                <select
+                                    value={newSenderNameColumn !== null ? String(newSenderNameColumn) : ''}
+                                    onChange={(e) => setNewSenderNameColumn(e.target.value === '' ? null : Number(e.target.value))}
+                                    className="w-full bg-zinc-900 border border-violet-700/40 rounded-lg px-2 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-violet-500/50"
+                                >
+                                    <option value="">선택 안 함 (고정값 사용)</option>
+                                    {newHeaders.map((h, idx) => (
+                                        <option key={idx} value={idx}>{colIndexToLetter(idx)}: {h || '(빈 열)'}</option>
+                                    ))}
+                                </select>
+                                <p className="text-[8px] text-zinc-600 mt-1">선택 시 다운로드할 때 해당 열에 각 사업자명이 자동 입력됩니다.</p>
                             </div>
 
                             {/* 고정값 설정 (매핑 안 된 열) */}
@@ -2401,6 +2434,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 Object.entries(fixedValues).forEach(([colIdx, value]) => {
                     newRow[Number(colIdx)] = value;
                 });
+                // 보내는사람 열에 현재 사업자명 자동 입력
+                if (template.senderNameColumn !== undefined) {
+                    newRow[template.senderNameColumn] = businessPrefix;
+                }
                 rows.push(newRow);
             }
 
