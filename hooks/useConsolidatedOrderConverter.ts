@@ -410,6 +410,8 @@ interface IntermediateOrder {
     recipientPhone: string;
     groupColValue: string;
     regOptionValue: string;
+    orderNumber: string;
+    bundleNumber: string;
 }
 
 /**
@@ -436,8 +438,10 @@ const consolidateMatchedOrders = (
         members.sort((a, b) => b.kg - a.kg); // 큰 것부터
     }
 
-    // 2. 수취인별 그룹핑
-    const recipientKey = (o: IntermediateOrder) => `${o.recipientName}|||${o.recipientPhone}`;
+    // 2. 수취인 + 주문(묶음) 단위 그룹핑
+    // 묶음배송번호가 있으면 우선, 없으면 주문번호로 구분 → 다른 주문끼리는 합산 안 함
+    const orderGroupKey = (o: IntermediateOrder) => o.bundleNumber || o.orderNumber;
+    const recipientKey = (o: IntermediateOrder) => `${o.recipientName}|||${o.recipientPhone}|||${orderGroupKey(o)}`;
     const groups = new Map<string, IntermediateOrder[]>();
     for (const o of orders) {
         const key = recipientKey(o);
@@ -575,6 +579,8 @@ const generateWorkbookForCompany = async (
             if (quantityColIdx === -1) quantityColIdx = headers.findIndex(h => h.includes('구매수'));
             if (quantityColIdx === -1) quantityColIdx = 22; // 기본값: W열
             const sourceOrderNumberIdx = 2;
+            let bundleNumberColIdx = headers.findIndex(h => h.includes('묶음배송번호') || h.includes('묶음배송'));
+            if (bundleNumberColIdx === -1) bundleNumberColIdx = 1; // 날개샵 기본 B열
             const recipientNameCol = 26;
             const recipientPhoneCol = 27;
             let optionColIdx = headers.findIndex(h => h.includes('옵션정보'));
@@ -638,6 +644,8 @@ const generateWorkbookForCompany = async (
                         row, productKey, config, qty, dateStr, recipientName, recipientPhone: phone,
                         groupColValue: String(row[groupColIdx] || '').trim(),
                         regOptionValue: String(row[regOptionColIdx] || '').trim(),
+                        orderNumber,
+                        bundleNumber: String(row[bundleNumberColIdx] || '').trim(),
                     });
                     includedOrderNumbers.push(orderNumber);
                 } else {
@@ -1057,6 +1065,9 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
     const [results, setResults] = useState<Record<string, ProcessedResult> | null>(null);
     const [excludedOrders, setExcludedOrders] = useState<ExcludedOrder[]>([]);
     const [fileName, setFileName] = useState<string>('');
+
+    // pricingConfig가 바뀌면 캐시 초기화 (구버전 품목키 캐싱 방지)
+    useEffect(() => { geminiProductCache.clear(); }, [pricingConfig]);
 
     const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = []) => {
         try {
