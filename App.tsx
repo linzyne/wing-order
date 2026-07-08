@@ -219,6 +219,64 @@ const App: React.FC = () => {
     if (notFoundOrders.length > 0) alert(`${template.name} ${matchedCount}건 다운로드!\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
   }, [allBusinesses]);
 
+  const handleGlobalCourierDownloadForBusiness = useCallback(async (template: CourierTemplate, businessId: string) => {
+    const bizData = (globalMasterRowsRef.current as Record<string, { header: any[]; dataRows: any[][] }>)[businessId];
+    if (!bizData || bizData.dataRows.length === 0) { alert('해당 사업자의 주문서가 없습니다.'); return; }
+
+    const bizDisplayName = allBusinesses.find(b => b.id === businessId)?.displayName || businessId;
+
+    const fakeOrderNums = new Set<string>();
+    globalFakeOrderInputRef.current.split('\n').forEach(line => {
+      const parsed = parseGlobalFakeLine(line, allBusinesses);
+      if (parsed?.businessId === businessId) {
+        const orderNum = parsed.orderNum.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        if (orderNum) fakeOrderNums.add(orderNum);
+      }
+    });
+    if (fakeOrderNums.size === 0) { alert(`${bizDisplayName}의 가구매 명단에 주문번호가 없습니다.`); return; }
+
+    const rows: any[][] = [[...template.headers]];
+    const notFoundOrders: string[] = [];
+    const seenOrderNums = new Set<string>();
+    const { mapping, fixedValues } = template;
+
+    for (const row of bizData.dataRows) {
+      if (!row) continue;
+      const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (!fakeOrderNums.has(orderNum)) continue;
+      if (seenOrderNums.has(orderNum)) continue;
+      seenOrderNums.add(orderNum);
+
+      const recipientName = String(row[26] || '').trim();
+      const phone = String(row[27] || '').trim();
+      const address = String(row[29] || '').trim();
+      const originalOrderNum = String(row[2] || '').trim();
+      if (!recipientName) notFoundOrders.push(originalOrderNum);
+
+      const newRow = new Array(template.headers.length).fill('');
+      newRow[mapping.orderNumber] = originalOrderNum;
+      newRow[mapping.recipientName] = recipientName;
+      newRow[mapping.recipientPhone] = phone;
+      newRow[mapping.recipientAddress] = address;
+      Object.entries(fixedValues).forEach(([colIdx, value]) => { newRow[Number(colIdx)] = value; });
+      if (template.senderNameColumn !== undefined) {
+        newRow[template.senderNameColumn] = bizDisplayName;
+      }
+      rows.push(newRow);
+    }
+
+    const matchedCount = rows.length - 1;
+    if (matchedCount === 0) { alert(`${bizDisplayName}: 가구매 명단과 매칭되는 주문을 찾지 못했습니다.`); return; }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+    const fullTmplName = template.label ? `${template.name} (${template.label})` : template.name;
+    const tmplSuffix = fullTmplName.includes('사무실') ? '사무실' : fullTmplName.includes('대행') ? '택배대행' : fullTmplName;
+    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${bizDisplayName} ${tmplSuffix}.xlsx`);
+    if (notFoundOrders.length > 0) alert(`${template.name} ${matchedCount}건 다운로드!\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
+  }, [allBusinesses]);
+
   const processGlobalCourierFiles = useCallback(async (template: CourierTemplate, files: File[]) => {
     const allBusiness = globalMasterRowsRef.current as Record<string, { header: any[]; dataRows: any[][] }>;
     const bizEntries = Object.entries(allBusiness);
@@ -774,6 +832,25 @@ const App: React.FC = () => {
                                 {fullName} ({totalFake}건)
                               </span>
                             </button>
+                            {/* 사업자별 분할 다운로드 */}
+                            {allBusinesses.length > 1 && (
+                              <div className="flex gap-1">
+                                {allBusinesses.map(b => {
+                                  const count = perBusinessFakeInput[b.id]?.split('\n').filter(Boolean).length ?? 0;
+                                  if (count === 0) return null;
+                                  return (
+                                    <button
+                                      key={b.id}
+                                      onClick={() => handleGlobalCourierDownloadForBusiness(tmpl, b.id)}
+                                      className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[8px] font-black border transition-all bg-zinc-900/60 ${cs.border} ${cs.text} hover:opacity-80`}
+                                    >
+                                      <ArrowDownTrayIcon className="w-2.5 h-2.5 shrink-0" />
+                                      {b.displayName} ({count}건)
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
                             {/* 업로드된 파일 목록 */}
                             {files.length > 0 && (
                               <div className="flex flex-col gap-1">
