@@ -238,7 +238,21 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // 저장된 summary key를 현재 품목 설정의 orderFormName || displayName으로 변환
     const resolveProductDisplayName = (key: string): string => {
         const product = pricingConfig[companyName]?.products?.[key];
-        return product?.orderFormName || product?.displayName || key;
+        const name = product?.orderFormName || product?.displayName;
+
+        // name이 있고 "_숫자" suffix가 없으면 바로 사용
+        if (name && !/_\d+$/.test(name)) return name;
+
+        // displayName 자체가 "_숫자"로 끝나거나 product가 없는 경우:
+        // suffix 제거 후 기본 키로 재탐색 (예: "포기김치 3kg_2" → "포기김치 3kg")
+        const baseKey = key.replace(/_\d+$/, '');
+        if (baseKey !== key) {
+            const baseProduct = pricingConfig[companyName]?.products?.[baseKey];
+            const baseName = baseProduct?.orderFormName || baseProduct?.displayName;
+            if (baseName) return baseName;
+        }
+
+        return name || key;
     };
 
     // depositSummaryExcel 텍스트를 파싱해 itemSummary(productKey→{count,totalPrice}) 재구성
@@ -1033,7 +1047,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     {onRecord && (
                                         <button
                                             onClick={onRecord}
-                                            title={isRecorded ? '다시 기록하기' : `${companyName} 기록하기`}
+                                            title={isRecorded ? '기록 해제' : `${companyName} 기록하기`}
                                             className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black tracking-tight border transition-all ${
                                                 isRecorded
                                                     ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
