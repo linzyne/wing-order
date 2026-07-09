@@ -3764,23 +3764,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleDeleteCompanyFromSalesHistory = async (companyName: string) => {
         const recordDate = resolveRecordDate(workDate, masterOrderFile);
         try {
-            const { loadDailySales } = await import('../services/firestoreService');
-            const existing = await loadDailySales(recordDate, businessId);
-            if (!existing) return;
-            const updated = {
-                ...existing,
-                records: (existing.records || []).filter(r => r.company !== companyName),
-                marginRecords: (existing.marginRecords || []).filter(r => !r.company || r.company !== companyName),
-                depositRecords: (existing.depositRecords || []).filter(d => !d.company || d.company !== companyName),
-                companyOrderRows: Object.fromEntries(Object.entries(existing.companyOrderRows || {}).filter(([k]) => k !== companyName)),
-                companyInvoiceRows: Object.fromEntries(Object.entries(existing.companyInvoiceRows || {}).filter(([k]) => k !== companyName)),
-            };
-            updated.totalAmount = (updated.records || []).reduce((s: number, r: any) => s + r.totalPrice, 0);
-            updated.marginTotal = (updated.marginRecords || []).reduce((s: number, r: any) => s + r.totalMargin, 0) || undefined;
-            updated.depositTotal = (updated.depositRecords || []).reduce((s: number, d: any) => s + d.amount, 0) || undefined;
-            if (!Object.keys(updated.companyOrderRows).length) delete (updated as any).companyOrderRows;
-            if (!Object.keys(updated.companyInvoiceRows).length) delete (updated as any).companyInvoiceRows;
-            await upsertDailySales(updated, businessId);
+            const { deleteCompanyFromDailySales } = await import('../services/firestoreService');
+            await deleteCompanyFromDailySales(recordDate, companyName, businessId);
             setRecordedCompanies((prev: Set<string>) => { const next = new Set(prev); next.delete(companyName); return next; });
             onSaved?.(recordDate);
         } catch (err) {

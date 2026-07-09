@@ -209,6 +209,30 @@ export const deleteDailySalesFromFirestore = async (
   await deleteDoc(docRef);
 };
 
+// 특정 날짜 기록에서 한 업체의 데이터만 제거 (매출/마진/입금/발주·송장), 다른 업체는 유지
+export const deleteCompanyFromDailySales = async (
+  date: string,
+  companyName: string,
+  businessId?: string
+): Promise<void> => {
+  const existing = await loadDailySales(date, businessId);
+  if (!existing) return;
+  const updated: DailySales = {
+    ...existing,
+    records: (existing.records || []).filter(r => r.company !== companyName),
+    marginRecords: (existing.marginRecords || []).filter(r => !r.company || r.company !== companyName),
+    depositRecords: (existing.depositRecords || []).filter(d => !d.company || d.company !== companyName),
+    companyOrderRows: Object.fromEntries(Object.entries(existing.companyOrderRows || {}).filter(([k]) => k !== companyName)),
+    companyInvoiceRows: Object.fromEntries(Object.entries(existing.companyInvoiceRows || {}).filter(([k]) => k !== companyName)),
+  };
+  updated.totalAmount = (updated.records || []).reduce((s, r) => s + r.totalPrice, 0);
+  updated.marginTotal = (updated.marginRecords || []).reduce((s, r) => s + r.totalMargin, 0) || undefined;
+  updated.depositTotal = (updated.depositRecords || []).reduce((s, d) => s + d.amount, 0) || undefined;
+  if (!Object.keys(updated.companyOrderRows).length) delete updated.companyOrderRows;
+  if (!Object.keys(updated.companyInvoiceRows).length) delete updated.companyInvoiceRows;
+  await upsertDailySales(updated, businessId);
+};
+
 // ===== Daily Workspace =====
 
 export interface SessionResultData {

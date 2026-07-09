@@ -200,6 +200,13 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     await refreshDate(date);
   };
 
+  const handleDeleteCompanyDate = async (date: string, companyName: string) => {
+    if (!window.confirm(`${formatDate(date)} ${companyName} 기록을 삭제하시겠습니까?`)) return;
+    const { deleteCompanyFromDailySales } = await import('../services/firestoreService');
+    await deleteCompanyFromDailySales(date, companyName, businessId);
+    await refreshDate(date);
+  };
+
   // 월별분석: 선택 연도의 전체 월별 품목별 마진 + 비용 데이터
   const monthlyAnalysisData = useMemo(() => {
     const yearStr = String(selectedYear);
@@ -1110,7 +1117,16 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                   <tr key={`${date}-${i}`} className={`${rowBg} hover:brightness-125 transition-all ${i === 0 && dayIdx !== 0 ? 'border-t-2 border-zinc-600' : 'border-t border-zinc-800/60'}`}>
                     {i === 0 ? (
                       <td rowSpan={records.length} className="py-1.5 px-3 font-bold text-zinc-200 border-r border-zinc-700 align-middle whitespace-nowrap">
-                        {formatDate(date)}
+                        <div className="flex items-center gap-1.5">
+                          <span>{formatDate(date)}</span>
+                          <button
+                            onClick={() => handleDeleteCompanyDate(date, activeCompany)}
+                            title={`${formatDate(date)} ${activeCompany} 기록 삭제`}
+                            className="text-zinc-700 hover:text-rose-400 p-0.5 transition-colors shrink-0"
+                          >
+                            <TrashIcon className="w-3 h-3" />
+                          </button>
+                        </div>
                       </td>
                     ) : null}
                     <td className="py-1 px-3 text-zinc-300 border-r border-zinc-800">{r.product}</td>
