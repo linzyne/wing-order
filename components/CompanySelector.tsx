@@ -763,6 +763,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
     const [checkedCompanies, setCheckedCompanies] = useState<Set<string>>(new Set());
     const [workDate, setWorkDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
+    // 매출 기록 저장/조회에 실제로 쓰이는 날짜: 마스터 파일명에 날짜가 있으면 그걸 우선하고, 없으면 작업날짜(workDate)를 사용
+    const resolveRecordDate = useCallback((baseDate: string, file: File | null): string => {
+        if (!file) return baseDate;
+        const fname = file.name;
+        const fullMatch = fname.match(/(\d{4})-(\d{2})-(\d{2})/);
+        if (fullMatch) return `${fullMatch[1]}-${fullMatch[2]}-${fullMatch[3]}`;
+        const shortMatch = fname.match(/(\d{2})(\d{2})/);
+        if (shortMatch) {
+            const mm = parseInt(shortMatch[1]);
+            const dd = parseInt(shortMatch[2]);
+            if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
+                return `${new Date(baseDate).getFullYear()}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+            }
+        }
+        return baseDate;
+    }, []);
     // 불 켜기/끄기: 세션별 미다운로드 추적
     const [orderLitSessions, setOrderLitSessions] = useState<Set<string>>(new Set());
     const [invoiceLitSessions, setInvoiceLitSessions] = useState<Set<string>>(new Set());
@@ -996,20 +1012,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, [pricingConfig, masterOrderData]);
 
-    // 오늘 기록된 업체를 Firestore에서 로드하여 recordedCompanies 초기화
+    // 기록된 업체를 Firestore에서 로드하여 recordedCompanies 초기화
+    // 작업날짜(workDate)나 마스터 파일명에서 파싱된 날짜가 바뀌면 그 날짜 기준으로 다시 로드해야
+    // 기록 버튼의 on/off 표시가 실제 저장 위치(recordDate)와 어긋나지 않는다.
     useEffect(() => {
-        const today = new Date().toLocaleDateString('en-CA');
+        const recordDate = resolveRecordDate(workDate, masterOrderFile);
+        let cancelled = false;
         import('../services/firestoreService').then(({ loadDailySales }) => {
-            loadDailySales(today, businessId).then(existing => {
-                if (!existing) return;
+            loadDailySales(recordDate, businessId).then(existing => {
+                if (cancelled) return;
                 const companies = new Set<string>();
-                (existing.records || []).forEach(r => { if (r.company) companies.add(r.company); });
-                Object.keys(existing.companyOrderRows || {}).forEach(c => companies.add(c));
-                (existing.depositRecords || []).forEach(d => { if (d.company) companies.add(d.company); });
-                if (companies.size > 0) setRecordedCompanies(companies);
+                if (existing) {
+                    (existing.records || []).forEach(r => { if (r.company) companies.add(r.company); });
+                    Object.keys(existing.companyOrderRows || {}).forEach(c => companies.add(c));
+                    (existing.depositRecords || []).forEach(d => { if (d.company) companies.add(d.company); });
+                }
+                setRecordedCompanies(companies);
             }).catch(() => {});
         });
-    }, [businessId]);
+        return () => { cancelled = true; };
+    }, [businessId, workDate, masterOrderFile, resolveRecordDate]);
 
     // 수동발주 초기 로드 (getDoc 1회)
     useEffect(() => {
@@ -3519,21 +3541,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const selectedCompanyNames = companyOverride ?? checkedCompanies;
         if (selectedCompanyNames.size === 0) { alert('기록할 업체를 선택해주세요.'); return; }
         // 마스터파일 이름에서 날짜 파싱 (예: "0309_주문목록.xlsx" → "2026-03-09")
-        let recordDate = workDate;
-        if (masterOrderFile) {
-            const fname = masterOrderFile.name;
-            const fullMatch = fname.match(/(\d{4})-(\d{2})-(\d{2})/);
-            const shortMatch = fname.match(/(\d{2})(\d{2})/);
-            if (fullMatch) {
-                recordDate = `${fullMatch[1]}-${fullMatch[2]}-${fullMatch[3]}`;
-            } else if (shortMatch) {
-                const mm = parseInt(shortMatch[1]);
-                const dd = parseInt(shortMatch[2]);
-                if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-                    recordDate = `${new Date(workDate).getFullYear()}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-                }
-            }
-        }
+        const recordDate = resolveRecordDate(workDate, masterOrderFile);
         const sortedCompanyNames = sortCompanies(Object.keys(pricingConfig));
 
         const isPartialSave = selectedCompanyNames.size < sortedCompanyNames.length;
@@ -3750,21 +3758,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
 
     const handleDeleteCompanyFromSalesHistory = async (companyName: string) => {
-        let recordDate = workDate;
-        if (masterOrderFile) {
-            const fname = masterOrderFile.name;
-            const fullMatch = fname.match(/(\d{4})-(\d{2})-(\d{2})/);
-            const shortMatch = fname.match(/(\d{2})(\d{2})/);
-            if (fullMatch) {
-                recordDate = `${fullMatch[1]}-${fullMatch[2]}-${fullMatch[3]}`;
-            } else if (shortMatch) {
-                const mm = parseInt(shortMatch[1]);
-                const dd = parseInt(shortMatch[2]);
-                if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-                    recordDate = `${new Date(workDate).getFullYear()}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
-                }
-            }
-        }
+        const recordDate = resolveRecordDate(workDate, masterOrderFile);
         try {
             const { loadDailySales } = await import('../services/firestoreService');
             const existing = await loadDailySales(recordDate, businessId);
