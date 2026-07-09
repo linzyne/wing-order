@@ -919,7 +919,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const handleDownloadOrder = () => {
         if (fakeMismatch) alert('미매칭(수량)을 확인하세요.');
-        if (localResult) { XLSX.writeFile(localResult.workbook, localResult.fileName); onOrderDownloaded?.(); setOrderDownloaded(true); }
+        if (localResult) {
+            // 미리보기에서 수정한 내용을 반영해 워크북을 새로 생성 (원본 워크북은 수정 전 상태로 고정되어 있음)
+            const headers = getHeaderForCompany(companyName, pricingConfig[companyName] || {} as any);
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...localResult.rows]);
+            ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: Math.max(headers.length - 1, 0), r: 0 } }) };
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '발주서');
+            XLSX.writeFile(wb, localResult.fileName);
+            onOrderDownloaded?.();
+            setOrderDownloaded(true);
+        }
     };
     const handleDownloadInvoice = (type: 'mgmt' | 'upload') => {
         if (!mergeResults) return;
@@ -1885,45 +1895,75 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         style={{ background:'#18181b', borderRadius:'16px', padding:'20px', width:'92vw', maxWidth:'1200px', maxHeight:'85vh', display:'flex', flexDirection:'column', border:'1px solid #3f3f46', boxShadow:'0 25px 60px rgba(0,0,0,0.6)' }}
                         onClick={e => e.stopPropagation()}
                     >
-                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexShrink:0 }}>
-                            <div>
-                                <div style={{ color:'#fff', fontWeight:800, fontSize:'14px' }}>{companyName} 발주서 미리보기</div>
-                                <div style={{ color:'#71717a', fontSize:'11px', marginTop:'2px' }}>{localResult.fileName} · {localResult.rows.length}건</div>
-                            </div>
-                            <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
-                                <button onClick={handleDownloadOrder} style={{ background:'#6366f1', color:'#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor:'pointer' }}>
-                                    다운로드
-                                </button>
-                                <button onClick={() => setShowOrderPreview(false)} style={{ background:'#27272a', color:'#a1a1aa', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'1px solid #3f3f46', cursor:'pointer' }}>
-                                    닫기
-                                </button>
-                            </div>
-                        </div>
                         {(() => {
                             const previewHeaders = getHeaderForCompany(companyName, pricingConfig[companyName] || {} as any);
+                            const updateOrderCell = (ri: number, ci: number, value: string) => {
+                                setLocalResult(prev => {
+                                    if (!prev) return prev;
+                                    const newRows = prev.rows.map((row, idx) => idx === ri ? row.map((cell, cidx) => cidx === ci ? value : cell) : row);
+                                    return { ...prev, rows: newRows };
+                                });
+                            };
+                            const addOrderRow = () => {
+                                setLocalResult(prev => prev ? { ...prev, rows: [...prev.rows, new Array(previewHeaders.length).fill('')] } : prev);
+                            };
+                            const removeOrderRow = (ri: number) => {
+                                setLocalResult(prev => prev ? { ...prev, rows: prev.rows.filter((_, idx) => idx !== ri) } : prev);
+                            };
                             return (
-                                <div style={{ overflowX:'auto', overflowY:'auto', flex:1, borderRadius:'8px', border:'1px solid #27272a' }}>
-                                    <table style={{ borderCollapse:'collapse', fontSize:'11px', whiteSpace:'nowrap', width:'100%' }}>
-                                        <thead>
-                                            <tr style={{ background:'#27272a', position:'sticky', top:0 }}>
-                                                <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center', minWidth:'32px' }}>#</th>
-                                                {previewHeaders.map((h, i) => (
-                                                    <th key={i} style={{ padding:'6px 10px', color:'#a1a1aa', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'left' }}>{h}</th>
-                                                ))}
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {localResult.rows.map((row, ri) => (
-                                                <tr key={ri} style={{ borderBottom:'1px solid #27272a', background: ri % 2 === 0 ? 'transparent' : 'rgba(39,39,42,0.4)' }}>
-                                                    <td style={{ padding:'5px 10px', color:'#52525b', textAlign:'center', borderRight:'1px solid #27272a' }}>{ri + 1}</td>
-                                                    {previewHeaders.map((_, ci) => (
-                                                        <td key={ci} style={{ padding:'5px 10px', color:'#e4e4e7', borderRight:'1px solid #27272a', maxWidth:'220px', overflow:'hidden', textOverflow:'ellipsis' }}>{row[ci] ?? ''}</td>
+                                <>
+                                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexShrink:0 }}>
+                                        <div>
+                                            <div style={{ color:'#fff', fontWeight:800, fontSize:'14px' }}>{companyName} 발주서 미리보기</div>
+                                            <div style={{ color:'#71717a', fontSize:'11px', marginTop:'2px' }}>{localResult.fileName} · {localResult.rows.length}건 · 셀을 클릭해 직접 수정할 수 있습니다</div>
+                                        </div>
+                                        <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                                            <button onClick={addOrderRow} style={{ background:'#16a34a', color:'#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:'4px' }}>
+                                                <PlusCircleIcon className="w-3.5 h-3.5" /> 행 추가
+                                            </button>
+                                            <button onClick={handleDownloadOrder} style={{ background:'#6366f1', color:'#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor:'pointer' }}>
+                                                다운로드
+                                            </button>
+                                            <button onClick={() => setShowOrderPreview(false)} style={{ background:'#27272a', color:'#a1a1aa', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'1px solid #3f3f46', cursor:'pointer' }}>
+                                                닫기
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div style={{ overflowX:'auto', overflowY:'auto', flex:1, borderRadius:'8px', border:'1px solid #27272a' }}>
+                                        <table style={{ borderCollapse:'collapse', fontSize:'11px', whiteSpace:'nowrap', width:'100%' }}>
+                                            <thead>
+                                                <tr style={{ background:'#27272a', position:'sticky', top:0 }}>
+                                                    <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center', minWidth:'32px' }}>#</th>
+                                                    {previewHeaders.map((h, i) => (
+                                                        <th key={i} style={{ padding:'6px 10px', color:'#a1a1aa', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'left' }}>{h}</th>
                                                     ))}
+                                                    <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, textAlign:'center', minWidth:'32px' }}></th>
                                                 </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                            </thead>
+                                            <tbody>
+                                                {localResult.rows.map((row, ri) => (
+                                                    <tr key={ri} style={{ borderBottom:'1px solid #27272a', background: ri % 2 === 0 ? 'transparent' : 'rgba(39,39,42,0.4)' }}>
+                                                        <td style={{ padding:'5px 10px', color:'#52525b', textAlign:'center', borderRight:'1px solid #27272a' }}>{ri + 1}</td>
+                                                        {previewHeaders.map((_, ci) => (
+                                                            <td key={ci} style={{ padding:0, borderRight:'1px solid #27272a', maxWidth:'220px' }}>
+                                                                <input
+                                                                    value={row[ci] ?? ''}
+                                                                    onChange={e => updateOrderCell(ri, ci, e.target.value)}
+                                                                    style={{ width:'100%', boxSizing:'border-box', background:'transparent', border:'none', outline:'none', color:'#e4e4e7', padding:'5px 10px', fontSize:'11px', fontFamily:'inherit' }}
+                                                                />
+                                                            </td>
+                                                        ))}
+                                                        <td style={{ padding:'5px 6px', textAlign:'center' }}>
+                                                            <button onClick={() => removeOrderRow(ri)} title="행 삭제" style={{ background:'transparent', border:'none', cursor:'pointer', color:'#ef4444', display:'inline-flex', alignItems:'center' }}>
+                                                                <TrashIcon className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </>
                             );
                         })()}
                     </div>
