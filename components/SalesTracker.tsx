@@ -1072,13 +1072,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     );
 
     const handleCopySettlement = () => {
-      const lines: string[] = ['날짜\t품목\t수량\t단가\t합계'];
+      const lines: string[] = ['날짜\t품목\t수량\t단가\t합계\t일별합계'];
       daysForCompany.forEach(({ date, records }) => {
+        const dayTotal = records.reduce((s, r) => s + r.totalPrice, 0);
         records.forEach((r, i) => {
-          lines.push([i === 0 ? date : '', r.product, r.count, r.supplyPrice, r.totalPrice].join('\t'));
+          lines.push([i === 0 ? date : '', r.product, r.count, r.supplyPrice, r.totalPrice, i === 0 ? dayTotal : ''].join('\t'));
         });
       });
-      lines.push(['합계', '', periodCount, '', periodTotal].join('\t'));
+      lines.push(['합계', '', periodCount, '', periodTotal, ''].join('\t'));
       navigator.clipboard.writeText(lines.join('\n'));
     };
 
@@ -1107,13 +1108,15 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 <th className="py-1.5 px-3 text-left font-semibold border-b border-r border-zinc-700">품목</th>
                 <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-14">수량</th>
                 <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-24">단가</th>
-                <th className="py-1.5 px-3 text-right font-semibold border-b border-zinc-700 w-24">합계</th>
+                <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-24">합계</th>
+                <th className="py-1.5 px-3 text-right font-semibold border-b border-zinc-700 w-24">일별합계</th>
               </tr>
             </thead>
             <tbody>
               {daysForCompany.map(({ date, records }, dayIdx) => {
                 const isEven = dayIdx % 2 === 0;
                 const rowBg = isEven ? 'bg-zinc-900' : 'bg-zinc-900/40';
+                const dayTotal = records.reduce((s, r) => s + r.totalPrice, 0);
                 return records.map((r, i) => (
                   <tr key={`${date}-${i}`} className={`${rowBg} hover:brightness-125 transition-all ${i === 0 && dayIdx !== 0 ? 'border-t-2 border-zinc-600' : 'border-t border-zinc-800/60'}`}>
                     {i === 0 ? (
@@ -1133,7 +1136,12 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                     <td className="py-1 px-3 text-zinc-300 border-r border-zinc-800">{r.product}</td>
                     <td className="py-1 px-3 text-right text-zinc-400 border-r border-zinc-800 tabular-nums">{r.count}</td>
                     <td className="py-1 px-3 text-right text-zinc-500 border-r border-zinc-800 tabular-nums">{r.supplyPrice.toLocaleString()}</td>
-                    <td className="py-1 px-3 text-right text-zinc-200 font-semibold tabular-nums">{r.totalPrice.toLocaleString()}</td>
+                    <td className="py-1 px-3 text-right text-zinc-200 font-semibold tabular-nums border-r border-zinc-800">{r.totalPrice.toLocaleString()}</td>
+                    {i === 0 ? (
+                      <td rowSpan={records.length} className="py-1.5 px-3 text-right text-rose-400 font-bold align-middle tabular-nums">
+                        {dayTotal.toLocaleString()}
+                      </td>
+                    ) : null}
                   </tr>
                 ));
               })}
@@ -1142,6 +1150,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 <td colSpan={2} className="py-1.5 px-3 text-zinc-300 font-bold border-r border-zinc-700">합계</td>
                 <td className="py-1.5 px-3 text-right text-zinc-200 font-bold border-r border-zinc-700 tabular-nums">{periodCount}</td>
                 <td className="py-1.5 px-3 border-r border-zinc-700" />
+                <td className="py-1.5 px-3 text-right text-white font-black tabular-nums border-r border-zinc-700">{periodTotal.toLocaleString()}</td>
                 <td className="py-1.5 px-3 text-right text-white font-black tabular-nums">{periodTotal.toLocaleString()}</td>
               </tr>
             </tbody>
