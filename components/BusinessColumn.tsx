@@ -51,7 +51,13 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
   const [salesRefreshTrigger, setSalesRefreshTrigger] = useState<{ date: string; n: number } | undefined>();
+  const [workstationRefreshTrigger, setWorkstationRefreshTrigger] = useState<{ date: string; n: number } | undefined>();
   const [actions, setActions] = useState<Partial<DownloadActions>>({});
+
+  // 매출현황에서 기록을 지우거나 바꿨을 때 워크스테이션의 recordedCompanies도 재조회
+  const handleCompanyRecordChanged = useCallback((date: string) => {
+    setWorkstationRefreshTrigger(prev => ({ date, n: (prev?.n ?? 0) + 1 }));
+  }, []);
 
   // 인라인 함수로 넘기면 매 렌더마다 새 참조 → CompanySelector useEffect 무한루프 발생
   // useCallback으로 안정화
@@ -187,6 +193,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               isPricingConfigLoaded={!isLoading}
               onExposeOrderRows={onExposeOrderRows}
               onHasWarnings={onHasWarnings}
+              externalRecordRefresh={workstationRefreshTrigger}
             />
           </div>
           <div style={{ display: !isLoading && activeTab === 'pricing' ? undefined : 'none' }}>
@@ -205,6 +212,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               isActive={activeTab === 'sales'}
               businessId={businessId}
               refreshTrigger={salesRefreshTrigger}
+              onCompanyRecordChanged={handleCompanyRecordChanged}
             />
           </div>
         </main>

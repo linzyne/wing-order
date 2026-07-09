@@ -10,7 +10,7 @@ declare var XLSX: any;
 type ViewMode = 'settlement' | 'invoices' | 'margin' | 'returns' | 'trend';
 type DateMode = 'month' | 'range';
 
-const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshTrigger?: { date: string; n: number } }> = ({ isActive, businessId, refreshTrigger }) => {
+const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshTrigger?: { date: string; n: number }; onCompanyRecordChanged?: (date: string) => void }> = ({ isActive, businessId, refreshTrigger, onCompanyRecordChanged }) => {
   const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
   const { salesHistory, load, loadMonth, refresh, refreshDate, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
@@ -205,6 +205,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     const { deleteCompanyFromDailySales } = await import('../services/firestoreService');
     await deleteCompanyFromDailySales(date, companyName, businessId);
     await refreshDate(date);
+    onCompanyRecordChanged?.(date);
   };
 
   // 월별분석: 선택 연도의 전체 월별 품목별 마진 + 비용 데이터
