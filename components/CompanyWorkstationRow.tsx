@@ -222,9 +222,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             || localResult?.summary
             || ((!localResult && !isLocalProcessing) ? sessionResults?.[sessionId]?.itemSummary : undefined)
             || null;
-        // 이전 차수가 있고 summaryOverride가 있을 때, 누적 데이터가 잘못 저장된 경우 감지
-        // → sessionResults.orderItems에서 현재 차수 실제 수량을 역산해 검증
-        if (previousRoundItems.length > 0 && summaryOverride && !localResult) {
+        // 이전 차수가 있을 때, sessionSummary 수량이 실제 발주 수량(orderItems)보다 많으면
+        // 누적 데이터가 잘못 저장된 것으로 판단 → orderItems에서 역산한 값 사용
+        if (previousRoundItems.length > 0 && !localResult) {
             const savedItems = sessionResults?.[sessionId]?.orderItems || [];
             if (savedItems.length > 0) {
                 const products = pricingConfig[companyName]?.products || {};
@@ -236,9 +236,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     recomputed[key].totalPrice += item.qty * ((products[key] as any)?.supplyPrice || 0);
                 }
                 const recomputedTotal = Object.values(recomputed).reduce((a, b) => a + b.count, 0);
-                const overrideTotal = (Object.values(summaryOverride) as { count: number; totalPrice: number }[]).reduce((a, b) => a + b.count, 0);
-                // override 수량이 실제 발주 수량보다 많으면 누적 데이터로 판단 → 역산값 사용
-                if (overrideTotal > recomputedTotal && Object.keys(recomputed).length > 0) {
+                const currentTotal = (Object.values(sessionSummary || {}) as { count: number; totalPrice: number }[]).reduce((a, b) => a + b.count, 0);
+                if (currentTotal > recomputedTotal && Object.keys(recomputed).length > 0) {
                     sessionSummary = recomputed;
                 }
             }
