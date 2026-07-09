@@ -25,6 +25,8 @@ interface MasterUploadHandlers {
   getCompanyRecorded?: (companyName: string) => boolean;
   toggleCompanyClosed?: (companyName: string) => void;
   toggleCompanyRecord?: (companyName: string) => void;
+  setWorkDate?: (date: string) => void;
+  getWorkDate?: () => string;
   uploadVendorInvoice?: (files: File[]) => void;
   getInvoiceState?: () => { name: string; uploadCount: number }[];
   downloadInvoice?: (companyName: string) => void;
@@ -75,6 +77,21 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const [downloadedButtons, setDownloadedButtons] = useState<Set<string>>(new Set());
   const [settlementCompany, setSettlementCompany] = useState<string | null>(null);
   const [copiedSettlement, setCopiedSettlement] = useState<string | null>(null);
+  const [globalWorkDate, setGlobalWorkDate] = useState<string>(() => new Date().toLocaleDateString('en-CA'));
+
+  // 마운트 시 첫 번째 사업자의 작업날짜를 가져와 표시값 동기화
+  useEffect(() => {
+    for (const b of businesses) {
+      const d = uploadFns[b.id]?.getWorkDate?.();
+      if (d) { setGlobalWorkDate(d); break; }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleGlobalWorkDateChange = (date: string) => {
+    setGlobalWorkDate(date);
+    businesses.forEach(b => uploadFns[b.id]?.setWorkDate?.(date));
+  };
 
   const refreshNextRounds = useCallback(() => {
     const next: Record<string, number> = {};
@@ -284,6 +301,13 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
       <div className="flex items-center justify-between">
         <span className="text-xs font-black text-zinc-300">공통 주문서 업로드</span>
         <div className="flex items-center gap-1.5">
+          <input
+            type="date"
+            value={globalWorkDate}
+            onChange={(e) => handleGlobalWorkDateChange(e.target.value)}
+            title="작업날짜 (전체 사업자에 동시 적용)"
+            className="bg-zinc-800 text-zinc-300 border border-zinc-700 rounded-lg px-1.5 py-0.5 text-[10px] font-bold focus:outline-none focus:border-indigo-500 transition-colors"
+          />
           <button
             onClick={handleBulkToggleClosed}
             title={bulkAllClosed ? '전체 마감 해제' : '전체 업체 마감 처리'}
