@@ -3340,6 +3340,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const missingMap = new Map<string, number>();
                 for (const item of items) {
                     if (companyConfig.products[item.matchedProductKey]) continue;
+                    // _숫자 suffix 키는 분할 변형 — resolveProductDisplayName에서 처리되므로 경고 제외
+                    if (/_\d+$/.test(item.matchedProductKey)) continue;
                     const key = `${item.registeredProductName}::${item.matchedProductKey}`;
                     missingMap.set(key, (missingMap.get(key) || 0) + item.qty);
                 }
