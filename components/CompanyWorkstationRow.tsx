@@ -218,10 +218,31 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 merged[key].totalPrice += stat.totalPrice;
             }
         }
-        const sessionSummary = summaryOverride
+        let sessionSummary: Record<string, { count: number; totalPrice: number }> | null = summaryOverride
             || localResult?.summary
             || ((!localResult && !isLocalProcessing) ? sessionResults?.[sessionId]?.itemSummary : undefined)
             || null;
+        // 이전 차수가 있고 summaryOverride가 있을 때, 누적 데이터가 잘못 저장된 경우 감지
+        // → sessionResults.orderItems에서 현재 차수 실제 수량을 역산해 검증
+        if (previousRoundItems.length > 0 && summaryOverride && !localResult) {
+            const savedItems = sessionResults?.[sessionId]?.orderItems || [];
+            if (savedItems.length > 0) {
+                const products = pricingConfig[companyName]?.products || {};
+                const recomputed: Record<string, { count: number; totalPrice: number }> = {};
+                for (const item of savedItems) {
+                    const key = item.matchedProductKey;
+                    if (!recomputed[key]) recomputed[key] = { count: 0, totalPrice: 0 };
+                    recomputed[key].count += item.qty;
+                    recomputed[key].totalPrice += item.qty * ((products[key] as any)?.supplyPrice || 0);
+                }
+                const recomputedTotal = Object.values(recomputed).reduce((a, b) => a + b.count, 0);
+                const overrideTotal = (Object.values(summaryOverride) as { count: number; totalPrice: number }[]).reduce((a, b) => a + b.count, 0);
+                // override 수량이 실제 발주 수량보다 많으면 누적 데이터로 판단 → 역산값 사용
+                if (overrideTotal > recomputedTotal && Object.keys(recomputed).length > 0) {
+                    sessionSummary = recomputed;
+                }
+            }
+        }
         if (sessionSummary) {
             for (const [key, stat] of Object.entries(sessionSummary) as [string, { count: number; totalPrice: number }][]) {
                 if (!merged[key]) merged[key] = { count: 0, totalPrice: 0 };
@@ -1700,10 +1721,21 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                 <button onClick={() => handleCopy(sessionId, effectiveDisplayExcelText, 'excel')} className={`text-[9px] font-black px-2 py-1 rounded border transition-all ${copiedExcelId === sessionId ? 'bg-emerald-500 text-white border-emerald-400' : 'bg-zinc-800 text-indigo-400 border-zinc-700 hover:text-white'}`}>{copiedExcelId === sessionId ? '복사됨!' : '엑셀용'}</button>
                                                 <button
                                                     onClick={() => {
-                                                        // summaryOverride > localResult.summary > 표시텍스트 파싱 > Firestore itemSummary(스테일 가능성)
+                                                        // summaryOverride > localResult.summary > 발주 품목 역산 > Firestore itemSummary
+                                                        // effectiveDisplayExcelText는 마지막 차수에서 누적텍스트일 수 있으므로 사용 금지
                                                         const currentSummary = summaryOverride || localResult?.summary || (() => {
-                                                            const parsed = parseSummaryFromExcelText(effectiveDisplayExcelText);
-                                                            if (Object.keys(parsed).length > 0) return parsed;
+                                                            const savedItems = syncedData?.orderItems || [];
+                                                            if (savedItems.length > 0) {
+                                                                const products = pricingConfig[companyName]?.products || {};
+                                                                const result: Record<string, { count: number; totalPrice: number }> = {};
+                                                                for (const item of savedItems) {
+                                                                    const key = item.matchedProductKey;
+                                                                    if (!result[key]) result[key] = { count: 0, totalPrice: 0 };
+                                                                    result[key].count += item.qty;
+                                                                    result[key].totalPrice += item.qty * ((products[key] as any)?.supplyPrice || 0);
+                                                                }
+                                                                if (Object.keys(result).length > 0) return result;
+                                                            }
                                                             return syncedData?.itemSummary || {};
                                                         })();
                                                         const vals: Record<string, { count: string; totalPrice: string }> = {};
