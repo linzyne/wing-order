@@ -255,6 +255,22 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         return name || key;
     };
 
+    // 같은 displayName으로 resolve되는 key들을 합산 (Firestore에 중복 키가 있는 경우 방지)
+    const mergeByDisplayName = (summary: Record<string, { count: number; totalPrice: number }>): [string, { count: number; totalPrice: number }][] => {
+        const merged = new Map<string, { count: number; totalPrice: number }>();
+        for (const [key, stat] of Object.entries(summary) as [string, { count: number; totalPrice: number }][]) {
+            const displayName = resolveProductDisplayName(key);
+            const existing = merged.get(displayName);
+            if (existing) {
+                existing.count += stat.count;
+                existing.totalPrice += stat.totalPrice;
+            } else {
+                merged.set(displayName, { count: stat.count, totalPrice: stat.totalPrice });
+            }
+        }
+        return [...merged.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
+    };
+
     // depositSummaryExcel 텍스트를 파싱해 itemSummary(productKey→{count,totalPrice}) 재구성
     // stale Firestore itemSummary 대신 항상 최신 표시 텍스트 기반으로 복원하기 위한 역변환
     const parseSummaryFromExcelText = (excelText: string): Record<string, { count: number; totalPrice: number }> => {
@@ -284,25 +300,23 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const today = workDate ? new Date(workDate + 'T00:00:00') : new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
-        const entries = Object.entries(combinedSummary) as [string, { count: number; totalPrice: number }][];
-        const totalCount = entries.reduce((a, [, b]) => a + b.count, 0);
-        let grandTotal = entries.reduce((a, [, b]) => a + b.totalPrice, 0);
+        const mergedEntries = mergeByDisplayName(combinedSummary as Record<string, { count: number; totalPrice: number }>);
+        const totalCount = mergedEntries.reduce((a, [, b]) => a + b.count, 0);
+        const grandTotal = mergedEntries.reduce((a, [, b]) => a + b.totalPrice, 0);
 
         const lines: string[] = [];
         const bizShort = getBusinessInfo(businessId ?? '')?.shortName || '';
         lines.push(`${dateTitle} (${companyName})${bizShort ? ' ' + bizShort : ''} - 1~${roundNumber}차 합산`);
         lines.push(`총주문수\t${totalCount}개`);
         lines.push('');
-        entries
-            .sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true }))
-            .forEach(([name, stat]) => {
-                lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-            });
+        mergedEntries.forEach(([displayName, stat]) => {
+            lines.push(`${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+        });
 
         // 현재 차수 추가분 표시
         if (currentSessionSummary && Object.keys(currentSessionSummary).length > 0) {
-            const addedItems = Object.entries(currentSessionSummary)
-                .map(([key, stat]: [string, any]) => `${resolveProductDisplayName(key)} ${stat.count}개 ${stat.totalPrice.toLocaleString()}원`)
+            const addedItems = mergeByDisplayName(currentSessionSummary as Record<string, { count: number; totalPrice: number }>)
+                .map(([displayName, stat]) => `${displayName} ${stat.count}개 ${stat.totalPrice.toLocaleString()}원`)
                 .join(', ');
             lines.push('');
             lines.push(`(${roundNumber}차 추가 : ${addedItems})`);
@@ -320,19 +334,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const today = workDate ? new Date(workDate + 'T00:00:00') : new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
-        const entries = Object.entries(combinedSummary) as [string, { count: number; totalPrice: number }][];
-        const totalCount = entries.reduce((a, [, b]) => a + b.count, 0);
-        const grandTotal = entries.reduce((a, [, b]) => a + b.totalPrice, 0);
+        const mergedEntries = mergeByDisplayName(combinedSummary as Record<string, { count: number; totalPrice: number }>);
+        const totalCount = mergedEntries.reduce((a, [, b]) => a + b.count, 0);
+        const grandTotal = mergedEntries.reduce((a, [, b]) => a + b.totalPrice, 0);
         const lines: string[] = [];
         const bizShort2 = getBusinessInfo(businessId ?? '')?.shortName || '';
         lines.push(`${dateTitle} (${companyName})${bizShort2 ? ' ' + bizShort2 : ''}`);
         lines.push(`총주문수\t${totalCount}개`);
         lines.push('');
-        entries
-            .sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true }))
-            .forEach(([name, stat]) => {
-                lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-            });
+        mergedEntries.forEach(([displayName, stat]) => {
+            lines.push(`${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+        });
         lines.push('');
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
         lines.push(`(입금자 ${getBusinessInfo(businessId ?? '')?.senderName || '안군농원'})`);
@@ -344,14 +356,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const today = workDate ? new Date(workDate + 'T00:00:00') : new Date();
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
-        const entries = Object.entries(combinedSummary).sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true })) as [string, { count: number; totalPrice: number }][];
-        const totalCount = entries.reduce((acc, [, s]) => acc + s.count, 0);
-        const grandTotal = entries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
+        const mergedEntries = mergeByDisplayName(combinedSummary as Record<string, { count: number; totalPrice: number }>);
+        const totalCount = mergedEntries.reduce((acc, [, s]) => acc + s.count, 0);
+        const grandTotal = mergedEntries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
         const lines: string[] = [];
-        entries.forEach(([name, stat], idx) => {
+        mergedEntries.forEach(([displayName, stat], idx) => {
             let col1 = idx === 0 ? dateTitle : idx === 1 ? `총 ${totalCount}개` : '';
-            let line = `${col1}\t${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
-            if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
+            let line = `${col1}\t${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
+            if (idx === mergedEntries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
             lines.push(line);
         });
         return lines.join('\n');
@@ -360,27 +372,27 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const buildDepositTextFromSummary = (summary: Record<string, { count: number; totalPrice: number }>, originalText: string | null | undefined): string => {
         const senderName = getBusinessInfo(businessId ?? '')?.senderName || '안군농원';
         const firstLine = originalText?.split('\n')[0] || '';
-        const totalCount = Object.values(summary).reduce((a, b) => a + b.count, 0);
-        let grandTotal = 0;
+        const mergedEntries = mergeByDisplayName(summary);
+        const totalCount = mergedEntries.reduce((a, [, b]) => a + b.count, 0);
+        const grandTotal = mergedEntries.reduce((a, [, b]) => a + b.totalPrice, 0);
         const lines = [firstLine, `총주문수\t${totalCount}개`, ''];
-        Object.entries(summary).sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true })).forEach(([name, stat]) => {
-            lines.push(`${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-            grandTotal += stat.totalPrice;
+        mergedEntries.forEach(([displayName, stat]) => {
+            lines.push(`${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
         });
         lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${senderName})`);
         return lines.join('\n');
     };
 
     const buildDepositExcelFromSummary = (summary: Record<string, { count: number; totalPrice: number }>, originalExcel: string | null | undefined): string => {
-        const entries = Object.entries(summary).sort(([a], [b]) => resolveProductDisplayName(a).localeCompare(resolveProductDisplayName(b), undefined, { numeric: true }));
-        const totalCount = entries.reduce((a, [, s]) => a + s.count, 0);
-        const grandTotal = entries.reduce((a, [, s]) => a + s.totalPrice, 0);
+        const mergedEntries = mergeByDisplayName(summary);
+        const totalCount = mergedEntries.reduce((a, [, s]) => a + s.count, 0);
+        const grandTotal = mergedEntries.reduce((a, [, s]) => a + s.totalPrice, 0);
         const firstLineTitle = originalExcel?.split('\t')[0] || '';
         const lines: string[] = [];
-        entries.forEach(([name, stat], idx) => {
+        mergedEntries.forEach(([displayName, stat], idx) => {
             let col1 = idx === 0 ? firstLineTitle : idx === 1 ? `총 ${totalCount}개` : '';
-            let line = `${col1}\t${resolveProductDisplayName(name)}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
-            if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
+            let line = `${col1}\t${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
+            if (idx === mergedEntries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
             lines.push(line);
         });
         return lines.join('\n');
