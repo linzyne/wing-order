@@ -541,7 +541,8 @@ const generateWorkbookForCompany = async (
     excludedOrders: ExcludedOrder[],
     manualOrders: ManualOrder[] = [],
     unmatchedOrders: UnmatchedOrder[] = [],
-    businessId?: string
+    businessId?: string,
+    workDate?: string
 ): Promise<[string, ProcessedResult | null]> => {
     try {
         const companyConfig = pricingConfig[companyName];
@@ -553,7 +554,8 @@ const generateWorkbookForCompany = async (
         const senderAddress = bizInfo.address;
         const stats = new StatsManager(senderName);
         const summary: AnalysisResult = {};
-        const today = new Date();
+        // 정산요약 내 날짜 표기는 작업날짜(workDate)를 우선 사용 — 지정 없으면 실제 오늘
+        const today = workDate ? new Date(workDate + 'T00:00:00') : new Date();
         const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -1069,7 +1071,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
     // pricingConfig가 바뀌면 캐시 초기화 (구버전 품목키 캐싱 방지)
     useEffect(() => { geminiProductCache.clear(); }, [pricingConfig]);
 
-    const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = []) => {
+    const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = [], workDate?: string) => {
         try {
             console.log(`[발주처리] ${targetCompanyName} 처리 시작`);
             const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -1153,7 +1155,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
 
             const localExcluded: ExcludedOrder[] = [];
             const localUnmatched: UnmatchedOrder[] = [];
-            const [, result] = await generateWorkbookForCompany(ai, geminiProductCache, pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId);
+            const [, result] = await generateWorkbookForCompany(ai, geminiProductCache, pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId, workDate);
 
             return { result, excluded: localExcluded, unmatched: localUnmatched };
         } catch (err) {

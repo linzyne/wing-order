@@ -849,7 +849,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 : []);
         try {
             const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
-            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude);
+            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude, workDate);
             if (processResponse) {
                 setLocalResult(processResponse.result);
                 setExcludedList(processResponse.excluded);
