@@ -866,12 +866,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
     const handleBulkAddProducts = (companyName: string, newProducts: ProductPricing[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newProducts.forEach(product => {
-            let productKey = product.displayName;
-            if (newConfig[companyName].products[productKey]) {
-                let idx = 2;
-                while (newConfig[companyName].products[`${product.displayName}_${idx}`]) idx++;
-                productKey = `${product.displayName}_${idx}`;
-            }
+            const productKey = product.displayName;
+            // 이미 같은 키가 있으면 덮어쓰지 않고 건너뜀 (기존 데이터 보호)
+            if (newConfig[companyName].products[productKey]) return;
             newConfig[companyName].products[productKey] = stripUndefined(product);
         });
         onConfigChange(newConfig);
@@ -885,12 +882,10 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
             onConfirm: (displayName) => {
                 if (!displayName) return;
                 const newConfig = JSON.parse(JSON.stringify(configRef.current));
-                let productKey = displayName;
-                // 같은 이름이 있으면 키에 번호를 붙여서 중복 허용
+                const productKey = displayName;
                 if (newConfig[companyName].products[productKey]) {
-                    let idx = 2;
-                    while (newConfig[companyName].products[`${displayName}_${idx}`]) idx++;
-                    productKey = `${displayName}_${idx}`;
+                    setDialog({ type: 'alert', message: `'${displayName}' 키가 이미 존재해요. 다른 이름을 사용해주세요.`, onConfirm: () => setDialog(null) });
+                    return;
                 }
                 newConfig[companyName].products[productKey] = { displayName, supplyPrice: 0 };
                 onConfigChange(newConfig);
