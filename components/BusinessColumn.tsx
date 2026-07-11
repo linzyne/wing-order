@@ -6,7 +6,7 @@ import TodoList from './TodoList';
 import { usePricingConfig, usePlatformConfigs, loadPricingBackup } from '../hooks/useFirestore';
 import { WrenchScrewdriverIcon, Cog6ToothIcon, ChartBarIcon, ArrowDownTrayIcon, ClipboardDocumentCheckIcon, PencilIcon } from './icons';
 import { syncPricingFields } from '../services/migration';
-import type { PricingConfig } from '../types';
+import type { PricingConfig, CompanyConfig } from '../types';
 
 const HARDCODED_IDS = ['안군농원', '조에'];
 
@@ -31,6 +31,7 @@ interface BusinessColumnProps {
   themeColor?: string;
   bank?: string;
   sharedSuppliers?: PricingConfig;
+  onSendToLibrary?: (companyName: string, companyConfig: CompanyConfig) => void;
   initiallyMounted?: boolean;
   refreshKey?: number;
   globalFakeOrderInput?: string;
@@ -46,7 +47,7 @@ interface BusinessColumnProps {
   onHasWarnings?: (has: boolean) => void;
 }
 
-const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, onEdit, onExposeOrderRows, onHasWarnings }) => {
+const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, onEdit, onExposeOrderRows, onHasWarnings }) => {
   const [activeTab, setActiveTab] = useState('converter');
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
@@ -204,6 +205,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               platformConfigs={platformConfigs}
               onPlatformConfigsChange={savePlatformConfig}
               sharedSuppliers={sharedSuppliers}
+              onSendToLibrary={onSendToLibrary}
             />
           </div>
           <div style={{ display: !isLoading && activeTab === 'sales' ? undefined : 'none' }}>

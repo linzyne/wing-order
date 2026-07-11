@@ -681,9 +681,10 @@ interface PricingEditorProps {
     onPlatformConfigsChange?: (configs: PlatformConfigs) => void;
     sharedSuppliers?: PricingConfig;
     isLibraryMode?: boolean;
+    onSendToLibrary?: (companyName: string, companyConfig: CompanyConfig) => void;
 }
 
-const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, platformConfigs = {}, onPlatformConfigsChange, sharedSuppliers, isLibraryMode }) => {
+const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, platformConfigs = {}, onPlatformConfigsChange, sharedSuppliers, isLibraryMode, onSendToLibrary }) => {
     const [dialog, setDialog] = useState<DialogType>(null);
     const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>(() => {
         return Object.keys(config).reduce((acc, key) => ({ ...acc, [key]: true }), {});
@@ -740,6 +741,23 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         setExpandedCompanies(prev => ({ ...prev, [finalName]: true }));
         setShowSupplierPicker(false);
         scrollToCard(finalName, 100);
+    };
+
+    const handleSendToLibrary = (companyName: string) => {
+        const cfg = configRef.current[companyName];
+        if (!cfg || !onSendToLibrary) return;
+        const alreadyInLibrary = !!sharedSuppliers?.[companyName];
+        setDialog({
+            type: 'confirm',
+            message: alreadyInLibrary
+                ? `'${companyName}'가 이미 라이브러리에 있어요. 최신 정보로 덮어쓸까요? 📤`
+                : `'${companyName}'를 라이브러리로 보낼까요? 다른 사업자에서도 불러와 쓸 수 있어요 📤`,
+            onConfirm: () => {
+                onSendToLibrary(companyName, JSON.parse(JSON.stringify(cfg)));
+                setDialog({ type: 'alert', message: `'${companyName}'를 라이브러리로 보냈어요! ✨`, onConfirm: () => setDialog(null) });
+            },
+            onCancel: () => setDialog(null),
+        });
     };
 
     const handleDeleteCompany = (companyName: string) => {
@@ -1113,6 +1131,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             isExpanded={expandedCompanies[companyName] ?? true}
                             onToggle={() => toggleCompany(companyName)}
                             onDeleteCompany={() => handleDeleteCompany(companyName)}
+                            onSendToLibrary={onSendToLibrary ? () => handleSendToLibrary(companyName) : undefined}
                             onUpdateCompanyName={(newName) => handleUpdateCompanyName(companyName, newName)}
                             onUpdatePhone={(phone) => handleUpdatePhone(companyName, phone)}
                             onUpdateBank={(bank) => handleUpdateBank(companyName, bank)}
@@ -1183,6 +1202,7 @@ const CompanyCard: React.FC<{
     isExpanded: boolean;
     onToggle: () => void;
     onDeleteCompany: () => void;
+    onSendToLibrary?: () => void;
     onUpdateCompanyName: (newName: string) => void;
     onUpdatePhone: (phone: string) => void;
     onUpdateBank: (bank: string) => void;
@@ -1224,6 +1244,15 @@ const CompanyCard: React.FC<{
                     </div>
                 </div>
                 <div className="flex items-center gap-5">
+                    {props.onSendToLibrary && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); props.onSendToLibrary!(); }}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-black border border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10 hover:border-indigo-500/50 transition-all"
+                            title="라이브러리로 보내기"
+                        >
+                            <span>📤</span><span>라이브러리로 보내기</span>
+                        </button>
+                    )}
                     <button onClick={(e) => { e.stopPropagation(); props.onDeleteCompany(); }} className="p-3 text-zinc-700 hover:text-red-500 hover:bg-zinc-800 rounded-full transition-all"><TrashIcon className="w-6 h-6" /></button>
                     <div className={`p-1.5 text-zinc-700 transition-transform duration-500 ${isExpanded ? 'rotate-180' : 'rotate-0'}`}><ChevronDownIcon className="w-8 h-8" /></div>
                 </div>

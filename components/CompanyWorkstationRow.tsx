@@ -566,9 +566,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const memoInitializedRef = useRef(false);
     useEffect(() => {
         if (!isFirstSession || memoInitializedRef.current) return;
+        memoInitializedRef.current = true;
         const saved = pricingConfig[companyName]?.memo;
         if (saved !== undefined) {
-            memoInitializedRef.current = true;
             setSessionMemo(saved);
         }
     }, [pricingConfig, companyName, isFirstSession]);

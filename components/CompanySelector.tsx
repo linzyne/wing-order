@@ -260,7 +260,7 @@ const CourierTemplateManager: React.FC<{
     const [newHeaders, setNewHeaders] = useState<string[]>([]);
     const [newMapping, setNewMapping] = useState<Record<string, number>>({});
     const [newFixedValues, setNewFixedValues] = useState<Record<number, string>>({});
-    const [newSenderNameColumn, setNewSenderNameColumn] = useState<number | null>(null);
+    const [newSenderNameColumns, setNewSenderNameColumns] = useState<number[]>([]);
     const [newReturnHeaders, setNewReturnHeaders] = useState<string[]>([]);
     const [newReturnMapping, setNewReturnMapping] = useState<Record<string, number>>({});
     const [showAddForm, setShowAddForm] = useState(false);
@@ -280,7 +280,7 @@ const CourierTemplateManager: React.FC<{
         setNewHeaders([]);
         setNewMapping({});
         setNewFixedValues({});
-        setNewSenderNameColumn(null);
+        setNewSenderNameColumns([]);
         setNewReturnHeaders([]);
         setNewReturnMapping({});
         setEditingId(null);
@@ -295,7 +295,9 @@ const CourierTemplateManager: React.FC<{
         setNewHeaders(tmpl.headers);
         setNewMapping({ ...tmpl.mapping } as Record<string, number>);
         setNewFixedValues({ ...tmpl.fixedValues });
-        setNewSenderNameColumn(tmpl.senderNameColumn !== undefined ? tmpl.senderNameColumn : null);
+        setNewSenderNameColumns(tmpl.senderNameColumns && tmpl.senderNameColumns.length > 0
+            ? tmpl.senderNameColumns
+            : (tmpl.senderNameColumn !== undefined ? [tmpl.senderNameColumn] : []));
         setNewReturnHeaders(tmpl.returnHeaders || []);
         setNewReturnMapping(tmpl.returnMapping ? { ...tmpl.returnMapping } as Record<string, number> : {});
         setShowAddForm(true);
@@ -406,7 +408,7 @@ const CourierTemplateManager: React.FC<{
                 trackingNumber: newMapping.trackingNumber,
             },
             fixedValues: newFixedValues,
-            senderNameColumn: newSenderNameColumn !== null ? newSenderNameColumn : undefined,
+            senderNameColumns: newSenderNameColumns.length > 0 ? newSenderNameColumns : undefined,
             unitPrice: Number(newUnitPrice) || 2270,
             returnHeaders: newReturnHeaders.length > 0 ? newReturnHeaders : undefined,
             returnMapping: (newReturnMapping.orderNumber !== undefined && newReturnMapping.trackingNumber !== undefined)
@@ -429,7 +431,7 @@ const CourierTemplateManager: React.FC<{
 
     // 매핑에 사용된 열 인덱스 Set (고정값 목록에서 제외하기 위해)
     const mappedIndices = new Set(Object.values(newMapping));
-    if (newSenderNameColumn !== null) mappedIndices.add(newSenderNameColumn);
+    newSenderNameColumns.forEach(idx => mappedIndices.add(idx));
 
     return (
         <div className="mb-4 bg-zinc-900/50 p-4 rounded-xl border border-pink-500/20 animate-fade-in space-y-4">
@@ -444,11 +446,17 @@ const CourierTemplateManager: React.FC<{
                         <span className="text-[9px] text-zinc-500 font-mono">
                             {COURIER_DATA_FIELDS.map(f => `${f.label}:${colIndexToLetter(tmpl.mapping[f.key])}`).join('  ')}
                         </span>
-                        {tmpl.senderNameColumn !== undefined && (
-                            <span className="text-[9px] text-violet-400/80 font-mono">
-                                보내는사람:{colIndexToLetter(tmpl.senderNameColumn)}
-                            </span>
-                        )}
+                        {(() => {
+                            const cols = tmpl.senderNameColumns && tmpl.senderNameColumns.length > 0
+                                ? tmpl.senderNameColumns
+                                : (tmpl.senderNameColumn !== undefined ? [tmpl.senderNameColumn] : []);
+                            if (cols.length === 0) return null;
+                            return (
+                                <span className="text-[9px] text-violet-400/80 font-mono">
+                                    보내는사람:{cols.map(colIndexToLetter).join(',')}
+                                </span>
+                            );
+                        })()}
                         {tmpl.returnMapping && (
                             <span className="text-[9px] text-emerald-500/70 font-mono">
                                 운송장: 주문번호:{colIndexToLetter(tmpl.returnMapping.orderNumber)} 송장:{colIndexToLetter(tmpl.returnMapping.trackingNumber)}
@@ -531,18 +539,23 @@ const CourierTemplateManager: React.FC<{
 
                             {/* 보내는사람 열 (사업자명 자동입력) */}
                             <div className="mt-2 pt-2 border-t border-zinc-800">
-                                <label className="text-[9px] text-violet-400 font-black uppercase tracking-widest mb-1.5 block">보내는사람 열 (사업자명 자동입력)</label>
-                                <select
-                                    value={newSenderNameColumn !== null ? String(newSenderNameColumn) : ''}
-                                    onChange={(e) => setNewSenderNameColumn(e.target.value === '' ? null : Number(e.target.value))}
-                                    className="w-full bg-zinc-900 border border-violet-700/40 rounded-lg px-2 py-1.5 text-[10px] text-zinc-200 focus:outline-none focus:border-violet-500/50"
-                                >
-                                    <option value="">선택 안 함 (고정값 사용)</option>
-                                    {newHeaders.map((h, idx) => (
-                                        <option key={idx} value={idx}>{colIndexToLetter(idx)}: {h || '(빈 열)'}</option>
-                                    ))}
-                                </select>
-                                <p className="text-[8px] text-zinc-600 mt-1">선택 시 다운로드할 때 해당 열에 각 사업자명이 자동 입력됩니다.</p>
+                                <label className="text-[9px] text-violet-400 font-black uppercase tracking-widest mb-1.5 block">보내는사람 열 (사업자명 자동입력, 복수 선택 가능)</label>
+                                <div className="flex flex-wrap gap-1.5">
+                                    {newHeaders.map((h, idx) => {
+                                        const checked = newSenderNameColumns.includes(idx);
+                                        return (
+                                            <button
+                                                type="button"
+                                                key={idx}
+                                                onClick={() => setNewSenderNameColumns(prev => checked ? prev.filter(i => i !== idx) : [...prev, idx])}
+                                                className={`text-[10px] px-2 py-1 rounded-lg border transition-colors ${checked ? 'bg-violet-950/40 border-violet-500/50 text-violet-300' : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:border-violet-500/40'}`}
+                                            >
+                                                {colIndexToLetter(idx)}: {h || '(빈 열)'}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <p className="text-[8px] text-zinc-600 mt-1">선택한 모든 열에 다운로드 시 각 사업자명이 자동 입력됩니다. (예: 보내는사람 + 보내는사람(지정) 둘 다 선택)</p>
                             </div>
 
                             {/* 고정값 설정 (매핑 안 된 열) */}
@@ -2461,10 +2474,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 Object.entries(fixedValues).forEach(([colIdx, value]) => {
                     newRow[Number(colIdx)] = value;
                 });
-                // 보내는사람 열에 현재 사업자명 자동 입력
-                if (template.senderNameColumn !== undefined) {
-                    newRow[template.senderNameColumn] = businessPrefix;
-                }
+                // 보내는사람 열(들)에 현재 사업자명 자동 입력
+                const senderCols = template.senderNameColumns && template.senderNameColumns.length > 0
+                    ? template.senderNameColumns
+                    : (template.senderNameColumn !== undefined ? [template.senderNameColumn] : []);
+                senderCols.forEach(idx => { newRow[idx] = businessPrefix; });
                 rows.push(newRow);
             }
 
@@ -3677,6 +3691,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
         }
         const records = Array.from(recordMap.values());
+
+        // 워크스테이션에서 수동으로 추가/차감한 금액도 매출 기록에 반영 (정산요약 총합계와 일치시키기 위함)
+        sortedCompanyNames.forEach(name => {
+            if (!selectedCompanyNames.has(name)) return;
+            (companySessions[name] || []).forEach(s => {
+                const adjustments = workspace?.sessionAdjustments?.[s.id];
+                if (!adjustments || adjustments.length === 0) return;
+                adjustments.forEach(adj => {
+                    records.push({ date: recordDate, company: name, product: adj.label, count: 1, supplyPrice: adj.amount, totalPrice: adj.amount });
+                });
+            });
+        });
 
         // Firestore는 undefined를 저장할 수 없으므로 null로 치환
         const sanitizeRows = (rows: any[][]): any[][] =>

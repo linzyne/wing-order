@@ -11,7 +11,7 @@ import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayI
 import { useSharedSuppliers, useCourierTemplates } from './hooks/useFirestore';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
-import type { CourierTemplate } from './types';
+import type { CourierTemplate, CompanyConfig } from './types';
 
 // 400레벨 원색을 약간 어둡게 (투명도 레이어 대신 직접 혼합한 값)
 function dimThemeColor(color: string): string {
@@ -144,6 +144,10 @@ const App: React.FC = () => {
   const sharedSuppliers = useSharedSuppliers();
   const { courierTemplates } = useCourierTemplates();
 
+  const handleSendCompanyToLibrary = useCallback((companyName: string, companyConfig: CompanyConfig) => {
+    sharedSuppliers.saveConfig({ ...sharedSuppliers.config, [companyName]: companyConfig });
+  }, [sharedSuppliers]);
+
   // 공통 택배: 각 사업자의 주문 행 데이터를 ref에 수집 (상태 불필요, 버튼 클릭 시점에 읽음)
   const globalMasterRowsRef = useRef<Record<string, { header: any[]; dataRows: any[][] }>>({} as Record<string, { header: any[]; dataRows: any[][] }>);
   const globalCourierFilesRef = useRef<Record<string, File[]>>({});
@@ -197,10 +201,11 @@ const App: React.FC = () => {
         newRow[mapping.recipientPhone] = phone;
         newRow[mapping.recipientAddress] = address;
         Object.entries(fixedValues).forEach(([colIdx, value]) => { newRow[Number(colIdx)] = value; });
-        // 보내는사람 열에 해당 사업자명 자동 입력
-        if (template.senderNameColumn !== undefined) {
-          newRow[template.senderNameColumn] = bizDisplayName;
-        }
+        // 보내는사람 열(들)에 해당 사업자명 자동 입력
+        const senderCols = template.senderNameColumns && template.senderNameColumns.length > 0
+          ? template.senderNameColumns
+          : (template.senderNameColumn !== undefined ? [template.senderNameColumn] : []);
+        senderCols.forEach(idx => { newRow[idx] = bizDisplayName; });
         rows.push(newRow);
       }
     }
@@ -261,9 +266,10 @@ const App: React.FC = () => {
       newRow[mapping.recipientPhone] = phone;
       newRow[mapping.recipientAddress] = address;
       Object.entries(fixedValues).forEach(([colIdx, value]) => { newRow[Number(colIdx)] = value; });
-      if (template.senderNameColumn !== undefined) {
-        newRow[template.senderNameColumn] = bizDisplayName;
-      }
+      const senderCols = template.senderNameColumns && template.senderNameColumns.length > 0
+        ? template.senderNameColumns
+        : (template.senderNameColumn !== undefined ? [template.senderNameColumn] : []);
+      senderCols.forEach(idx => { newRow[idx] = bizDisplayName; });
       rows.push(newRow);
     }
 
@@ -1052,6 +1058,7 @@ const App: React.FC = () => {
               themeColor={dimThemeColor(b.themeColor)}
               bank={b.bank}
               sharedSuppliers={sharedSuppliers.config}
+              onSendToLibrary={handleSendCompanyToLibrary}
               initiallyMounted={true}
               onRegisterMasterUpload={handleRegisterMasterUpload}
               onRegisterReset={handleRegisterReset}
