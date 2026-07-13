@@ -1081,8 +1081,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
 
     const [manualInput, setManualInput] = useState({
-        companyName: '', recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: ''
+        companyName: '', recipientName: '', phone: '', address: '', memo: ''
     });
+    const [manualSelectedProducts, setManualSelectedProducts] = useState<{ productKey: string, productName: string, qty: string }[]>([]);
     const [editingOrderId, setEditingOrderId] = useState<string | null>(null);
 
 
@@ -2620,37 +2621,41 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const handleAddManualOrder = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!manualInput.companyName || !manualInput.recipientName || !manualInput.productName) {
-            alert('업체, 수령자 이름, 품목명은 필수입니다.'); return;
+        if (!manualInput.companyName || !manualInput.recipientName || manualSelectedProducts.length === 0) {
+            alert('업체, 수령자 이름, 품목은 필수입니다.'); return;
         }
         if (editingOrderId) {
+            const item = manualSelectedProducts[0];
             setManualOrders(prev => prev.map(o => o.id === editingOrderId ? {
                 ...o, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
-                phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName,
-                qty: parseInt(manualInput.qty) || 1, memo: manualInput.memo
+                phone: manualInput.phone, address: manualInput.address, productName: item.productName,
+                qty: parseInt(item.qty) || 1, memo: manualInput.memo
             } : o));
             setEditingOrderId(null);
         } else {
-            const newOrder: ManualOrder = {
-                id: `mo-${Date.now()}`, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
-                phone: manualInput.phone, address: manualInput.address, productName: manualInput.productName, qty: parseInt(manualInput.qty) || 1,
+            const newOrders: ManualOrder[] = manualSelectedProducts.map((item, idx) => ({
+                id: `mo-${Date.now()}-${idx}`, companyName: manualInput.companyName, recipientName: manualInput.recipientName,
+                phone: manualInput.phone, address: manualInput.address, productName: item.productName, qty: parseInt(item.qty) || 1,
                 memo: manualInput.memo
-            };
-            setManualOrders(prev => [...prev, newOrder]);
-            setSelectedManualOrderIds(prev => new Set([...prev, newOrder.id]));
+            }));
+            setManualOrders(prev => [...prev, ...newOrders]);
+            setSelectedManualOrderIds(prev => new Set([...prev, ...newOrders.map(o => o.id)]));
         }
-        setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: '' }));
+        setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', memo: '' }));
+        setManualSelectedProducts([]);
     };
 
     const handleStartEditManualOrder = (o: ManualOrder) => {
         setEditingOrderId(o.id);
         const productKey = Object.entries(pricingConfig[o.companyName]?.products ?? {}).find(([, p]: [string, any]) => (p.orderFormName || p.displayName) === o.productName)?.[0] ?? '';
-        setManualInput({ companyName: o.companyName, recipientName: o.recipientName, phone: o.phone, address: o.address, productName: o.productName, productKey, qty: String(o.qty), memo: o.memo ?? '' });
+        setManualInput({ companyName: o.companyName, recipientName: o.recipientName, phone: o.phone, address: o.address, memo: o.memo ?? '' });
+        setManualSelectedProducts([{ productKey, productName: o.productName, qty: String(o.qty) }]);
     };
 
     const handleCancelEditManualOrder = () => {
         setEditingOrderId(null);
-        setManualInput({ companyName: '', recipientName: '', phone: '', address: '', productName: '', productKey: '', qty: '1', memo: '' });
+        setManualInput({ companyName: '', recipientName: '', phone: '', address: '', memo: '' });
+        setManualSelectedProducts([]);
     };
 
     const handleQuickSelect = (person: { name: string, phone: string, address: string }) => {
@@ -4183,7 +4188,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     </div>
                     <form onSubmit={handleAddManualOrder} className="flex flex-col gap-2">
                         <div className="grid grid-cols-2 gap-2">
-                            <select value={manualInput.companyName} onChange={e => setManualInput({...manualInput, companyName: e.target.value, productName: '', productKey: ''})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
+                            <select value={manualInput.companyName} onChange={e => { setManualInput({...manualInput, companyName: e.target.value}); setManualSelectedProducts([]); }} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
                                 <option value="">업체 선택</option>
                                 {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
                             </select>
@@ -4193,25 +4198,39 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <input placeholder="전화번호" value={manualInput.phone} onChange={e => setManualInput({...manualInput, phone: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
                             <input placeholder="주소" value={manualInput.address} onChange={e => setManualInput({...manualInput, address: e.target.value})} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
-                            <select value={manualInput.productKey} onChange={e => {
-                                const selectedKey = e.target.value;
-                                const p = pricingConfig[manualInput.companyName]?.products?.[selectedKey] as any;
-                                const resolvedName = p ? (p.orderFormName || p.displayName || selectedKey) : selectedKey;
-                                setManualInput({...manualInput, productKey: selectedKey, productName: resolvedName});
-                            }} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
-                                <option value="">품목 선택</option>
-                                {manualInput.companyName && pricingConfig[manualInput.companyName]?.products &&
-                                    Object.entries(pricingConfig[manualInput.companyName].products).map(([key, p]: [string, any]) => (
-                                        <option key={key} value={key}>{p.displayName || key}{p.orderFormName && p.orderFormName !== p.displayName ? ` → ${p.orderFormName}` : ''} ({(Number(p.supplyPrice) || 0).toLocaleString()}원)</option>
-                                    ))
-                                }
-                            </select>
-                            <div className="flex gap-2">
-                                <input type="number" placeholder="수량" value={manualInput.qty} onChange={e => setManualInput({...manualInput, qty: e.target.value})} className="w-14 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
-                                <button type="submit" className={`flex-1 rounded-xl text-xs font-black transition-all ${editingOrderId ? 'bg-amber-500 hover:bg-amber-400 text-white' : 'btn-accent'}`}>{editingOrderId ? '수정 완료' : '추가'}</button>
+                        <select value="" onChange={e => {
+                            const selectedKey = e.target.value;
+                            if (!selectedKey) return;
+                            const p = pricingConfig[manualInput.companyName]?.products?.[selectedKey] as any;
+                            const resolvedName = p ? (p.orderFormName || p.displayName || selectedKey) : selectedKey;
+                            if (editingOrderId) {
+                                setManualSelectedProducts([{ productKey: selectedKey, productName: resolvedName, qty: '1' }]);
+                            } else {
+                                setManualSelectedProducts(prev => prev.some(pr => pr.productKey === selectedKey) ? prev : [...prev, { productKey: selectedKey, productName: resolvedName, qty: '1' }]);
+                            }
+                        }} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">
+                            <option value="">+ 품목 추가 (여러 개 선택 가능)</option>
+                            {manualInput.companyName && pricingConfig[manualInput.companyName]?.products &&
+                                Object.entries(pricingConfig[manualInput.companyName].products).map(([key, p]: [string, any]) => (
+                                    <option key={key} value={key}>{p.displayName || key}{p.orderFormName && p.orderFormName !== p.displayName ? ` → ${p.orderFormName}` : ''} ({(Number(p.supplyPrice) || 0).toLocaleString()}원)</option>
+                                ))
+                            }
+                        </select>
+                        {manualSelectedProducts.length > 0 && (
+                            <div className="flex flex-col gap-1.5">
+                                {manualSelectedProducts.map((item, idx) => (
+                                    <div key={item.productKey} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-1.5">
+                                        <span className="flex-1 text-[10px] font-bold text-zinc-300 truncate">{item.productName}</span>
+                                        <input type="number" placeholder="수량" value={item.qty} onChange={e => {
+                                            const qty = e.target.value;
+                                            setManualSelectedProducts(prev => prev.map((p, i) => i === idx ? { ...p, qty } : p));
+                                        }} className="w-14 bg-zinc-950 border border-zinc-800 rounded-lg px-1.5 py-1 text-[10px] font-bold text-white outline-none" />
+                                        <button type="button" onClick={() => setManualSelectedProducts(prev => prev.filter((_, i) => i !== idx))} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
+                                    </div>
+                                ))}
                             </div>
-                        </div>
+                        )}
+                        <button type="submit" className={`rounded-xl text-xs font-black transition-all py-2 ${editingOrderId ? 'bg-amber-500 hover:bg-amber-400 text-white' : 'btn-accent'}`}>{editingOrderId ? '수정 완료' : `추가${manualSelectedProducts.length > 1 ? ` (${manualSelectedProducts.length}건)` : ''}`}</button>
                         <div className="flex gap-2 items-center">
                             <input placeholder="메모 (배송메세지로 입력됨)" value={manualInput.memo} onChange={e => setManualInput({...manualInput, memo: e.target.value})} className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none" />
                             {editingOrderId && <button type="button" onClick={handleCancelEditManualOrder} className="px-2.5 py-2 text-[10px] font-black text-zinc-500 hover:text-zinc-300 transition-colors whitespace-nowrap">취소</button>}
