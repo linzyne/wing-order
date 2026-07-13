@@ -1385,12 +1385,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
         }
 
-        // 주문번호로만 매칭
+        // 주문번호로만 매칭. 단, 같은 주문번호를 서로 다른 이름 2명이 주장하는 경우
+        // (duplicates) 누가 진짜인지 이름으로 역추적할 수 없으므로 매칭 처리하지 않고
+        // 미매칭으로 남겨 사람이 직접 확인하게 한다.
+        const duplicateNumbers = new Set(duplicates.map(d => d.number));
         const matched = Array.from(inputNumbers).filter(num =>
-            foundDetails[num] || masterOrderNumbers.has(num)
+            !duplicateNumbers.has(num) && (foundDetails[num] || masterOrderNumbers.has(num))
         );
         const missing = Array.from(inputNumbers).filter(num =>
-            !foundDetails[num] && !masterOrderNumbers.has(num)
+            duplicateNumbers.has(num) || (!foundDetails[num] && !masterOrderNumbers.has(num))
         );
 
         // 주문번호 없이도 유효한 특수 키워드 (예: 실배 = 실물배송)
