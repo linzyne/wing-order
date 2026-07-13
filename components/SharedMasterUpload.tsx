@@ -24,7 +24,7 @@ interface MasterUploadHandlers {
   getCompanyClosed?: (companyName: string) => boolean;
   getCompanyRecorded?: (companyName: string) => boolean;
   toggleCompanyClosed?: (companyName: string) => void;
-  toggleCompanyRecord?: (companyName: string) => void;
+  toggleCompanyRecord?: (companyName: string) => Promise<void>;
   setWorkDate?: (date: string) => void;
   getWorkDate?: () => string;
   uploadVendorInvoice?: (files: File[]) => void;
@@ -156,7 +156,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     });
   };
 
-  const handleBulkToggleRecorded = () => {
+  const handleBulkToggleRecorded = async () => {
     const snapshot = refreshDownloadSnapshot();
     const entries = snapshot.flatMap(biz =>
       biz.companies.map(c => ({ bizId: biz.businessId, companyName: c.name }))
@@ -167,15 +167,19 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     });
     const allRecorded = entries.length > 0 && entries.every(({ bizId, companyName }) => freshMap[`${bizId}_${companyName}`]);
     const next = !allRecorded;
+    // 워크스테이션 각 업체의 기록 버튼을 실제로 한 번씩 눌러주는 것과 동일하게, 하나씩 저장이
+    // 끝나길 기다렸다가 다음 업체로 넘어간다 (동시에 쏘면 같은 사업자 문서를 서로 덮어써서
+    // 일부 업체만 기록되는 문제가 있었음)
+    for (const { bizId, companyName } of entries) {
+      if ((freshMap[`${bizId}_${companyName}`] ?? false) !== next) {
+        await uploadFns[bizId]?.toggleCompanyRecord?.(companyName);
+      }
+    }
+    const updatedMap: Record<string, boolean> = { ...freshMap };
     entries.forEach(({ bizId, companyName }) => {
-      if ((freshMap[`${bizId}_${companyName}`] ?? false) !== next)
-        uploadFns[bizId]?.toggleCompanyRecord?.(companyName);
+      updatedMap[`${bizId}_${companyName}`] = uploadFns[bizId]?.getCompanyRecorded?.(companyName) ?? false;
     });
-    setCompanyRecordedMap(prev => {
-      const u = { ...prev, ...freshMap };
-      entries.forEach(({ bizId, companyName }) => { u[`${bizId}_${companyName}`] = next; });
-      return u;
-    });
+    setCompanyRecordedMap(prev => ({ ...prev, ...updatedMap }));
   };
 
   const bulkAllClosed = (() => {
@@ -455,16 +459,19 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   });
                 };
 
-                const handleToggleAllRecorded = () => {
+                const handleToggleAllRecorded = async () => {
                   const next = !allRecordedKey;
-                  bizEntries.forEach(({ biz }) => {
+                  // 워크스테이션의 업체별 기록 버튼을 하나씩 실제로 누르는 것과 동일하게 순차 처리
+                  for (const { biz } of bizEntries) {
                     const mapKey = `${biz.businessId}_${companyName}`;
                     const cur = companyRecordedMap[mapKey] ?? false;
-                    if (cur !== next) uploadFns[biz.businessId]?.toggleCompanyRecord?.(companyName);
-                  });
+                    if (cur !== next) await uploadFns[biz.businessId]?.toggleCompanyRecord?.(companyName);
+                  }
                   setCompanyRecordedMap(prev => {
                     const u = { ...prev };
-                    bizEntries.forEach(({ biz }) => { u[`${biz.businessId}_${companyName}`] = next; });
+                    bizEntries.forEach(({ biz }) => {
+                      u[`${biz.businessId}_${companyName}`] = uploadFns[biz.businessId]?.getCompanyRecorded?.(companyName) ?? false;
+                    });
                     return u;
                   });
                 };
