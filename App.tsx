@@ -518,24 +518,48 @@ const App: React.FC = () => {
     return counts;
   }, [globalFakeOrderInput, allBusinesses]);
 
-  // 전체 특수 키워드 자동 매칭 건수 합계
-  const globalSpecialMatchTotal = useMemo(() => {
-    let total = 0;
-    (Object.values(perBusinessSpecialMatchCounts) as number[]).forEach(n => { total += n; });
-    return total;
-  }, [perBusinessSpecialMatchCounts]);
-
   // 사업자별 가구매 매칭/미발견 통계
+  // 주의: total/matched 모두 "고유 주문번호 수(+특수키워드 줄 수)" 기준으로 맞춰야 함.
+  // total을 줄 수(중복 포함)로 세면 중복 주문번호가 있을 때 실제로는 없는 미매칭이 배지에 표시됨.
   const perBusinessFakeStats = useMemo(() => {
     const stats: Record<string, { total: number; matched: number }> = {};
     allBusinesses.forEach(b => {
       const input = perBusinessFakeInput[b.id] || '';
-      const total = input.trim() ? input.trim().split('\n').filter(Boolean).length : 0;
-      const matched = (matchedFakeNums[b.id]?.length ?? 0) + (perBusinessSpecialMatchCounts[b.id] ?? 0);
+      if (!input.trim()) return;
+      const regularNums = new Set<string>();
+      input.trim().split('\n').forEach(line => {
+        const matches = line.match(/[A-Za-z0-9-]{5,}/g);
+        if (matches) matches.forEach(m => { if (!isSpecialMatchOrderNum(m)) regularNums.add(m.trim()); });
+      });
+      const specialCount = perBusinessSpecialMatchCounts[b.id] ?? 0;
+      const total = regularNums.size + specialCount;
+      const matched = (matchedFakeNums[b.id]?.length ?? 0) + specialCount;
       if (total > 0) stats[b.id] = { total, matched };
     });
     return stats;
   }, [perBusinessFakeInput, matchedFakeNums, perBusinessSpecialMatchCounts, allBusinesses]);
+
+  // 특정 업체 기준으로 주문번호가 매칭됐는지 (업체 간 주문번호 우연 충돌로 오매칭되는 것 방지)
+  const isOrderMatchedForBusiness = useCallback((businessId: string | null, orderNum: string) => {
+    if (!businessId) return allMatchedFakeNums.has(orderNum);
+    return (matchedFakeNums[businessId] || []).includes(orderNum);
+  }, [matchedFakeNums, allMatchedFakeNums]);
+
+  // 전체 가구매 명단 중 미매칭 줄 (버튼 라벨/배지/명단 리스트가 모두 이 배열 하나만 참조하도록 통일)
+  const globalFakeUnmatchedLines = useMemo(() => {
+    const lines = globalFakeOrderInput.trim() ? globalFakeOrderInput.trim().split('\n').filter(Boolean) : [];
+    return lines.filter(line => {
+      const parsed = parseGlobalFakeLine(line, allBusinesses);
+      if (!parsed?.orderNum) return true;
+      if (isSpecialMatchOrderNum(parsed.orderNum)) return false;
+      return !isOrderMatchedForBusiness(parsed.businessId, parsed.orderNum);
+    });
+  }, [globalFakeOrderInput, allBusinesses, isOrderMatchedForBusiness]);
+
+  const globalFakeLineStats = useMemo(() => {
+    const total = globalFakeOrderInput.trim() ? globalFakeOrderInput.trim().split('\n').filter(Boolean).length : 0;
+    return { total, matched: total - globalFakeUnmatchedLines.length };
+  }, [globalFakeOrderInput, globalFakeUnmatchedLines]);
 
   const handleGlobalFakeMatch = useCallback((businessId: string, matched: string[]) => {
     setMatchedFakeNums(prev => {
@@ -637,7 +661,7 @@ const App: React.FC = () => {
                 : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
             }`}
           >
-            가구매 명단{globalFakeOrderInput.trim() ? ` (${globalFakeOrderInput.trim().split('\n').filter(Boolean).length}${(allMatchedFakeNums.size + globalSpecialMatchTotal) > 0 ? `/${allMatchedFakeNums.size + globalSpecialMatchTotal}` : ''})` : ''}
+            가구매 명단{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}
           </button>
           {showGlobalFake && (
             <div className="absolute right-0 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
@@ -673,7 +697,7 @@ const App: React.FC = () => {
                   >
                     {globalFakeOrderInput.split('\n').map((line, i) => {
                       const parsed = parseGlobalFakeLine(line, allBusinesses);
-                      const isMatched = parsed?.orderNum ? (allMatchedFakeNums.has(parsed.orderNum) || isSpecialMatchOrderNum(parsed.orderNum)) : false;
+                      const isMatched = parsed?.orderNum ? (isOrderMatchedForBusiness(parsed.businessId, parsed.orderNum) || isSpecialMatchOrderNum(parsed.orderNum)) : false;
                       const isValid = !!parsed?.businessId;
                       const isEmpty = !line.trim();
                       return (
@@ -693,67 +717,54 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {globalFakeOrderInput.trim() && (
-                  <div className="mt-2 space-y-1.5">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[10px] text-zinc-500 font-black">
-                        총 {globalFakeOrderInput.trim().split('\n').filter(Boolean).length}명
-                      </span>
-                      {(() => {
-                        const globalSpecialCount = globalSpecialMatchTotal;
-                        const totalMatched = allMatchedFakeNums.size + globalSpecialCount;
-                        return totalMatched > 0 ? (
-                          <span className="text-[10px] text-emerald-400 font-black">매칭 {totalMatched}</span>
-                        ) : null;
-                      })()}
-                      {(() => {
-                        const total = globalFakeOrderInput.trim().split('\n').filter(Boolean).length;
-                        const globalSpecialCount = globalSpecialMatchTotal;
-                        const unmatched = total - allMatchedFakeNums.size - globalSpecialCount;
-                        return unmatched > 0 ? (
-                          <span className="text-[10px] text-rose-400 font-black">미매칭 {unmatched}</span>
-                        ) : null;
-                      })()}
-                    </div>
-                    {allBusinesses
-                      .filter(b => perBusinessFakeStats[b.id])
-                      .map(b => {
-                        const s = perBusinessFakeStats[b.id];
-                        const missing = s.total - s.matched;
-                        return (
-                          <div key={b.id} className="flex items-center gap-1.5 flex-wrap pl-1 border-l-2 border-zinc-800">
-                            <span className="text-[9px] text-zinc-500 font-black">{b.displayName}</span>
-                            <span className="text-[9px] text-zinc-700 font-black">{s.total}명</span>
-                            {s.matched > 0 && (
-                              <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {s.matched}</span>
-                            )}
-                            {missing > 0 && (
-                              <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {missing}</span>
-                            )}
-                          </div>
-                        );
-                      })
-                    }
-                    {(() => {
-                      const unmatchedLines = globalFakeOrderInput.trim().split('\n').filter(line => {
-                        if (!line.trim()) return false;
-                        const parsed = parseGlobalFakeLine(line, allBusinesses);
-                        if (!parsed?.orderNum) return true;
-                        if (isSpecialMatchOrderNum(parsed.orderNum)) return false;
-                        return !allMatchedFakeNums.has(parsed.orderNum);
-                      });
-                      if (unmatchedLines.length === 0) return null;
-                      return (
+                {globalFakeOrderInput.trim() && (() => {
+                  const unmatchedLines = globalFakeUnmatchedLines;
+                  const total = globalFakeLineStats.total;
+                  const matchedCount = globalFakeLineStats.matched;
+                  const unmatchedCount = unmatchedLines.length;
+                  return (
+                    <div className="mt-2 space-y-1.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] text-zinc-500 font-black">
+                          총 {total}명
+                        </span>
+                        {matchedCount > 0 && (
+                          <span className="text-[10px] text-emerald-400 font-black">매칭 {matchedCount}</span>
+                        )}
+                        {unmatchedCount > 0 && (
+                          <span className="text-[10px] text-rose-400 font-black">미매칭 {unmatchedCount}</span>
+                        )}
+                      </div>
+                      {allBusinesses
+                        .filter(b => perBusinessFakeStats[b.id])
+                        .map(b => {
+                          const s = perBusinessFakeStats[b.id];
+                          const missing = s.total - s.matched;
+                          return (
+                            <div key={b.id} className="flex items-center gap-1.5 flex-wrap pl-1 border-l-2 border-zinc-800">
+                              <span className="text-[9px] text-zinc-500 font-black">{b.displayName}</span>
+                              <span className="text-[9px] text-zinc-700 font-black">{s.total}명</span>
+                              {s.matched > 0 && (
+                                <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {s.matched}</span>
+                              )}
+                              {missing > 0 && (
+                                <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {missing}</span>
+                              )}
+                            </div>
+                          );
+                        })
+                      }
+                      {unmatchedLines.length > 0 && (
                         <div className="mt-1 bg-rose-950/30 border border-rose-500/20 rounded-xl px-3 py-2 space-y-0.5">
                           <p className="text-[9px] text-rose-400 font-black uppercase tracking-widest mb-1">미매칭 명단</p>
                           {unmatchedLines.map((line, i) => (
                             <div key={i} className="text-[10px] font-mono text-rose-300">{line}</div>
                           ))}
                         </div>
-                      );
-                    })()}
-                  </div>
-                )}
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* 미발송 명단 */}
                 <div className="mt-4 border-t border-zinc-800 pt-4">
