@@ -420,6 +420,13 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                           <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {c.result.notFound.length}건</span>
                         )}
                       </div>
+                      {c.result.notFound.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                          {c.result.notFound.map((num: string) => (
+                            <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded text-[8px] font-mono">{num}</span>
+                          ))}
+                        </div>
+                      )}
                       {c.hasMatchedRows && (
                         <div className="flex gap-1.5">
                           <button
