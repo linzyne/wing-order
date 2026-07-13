@@ -1035,11 +1035,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         import('../services/firestoreService').then(({ loadDailySales }) => {
             loadDailySales(recordDate, businessId).then(existing => {
                 if (cancelled) return;
+                // 매출현황(SalesTracker)은 records 필드만 읽으므로, 배지도 records 기준으로만 켠다.
+                // (companyOrderRows/depositRecords만 있고 records가 없으면 매출현황엔 안 보이므로 배지도 꺼야 함)
                 const companies = new Set<string>();
                 if (existing) {
                     (existing.records || []).forEach(r => { if (r.company) companies.add(r.company); });
-                    Object.keys(existing.companyOrderRows || {}).forEach(c => companies.add(c));
-                    (existing.depositRecords || []).forEach(d => { if (d.company) companies.add(d.company); });
                 }
                 setRecordedCompanies(companies);
             }).catch(() => {});
@@ -3713,6 +3713,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             });
         });
 
+        // 매출현황(SalesTracker)은 records만 표시하므로, 품목 매칭 실패 등으로 records가
+        // 하나도 안 만들어진 선택 업체는 "기록됨" 배지도 켜면 안 된다 (배지-실데이터 불일치 방지)
+        const recordedCompanyNamesThisSave = new Set(records.map(r => r.company));
+        const unrecordedSelectedCompanies = [...selectedCompanyNames].filter(n => !recordedCompanyNamesThisSave.has(n));
+
         // Firestore는 undefined를 저장할 수 없으므로 null로 치환
         const sanitizeRows = (rows: any[][]): any[][] =>
             rows.map(row => row.map(cell => cell === undefined ? null : cell));
@@ -3780,7 +3785,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         try {
             await upsertDailySales(dailySales, businessId);
             setSaveStatus('success');
-            setRecordedCompanies(prev => { const next = new Set(prev); selectedCompanyNames.forEach(n => next.add(n)); return next; });
+            setRecordedCompanies(prev => {
+                const next = new Set(prev);
+                recordedCompanyNamesThisSave.forEach(n => next.add(n));
+                // 품목 매칭 실패 등으로 이번 저장에서 records가 안 만들어진 업체는 배지를 끈다
+                unrecordedSelectedCompanies.forEach(n => next.delete(n));
+                return next;
+            });
+            if (unrecordedSelectedCompanies.length > 0) {
+                alert(`품목 매칭 실패 등으로 다음 업체는 매출 기록이 생성되지 않았습니다 (기록 배지도 꺼집니다):\n${unrecordedSelectedCompanies.join(', ')}\n\n품목/업체 설정에서 매칭 여부를 확인해주세요.`);
+            }
             onSaved?.(recordDate);
             setTimeout(() => setSaveStatus('idle'), 2000);
         } catch (err: any) {

@@ -435,12 +435,14 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   .filter((e): e is { biz: typeof downloadSnapshot[0]; company: NonNullable<typeof e.company> } => !!e.company);
                 if (bizEntries.length === 0) return null;
 
-                // 업체 단위 마감/기록 상태: 모든 사업자 중 하나라도 활성이면 활성으로 표시
-                const anyClosedKey = bizEntries.some(({ biz }) => companyClosedMap[`${biz.businessId}_${companyName}`] ?? false);
-                const anyRecordedKey = bizEntries.some(({ biz }) => companyRecordedMap[`${biz.businessId}_${companyName}`] ?? false);
+                // 업체 단위 마감/기록 상태: 같은 업체명이 여러 사업자에 걸쳐 있을 때, "하나라도"(OR) 기준으로
+                // 배지를 켜면 실제로는 기록 안 된 사업자가 있어도 켜진 것처럼 보이고, 토글 시에도 이미
+                // 목표상태와 같은 사업자는 건너뛰어 조용히 누락된다. "전부 다"(AND) 기준으로 통일한다.
+                const allClosedKey = bizEntries.every(({ biz }) => companyClosedMap[`${biz.businessId}_${companyName}`] ?? false);
+                const allRecordedKey = bizEntries.every(({ biz }) => companyRecordedMap[`${biz.businessId}_${companyName}`] ?? false);
 
                 const handleToggleAllClosed = () => {
-                  const next = !anyClosedKey;
+                  const next = !allClosedKey;
                   bizEntries.forEach(({ biz }) => {
                     const mapKey = `${biz.businessId}_${companyName}`;
                     const cur = companyClosedMap[mapKey] ?? false;
@@ -454,7 +456,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                 };
 
                 const handleToggleAllRecorded = () => {
-                  const next = !anyRecordedKey;
+                  const next = !allRecordedKey;
                   bizEntries.forEach(({ biz }) => {
                     const mapKey = `${biz.businessId}_${companyName}`;
                     const cur = companyRecordedMap[mapKey] ?? false;
@@ -479,9 +481,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                       </button>
                       <button
                         onClick={handleToggleAllClosed}
-                        title={anyClosedKey ? '마감 해제 (전체 사업자)' : '마감 처리 (전체 사업자)'}
+                        title={allClosedKey ? '마감 해제 (전체 사업자)' : '마감 처리 (전체 사업자)'}
                         className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-black tracking-tight border transition-all ${
-                          anyClosedKey
+                          allClosedKey
                             ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
                             : 'bg-transparent text-zinc-600 border-zinc-700 hover:text-zinc-400 hover:border-zinc-500'
                         }`}
@@ -490,9 +492,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                       </button>
                       <button
                         onClick={handleToggleAllRecorded}
-                        title={anyRecordedKey ? '기록 해제 (전체 사업자)' : '기록하기 (전체 사업자)'}
+                        title={allRecordedKey ? '기록 해제 (전체 사업자)' : '기록하기 (전체 사업자)'}
                         className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-black tracking-tight border transition-all ${
-                          anyRecordedKey
+                          allRecordedKey
                             ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
                             : 'bg-transparent text-zinc-600 border-zinc-700 hover:text-zinc-400 hover:border-zinc-500'
                         }`}
