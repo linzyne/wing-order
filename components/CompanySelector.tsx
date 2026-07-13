@@ -806,15 +806,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [depositBaseRows, setDepositBaseRows] = useState<any[][]>([]);
     const [depositExtraRows, setDepositExtraRows] = useState<{ bankName: string; accountNumber: string; amount: string; label: string }[]>([]);
 
-    // 워크스테이션 초기화 공통 로직 (confirm 없음)
+    // 워크스테이션 초기화 공통 로직
+    // 추가/차감 내역(sessionAdjustments)이 남아있으면 삭제하지 않고 보존한다 (수동 입금내역과 동일한 유지/삭제 확인 패턴).
     const doResetWorkstation = useCallback(() => {
         setSessionResults(null);
-        Promise.all([
+        const allAdjustments: { label: string; amount: number }[] = Object.values(workspace?.sessionAdjustments || {}).flat() as any[];
+        let keepAdjustments = false;
+        if (allAdjustments.length > 0) {
+            const totalAmount = allAdjustments.reduce((sum, a) => sum + (a.amount || 0), 0);
+            const list = allAdjustments.map(a => `  • ${a.label || '조정'} - ${(a.amount || 0).toLocaleString()}원`).join('\n');
+            keepAdjustments = confirm(`기존 추가/차감 내역 ${allAdjustments.length}건 (총 ${totalAmount.toLocaleString()}원)이 있습니다.\n유지하시겠습니까?\n\n${list}\n\n[확인] 유지  |  [취소] 삭제`);
+        }
+        const writes: Promise<any>[] = [
             clearSessionResults(businessId),
             updateField('sessionSummary', {}),
             updateField('sessionWorkflows', {}),
-            updateField('sessionAdjustments', {}),
-        ]);
+        ];
+        if (!keepAdjustments) {
+            writes.push(updateField('sessionAdjustments', {}));
+        }
+        Promise.all(writes);
         setTotalsMap({});
         setExcludedCountsMap({});
         setAllExcludedDetails({});
@@ -833,7 +844,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setCompanyOverrides({});
         clearMasterRef.current();
         onWorkstationReset?.();
-    }, [updateField, onWorkstationReset]);
+    }, [updateField, onWorkstationReset, workspace]);
 
     const onRegisterResetRef = useRef(onRegisterReset);
     onRegisterResetRef.current = onRegisterReset;
@@ -847,7 +858,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     // 워크스테이션 수동 초기화 함수
     const handleResetWorkstations = useCallback(() => {
-        if (!window.confirm('워크스테이션 데이터(처리결과/진행상황/조정내역)를 초기화할까요?')) return;
+        if (!window.confirm('워크스테이션 데이터(처리결과/진행상황)를 초기화할까요?\n(추가/차감 내역이 있으면 별도로 유지 여부를 물어봅니다)')) return;
         doResetWorkstation();
     }, [doResetWorkstation]);
 
