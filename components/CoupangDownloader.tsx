@@ -8,7 +8,7 @@ import {
   loadCoupangApiKeys, saveCoupangApiKeys, deleteCoupangApiKeys, downloadOrdersAsExcel,
   type CoupangApiKeys,
 } from '../services/coupangApi';
-import { Cog6ToothIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ChevronDownIcon, XMarkIcon, EyeIcon, EyeSlashIcon } from './icons';
+import { Cog6ToothIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ChevronDownIcon, XMarkIcon, EyeIcon, EyeSlashIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
 
 interface Business { id: string; displayName: string; }
 interface CoupangDownloaderProps {
@@ -20,13 +20,32 @@ interface DownloadState { loading: boolean; error: string | null; lastCount?: nu
 
 const EMPTY_CREDS: WingCredentials = { id: '', password: '' };
 const EMPTY_KEYS: CoupangApiKeys = { accessKey: '', secretKey: '', vendorId: '' };
-const PRESET_TIMES = ['8시', '9시', '10시', '11시', '12시'];
+const DEFAULT_PRESET_TIMES = ['8시', '9시', '10시', '11시', '12시'];
+const PRESET_TIMES_KEY = 'coupang_preset_times';
+
+function loadPresetTimes(): string[] {
+  try {
+    const raw = localStorage.getItem(PRESET_TIMES_KEY);
+    if (!raw) return DEFAULT_PRESET_TIMES;
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) && arr.every(v => typeof v === 'string') && arr.length > 0 ? arr : DEFAULT_PRESET_TIMES;
+  } catch { return DEFAULT_PRESET_TIMES; }
+}
+
+function savePresetTimes(times: string[]): void {
+  localStorage.setItem(PRESET_TIMES_KEY, JSON.stringify(times));
+}
 
 const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onRegisterDirectUpload }) => {
   const [isExpanded, setIsExpanded] = useState(() => localStorage.getItem('coupang_dl_expanded') !== 'false');
   const [selectedStatus, setSelectedStatus] = useState<Record<string, OrderStatus>>({});
   const [downloadStates, setDownloadStates] = useState<Record<string, DownloadState>>({});
   const [timeLabel, setTimeLabel] = useState('');
+  const [presetTimes, setPresetTimes] = useState<string[]>(() => loadPresetTimes());
+  const [editingPresets, setEditingPresets] = useState(false);
+  const [newPresetInput, setNewPresetInput] = useState('');
+  const [showBulkTimeModal, setShowBulkTimeModal] = useState(false);
+  const [modalTimeLabel, setModalTimeLabel] = useState('');
 
   const [methods, setMethods] = useState<Record<string, DownloadMethod>>({});
   const [apiKeys, setApiKeys] = useState<Record<string, CoupangApiKeys | null>>({});
@@ -75,6 +94,21 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     return !!credentials[id]?.id;
   };
 
+  const addPresetTime = () => {
+    const v = newPresetInput.trim();
+    setNewPresetInput('');
+    if (!v || presetTimes.includes(v)) return;
+    const next = [...presetTimes, v];
+    setPresetTimes(next);
+    savePresetTimes(next);
+  };
+
+  const removePresetTime = (t: string) => {
+    const next = presetTimes.filter(p => p !== t);
+    setPresetTimes(next);
+    savePresetTimes(next);
+  };
+
   // ── API 다운로드 ──
   const handleApiDownload = async (business: Business) => {
     const keys = apiKeys[business.id];
@@ -89,7 +123,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
   };
 
   // ── 브라우저 자동화 다운로드 ──
-  const handleBrowserDownload = async (business: Business) => {
+  const handleBrowserDownload = async (business: Business, timeLabelOverride?: string) => {
     const creds = credentials[business.id];
     if (!creds) return;
     setDownloadStates(prev => ({ ...prev, [business.id]: { loading: true, error: null } }));
@@ -99,7 +133,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
       const res = await fetch('/api/wing-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: creds.id, password: creds.password, status: getStatus(business.id), businessName: business.displayName, timeLabel }),
+        body: JSON.stringify({ id: creds.id, password: creds.password, status: getStatus(business.id), businessName: business.displayName, timeLabel: timeLabelOverride ?? timeLabel }),
         signal: controller.signal,
       });
       if (!res.ok) {
@@ -127,20 +161,32 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     }
   };
 
-  const handleDownload = (business: Business) => {
+  const handleDownload = (business: Business, timeLabelOverride?: string) => {
     if (getMethod(business.id) === 'api') return handleApiDownload(business);
-    else return handleBrowserDownload(business);
+    else return handleBrowserDownload(business, timeLabelOverride);
   };
 
-  const handleBulkDownload = async () => {
+  const handleBulkDownload = async (timeLabelOverride?: string) => {
     if (bulkDownloadLoading) return;
     const targets = businesses.filter(b => isConfigured(b.id));
     if (targets.length === 0) return;
     setBulkDownloadLoading(true);
     for (const b of targets) {
-      await handleDownload(b);
+      await handleDownload(b, timeLabelOverride);
     }
     setBulkDownloadLoading(false);
+  };
+
+  const openBulkTimeModal = () => {
+    setModalTimeLabel(timeLabel);
+    setShowBulkTimeModal(true);
+  };
+
+  const confirmBulkDownload = () => {
+    const label = modalTimeLabel.trim();
+    setTimeLabel(label);
+    setShowBulkTimeModal(false);
+    handleBulkDownload(label);
   };
 
   const handleBulkInvoiceFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -321,35 +367,67 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
         {isExpanded && (
           <div className="px-3 pb-3 flex flex-col gap-1.5">
             {/* 파일명 시간 설정 */}
-            <div className="flex items-center gap-2 py-1 px-2 rounded-lg bg-zinc-900/40">
-              <span className="text-[9px] font-black text-zinc-500 shrink-0 uppercase tracking-widest">시간</span>
-              <div className="flex gap-1">
-                {PRESET_TIMES.map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setTimeLabel(t)}
-                    className={`px-1.5 py-0.5 text-[10px] font-black rounded-md transition-all ${
-                      timeLabel === t ? 'bg-sky-700 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'
-                    }`}
-                  >{t}</button>
-                ))}
+            <div className="flex flex-col gap-1 py-1 px-2 rounded-lg bg-zinc-900/40">
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-black text-zinc-500 shrink-0 uppercase tracking-widest">시간</span>
+                <div className="flex flex-wrap gap-1">
+                  {presetTimes.map(t => (
+                    <button
+                      key={t}
+                      onClick={() => editingPresets ? removePresetTime(t) : setTimeLabel(t)}
+                      className={`flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-black rounded-md transition-all ${
+                        editingPresets ? 'bg-red-900/40 text-red-400 hover:bg-red-900/70'
+                          : timeLabel === t ? 'bg-sky-700 text-white shadow' : 'text-zinc-500 hover:text-zinc-300'
+                      }`}
+                    >
+                      {editingPresets && <TrashIcon className="w-2.5 h-2.5" />}
+                      {t}
+                    </button>
+                  ))}
+                </div>
+                {editingPresets ? (
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={newPresetInput}
+                      onChange={e => setNewPresetInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') addPresetTime(); }}
+                      placeholder="새 시간"
+                      className="bg-zinc-800 border border-zinc-700/60 rounded px-2 py-0.5 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none w-16"
+                    />
+                    <button onClick={addPresetTime} className="p-1 rounded-md bg-emerald-900/50 text-emerald-400 hover:bg-emerald-800/70">
+                      <PlusIcon className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={timeLabel}
+                    onChange={e => setTimeLabel(e.target.value)}
+                    placeholder="직접입력"
+                    className="bg-zinc-800 border border-zinc-700/60 rounded px-2 py-0.5 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none w-16"
+                  />
+                )}
+                <button
+                  onClick={() => setEditingPresets(v => !v)}
+                  title="시간 목록 편집"
+                  className={`p-1 rounded-md shrink-0 transition-colors ${editingPresets ? 'bg-sky-800 text-white' : 'text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700/50'}`}
+                >
+                  <PencilIcon className="w-3 h-3" />
+                </button>
+                {!editingPresets && timeLabel && (
+                  <span className="text-[9px] text-zinc-500 truncate">→ 파일명: 날짜_{timeLabel}.xlsx</span>
+                )}
               </div>
-              <input
-                type="text"
-                value={timeLabel}
-                onChange={e => setTimeLabel(e.target.value)}
-                placeholder="직접입력"
-                className="bg-zinc-800 border border-zinc-700/60 rounded px-2 py-0.5 text-[10px] text-zinc-200 placeholder-zinc-600 outline-none w-16"
-              />
-              {timeLabel && (
-                <span className="text-[9px] text-zinc-500 truncate">→ 파일명: 날짜_{timeLabel}.xlsx</span>
+              {editingPresets && (
+                <span className="text-[9px] text-zinc-600">칩을 클릭하면 삭제됩니다. 완료 후 연필 아이콘을 다시 눌러주세요.</span>
               )}
             </div>
 
             {/* 일괄 버튼 */}
             <div className="flex gap-2 pt-0.5">
               <button
-                onClick={handleBulkDownload}
+                onClick={openBulkTimeModal}
                 disabled={bulkDownloadLoading || businesses.every(b => !isConfigured(b.id))}
                 className={`flex items-center gap-1 px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${
                   bulkDownloadLoading || businesses.every(b => !isConfigured(b.id))
@@ -467,6 +545,54 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
           </div>
         )}
       </div>
+
+      {/* 일괄 다운로드 시간 선택 모달 */}
+      {showBulkTimeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowBulkTimeModal(false)}>
+          <div className="bg-zinc-900 border border-zinc-700/60 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-black text-white">몇 시 주문서인가요?</h3>
+              <button onClick={() => setShowBulkTimeModal(false)} className="text-zinc-500 hover:text-zinc-300"><XMarkIcon className="w-4 h-4" /></button>
+            </div>
+
+            <div className="flex flex-wrap gap-1.5 mb-3">
+              {presetTimes.map(t => (
+                <button
+                  key={t}
+                  onClick={() => setModalTimeLabel(t)}
+                  className={`px-2.5 py-1 text-xs font-black rounded-lg transition-all ${
+                    modalTimeLabel === t ? 'bg-sky-700 text-white shadow' : 'bg-zinc-800 text-zinc-400 hover:text-zinc-200'
+                  }`}
+                >{t}</button>
+              ))}
+            </div>
+
+            <input
+              type="text"
+              autoFocus
+              value={modalTimeLabel}
+              onChange={e => setModalTimeLabel(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && modalTimeLabel.trim()) confirmBulkDownload(); }}
+              placeholder="직접입력"
+              className="w-full bg-zinc-800 border border-zinc-700/60 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 outline-none"
+            />
+            {modalTimeLabel.trim() && (
+              <p className="mt-2 text-[10px] text-zinc-500 truncate">→ 파일명: 날짜_{modalTimeLabel.trim()}.xlsx</p>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <button
+                onClick={confirmBulkDownload}
+                disabled={!modalTimeLabel.trim()}
+                className={`flex-1 py-2 text-xs font-black rounded-xl transition-colors ${
+                  modalTimeLabel.trim() ? 'bg-sky-700 hover:bg-sky-600 text-white' : 'bg-zinc-700/40 text-zinc-600 cursor-not-allowed'
+                }`}
+              >다운로드 시작</button>
+              <button onClick={() => setShowBulkTimeModal(false)} className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs font-black rounded-xl transition-colors">취소</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 설정 모달 */}
       {editingId && editingBusiness && (
