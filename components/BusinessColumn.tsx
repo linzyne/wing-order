@@ -37,6 +37,7 @@ interface BusinessColumnProps {
   globalFakeOrderInput?: string;
   onGlobalFakeMatch?: (matched: string[]) => void;
   globalUnsentOrderInput?: string;
+  fakeOrderCourierRows?: any[][];
   onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void;
   onRegisterMasterUpload?: (businessId: string, handlers: MasterUploadHandlers) => void;
   onRegisterReset?: (businessId: string, fn: () => void) => void;
@@ -47,7 +48,7 @@ interface BusinessColumnProps {
   onHasWarnings?: (has: boolean) => void;
 }
 
-const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, onEdit, onExposeOrderRows, onHasWarnings }) => {
+const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, onEdit, onExposeOrderRows, onHasWarnings }) => {
   const [activeTab, setActiveTab] = useState('converter');
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
@@ -191,6 +192,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               globalFakeOrderInput={globalFakeOrderInput}
               onGlobalFakeMatch={onGlobalFakeMatch}
               globalUnsentOrderInput={globalUnsentOrderInput}
+              fakeOrderCourierRows={fakeOrderCourierRows}
               isPricingConfigLoaded={!isLoading}
               onExposeOrderRows={onExposeOrderRows}
               onHasWarnings={onHasWarnings}

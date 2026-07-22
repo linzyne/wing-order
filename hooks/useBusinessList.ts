@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import { BUSINESS_INFO, registerDynamicBusiness, unregisterDynamicBusiness } from '../types';
 import type { HardcodedBusinessId } from '../types';
@@ -121,22 +121,26 @@ export const useBusinessList = () => {
     };
   }, []);
 
-  const dynamicIds = new Set(dynamicBusinesses.map(b => b.id));
-  const allBusinesses: BusinessEntry[] = [
-    ...HARDCODED_ENTRIES.filter(h => !dynamicIds.has(h.id)),
-    ...dynamicBusinesses.map(b => ({
-      id: b.id,
-      displayName: b.displayName,
-      shortName: b.shortName,
-      senderName: b.senderName,
-      phone: b.phone,
-      address: b.address,
-      themeColor: b.themeColor || '#09090b',
-      buttonColor: b.buttonColor || '#8b5cf6',
-      isDynamic: true,
-      bank: b.bank,
-    })),
-  ];
+  // dynamicBusinesses가 실제로 바뀔 때만 새 배열을 만듦 (매 렌더마다 새 배열이면
+  // 이 값을 의존성으로 쓰는 모든 useCallback/useEffect가 매번 재실행됨)
+  const allBusinesses: BusinessEntry[] = useMemo(() => {
+    const dynamicIds = new Set(dynamicBusinesses.map(b => b.id));
+    return [
+      ...HARDCODED_ENTRIES.filter(h => !dynamicIds.has(h.id)),
+      ...dynamicBusinesses.map(b => ({
+        id: b.id,
+        displayName: b.displayName,
+        shortName: b.shortName,
+        senderName: b.senderName,
+        phone: b.phone,
+        address: b.address,
+        themeColor: b.themeColor || '#09090b',
+        buttonColor: b.buttonColor || '#8b5cf6',
+        isDynamic: true,
+        bank: b.bank,
+      })),
+    ];
+  }, [dynamicBusinesses]);
 
   const addBusiness = useCallback(async (
     entry: Omit<DynamicBusinessEntry, 'createdAt'>,

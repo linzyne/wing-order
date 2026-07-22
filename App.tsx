@@ -88,13 +88,13 @@ const App: React.FC = () => {
   const [refreshKeys, setRefreshKeys] = useState<Record<string, number>>({});
   const [editingBusiness, setEditingBusiness] = useState<ReturnType<typeof useBusinessList>['businesses'][0] | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; }>>({});
+  const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; }>>({});
   const directCoupangUploadRef = useRef<((businessId: string, file: File) => Promise<void>) | null>(null);
   const resetFnsRef = useRef<Record<string, () => void>>({});
   type DepositExtraRow = { bankName: string; accountNumber: string; amount: string; label: string };
   const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void }>>({});
 
-  const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; }) => {
+  const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; }) => {
     uploadFnsRef.current[businessId] = handlers;
   }, []);
 
@@ -130,6 +130,12 @@ const App: React.FC = () => {
   }, []);
 
   const { businesses: allBusinesses, isLoading: businessListLoading, addBusiness, removeBusiness, updateBusiness } = useBusinessList();
+  // id/displayName만 필요한 하위 패널에 매 렌더마다 새 배열을 넘기면 그걸 의존성으로 쓰는
+  // useCallback/useEffect가 계속 재실행되므로(예: 통합송장변환 패널의 배지 새로고침) 메모이즈
+  const businessIdNamePairs = useMemo(
+    () => allBusinesses.map(b => ({ id: b.id, displayName: b.displayName })),
+    [allBusinesses]
+  );
 
   const openBulkDepositModal = useCallback(() => {
     const loaded: Record<string, any[][]> = {};
@@ -154,6 +160,18 @@ const App: React.FC = () => {
   const [globalCourierFiles, setGlobalCourierFiles] = useState<Record<string, File[]>>({});
   const [globalCourierResults, setGlobalCourierResults] = useState<Record<string, { matched: number; total: number; notFound: string[]; bizIds: string[] }>>({});
   const [globalCourierMatchedRows, setGlobalCourierMatchedRows] = useState<Record<string, any[][]>>({});
+  // 템플릿별 → 사업자별로 나눈 매칭 행 (헤더 없이 데이터 행만) — 사업자별 "합산 다운로드"에 병합하기 위함
+  const [globalCourierRowsByBiz, setGlobalCourierRowsByBiz] = useState<Record<string, Record<string, any[][]>>>({});
+  // 사업자ID → 모든 가구매 택배 템플릿에서 매칭된 행 전체 (합산 다운로드 병합용)
+  const courierRowsByBusiness = useMemo(() => {
+    const result: Record<string, any[][]> = {};
+    for (const byBiz of Object.values(globalCourierRowsByBiz)) {
+      for (const [bizId, rows] of Object.entries(byBiz)) {
+        result[bizId] = [...(result[bizId] || []), ...rows];
+      }
+    }
+    return result;
+  }, [globalCourierRowsByBiz]);
 
   const handleExposeOrderRows = useCallback((businessId: string, header: any[] | null, dataRows: any[][]) => {
     globalMasterRowsRef.current[businessId] = { header: header ?? [], dataRows };
@@ -293,6 +311,7 @@ const App: React.FC = () => {
 
     setGlobalCourierResults(prev => { const n = { ...prev }; delete n[template.id]; return n; });
     setGlobalCourierMatchedRows(prev => { const n = { ...prev }; delete n[template.id]; return n; });
+    setGlobalCourierRowsByBiz(prev => { const n = { ...prev }; delete n[template.id]; return n; });
 
     if (files.length === 0) return;
 
@@ -327,6 +346,7 @@ const App: React.FC = () => {
 
       const header = bizEntries.find(([, b]) => b.header.length > 0)?.[1].header ?? [];
       const matchedRows: any[][] = [header];
+      const rowsByBiz: Record<string, any[][]> = {};
       const notFoundOrders: string[] = [];
       const seenOrderNums = new Set<string>();
       const matchedBizIds = new Set<string>();
@@ -346,6 +366,7 @@ const App: React.FC = () => {
             newRow[3] = template.name;
             newRow[4] = tracking;
             matchedRows.push(newRow);
+            (rowsByBiz[bizId] || (rowsByBiz[bizId] = [])).push(newRow);
           } else {
             notFoundOrders.push(String(row[2] || ''));
           }
@@ -354,7 +375,10 @@ const App: React.FC = () => {
 
       const matchedCount = matchedRows.length - 1;
       setGlobalCourierResults(prev => ({ ...prev, [template.id]: { matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders, bizIds: [...matchedBizIds] } }));
-      if (matchedCount > 0) setGlobalCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
+      if (matchedCount > 0) {
+        setGlobalCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
+        setGlobalCourierRowsByBiz(prev => ({ ...prev, [template.id]: rowsByBiz }));
+      }
     } catch (err: any) {
       alert(`${template.name} 운송장 처리 중 오류: ` + err.message);
     }
@@ -375,6 +399,17 @@ const App: React.FC = () => {
     setGlobalCourierFiles(prev => ({ ...prev, [template.id]: updated }));
     await processGlobalCourierFiles(template, updated);
   }, [processGlobalCourierFiles]);
+
+  // 통합 송장 변환 패널 "초기화": 화면 목록뿐 아니라 실제 매칭 데이터(업체송장/가구매 택배)까지 전부 비움
+  const handleResetInvoicePanel = useCallback(() => {
+    setInvoiceResults([]);
+    allBusinesses.forEach(b => uploadFnsRef.current[b.id]?.resetInvoiceMatching?.());
+    globalCourierFilesRef.current = {};
+    setGlobalCourierFiles({});
+    setGlobalCourierResults({});
+    setGlobalCourierMatchedRows({});
+    setGlobalCourierRowsByBiz({});
+  }, [allBusinesses]);
 
   const handleGlobalCourierResultDownload = useCallback((templateId: string) => {
     const rows = globalCourierMatchedRows[templateId];
@@ -949,7 +984,7 @@ const App: React.FC = () => {
           {showUpload && (
             <div className="absolute right-0 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
               <SharedMasterUpload
-                businesses={allBusinesses.map(b => ({ id: b.id, displayName: b.displayName }))}
+                businesses={businessIdNamePairs}
                 uploadFns={uploadFnsRef.current}
                 onClose={() => setShowUpload(false)}
                 results={uploadResults}
@@ -974,12 +1009,12 @@ const App: React.FC = () => {
           </button>
           <div className={`absolute right-0 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showInvoice ? '' : 'hidden'}`}>
             <ConsolidatedInvoicePanel
-              businesses={allBusinesses.map(b => ({ id: b.id, displayName: b.displayName }))}
+              businesses={businessIdNamePairs}
               uploadFns={uploadFnsRef.current}
               onClose={() => setShowInvoice(false)}
               results={invoiceResults}
               onResultsChange={setInvoiceResults}
-              onReset={() => setInvoiceResults([])}
+              onReset={handleResetInvoicePanel}
               couriers={courierItemsForPanel}
               hasFakeOrders={globalFakeOrderInput.trim().length > 0}
               onCourierFilesAdd={handleCourierFilesAddForPanel}
@@ -1010,7 +1045,7 @@ const App: React.FC = () => {
           </button>
           <div className={`absolute right-0 top-full mt-2 z-50 w-[480px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCoupang ? '' : 'hidden'}`}>
             <CoupangDownloader
-              businesses={allBusinesses.map(b => ({ id: b.id, displayName: b.displayName }))}
+              businesses={businessIdNamePairs}
               onRegisterDirectUpload={(fn) => { directCoupangUploadRef.current = fn; }}
             />
           </div>
@@ -1081,6 +1116,7 @@ const App: React.FC = () => {
               globalFakeOrderInput={perBusinessFakeInput[b.id] || ''}
               onGlobalFakeMatch={(matched) => handleGlobalFakeMatch(b.id, matched)}
               globalUnsentOrderInput={perBusinessUnsentInput[b.id] || ''}
+              fakeOrderCourierRows={courierRowsByBusiness[b.id] || []}
               onEdit={b.isDynamic ? () => setEditingBusiness(b) : undefined}
               onExposeOrderRows={(header, dataRows) => handleExposeOrderRows(b.id, header, dataRows)}
               onWarningUpdate={(_sessionId, has) => setBusinessWarnings(prev => prev[b.id] === has ? prev : { ...prev, [b.id]: has })}

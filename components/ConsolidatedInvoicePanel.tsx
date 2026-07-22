@@ -155,13 +155,13 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
         items.push({ fileName: f.name, businessId: null, displayName: null, status: 'courier', courierLabel: courier.label ? `${courier.name} (${courier.label})` : courier.name });
         continue;
       }
-      // 파일명에 "가구매"가 있지만 자동 택배사 감지 실패 → 수동 선택 대기
-      const lowerName = f.name.normalize('NFC').toLowerCase().replace(/\s/g, '');
-      if (couriers && couriers.length > 0 && lowerName.includes('가구매')) {
+      const biz = detectBusiness(f.name, businesses);
+      // 사업자명과도 매칭되지 않는 파일 → 가구매 택배 송장일 가능성이 높으므로 수동 선택 대기
+      // (택배사가 주는 운송장 파일명에는 보통 "가구매"라는 단어가 없어 자동 인식이 안 되는 경우가 많음)
+      if (!biz && couriers && couriers.length > 0) {
         items.push({ fileName: f.name, businessId: null, displayName: null, status: 'courier-pending', pendingFile: f });
         continue;
       }
-      const biz = detectBusiness(f.name, businesses);
       items.push({ fileName: f.name, businessId: biz?.id ?? null, displayName: biz?.displayName ?? null, status: biz ? 'done' : 'unmatched' });
       if (biz) grouped[biz.id] = [...(grouped[biz.id] || []), f];
     }
@@ -257,7 +257,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
       <div className="bg-zinc-800/60 rounded-xl px-3 py-2 text-[10px] text-zinc-500 leading-relaxed">
         파일명에 사업자명 포함 필수 · 여러 파일 동시 가능
         <br />(예: <span className="text-zinc-300">안군_송장_0617.xlsx</span>)
-        <br />가구매 운송장은 파일명에 <span className="text-violet-300">가구매 사무실</span> 또는 <span className="text-violet-300">가구매 대행</span> 포함
+        <br />가구매 운송장도 그냥 같이 드롭하면 됩니다 · 자동인식 안 되면 <span className="text-violet-300">택배사만 한 번 선택</span>
       </div>
 
       {/* 드롭 존 */}

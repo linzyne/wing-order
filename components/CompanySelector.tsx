@@ -56,7 +56,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -706,7 +706,7 @@ function matchProductSync(
     return null;
 }
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
     const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
@@ -2336,6 +2336,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const getInvoiceStateRef = useRef(() => [] as { name: string; uploadCount: number }[]);
     const downloadAllInvoicesRef = useRef(() => {});
     const getInvoiceWorkbookFileRef = useRef<() => File | null>(() => null);
+    const resetInvoiceMatchingRef = useRef(() => {});
     // 배치 차수 카운터: React state 재렌더 대기 없이 즉시 갱신하는 ref
     masterUploadRef.current = handleMasterUpload;
     batchUploadRef.current = handleBatchUpload;
@@ -2423,6 +2424,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             downloadInvoice: (companyName) => wsInvoiceDownloadRef.current(companyName),
             downloadAllInvoices: () => downloadAllInvoicesRef.current(),
             getInvoiceWorkbookFile: () => getInvoiceWorkbookFileRef.current(),
+            resetInvoiceMatching: () => resetInvoiceMatchingRef.current(),
             getLastSettlementSummaries: () => getLastSettlementSummariesRef.current(),
         });
     // 마운트 시 1회만 실행 - onRegisterMasterUpload dep 변경 시 재실행하면 루프 발생
@@ -2814,6 +2816,58 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             return next;
         });
     };
+
+    // 통합 송장 변환 패널의 "초기화" 버튼: 업로드된 업체송장/매칭 결과를 실제로 비움
+    // (allUploadInvoiceRows/allHeaders만 지우면 sessionResults의 uploadInvoiceRows fallback 때문에
+    //  배지 카운트가 부활하므로 Firestore에 저장된 값도 같이 비워야 함)
+    resetInvoiceMatchingRef.current = () => {
+        setVendorFiles({});
+        setAllUploadInvoiceRows({});
+        setAllHeaders({});
+        // setState 업데이터 함수 안에서 다른 setState(handleSaveSessionResult)를 호출하면
+        // React가 업데이터를 여러 번 호출할 수 있어(StrictMode 등) Firestore에 중복 저장되거나
+        // 최종 state가 꼬일 수 있음 → 지울 대상만 먼저 순수하게 계산한 뒤, 저장은 별도로 수행
+        setSessionResults(prev => {
+            if (!prev) return prev;
+            let changed = false;
+            const next: Record<string, SessionResultData> = { ...prev };
+            Object.keys(prev).forEach(sid => {
+                const data: SessionResultData = prev[sid];
+                const rows = typeof data.uploadInvoiceRows === 'string'
+                    ? JSON.parse(data.uploadInvoiceRows)
+                    : (data.uploadInvoiceRows || []);
+                if (rows.length > 0) {
+                    next[sid] = { ...data, uploadInvoiceRows: [] } as SessionResultData;
+                    changed = true;
+                }
+            });
+            if (!changed) return prev;
+            Object.keys(next).forEach(sid => {
+                if (next[sid] !== prev[sid]) saveSessionResult(sid, next[sid], businessId);
+            });
+            return next;
+        });
+    };
+
+    // 가구매 택배(App 레벨 통합 패널)에서 매칭된 운송장 행 중, 이미 다른 경로로 매칭된 주문번호(existingKeys)와 겹치지 않는 것만 반환
+    const getExtraFakeCourierRowsByKeys = useCallback((existingKeys: Set<string>): any[][] => {
+        if (!fakeOrderCourierRows || fakeOrderCourierRows.length === 0) return [];
+        const seen = new Set<string>();
+        const extras: any[][] = [];
+        for (const row of fakeOrderCourierRows) {
+            const key = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            if (!key || existingKeys.has(key) || seen.has(key)) continue;
+            seen.add(key);
+            extras.push(row);
+        }
+        return extras;
+    }, [fakeOrderCourierRows]);
+
+    const getExtraFakeCourierRows = useCallback((existingRows: any[][]): any[][] => {
+        const existingKeys = new Set(existingRows.map(r => String(r[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()));
+        return getExtraFakeCourierRowsByKeys(existingKeys);
+    }, [getExtraFakeCourierRowsByKeys]);
+
     getInvoiceStateRef.current = () => {
         const result: { name: string; uploadCount: number }[] = [];
         (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([name, sessions]) => {
@@ -2830,18 +2884,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (count > 0) result.push({ name, uploadCount: count });
         });
 
-        // 가구매 항목: 명단 주문번호와 매칭되는 upload invoice 행 수
+        // 가구매 항목: 명단 주문번호와 매칭되는 upload invoice 행 수 (+ 가구매 택배로 매칭된 행 수, 중복 제외)
         if (effectiveFakeInput.trim()) {
             const fakeNums = resolveFakeOrderNumbers(effectiveFakeInput, { normalize: true });
             if (fakeNums.size > 0) {
                 let fakeCount = 0;
+                const countedKeys = new Set<string>();
                 (Object.entries(companySessions) as [string, SessionData[]][]).forEach(([, sessions]) => {
                     sessions.forEach(s => {
                         const rows = allUploadInvoiceRows[s.id];
                         if (rows && rows.length > 0) {
                             rows.forEach(row => {
                                 const num = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                                if (fakeNums.has(num)) fakeCount++;
+                                if (fakeNums.has(num)) { fakeCount++; countedKeys.add(num); }
                             });
                             return;
                         }
@@ -2850,11 +2905,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             const savedRows: any[][] = typeof saved.uploadInvoiceRows === 'string' ? JSON.parse(saved.uploadInvoiceRows) : (saved.uploadInvoiceRows || []);
                             savedRows.forEach(row => {
                                 const num = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                                if (fakeNums.has(num)) fakeCount++;
+                                if (fakeNums.has(num)) { fakeCount++; countedKeys.add(num); }
                             });
                         }
                     });
                 });
+                fakeCount += getExtraFakeCourierRowsByKeys(countedKeys).length;
                 if (fakeCount > 0) result.push({ name: '가구매', uploadCount: fakeCount });
             }
         }
@@ -2889,6 +2945,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     }
                 });
             });
+            mergedRows.push(...getExtraFakeCourierRows(mergedRows));
             if (!mergedRows.length) { alert('가구매 매칭된 송장 데이터가 없습니다.'); return; }
             const wb = XLSX.utils.book_new();
             const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
@@ -2943,6 +3000,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             });
         });
+        mergedRows.push(...getExtraFakeCourierRows(mergedRows));
         if (mergedRows.length === 0) return null;
         const wb = XLSX.utils.book_new();
         const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
