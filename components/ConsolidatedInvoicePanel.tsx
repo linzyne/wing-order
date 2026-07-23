@@ -222,7 +222,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                 setDownloadSnapshot([]);
                 setInvoiceCountMap({});
               }}
-              className="text-[10px] font-black text-zinc-600 hover:text-rose-400 transition-colors"
+              className="text-xs font-black text-zinc-400 hover:text-rose-400 border border-zinc-700 hover:border-rose-400/50 rounded-lg px-2.5 py-1 transition-colors"
             >
               초기화
             </button>
