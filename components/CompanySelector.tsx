@@ -6,7 +6,7 @@ import FileUpload from './FileUpload';
 import AutoWatcherPanel from './AutoWatcherPanel';
 import BatchInvoicePanel from './BatchInvoicePanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
-import { getBusinessInfo } from '../types';
+import { getBusinessInfo, resolveSenderColumns } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
@@ -431,7 +431,7 @@ const CourierTemplateManager: React.FC<{
 
     // 매핑에 사용된 열 인덱스 Set (고정값 목록에서 제외하기 위해)
     const mappedIndices = new Set(Object.values(newMapping));
-    newSenderNameColumns.forEach(idx => mappedIndices.add(idx));
+    resolveSenderColumns({ headers: newHeaders, senderNameColumns: newSenderNameColumns } as CourierTemplate).forEach(idx => mappedIndices.add(idx));
 
     return (
         <div className="mb-4 bg-zinc-900/50 p-4 rounded-xl border border-pink-500/20 animate-fade-in space-y-4">
@@ -447,9 +447,7 @@ const CourierTemplateManager: React.FC<{
                             {COURIER_DATA_FIELDS.map(f => `${f.label}:${colIndexToLetter(tmpl.mapping[f.key])}`).join('  ')}
                         </span>
                         {(() => {
-                            const cols = tmpl.senderNameColumns && tmpl.senderNameColumns.length > 0
-                                ? tmpl.senderNameColumns
-                                : (tmpl.senderNameColumn !== undefined ? [tmpl.senderNameColumn] : []);
+                            const cols = resolveSenderColumns(tmpl);
                             if (cols.length === 0) return null;
                             return (
                                 <span className="text-[9px] text-violet-400/80 font-mono">
@@ -2006,6 +2004,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             initial[name] = [{ id: `${name}-1`, companyName: name, round: 1 }];
         });
         setCompanySessions(initial);
+        // 세션이 재생성되면서 이전 세션의 id(예: `${name}-1`)가 재사용되므로,
+        // 그 id에 매달려 있던 발주/송장 데이터를 함께 비우지 않으면
+        // 마스터 삭제 후에도 이전에 생성된 발주서가 그대로 남아 다운로드된다.
+        setSessionResults(null);
+        setTotalsMap({});
+        setExcludedCountsMap({});
+        setAllExcludedDetails({});
+        setAllOrderRows({});
+        setAllInvoiceRows({});
+        setAllUploadInvoiceRows({});
+        setAllHeaders({});
+        setAllSummaries({});
+        setAllItemSummaries({});
+        setAllOrderItems({});
+        setAllRegisteredNames({});
+        setAllPreConsolidationByGroup({});
+        setOrderLitSessions(new Set());
+        setInvoiceLitSessions(new Set());
+        setBatchInvoiceLit(new Set());
         setWorkstationResetKey(prev => prev + 1);
     };
 
@@ -2481,11 +2498,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 Object.entries(fixedValues).forEach(([colIdx, value]) => {
                     newRow[Number(colIdx)] = value;
                 });
-                // 보내는사람 열(들)에 현재 사업자명 자동 입력
-                const senderCols = template.senderNameColumns && template.senderNameColumns.length > 0
-                    ? template.senderNameColumns
-                    : (template.senderNameColumn !== undefined ? [template.senderNameColumn] : []);
-                senderCols.forEach(idx => { newRow[idx] = businessPrefix; });
+                // 보내는사람 열(들)에 현재 사업자명 자동 입력 (고정값 설정과 무관하게 항상 현재 사업자명으로 덮어씀)
+                resolveSenderColumns(template).forEach(idx => { newRow[idx] = businessPrefix; });
                 rows.push(newRow);
             }
 
@@ -2497,7 +2511,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
             const fullTmplName = template.label ? `${template.name} (${template.label})` : template.name;
             const tmplSuffix = fullTmplName.includes('사무실') ? '사무실' : fullTmplName.includes('대행') ? '택배대행' : fullTmplName;
-            XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${businessPrefix} ${tmplSuffix}.xlsx`);
+            XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${businessPrefix} 가구매 ${tmplSuffix}.xlsx`);
 
             if (notFoundOrders.length > 0) {
                 alert(`${template.name} ${matchedCount}건 다운로드 완료!\n\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);

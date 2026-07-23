@@ -228,6 +228,27 @@ export interface CourierTemplate {
   };
 }
 
+// 보내는사람 열 index 목록을 계산한다.
+// 택배 양식(courierTemplates)은 모든 사업자가 공유하는 단일 설정이라, 양식 수정 화면에서
+// "고정값"란에 사업자명을 직접 입력해버리면 그 값이 전역에 저장되어 다른 사업자 다운로드에도
+// 그대로 노출되는 사고가 났다. 그래서 헤더 텍스트로 보내는사람 열을 코드에서 직접 판별해
+// 수동 설정(senderNameColumns) 여부와 무관하게 항상 해당 사업자명으로 덮어쓴다.
+const SENDER_NAME_HEADER_PATTERNS = ['보내는사람', '보내는분', '보내는이', '발송인', '송하인', '보내는곳', '업체명'];
+const SENDER_NAME_HEADER_EXCLUDE = ['전화', '연락처', '핸드폰', '휴대폰', '주소', '우편번호', '팩스'];
+
+export function resolveSenderColumns(template: CourierTemplate): number[] {
+  const manual = template.senderNameColumns && template.senderNameColumns.length > 0
+    ? template.senderNameColumns
+    : (template.senderNameColumn !== undefined ? [template.senderNameColumn] : []);
+  const autoDetected = template.headers.reduce<number[]>((acc, h, idx) => {
+    const header = String(h || '');
+    if (SENDER_NAME_HEADER_EXCLUDE.some(ex => header.includes(ex))) return acc;
+    if (SENDER_NAME_HEADER_PATTERNS.some(p => header.includes(p))) acc.push(idx);
+    return acc;
+  }, []);
+  return Array.from(new Set([...manual, ...autoDetected]));
+}
+
 // ===== 멀티 플랫폼 설정 =====
 
 export interface PlatformColumnMapping {

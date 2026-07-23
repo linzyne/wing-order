@@ -12,6 +12,7 @@ import { useSharedSuppliers, useCourierTemplates } from './hooks/useFirestore';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig } from './types';
+import { resolveSenderColumns } from './types';
 
 // 400레벨 원색을 약간 어둡게 (투명도 레이어 대신 직접 혼합한 값)
 function dimThemeColor(color: string): string {
@@ -219,11 +220,8 @@ const App: React.FC = () => {
         newRow[mapping.recipientPhone] = phone;
         newRow[mapping.recipientAddress] = address;
         Object.entries(fixedValues).forEach(([colIdx, value]) => { newRow[Number(colIdx)] = value; });
-        // 보내는사람 열(들)에 해당 사업자명 자동 입력
-        const senderCols = template.senderNameColumns && template.senderNameColumns.length > 0
-          ? template.senderNameColumns
-          : (template.senderNameColumn !== undefined ? [template.senderNameColumn] : []);
-        senderCols.forEach(idx => { newRow[idx] = bizDisplayName; });
+        // 보내는사람 열(들)에 해당 사업자명 자동 입력 (고정값 설정과 무관하게 항상 해당 사업자명으로 덮어씀)
+        resolveSenderColumns(template).forEach(idx => { newRow[idx] = bizDisplayName; });
         rows.push(newRow);
       }
     }
@@ -240,7 +238,7 @@ const App: React.FC = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
     const fullTmplName = template.label ? `${template.name} (${template.label})` : template.name;
     const tmplSuffix = fullTmplName.includes('사무실') ? '사무실' : fullTmplName.includes('대행') ? '택배대행' : fullTmplName;
-    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${senderName} ${tmplSuffix}.xlsx`);
+    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${senderName} 가구매 ${tmplSuffix}.xlsx`);
     if (notFoundOrders.length > 0) alert(`${template.name} ${matchedCount}건 다운로드!\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
   }, [allBusinesses]);
 
@@ -284,10 +282,7 @@ const App: React.FC = () => {
       newRow[mapping.recipientPhone] = phone;
       newRow[mapping.recipientAddress] = address;
       Object.entries(fixedValues).forEach(([colIdx, value]) => { newRow[Number(colIdx)] = value; });
-      const senderCols = template.senderNameColumns && template.senderNameColumns.length > 0
-        ? template.senderNameColumns
-        : (template.senderNameColumn !== undefined ? [template.senderNameColumn] : []);
-      senderCols.forEach(idx => { newRow[idx] = bizDisplayName; });
+      resolveSenderColumns(template).forEach(idx => { newRow[idx] = bizDisplayName; });
       rows.push(newRow);
     }
 
@@ -299,7 +294,7 @@ const App: React.FC = () => {
     XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
     const fullTmplName = template.label ? `${template.name} (${template.label})` : template.name;
     const tmplSuffix = fullTmplName.includes('사무실') ? '사무실' : fullTmplName.includes('대행') ? '택배대행' : fullTmplName;
-    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${bizDisplayName} ${tmplSuffix}.xlsx`);
+    XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${bizDisplayName} 가구매 ${tmplSuffix}.xlsx`);
     if (notFoundOrders.length > 0) alert(`${template.name} ${matchedCount}건 다운로드!\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
   }, [allBusinesses]);
 
