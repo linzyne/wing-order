@@ -419,6 +419,9 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
                 </div>
                 <div className="text-white font-black text-sm">{item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}</div>
                 <div className="text-zinc-500 text-xs font-bold mt-0.5">{item.company} · {item.reason}</div>
+                <div className="text-zinc-500 text-[10px] font-bold mt-0.5">
+                  [업체:{item.vendorMethod || '-'}][고객:{item.customerMethod === '환불' ? (item.refundMethod || '환불') : item.customerMethod}]
+                </div>
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-[10px] text-zinc-500 font-bold">
                     {item.customerMethod}{item.deduction === 'full' ? ` · -${(item.marginPerUnit || 0).toLocaleString()}원` : ''}
