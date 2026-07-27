@@ -504,7 +504,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const origText = localResult?.depositSummary || syncedData?.depositSummary;
             return buildDepositTextFromSummary(summaryOverride, origText);
         }
-        return localResult?.depositSummary || syncedData?.depositSummary || '';
+        const base = localResult?.depositSummary || syncedData?.depositSummary || '';
+        // 발주서 없이 추가/차감 내역만 있는 세션도 정산 요약을 표시할 수 있어야 하므로,
+        // "총 합계" 앵커가 있는 빈 템플릿을 만들어 아래 조정 내역 합산 로직이 동작하게 한다.
+        if (!base && sessionAdjustments.length > 0) return buildDepositTextFromSummary({}, null);
+        return base;
     })();
     const effectiveDisplayExcelText = (() => {
         if (cumulativeDepositExcelText !== null) return cumulativeDepositExcelText;
@@ -1596,6 +1600,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         }} />
                                     </label>
                                 )}
+                                {sessionAdjustments.length > 0 && (
+                                    <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
+                                )}
                                 {(() => {
                                     const exQty = excludedList.reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
                                     const unQty = unmatchedList.reduce((sum: number, u: any) => sum + (u.qty || 1), 0);
@@ -1731,7 +1738,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 </tr>
             )}
 
-            {showSummary && (localResult || syncedData) && (
+            {showSummary && (localResult || syncedData || sessionAdjustments.length > 0) && (
                 <tr className="bg-zinc-950/40 border-none animate-fade-in">
                     <td colSpan={3} className="px-6 py-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
