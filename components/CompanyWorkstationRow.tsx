@@ -522,7 +522,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const onEffectiveTextChangeRef = useRef(onEffectiveTextChange);
     onEffectiveTextChangeRef.current = onEffectiveTextChange;
     useEffect(() => {
-        if (!effectiveDisplayText) return;
+        if (!effectiveDisplayText) {
+            // 이 세션이 마지막 차수인데 표시할 정산 데이터가 없다면(다른 차수가 다른 업체로
+            // 옮겨지고 이 업체엔 아무것도 안 남은 경우 등) 캐시를 비워야 한다. 그냥 return하면
+            // 예전 차수가 남겨둔 stale 텍스트가 통합주문서업로드 팝업에 계속 남는다.
+            onEffectiveTextChangeRef.current?.('', '');
+            return;
+        }
         const baseTotal = isCumulativeView
             ? Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0)
             : Object.values((summaryOverride || localResult?.summary || syncedData?.itemSummary || {}) as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
@@ -535,7 +541,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 .replace(/(총 합계\s+)([\d,]+)(원)/, (_m, p1, _p2, p3) => `${p1}${(baseTotal + adjTotal).toLocaleString()}${p3}`);
         }
         onEffectiveTextChangeRef.current?.(kakaoText, effectiveDisplayExcelText);
-    }, [effectiveDisplayText, effectiveDisplayExcelText, allSessionAdjustments]);
+    // isLastSession을 deps에 넣어야 한다: 다른 차수가 삭제/이동되어 이 세션이 "마지막 차수"로
+    // 바뀌어도 effectiveDisplayText 문자열 자체는 그대로일 수 있어(=deps 미변경) effect가
+    // 재실행되지 않고, 통합주문서업로드 캐시(companyLastSettlementRef)가 사라진 옛 차수의
+    // 정산요약을 계속 들고 있는 버그가 있었다.
+    }, [effectiveDisplayText, effectiveDisplayExcelText, allSessionAdjustments, isLastSession]);
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig, businessId);
