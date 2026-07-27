@@ -359,6 +359,40 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         </div>
 
         <div className="overflow-y-auto custom-scrollbar flex-1 px-6 py-5 space-y-4">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">주문번호</label>
+              <input
+                type="text"
+                value={draft.orderNumber}
+                onChange={e => onChange({ ...draft, orderNumber: e.target.value })}
+                placeholder="주문번호"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30 outline-none"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">받는사람</label>
+              <input
+                type="text"
+                value={draft.recipientName}
+                onChange={e => onChange({ ...draft, recipientName: e.target.value })}
+                placeholder="받는사람"
+                className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30 outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">품목명 (표시용)</label>
+            <input
+              type="text"
+              value={draft.productName}
+              onChange={e => onChange({ ...draft, productName: e.target.value })}
+              placeholder="품목명"
+              className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30 outline-none"
+            />
+          </div>
+
           <div>
             <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">사유</label>
             <textarea

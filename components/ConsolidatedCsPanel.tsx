@@ -145,6 +145,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
   const [businessPricingConfig, setBusinessPricingConfig] = useState<PricingConfig | null>(null);
   const [loadingBusinessData, setLoadingBusinessData] = useState(false);
   const [search, setSearch] = useState('');
+  const [manualCompany, setManualCompany] = useState('');
   const [csDraft, setCsDraft] = useState<CsDraft | null>(null);
   const [editing, setEditing] = useState<{ date: string; record: OpenCsItem; businessId: string } | null>(null);
   const [editingPricingConfig, setEditingPricingConfig] = useState<PricingConfig | undefined>(undefined);
@@ -178,6 +179,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
     let cancelled = false;
     setLoadingBusinessData(true);
     setSearch('');
+    setManualCompany('');
     (async () => {
       const { loadAllSalesHistory, loadPricingConfig } = await import('../services/firestoreService');
       const [history, configResult] = await Promise.all([
@@ -339,6 +341,26 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
               disabled={loadingBusinessData}
               className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30 outline-none disabled:opacity-50"
             />
+          </div>
+        )}
+
+        {selectedBusinessId && !loadingBusinessData && (
+          <div className="flex items-center gap-2">
+            <select
+              value={manualCompany}
+              onChange={e => setManualCompany(e.target.value)}
+              className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-white outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
+            >
+              <option value="">발주내역 없이 수동 접수할 업체 선택...</option>
+              {Object.keys(businessPricingConfig || {}).map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button
+              onClick={() => manualCompany && setCsDraft(buildCsDraft(manualCompany, [], businessPricingConfig || undefined))}
+              disabled={!manualCompany}
+              className="shrink-0 px-3 py-2 rounded-xl bg-zinc-700/50 text-zinc-300 hover:bg-zinc-700 disabled:opacity-40 text-xs font-black border border-zinc-600/40 transition-colors"
+            >
+              수동 접수
+            </button>
           </div>
         )}
 
