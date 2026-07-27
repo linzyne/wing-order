@@ -438,6 +438,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const lastProcessedMasterRef = useRef<File | null>(null);
     const lastProcessedBatchRef = useRef<File | null>(null);
     const lastFakeOrdersRef = useRef<string>('');
+    const lastAddressOverridesRef = useRef<string>('');
     const lastManualOrdersRef = useRef<string>('');
     const lastGoodMergeRef = useRef<{ rows: any[][], uploadRows: any[][], header: any[] } | null>(null);
     // localResult가 null인 게 "아직 처리 전"인지 "처리했더니 매칭 0건"인지 구분하기 위한 플래그.
@@ -635,10 +636,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);
+        const addressOverridesStr = JSON.stringify(addressOverrides);
         const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
         const hasBatchFileChanged = batchFile && batchFile !== lastProcessedBatchRef.current;
         const hasFakeOrdersChanged = fakeOrderNumbers !== lastFakeOrdersRef.current;
         const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
+        const hasAddressOverridesChanged = addressOverridesStr !== lastAddressOverridesRef.current;
         // 마스터 파일이 바뀌었는데 이 업체가 더 이상 감지되지 않으면 이전 세션 자동 초기화
         const hasFileChangedButEvicted = isFirstSession && masterFile && !isDetected
             && lastProcessedMasterRef.current !== null && masterFile !== lastProcessedMasterRef.current;
@@ -650,11 +653,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // N차 일괄 업로드: 가구매 제외 포함하여 처리
             lastProcessedBatchRef.current = batchFile;
             lastFakeOrdersRef.current = fakeOrderNumbers;
+            lastAddressOverridesRef.current = addressOverridesStr;
             handleLocalFileChange(batchFile);
         } else if (hasFileChanged) {
             if (masterFile) {
                 lastFakeOrdersRef.current = fakeOrderNumbers;
                 lastManualOrdersRef.current = manualOrdersStr;
+                lastAddressOverridesRef.current = addressOverridesStr;
 
                 if (!isProcessingRef.current) {
                     // ref는 실제 처리가 시작될 때만 업데이트 (처리 중 파일 교체 시 재트리거 허용)
@@ -679,6 +684,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // 가구매 변경: 이미 파일 처리가 된 이후에만 재처리 (1차/N차 모두)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
+            lastAddressOverridesRef.current = addressOverridesStr;
+            const fileToReprocess = lastProcessedMasterRef.current || lastProcessedBatchRef.current;
+            handleLocalFileChange(fileToReprocess);
+        } else if (hasAddressOverridesChanged && (lastProcessedMasterRef.current || lastProcessedBatchRef.current)) {
+            // 주소 변경 명단 변경: 이미 파일 처리가 된 이후에만 재처리
+            lastAddressOverridesRef.current = addressOverridesStr;
             const fileToReprocess = lastProcessedMasterRef.current || lastProcessedBatchRef.current;
             handleLocalFileChange(fileToReprocess);
         } else if (hasManualOrdersChanged) {
@@ -696,8 +707,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // Firestore 초기 로드 등 - ref만 업데이트 (재처리 안함)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
+            lastAddressOverridesRef.current = addressOverridesStr;
         }
-    }, [masterFile, batchFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, isLocalProcessing]);
+    }, [masterFile, batchFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, addressOverrides, isLocalProcessing]);
 
     useEffect(() => {
         if (!localResult) {
