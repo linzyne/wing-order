@@ -17,6 +17,12 @@ const isQuotaError = (e: any): boolean => {
 export const notifyQuotaExceeded = () =>
   window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
 
+// ===== CS 접수/정산 반영 알림 (통합CS현황 등 매출현황과 별개로 마운트된 화면에서 저장했을 때
+// 같은 사업자의 SalesTracker/워크스테이션이 이미 열려 있어도 자동 갱신되도록 알림) =====
+
+export const CS_SAVED_EVENT = 'wing:cs-saved';
+export const WORKSPACE_ADJUSTMENT_EVENT = 'wing:workspace-adjustment-saved';
+
 // ===== 사업자별 Firestore 경로 헬퍼 =====
 // 안군농원(또는 미지정)이면 기존 경로 그대로, 그 외 사업자는 접미사 추가
 const getConfigDocId = (businessId?: string): string =>
@@ -263,6 +269,7 @@ export interface DailyWorkspaceData {
   sessionMemos?: Record<string, string>;
   sessionSummary?: Record<string, { orderCount: number }>;
   summaryOverrides?: Record<string, Record<string, { count: number; totalPrice: number }>>;
+  companySessionRounds?: Record<string, { id: string; round: number }[]>;
   updatedAt?: any;
 }
 

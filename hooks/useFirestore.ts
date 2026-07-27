@@ -8,6 +8,7 @@ import {
   getDailyWorkspace,
   updateDailyWorkspaceField,
   updateDailyWorkspaceSessionField,
+  WORKSPACE_ADJUSTMENT_EVENT,
   loadPlatformConfigs,
   savePlatformConfigs,
   loadTodos,
@@ -180,6 +181,20 @@ export const useDailyWorkspace = (businessId?: string) => {
       setWorkspace(data);
       setIsReady(true);
     });
+  }, [businessId]);
+
+  // 통합CS현황 등 다른 화면에서 이 사업자의 정산 조정을 저장했을 때도 반영되도록 갱신
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.businessId !== businessId) return;
+      getDailyWorkspace(businessId).then(data => {
+        if (currentBusinessIdRef.current !== businessId) return;
+        setWorkspace(data);
+      });
+    };
+    window.addEventListener(WORKSPACE_ADJUSTMENT_EVENT, handler);
+    return () => window.removeEventListener(WORKSPACE_ADJUSTMENT_EVENT, handler);
   }, [businessId]);
 
   const updateField = useCallback(async (field: string, value: any) => {

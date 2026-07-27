@@ -1,13 +1,15 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
 import { usePricingConfig } from '../hooks/useFirestore';
+import CsEntryModal, { type CsDraft, resolveOrderRowFields, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
+import { CS_SAVED_EVENT } from '../services/firestoreService';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
-import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord } from '../types';
-import { getBusinessInfo } from '../types';
+import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord, CsRecord } from '../types';
+import { getBusinessInfo, getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
 
 declare var XLSX: any;
 
-type ViewMode = 'settlement' | 'invoices' | 'margin' | 'returns' | 'trend';
+type ViewMode = 'settlement' | 'orders' | 'invoices' | 'margin' | 'returns' | 'cs' | 'trend';
 type DateMode = 'month' | 'range';
 
 const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshTrigger?: { date: string; n: number }; onCompanyRecordChanged?: (date: string) => void }> = ({ isActive, businessId, refreshTrigger, onCompanyRecordChanged }) => {
@@ -24,6 +26,16 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   useEffect(() => {
     if (refreshTrigger) refreshDate(refreshTrigger.date);
   }, [refreshTrigger?.n]);
+
+  // 통합CS현황 등 다른 화면에서 이 사업자의 CS를 접수했을 때도 반영되도록 갱신
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.businessId === businessId && detail?.date) refreshDate(detail.date);
+    };
+    window.addEventListener(CS_SAVED_EVENT, handler);
+    return () => window.removeEventListener(CS_SAVED_EVENT, handler);
+  }, [businessId, refreshDate]);
   const [viewMode, setViewMode] = useState<ViewMode>('settlement');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -33,6 +45,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   // 발주/송장 검색
   const [orderSearch, setOrderSearch] = useState('');
   const [invoiceSearch, setInvoiceSearch] = useState('');
+
+  // CS 접수
+  const [csDraft, setCsDraft] = useState<CsDraft | null>(null);
+  const [editingCs, setEditingCs] = useState<{ date: string; record: CsRecord } | null>(null);
+  const [deletingCsKey, setDeletingCsKey] = useState<string | null>(null);
 
   // 판매추이
   const [trendDays, setTrendDays] = useState(14);
@@ -88,12 +105,19 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   const allRecords = useMemo(() => filteredHistory.flatMap(d => d.records), [filteredHistory]);
 
   // 발주 데이터 합산 (companyOrderRows 우선, 없으면 flat orderRows 폴백)
+  // 업체명을 행별로 같이 들고 있어야 CS 접수 시 그 업체의 헤더 구조/등록상품을 조회할 수 있음
   const allOrderRows = useMemo(() => {
-    const rows: { date: string; data: any[][] }[] = [];
+    const rows: { date: string; data: { company: string; row: any[] }[] }[] = [];
     filteredHistory.forEach(d => {
-      const data = d.companyOrderRows
-        ? Object.values(d.companyOrderRows).flat()
-        : d.orderRows || [];
+      let data: { company: string; row: any[] }[];
+      if (d.companyOrderRows) {
+        data = [];
+        Object.entries(d.companyOrderRows).forEach(([company, companyRows]) => {
+          (companyRows as any[][]).forEach(row => data.push({ company, row }));
+        });
+      } else {
+        data = (d.orderRows || []).map(row => ({ company: '', row }));
+      }
       if (data.length > 0) rows.push({ date: d.date, data });
     });
     return rows;
@@ -111,14 +135,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     return rows;
   }, [filteredHistory]);
 
-  // 발주 검색 필터링
+  // 발주 검색 필터링 (이름, 주문번호 등 행 내 아무 셀이나 일치하면 검색됨)
   const filteredOrderRows = useMemo(() => {
     const q = orderSearch.trim().toLowerCase();
     if (!q) return allOrderRows;
     return allOrderRows
       .map(({ date, data }) => ({
         date,
-        data: data.filter(row => row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q))),
+        data: data.filter(({ row }) => row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q))),
       }))
       .filter(({ data }) => data.length > 0);
   }, [allOrderRows, orderSearch]);
@@ -190,6 +214,26 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     return { records, total };
   }, [filteredHistory]);
 
+  // CS 데이터 합산 (기간 필터 기준 — CS 탭 목록용)
+  const allCsData = useMemo(() => {
+    const records: (CsRecord & { date: string })[] = [];
+    filteredHistory.forEach(d => {
+      (d.csRecords || []).forEach(r => records.push({ ...r, date: d.date }));
+    });
+    return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [filteredHistory]);
+
+  // 주문번호 → 미완료 CS 매핑 (발주내역 뱃지용, 기간 필터와 무관하게 전체 이력 대상)
+  const openCsByOrderNumber = useMemo(() => {
+    const map = new Map<string, CsRecord>();
+    salesHistory.forEach(d => {
+      (d.csRecords || []).forEach(r => {
+        if (!isCsFullyCompleted(r)) map.set(r.orderNumber, r);
+      });
+    });
+    return map;
+  }, [salesHistory]);
+
   const handleDeleteReturn = async (date: string, index: number) => {
     const existing = salesHistory.find(d => d.date === date);
     if (!existing || !existing.returnRecords) return;
@@ -206,6 +250,60 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     await deleteCompanyFromDailySales(date, companyName, businessId);
     await refreshDate(date);
     onCompanyRecordChanged?.(date);
+  };
+
+  const openCsDetail = (company: string, row: any[]) => {
+    setCsDraft(buildCsDraft(company, row, pricingConfig));
+  };
+
+  const handleCsSaved = () => {
+    if (editingCs) { refreshDate(editingCs.date); return; }
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    refreshDate(todayStr);
+  };
+
+  const handleToggleCsSide = async (date: string, id: string, side: 'vendor' | 'customer') => {
+    const existing = salesHistory.find(d => d.date === date);
+    if (!existing?.csRecords) return;
+    const now = new Date().toISOString();
+    const updated = existing.csRecords.map(r => {
+      if (r.id !== id) return r;
+      const isVendor = side === 'vendor';
+      const currentStatus = isVendor ? getCsVendorStatus(r) : getCsCustomerStatus(r);
+      const nextStatus = currentStatus === '접수' ? '완료' as const : '접수' as const;
+      return {
+        ...r,
+        vendorStatus: isVendor ? nextStatus : getCsVendorStatus(r),
+        customerStatus: isVendor ? getCsCustomerStatus(r) : nextStatus,
+        vendorCompletedAt: isVendor ? (nextStatus === '완료' ? now : undefined) : r.vendorCompletedAt,
+        customerCompletedAt: isVendor ? r.customerCompletedAt : (nextStatus === '완료' ? now : undefined),
+      };
+    });
+    const { upsertDailySales } = await import('../services/firestoreService');
+    await upsertDailySales({ ...existing, csRecords: updated }, businessId);
+    await refreshDate(date);
+  };
+
+  const handleEditCs = (record: CsRecord & { date: string }) => {
+    setEditingCs({ date: record.date, record });
+    setCsDraft(buildCsDraftFromRecord(record));
+  };
+
+  const handleDeleteCs = async (record: CsRecord & { date: string }) => {
+    if (!window.confirm(`${record.recipientName || '이름없음'} · ${record.orderNumber || '주문번호없음'} CS 접수를 삭제하시겠습니까?`)) return;
+    setDeletingCsKey(record.id);
+    try {
+      await deleteCsRecord(businessId, record.date, record);
+      await refreshDate(record.date);
+    } finally {
+      setDeletingCsKey(null);
+    }
+  };
+
+  const closeCsModal = () => {
+    setCsDraft(null);
+    setEditingCs(null);
   };
 
   // 월별분석: 선택 연도의 전체 월별 품목별 마진 + 비용 데이터
@@ -449,7 +547,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       allOrderRows.forEach(({ data }) => {
         // 헤더는 첫 번째 데이터에서만 가져오거나 생략 (데이터 구조상 헤더가 포함된 경우도 있음)
         // 여기서는 단순히 모든 행을 추가 (헤더 중복 가능성 유의)
-        data.forEach(row => orderSheetRows.push(row));
+        data.forEach(({ row }) => orderSheetRows.push(row));
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orderSheetRows), '발주');
     }
@@ -616,15 +714,35 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 <div className="px-6 pb-4 animate-fade-in overflow-x-auto">
                   <table className="w-full text-left">
                     <tbody className="divide-y divide-zinc-900/50">
-                      {data.map((row, i) => (
-                        <tr key={i} className="text-xs">
-                          {row.map((cell: any, j: number) => (
-                            <td key={j} className="py-1.5 pr-3 text-zinc-300 font-mono whitespace-nowrap">
-                              {cell != null ? String(cell) : ''}
+                      {data.map(({ company, row }, i) => {
+                        const fields = resolveOrderRowFields(company, row, pricingConfig);
+                        const openCs = fields.orderNumber ? openCsByOrderNumber.get(fields.orderNumber) : undefined;
+                        return (
+                          <tr key={i} className="text-xs">
+                            {company && (
+                              <td className="py-1.5 pr-3 text-violet-400 font-black whitespace-nowrap">{company}</td>
+                            )}
+                            {row.map((cell: any, j: number) => (
+                              <td key={j} className="py-1.5 pr-3 text-zinc-300 font-mono whitespace-nowrap">
+                                {cell != null ? String(cell) : ''}
+                              </td>
+                            ))}
+                            <td className="py-1.5 pr-3 whitespace-nowrap">
+                              {openCs && (
+                                <span className="mr-2 text-[10px] bg-amber-500/10 text-amber-400 px-2 py-1 rounded-full font-black border border-amber-500/20">
+                                  CS 처리중
+                                </span>
+                              )}
+                              <button
+                                onClick={() => openCsDetail(company, row)}
+                                className="px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-[10px] font-black border border-rose-500/20 transition-colors"
+                              >
+                                CS 접수
+                              </button>
                             </td>
-                          ))}
-                        </tr>
-                      ))}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -1032,6 +1150,113 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
           <div className="p-12 text-center">
             <p className="text-zinc-600 font-bold text-sm">해당 기간의 반품 데이터가 없습니다.</p>
             <p className="text-zinc-700 text-xs mt-2">발주서/송장 관리 탭의 반품 관리에서 반품을 등록하세요.</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /** CS 렌더링 */
+  const renderCsView = () => {
+    const records = allCsData;
+    const openCount = records.filter(r => !isCsFullyCompleted(r)).length;
+
+    return (
+      <div className="divide-y divide-zinc-900">
+        {records.length > 0 && (
+          <div className="px-6 py-4 flex items-center justify-between bg-zinc-900/30">
+            <span className="text-zinc-400 font-black text-xs">기간 내 CS</span>
+            <span className="text-amber-400 font-black text-lg">
+              {openCount}건 진행중 <span className="text-zinc-500 text-xs font-bold">/ 총 {records.length}건</span>
+            </span>
+          </div>
+        )}
+
+        {records.length === 0 ? (
+          <div className="p-12 text-center">
+            <p className="text-zinc-600 font-bold text-sm">해당 기간의 CS 데이터가 없습니다.</p>
+            <p className="text-zinc-700 text-xs mt-2">발주내역 탭에서 주문을 검색해 CS를 접수하세요.</p>
+          </div>
+        ) : (
+          <div className="p-6 overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
+                  <th className="pb-3 pr-4">접수일</th>
+                  <th className="pb-3 pr-4">업체</th>
+                  <th className="pb-3 pr-4">주문번호</th>
+                  <th className="pb-3 pr-4">이름</th>
+                  <th className="pb-3 pr-4">사유</th>
+                  <th className="pb-3 pr-4">업체방법</th>
+                  <th className="pb-3 pr-4">고객방법</th>
+                  <th className="pb-3 pr-4 text-right">차감</th>
+                  <th className="pb-3 pr-4 text-right">상태</th>
+                  <th className="pb-3 text-right">관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-900/50">
+                {records.map(r => (
+                  <tr key={r.id} className="text-xs hover:bg-zinc-900/30 transition-colors">
+                    <td className="py-3 pr-4 text-zinc-500 font-bold whitespace-nowrap">{formatDate(r.date)}</td>
+                    <td className="py-3 pr-4 font-bold text-violet-400 whitespace-nowrap">{r.company}</td>
+                    <td className="py-3 pr-4 text-zinc-300 font-mono whitespace-nowrap">{r.orderNumber}</td>
+                    <td className="py-3 pr-4 text-zinc-300 font-bold whitespace-nowrap">{r.recipientName}</td>
+                    <td className="py-3 pr-4 text-zinc-400">{r.reason}</td>
+                    <td className="py-3 pr-4 text-zinc-400 whitespace-nowrap">{r.vendorMethod || '-'}</td>
+                    <td className="py-3 pr-4 text-zinc-400 whitespace-nowrap">{r.customerMethod}</td>
+                    <td className="py-3 pr-4 text-right whitespace-nowrap">
+                      {r.deduction === 'full'
+                        ? <span className="text-rose-400 font-black">-{(r.marginPerUnit || 0).toLocaleString()}원</span>
+                        : <span className="text-zinc-600">없음</span>}
+                    </td>
+                    <td className="py-3 pr-4 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {isCsFullyCompleted(r) && (
+                          <span className="px-2 py-1 rounded-full text-[10px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            완료
+                          </span>
+                        )}
+                        {(['vendor', 'customer'] as const).map(side => {
+                          const label = side === 'vendor' ? '업체' : '고객';
+                          const status = side === 'vendor' ? getCsVendorStatus(r) : getCsCustomerStatus(r);
+                          const isDone = status === '완료';
+                          return (
+                            <button
+                              key={side}
+                              onClick={() => handleToggleCsSide(r.date, r.id, side)}
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-black border transition-colors ${
+                                isDone
+                                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                                  : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
+                              }`}
+                            >
+                              {label} {isDone ? '처리완료' : '접수중'}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="py-3 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleEditCs(r)}
+                          className="px-2.5 py-1 rounded-full text-[10px] font-black bg-zinc-700/40 text-zinc-300 border border-zinc-600/40 hover:bg-zinc-700/60 transition-colors"
+                        >
+                          수정
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCs(r)}
+                          disabled={deletingCsKey === r.id}
+                          className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
+                        >
+                          {deletingCsKey === r.id ? '삭제 중...' : '삭제'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -1504,9 +1729,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   const tabs: [ViewMode, string][] = [
     ['settlement', '업체별정산'],
     ['trend', '판매추이'],
+    ['orders', '발주내역'],
     ['invoices', '송장내역'],
     ['margin', '합계표(마진)'],
     ['returns', '반품'],
+    ['cs', 'CS'],
   ];
 
   return (
@@ -1725,11 +1952,25 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       ) : (
         <section className="bg-zinc-900/40 rounded-[2.5rem] border border-zinc-800 shadow-2xl overflow-hidden">
           {viewMode === 'settlement' && renderSettlementView()}
+          {viewMode === 'orders' && renderOrdersView()}
           {viewMode === 'invoices' && renderInvoicesView()}
           {viewMode === 'margin' && renderMarginView()}
           {viewMode === 'returns' && renderReturnView()}
+          {viewMode === 'cs' && renderCsView()}
           {viewMode === 'trend' && renderTrendView()}
         </section>
+      )}
+
+      {csDraft && (
+        <CsEntryModal
+          businessId={businessId}
+          pricingConfig={pricingConfig}
+          draft={csDraft}
+          onChange={setCsDraft}
+          onClose={closeCsModal}
+          onSaved={handleCsSaved}
+          editing={editingCs || undefined}
+        />
       )}
     </div>
   );

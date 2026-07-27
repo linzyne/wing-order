@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   loadWingCredentials, saveWingCredentials, deleteWingCredentials,
   loadDownloadMethod, saveDownloadMethod,
@@ -547,7 +548,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
       </div>
 
       {/* 일괄 다운로드 시간 선택 모달 */}
-      {showBulkTimeModal && (
+      {showBulkTimeModal && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowBulkTimeModal(false)}>
           <div className="bg-zinc-900 border border-zinc-700/60 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
@@ -591,13 +592,14 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
               <button onClick={() => setShowBulkTimeModal(false)} className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-300 text-xs font-black rounded-xl transition-colors">취소</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* 설정 모달 */}
-      {editingId && editingBusiness && (
+      {editingId && editingBusiness && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setEditingId(null)}>
-          <div className="bg-zinc-900 border border-zinc-700/60 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="bg-zinc-900 border border-zinc-700/60 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-black text-white">{editingBusiness.displayName} — 다운로드 설정</h3>
               <button onClick={() => setEditingId(null)} className="text-zinc-500 hover:text-zinc-300"><XMarkIcon className="w-4 h-4" /></button>
@@ -692,7 +694,8 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
               <button onClick={clearEdit} className="px-3 py-2 bg-red-900/40 hover:bg-red-800/60 text-red-400 text-xs font-black rounded-xl transition-colors">삭제</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

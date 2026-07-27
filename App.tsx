@@ -7,6 +7,7 @@ import CoupangDownloader from './components/CoupangDownloader';
 import PricingEditor from './components/PricingEditor';
 import SharedMasterUpload, { type UploadResult } from './components/SharedMasterUpload';
 import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from './components/ConsolidatedInvoicePanel';
+import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates } from './hooks/useFirestore';
 import { useBusinessList } from './hooks/useBusinessList';
@@ -68,6 +69,7 @@ const App: React.FC = () => {
   const [showInvoice, setShowInvoice] = useState(false);
   const [showGlobalFake, setShowGlobalFake] = useState(false);
   const [showSupplierLibrary, setShowSupplierLibrary] = useState(false);
+  const [showCs, setShowCs] = useState(false);
   const [globalFakeOrderInput, setGlobalFakeOrderInput] = useState(() => loadPersistedFakeOrder());
   const [isEditingGlobalFake, setIsEditingGlobalFake] = useState(false);
   const [globalUnsentOrderInput, setGlobalUnsentOrderInput] = useState('');
@@ -482,17 +484,18 @@ const App: React.FC = () => {
 
   // 드롭다운 외부 클릭 감지 — overlay 대신 document mousedown으로 처리 (overlay는 스크롤을 막으므로)
   useEffect(() => {
-    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary) return;
+    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary && !showCs) return;
     const handler = () => {
       setShowCoupang(false);
       setShowUpload(false);
       setShowInvoice(false);
       setShowGlobalFake(false);
       setShowSupplierLibrary(false);
+      setShowCs(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary]);
+  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary, showCs]);
 
   const handleDeleteBusiness = async (businessId: string) => {
     const label = allBusinesses.find(b => b.id === businessId)?.displayName;
@@ -682,7 +685,7 @@ const App: React.FC = () => {
         {/* 전체 가구매 명단 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowGlobalFake(v => !v); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); }}
+            onClick={() => { setShowGlobalFake(v => !v); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showGlobalFake
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -967,7 +970,7 @@ const App: React.FC = () => {
         {/* 공통 주문서 업로드 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowUpload(v => !v); setShowCoupang(false); setShowInvoice(false); setShowGlobalFake(false); setShowSupplierLibrary(false); }}
+            onClick={() => { setShowUpload(v => !v); setShowCoupang(false); setShowInvoice(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showUpload
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -993,7 +996,7 @@ const App: React.FC = () => {
         {/* 통합 송장 변환 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowInvoice(v => !v); setShowCoupang(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); }}
+            onClick={() => { setShowInvoice(v => !v); setShowCoupang(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showInvoice
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1029,7 +1032,7 @@ const App: React.FC = () => {
         {/* 쿠팡 다운로드 토글 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowCoupang(v => !v); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); }}
+            onClick={() => { setShowCoupang(v => !v); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showCoupang
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1049,7 +1052,7 @@ const App: React.FC = () => {
         {/* 공급업체 라이브러리 (전체 사업자 공유) */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowSupplierLibrary(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); }}
+            onClick={() => { setShowSupplierLibrary(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowCs(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showSupplierLibrary
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1064,6 +1067,28 @@ const App: React.FC = () => {
               onConfigChange={sharedSuppliers.saveConfig}
               isLibraryMode
             />
+          </div>
+        </div>
+
+        {/* 통합 CS 현황 (전체 사업자, 접수중인 건만) */}
+        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => { setShowCs(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); }}
+            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
+              showCs
+                ? 'bg-zinc-700 text-white border-zinc-600'
+                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
+            }`}
+          >
+            통합CS현황
+          </button>
+          <div className={`absolute right-0 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCs ? '' : 'hidden'}`}>
+            {showCs && (
+              <ConsolidatedCsPanel
+                businesses={businessIdNamePairs}
+                onClose={() => setShowCs(false)}
+              />
+            )}
           </div>
         </div>
 

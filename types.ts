@@ -191,7 +191,49 @@ export interface ReturnRecord {
   totalMargin: number;   // 총 반품 마진 (음수)
   memo?: string;         // 반품 사유
   orderDate?: string;    // 주문 날짜 (YYYY-MM-DD)
-  type?: '반품' | '광고비' | '슬롯'; // 품목별관리 구분 (없으면 반품)
+  type?: '반품' | '광고비' | '슬롯' | 'CS환불'; // 품목별관리 구분 (없으면 반품)
+  csRecordId?: string;   // 연결된 CsRecord.id (CS환불 - 수정/삭제 시 반품기록 재계산용)
+}
+
+export interface CsRecord {
+  id: string;
+  orderNumber: string;
+  recipientName: string;
+  company: string;
+  productKey?: string;
+  productName?: string;
+  reason: string;        // 사유
+  vendorMethod: string;  // 업체방법
+  customerMethod: '재배송' | '환불'; // 고객방법
+  deduction: 'full' | 'none'; // 마진 차감 (전액차감/차감없음)
+  supplyPrice?: number;   // 전액차감 시 정산요약에 반영된 공급가
+  marginPerUnit?: number; // 전액차감 시 판매현황에 반영된 마진
+  refundMethod?: '계좌환불' | '전산환불'; // 환불 시 처리 방법
+  refundBankName?: string;      // 계좌환불 은행명
+  refundAccountNumber?: string; // 계좌환불 계좌번호
+  refundHolder?: string;        // 계좌환불 예금주
+  refundAmount?: number;        // 계좌환불 금액
+  /** @deprecated 구버전 단일 상태 필드 (구 데이터 호환용). vendorStatus/customerStatus 사용 */
+  status?: '접수' | '완료';
+  vendorStatus?: '접수' | '완료';   // 업체 처리 상태
+  customerStatus?: '접수' | '완료'; // 고객 처리 상태
+  createdAt: string;      // ISO timestamp (접수 시각)
+  completedAt?: string;   // ISO timestamp (업체+고객 모두 완료된 시각, 구버전 호환용)
+  vendorCompletedAt?: string;   // ISO timestamp (업체 완료 처리 시각)
+  customerCompletedAt?: string; // ISO timestamp (고객 완료 처리 시각)
+  orderRowSnapshot?: any[];       // 접수 시점 원본 발주 행 스냅샷 (상세보기용, 재검색 방지)
+  orderRowHeaders?: string[];     // 접수 시점 헤더 스냅샷
+}
+
+// 구버전 데이터는 status 필드만 있으므로, vendorStatus/customerStatus가 없으면 status로 대체한다.
+export function getCsVendorStatus(r: CsRecord): '접수' | '완료' {
+  return r.vendorStatus ?? r.status ?? '접수';
+}
+export function getCsCustomerStatus(r: CsRecord): '접수' | '완료' {
+  return r.customerStatus ?? r.status ?? '접수';
+}
+export function isCsFullyCompleted(r: CsRecord): boolean {
+  return getCsVendorStatus(r) === '완료' && getCsCustomerStatus(r) === '완료';
 }
 
 export interface ExpenseRecord {
@@ -301,6 +343,7 @@ export interface DailySales {
   returnRecords?: ReturnRecord[];
   returnTotal?: number;
   expenseRecords?: ExpenseRecord[];
+  csRecords?: CsRecord[];
 }
 
 // ===== Todo List =====

@@ -932,6 +932,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
         delete currentSummary[sessionId];
         updateField('sessionSummary', currentSummary);
+        // localResult/excludedList를 비우지 않으면, 부모의 allOrderRows는 비워져서 "불"은 꺼지지만
+        // 이 카드 자체(발주 건수·키워드·정산요약 등)는 여전히 예전 localResult 기준으로 렌더링되어
+        // 교체 이전 데이터가 화면에 그대로 남는다.
+        setLocalResult(null);
+        setExcludedList([]);
         setUnmatchedList([]);
         onResultUpdate(sessionId, 0, 0, []);
         onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);

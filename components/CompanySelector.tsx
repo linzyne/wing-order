@@ -760,6 +760,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         return initial;
     });
+    // 오늘 업체별 세션(차수) 목록을 workspace에 기록 — 다른 탭(매출현황 CS 등)에서
+    // "그 업체의 오늘 마지막 차수 세션"을 찾아 sessionAdjustments에 반영할 때 참조하기 위함
+    useEffect(() => {
+        if (!isReady) return;
+        const registry: Record<string, { id: string; round: number }[]> = {};
+        Object.entries(companySessions).forEach(([name, sessions]) => {
+            registry[name] = (sessions as SessionData[]).map(s => ({ id: s.id, round: s.round }));
+        });
+        updateField('companySessionRounds', registry);
+    }, [companySessions, isReady, updateField]);
+
     const [workstationResetKey, setWorkstationResetKey] = useState(0);
 
     const [vendorFiles, setVendorFiles] = useState<Record<string, File[]>>({});
@@ -2069,13 +2080,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
                 const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
                 setMasterOrderFile(new File([buf], masterOrderFile.name, { type: masterOrderFile.type }));
-                setDetectedCompanies(prev => {
-                    const next = new Set(prev);
-                    if (kReplaceToCompany) next.add(kReplaceToCompany);
-                    const fromStillHasRows = updated.slice(1).some((r: any[]) => String(r[10] || '').trim() === kReplaceFrom);
-                    if (!fromStillHasRows && kReplaceFromCompany) next.delete(kReplaceFromCompany);
-                    return next;
-                });
+                // detectedCompanies는 아래 masterOrderData 기반 useEffect(키워드 매칭 재계산)가
+                // 자동으로 정확히 갱신한다. 여기서 직접 kReplaceFromCompany를 evict하면, 그 업체가
+                // 다른 K값으로 여전히 매칭되는 행을 갖고 있어도 일시적으로 isDetected=false가 되어
+                // CompanyWorkstationRow가 resetSyncedData()를 호출하며 lastProcessedMasterRef를
+                // 이 masterFile로 찍어버린다. 그 직후 useEffect가 isDetected를 다시 true로 되돌려도
+                // masterFile 참조가 이미 "처리 완료"로 기록되어 있어 실제 재처리(재매칭)가 영영 스킵되고,
+                // 화면에는 교체 이전의 stale 발주/정산 데이터가 그대로 남는 버그가 있었다.
             }
         } else {
             // ── N차수(batch) 교체 ─────────────────────────────────────
