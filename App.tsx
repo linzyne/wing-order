@@ -42,25 +42,14 @@ function loadPersistedFakeOrder(): string {
   return '';
 }
 
-// 주소 변경 명단: 만료 없이 수동 삭제 전까지 유지 (가구매 명단과 달리 TTL 없음)
-const ADDRESS_OVERRIDE_KEY = 'globalAddressOverrideInput';
+// 긴급공지: 만료 없이 수동 삭제 전까지 유지 (가구매 명단과 달리 TTL 없음).
+// 발주서 생성(마스터/N차 업로드) 시마다 팝업으로 띄워 깜빡하기 쉬운 주소변경 등을 상기시킴.
+const URGENT_NOTICE_KEY = 'globalUrgentNotice';
 
-function loadPersistedAddressOverride(): string {
+function loadPersistedUrgentNotice(): string {
   try {
-    return localStorage.getItem(ADDRESS_OVERRIDE_KEY) || '';
+    return localStorage.getItem(URGENT_NOTICE_KEY) || '';
   } catch { return ''; }
-}
-
-// "주문번호,새주소" 형식 파싱 (주소에 쉼표가 있어도 첫 쉼표 기준으로만 분리)
-function parseAddressOverrideLine(line: string): { orderNumber: string; address: string } | null {
-  const trimmed = line.trim();
-  if (!trimmed) return null;
-  const commaIdx = trimmed.indexOf(',');
-  if (commaIdx === -1) return null;
-  const orderNumber = trimmed.slice(0, commaIdx).trim();
-  const address = trimmed.slice(commaIdx + 1).trim();
-  if (!orderNumber || !address) return null;
-  return { orderNumber, address };
 }
 
 // "사업자_이름_주문번호" 형식 파싱 (이름에 _가 있어도 마지막 _로 분리)
@@ -96,20 +85,11 @@ const App: React.FC = () => {
   const [globalUnsentOrderInput, setGlobalUnsentOrderInput] = useState('');
   const [isEditingGlobalUnsent, setIsEditingGlobalUnsent] = useState(false);
   const [matchedFakeNums, setMatchedFakeNums] = useState<Record<string, string[]>>({});
-  const [showAddressOverride, setShowAddressOverride] = useState(false);
-  const [globalAddressOverrideInput, setGlobalAddressOverrideInput] = useState(() => loadPersistedAddressOverride());
+  const [showUrgentNotice, setShowUrgentNotice] = useState(false);
+  const [globalUrgentNotice, setGlobalUrgentNotice] = useState(() => loadPersistedUrgentNotice());
   useEffect(() => {
-    try { localStorage.setItem(ADDRESS_OVERRIDE_KEY, globalAddressOverrideInput); } catch {}
-  }, [globalAddressOverrideInput]);
-  const addressOverrideMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    globalAddressOverrideInput.split('\n').forEach(line => {
-      const parsed = parseAddressOverrideLine(line);
-      if (parsed) map[parsed.orderNumber] = parsed.address;
-    });
-    return map;
-  }, [globalAddressOverrideInput]);
-  const addressOverrideCount = Object.keys(addressOverrideMap).length;
+    try { localStorage.setItem(URGENT_NOTICE_KEY, globalUrgentNotice); } catch {}
+  }, [globalUrgentNotice]);
   const globalFakeOrderInputRef = useRef('');
   useEffect(() => { globalFakeOrderInputRef.current = globalFakeOrderInput; }, [globalFakeOrderInput]);
   useEffect(() => {
@@ -519,7 +499,7 @@ const App: React.FC = () => {
 
   // 드롭다운 외부 클릭 감지 — overlay 대신 document mousedown으로 처리 (overlay는 스크롤을 막으므로)
   useEffect(() => {
-    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary && !showCs && !showAddressOverride) return;
+    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary && !showCs && !showUrgentNotice) return;
     const handler = () => {
       setShowCoupang(false);
       setShowUpload(false);
@@ -527,11 +507,11 @@ const App: React.FC = () => {
       setShowGlobalFake(false);
       setShowSupplierLibrary(false);
       setShowCs(false);
-      setShowAddressOverride(false);
+      setShowUrgentNotice(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary, showCs, showAddressOverride]);
+  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary, showCs, showUrgentNotice]);
 
   const handleDeleteBusiness = async (businessId: string) => {
     const label = allBusinesses.find(b => b.id === businessId)?.displayName;
@@ -718,39 +698,36 @@ const App: React.FC = () => {
           일괄 업무일지
         </button>
 
-        {/* 주소 변경 명단 */}
+        {/* 긴급공지: 내용이 있으면 발주서 생성(마스터/N차 업로드) 시마다 팝업으로 리마인드 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowAddressOverride(v => !v); setShowGlobalFake(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); }}
+            onClick={() => { setShowUrgentNotice(v => !v); setShowGlobalFake(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showAddressOverride
+              showUrgentNotice
                 ? 'bg-zinc-700 text-white border-zinc-600'
-                : addressOverrideCount > 0
-                ? 'text-sky-400 border-sky-500/50 hover:border-sky-400 hover:bg-sky-900/30'
+                : globalUrgentNotice.trim()
+                ? 'text-amber-400 border-amber-500/50 hover:border-amber-400 hover:bg-amber-900/30'
                 : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
             }`}
           >
-            주소 변경{addressOverrideCount > 0 ? ` (${addressOverrideCount})` : ''}
+            긴급공지{globalUrgentNotice.trim() ? ' ●' : ''}
           </button>
-          {showAddressOverride && (
+          {showUrgentNotice && (
             <div className="absolute right-0 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
               <div className="p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">주소 변경 명단</h3>
-                  {globalAddressOverrideInput.trim() && (
-                    <button onClick={() => setGlobalAddressOverrideInput('')} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
+                  <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">긴급공지</h3>
+                  {globalUrgentNotice.trim() && (
+                    <button onClick={() => setGlobalUrgentNotice('')} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
                   )}
                 </div>
-                <p className="text-zinc-600 text-[10px] mb-2 font-mono">형식: 주문번호,새주소 — 발주서 생성 시 해당 주문번호의 주소가 자동으로 교체됩니다</p>
+                <p className="text-zinc-600 text-[10px] mb-2 font-mono">내용을 적어두면, 마스터/N차 주문서를 업로드해 발주서를 생성할 때마다 팝업으로 안내됩니다 (예: 주소 변경 건).</p>
                 <textarea
-                  value={globalAddressOverrideInput}
-                  onChange={(e) => setGlobalAddressOverrideInput(e.target.value)}
-                  placeholder={'11100198137997,서울 강남구 테헤란로 1\n11100198138001,부산 해운대구 센텀로 2'}
-                  className="w-full h-[160px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-sky-500/50 resize-none custom-scrollbar"
+                  value={globalUrgentNotice}
+                  onChange={(e) => setGlobalUrgentNotice(e.target.value)}
+                  placeholder={'예: 712805816516609 홍길동 주소가 경북 구미시로 변경됨 — 미리보기에서 수동으로 고칠 것'}
+                  className="w-full h-[160px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-amber-500/50 resize-none custom-scrollbar"
                 />
-                {addressOverrideCount > 0 && (
-                  <p className="mt-2 text-[10px] text-sky-400 font-black">등록됨 {addressOverrideCount}건 (사용 후에도 목록에 남아있으니 다 쓴 항목은 직접 지워주세요)</p>
-                )}
               </div>
             </div>
           )}
@@ -759,7 +736,7 @@ const App: React.FC = () => {
         {/* 전체 가구매 명단 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowGlobalFake(v => !v); setShowAddressOverride(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); }}
+            onClick={() => { setShowGlobalFake(v => !v); setShowUrgentNotice(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showGlobalFake
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1044,7 +1021,7 @@ const App: React.FC = () => {
         {/* 공통 주문서 업로드 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowUpload(v => !v); setShowCoupang(false); setShowInvoice(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowAddressOverride(false); }}
+            onClick={() => { setShowUpload(v => !v); setShowCoupang(false); setShowInvoice(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowUrgentNotice(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showUpload
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1062,6 +1039,7 @@ const App: React.FC = () => {
                 results={uploadResults}
                 onResultsChange={setUploadResults}
                 warningBusinessIds={new Set(Object.keys(businessWarnings).filter(id => businessWarnings[id]))}
+                urgentNotice={globalUrgentNotice}
               />
             </div>
           )}
@@ -1070,7 +1048,7 @@ const App: React.FC = () => {
         {/* 통합 송장 변환 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowInvoice(v => !v); setShowCoupang(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowAddressOverride(false); }}
+            onClick={() => { setShowInvoice(v => !v); setShowCoupang(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowUrgentNotice(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showInvoice
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1106,7 +1084,7 @@ const App: React.FC = () => {
         {/* 쿠팡 다운로드 토글 */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowCoupang(v => !v); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowAddressOverride(false); }}
+            onClick={() => { setShowCoupang(v => !v); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowUrgentNotice(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showCoupang
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1126,7 +1104,7 @@ const App: React.FC = () => {
         {/* 공급업체 라이브러리 (전체 사업자 공유) */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowSupplierLibrary(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowCs(false); setShowAddressOverride(false); }}
+            onClick={() => { setShowSupplierLibrary(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowCs(false); setShowUrgentNotice(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showSupplierLibrary
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1147,7 +1125,7 @@ const App: React.FC = () => {
         {/* 통합 CS 현황 (전체 사업자, 접수중인 건만) */}
         <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowCs(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowAddressOverride(false); }}
+            onClick={() => { setShowCs(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowUrgentNotice(false); }}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
               showCs
                 ? 'bg-zinc-700 text-white border-zinc-600'
@@ -1210,7 +1188,6 @@ const App: React.FC = () => {
               globalFakeOrderInput={perBusinessFakeInput[b.id] || ''}
               onGlobalFakeMatch={(matched) => handleGlobalFakeMatch(b.id, matched)}
               globalUnsentOrderInput={perBusinessUnsentInput[b.id] || ''}
-              addressOverrides={addressOverrideMap}
               fakeOrderCourierRows={courierRowsByBusiness[b.id] || []}
               onEdit={b.isDynamic ? () => setEditingBusiness(b) : undefined}
               onExposeOrderRows={(header, dataRows) => handleExposeOrderRows(b.id, header, dataRows)}

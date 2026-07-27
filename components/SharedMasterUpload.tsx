@@ -42,6 +42,7 @@ interface Props {
   results: UploadResult[];
   onResultsChange: React.Dispatch<React.SetStateAction<UploadResult[]>>;
   warningBusinessIds?: Set<string>;
+  urgentNotice?: string;
 }
 
 function detectBusiness(filename: string, businesses: Business[]): Business | null {
@@ -66,7 +67,7 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
   return null;
 }
 
-const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds }) => {
+const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, urgentNotice }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
@@ -263,6 +264,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList).filter(f => /\.(xlsx|xls)$/i.test(f.name));
     if (files.length === 0) return;
+    if (urgentNotice?.trim()) alert(`[긴급공지]\n\n${urgentNotice}`);
     processFiles(files);
   };
 

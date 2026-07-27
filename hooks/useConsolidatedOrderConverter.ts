@@ -35,7 +35,6 @@ export type ProcessedResult = {
     consolidationLog?: ConsolidationLogEntry[]; // 합산 변환 내역
     preConsolidationByGroup?: Record<string, number>; // 합산 전 groupName별 수량 (누락 비교용)
     manualOrderCounts?: Record<string, number>; // 수동발주 수량 (productKey별) — 마진 계산에서 제외용
-    addressChanges?: { recipientName: string; orderNumber: string }[]; // 사전등록된 주소변경이 반영된 주문
 };
 
 export interface ConsolidationLogEntry {
@@ -543,8 +542,7 @@ const generateWorkbookForCompany = async (
     manualOrders: ManualOrder[] = [],
     unmatchedOrders: UnmatchedOrder[] = [],
     businessId?: string,
-    workDate?: string,
-    addressOverrides: Record<string, string> = {}
+    workDate?: string
 ): Promise<[string, ProcessedResult | null]> => {
     try {
         const companyConfig = pricingConfig[companyName];
@@ -570,7 +568,6 @@ const generateWorkbookForCompany = async (
         let originalOrderCount = 0;
         let consolidationLog: ConsolidationLogEntry[] = [];
         let preConsolidationByGroup: Record<string, number> = {};
-        const addressChanges: { recipientName: string; orderNumber: string }[] = [];
 
         if (json.length > 0) {
             const headers = json[0].map(h => String(h).trim());
@@ -676,15 +673,7 @@ const generateWorkbookForCompany = async (
 
             // Phase 3: 출력 생성 (기존 로직과 동일)
             for (const order of finalOrders) {
-                const { productKey, config, qty, dateStr } = order;
-                let row = order.row;
-                const overrideAddress = addressOverrides[order.orderNumber];
-                if (overrideAddress) {
-                    row = [...row];
-                    row[29] = overrideAddress; // 주소
-                    row[28] = ''; // 우편번호 (주소 변경으로 기존 값 무효화)
-                    addressChanges.push({ recipientName: order.recipientName, orderNumber: order.orderNumber });
-                }
+                const { row, productKey, config, qty, dateStr } = order;
                 const splitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
                 const isQuantityMode = config.splitMode === 'quantity';
                 const poRowQty = isQuantityMode ? qty : qty * splitCount;
@@ -763,7 +752,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, addressChanges: addressChanges.length > 0 ? addressChanges : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];
@@ -1082,7 +1071,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
     // pricingConfig가 바뀌면 캐시 초기화 (구버전 품목키 캐싱 방지)
     useEffect(() => { geminiProductCache.clear(); }, [pricingConfig]);
 
-    const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = [], workDate?: string, addressOverrides: Record<string, string> = {}) => {
+    const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = [], workDate?: string) => {
         try {
             console.log(`[발주처리] ${targetCompanyName} 처리 시작`);
             const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -1166,7 +1155,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
 
             const localExcluded: ExcludedOrder[] = [];
             const localUnmatched: UnmatchedOrder[] = [];
-            const [, result] = await generateWorkbookForCompany(ai, geminiProductCache, pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId, workDate, addressOverrides);
+            const [, result] = await generateWorkbookForCompany(ai, geminiProductCache, pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId, workDate);
 
             return { result, excluded: localExcluded, unmatched: localUnmatched };
         } catch (err) {

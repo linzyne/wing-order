@@ -61,7 +61,6 @@ interface CompanyWorkstationRowProps {
     batchFile?: File | null;
     isDetected: boolean;
     fakeOrderNumbers: string;
-    addressOverrides?: Record<string, string>;
     manualOrders?: ManualOrder[];
     isSelected?: boolean;
     onSelectToggle?: (sessionId: string) => void;
@@ -111,7 +110,7 @@ interface CompanyWorkstationRowProps {
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
-    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, addressOverrides = {}, manualOrders = [],
+    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     companySummaryBar,
     previousRoundItems = [],
@@ -438,7 +437,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const lastProcessedMasterRef = useRef<File | null>(null);
     const lastProcessedBatchRef = useRef<File | null>(null);
     const lastFakeOrdersRef = useRef<string>('');
-    const lastAddressOverridesRef = useRef<string>('');
     const lastManualOrdersRef = useRef<string>('');
     const lastGoodMergeRef = useRef<{ rows: any[][], uploadRows: any[][], header: any[] } | null>(null);
     // localResult가 null인 게 "아직 처리 전"인지 "처리했더니 매칭 0건"인지 구분하기 위한 플래그.
@@ -636,12 +634,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);
-        const addressOverridesStr = JSON.stringify(addressOverrides);
         const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
         const hasBatchFileChanged = batchFile && batchFile !== lastProcessedBatchRef.current;
         const hasFakeOrdersChanged = fakeOrderNumbers !== lastFakeOrdersRef.current;
         const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
-        const hasAddressOverridesChanged = addressOverridesStr !== lastAddressOverridesRef.current;
         // 마스터 파일이 바뀌었는데 이 업체가 더 이상 감지되지 않으면 이전 세션 자동 초기화
         const hasFileChangedButEvicted = isFirstSession && masterFile && !isDetected
             && lastProcessedMasterRef.current !== null && masterFile !== lastProcessedMasterRef.current;
@@ -653,13 +649,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // N차 일괄 업로드: 가구매 제외 포함하여 처리
             lastProcessedBatchRef.current = batchFile;
             lastFakeOrdersRef.current = fakeOrderNumbers;
-            lastAddressOverridesRef.current = addressOverridesStr;
             handleLocalFileChange(batchFile);
         } else if (hasFileChanged) {
             if (masterFile) {
                 lastFakeOrdersRef.current = fakeOrderNumbers;
                 lastManualOrdersRef.current = manualOrdersStr;
-                lastAddressOverridesRef.current = addressOverridesStr;
 
                 if (!isProcessingRef.current) {
                     // ref는 실제 처리가 시작될 때만 업데이트 (처리 중 파일 교체 시 재트리거 허용)
@@ -684,12 +678,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // 가구매 변경: 이미 파일 처리가 된 이후에만 재처리 (1차/N차 모두)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
-            lastAddressOverridesRef.current = addressOverridesStr;
-            const fileToReprocess = lastProcessedMasterRef.current || lastProcessedBatchRef.current;
-            handleLocalFileChange(fileToReprocess);
-        } else if (hasAddressOverridesChanged && (lastProcessedMasterRef.current || lastProcessedBatchRef.current)) {
-            // 주소 변경 명단 변경: 이미 파일 처리가 된 이후에만 재처리
-            lastAddressOverridesRef.current = addressOverridesStr;
             const fileToReprocess = lastProcessedMasterRef.current || lastProcessedBatchRef.current;
             handleLocalFileChange(fileToReprocess);
         } else if (hasManualOrdersChanged) {
@@ -707,9 +695,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // Firestore 초기 로드 등 - ref만 업데이트 (재처리 안함)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
-            lastAddressOverridesRef.current = addressOverridesStr;
         }
-    }, [masterFile, batchFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, addressOverrides, isLocalProcessing]);
+    }, [masterFile, batchFile, isDetected, isFirstSession, isLastSession, fakeOrderNumbers, manualOrders, isLocalProcessing]);
 
     useEffect(() => {
         if (!localResult) {
@@ -896,16 +883,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 : []);
         try {
             const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
-            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude, workDate, addressOverrides);
+            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude, workDate);
             if (processResponse) {
                 setLocalResult(processResponse.result);
                 setExcludedList(processResponse.excluded);
                 setUnmatchedList(processResponse.unmatched || []);
-                const changes = processResponse.result?.addressChanges;
-                if (changes && changes.length > 0) {
-                    const names = changes.map(c => c.recipientName).join(', ');
-                    alert(`[${companyName}] 다음 주문은 사전등록된 주소로 변경되어 발주서에 반영되었습니다.\n${names}`);
-                }
                 if (!processResponse.result) {
                     // 실제 재매칭 결과 매칭 0건 → 구식 Firestore 세션 데이터가 남아있으면
                     // syncedData 폴백으로 되살아나지 않도록 함께 정리한다.
