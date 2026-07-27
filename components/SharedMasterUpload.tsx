@@ -79,6 +79,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const [settlementCompany, setSettlementCompany] = useState<string | null>(null);
   const [copiedSettlement, setCopiedSettlement] = useState<string | null>(null);
   const [globalWorkDate, setGlobalWorkDate] = useState<string>(() => new Date().toLocaleDateString('en-CA'));
+  const [pendingUrgentFiles, setPendingUrgentFiles] = useState<File[] | null>(null);
 
   // 마운트 시 첫 번째 사업자의 작업날짜를 가져와 표시값 동기화
   useEffect(() => {
@@ -264,8 +265,20 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList).filter(f => /\.(xlsx|xls)$/i.test(f.name));
     if (files.length === 0) return;
-    if (urgentNotice?.trim()) alert(`[긴급공지]\n\n${urgentNotice}`);
+    if (urgentNotice?.trim()) {
+      setPendingUrgentFiles(files);
+      return;
+    }
     processFiles(files);
+  };
+
+  const handleUrgentNoticeConfirm = () => {
+    if (pendingUrgentFiles) processFiles(pendingUrgentFiles);
+    setPendingUrgentFiles(null);
+  };
+
+  const handleUrgentNoticeCancel = () => {
+    setPendingUrgentFiles(null);
   };
 
   const handleRemoveResult = (globalIdx: number, r: UploadResult) => {
@@ -599,6 +612,33 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
           onCopy={(id, text) => { navigator.clipboard.writeText(text); setCopiedSettlement(id); setTimeout(() => setCopiedSettlement(null), 2000); }}
           onClose={() => setSettlementCompany(null)}
         />,
+        document.body
+      )}
+
+      {pendingUrgentFiles && createPortal(
+        <div
+          style={{ position:'fixed', top:0, left:0, right:0, bottom:0, zIndex:99999, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.7)' }}
+          onClick={handleUrgentNoticeCancel}
+        >
+          <div
+            style={{ background:'#27272a', borderRadius:'16px', padding:'24px', maxWidth:'400px', width:'90%', border:'2px solid #f59e0b', boxShadow:'0 25px 50px rgba(0,0,0,0.5)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ color:'#fff', fontWeight:700, fontSize:'14px', marginBottom:'4px' }}>긴급공지</div>
+            <div style={{ color:'#a1a1aa', fontSize:'11px', marginBottom:'16px' }}>발주서 생성 전 확인하세요</div>
+            <div style={{ maxHeight:'240px', overflowY:'auto', marginBottom:'16px', padding:'10px 12px', borderRadius:'12px', border:'1px solid #3f3f46', background:'rgba(63,63,70,0.3)' }}>
+              <span style={{ fontSize:'12px', fontWeight:600, color:'#fff', whiteSpace:'pre-wrap' }}>{urgentNotice}</span>
+            </div>
+            <div style={{ display:'flex', gap:'8px' }}>
+              <button onClick={handleUrgentNoticeConfirm} style={{ flex:1, background:'#f59e0b', color:'#fff', fontWeight:700, fontSize:'12px', padding:'10px', borderRadius:'12px', border:'none', cursor:'pointer' }}>
+                확인, 계속 진행
+              </button>
+              <button onClick={handleUrgentNoticeCancel} style={{ padding:'10px 16px', color:'#a1a1aa', fontSize:'12px', fontWeight:700, background:'transparent', border:'none', cursor:'pointer' }}>
+                취소
+              </button>
+            </div>
+          </div>
+        </div>,
         document.body
       )}
     </div>
