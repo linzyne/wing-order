@@ -417,8 +417,10 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
                   <span className="text-[10px] font-black text-violet-400">{item.businessName}</span>
                   <span className="text-[10px] text-zinc-600 font-bold">{item.date}</span>
                 </div>
-                <div className="text-white font-black text-sm">{item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}</div>
-                <div className="text-zinc-500 text-xs font-bold mt-0.5">{item.company} · {item.reason}</div>
+                <div className="text-white font-black text-sm">
+                  <span className="text-amber-400">[{item.company || '업체없음'}]</span> {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}
+                </div>
+                <div className="text-zinc-500 text-xs font-bold mt-0.5">{item.reason}</div>
                 <div className="text-zinc-500 text-[10px] font-bold mt-0.5">
                   [업체:{item.vendorMethod || '-'}][고객:{item.customerMethod === '환불' ? (item.refundMethod || '환불') : item.customerMethod}]
                 </div>
