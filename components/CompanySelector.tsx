@@ -2136,6 +2136,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setBatchMasterRows(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchMasterRows }; });
             setBatchExpectedCounts(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchExpectedCounts }; });
             setBatchPlatforms(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchPlatforms }; });
+
+            // 옛 세션 ID에 남아있던 처리 결과(품목 합계·발주행 등)를 정리한다.
+            // 안 지우면 다음 차수의 누적 정산요약(previousRoundItems)이 교체 전 데이터를
+            // 계속 합산해 통합주문서업로드 정산요약이 실제 워크스테이션 화면과 어긋난다.
+            setAllItemSummaries(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setAllOrderRows(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setAllOrderItems(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setAllRegisteredNames(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setAllPreConsolidationByGroup(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setTotalsMap(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setExcludedCountsMap(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setAllExcludedDetails(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setOrderLitSessions(prev => { const n = new Set(prev); removedIds.forEach(id => n.delete(id)); return n; });
+            setInvoiceLitSessions(prev => { const n = new Set(prev); removedIds.forEach(id => n.delete(id)); return n; });
+            removedIds.forEach(id => { handleDeleteSessionResult(id); });
         }
 
         setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: hasProductMap ? { ...kReplaceProductMap } : undefined, round: kReplaceRound ?? 1 } as any]);
