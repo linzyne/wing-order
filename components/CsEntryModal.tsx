@@ -426,7 +426,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
                   key={m}
                   onClick={() => onChange({ ...draft, customerMethod: m, deduction: m === '재배송' ? 'none' : draft.deduction })}
                   className={`flex-1 py-2 rounded-xl text-sm font-black border transition-all ${
-                    draft.customerMethod === m ? 'bg-violet-500 text-white border-violet-500' : 'bg-zinc-950 text-zinc-500 border-zinc-800 hover:text-white'
+                    draft.customerMethod === m ? 'bg-violet-600 text-white border-violet-600 shadow-md shadow-violet-950/40' : 'bg-zinc-950 text-zinc-500 border-zinc-800 hover:text-white'
                   }`}
                 >
                   {m}
@@ -442,7 +442,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
                 <button
                   type="button"
                   onClick={() => onChange({ ...draft, refundMethod: draft.refundMethod === '계좌환불' ? '전산환불' : '계좌환불' })}
-                  className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${draft.refundMethod === '계좌환불' ? 'bg-indigo-500' : 'bg-zinc-700'}`}
+                  className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${draft.refundMethod === '계좌환불' ? 'bg-violet-600' : 'bg-zinc-700'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${draft.refundMethod === '계좌환불' ? 'translate-x-5' : ''}`} />
                 </button>
@@ -463,7 +463,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
                         refundAmount: parsed.amount ? String(parsed.amount) : draft.refundAmount,
                       });
                     }}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-zinc-300 placeholder-zinc-600 focus:ring-1 focus:ring-indigo-500/30 focus:border-indigo-500/30 outline-none resize-none"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs font-mono text-zinc-300 placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30 outline-none resize-none"
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <input
@@ -503,7 +503,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
                 <button
                   type="button"
                   onClick={() => onChange({ ...draft, deduction: draft.deduction === 'full' ? 'none' : 'full' })}
-                  className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${draft.deduction === 'full' ? 'bg-rose-500' : 'bg-zinc-700'}`}
+                  className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${draft.deduction === 'full' ? 'bg-violet-600' : 'bg-zinc-700'}`}
                 >
                   <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full transition-transform ${draft.deduction === 'full' ? 'translate-x-5' : ''}`} />
                 </button>
@@ -514,7 +514,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
                   <select
                     value={draft.productKey}
                     onChange={e => onChange({ ...draft, productKey: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-rose-500/30 focus:border-rose-500/30"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
                   >
                     <option value="">품목 선택...</option>
                     {Object.entries(pricingConfig?.[draft.company]?.products || {}).map(([key, p]: [string, any]) => (
@@ -549,7 +549,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
               (draft.customerMethod === '환불' && draft.deduction === 'full' && !draft.productKey) ||
               (draft.customerMethod === '환불' && draft.refundMethod === '계좌환불' && (!draft.refundBankName.trim() || !draft.refundAccountNumber.trim() || !(parseInt(draft.refundAmount, 10) > 0)))
             }
-            className="w-full py-3 rounded-xl bg-violet-500 hover:bg-violet-400 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black text-sm transition-all"
+            className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black text-sm shadow-md shadow-violet-950/40 transition-all"
           >
             {saving ? '저장 중...' : editing ? '수정 완료' : '접수 완료'}
           </button>

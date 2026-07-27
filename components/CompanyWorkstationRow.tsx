@@ -61,6 +61,7 @@ interface CompanyWorkstationRowProps {
     batchFile?: File | null;
     isDetected: boolean;
     fakeOrderNumbers: string;
+    addressOverrides?: Record<string, string>;
     manualOrders?: ManualOrder[];
     isSelected?: boolean;
     onSelectToggle?: (sessionId: string) => void;
@@ -110,7 +111,7 @@ interface CompanyWorkstationRowProps {
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
-    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
+    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, addressOverrides = {}, manualOrders = [],
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     companySummaryBar,
     previousRoundItems = [],
@@ -439,6 +440,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const lastFakeOrdersRef = useRef<string>('');
     const lastManualOrdersRef = useRef<string>('');
     const lastGoodMergeRef = useRef<{ rows: any[][], uploadRows: any[][], header: any[] } | null>(null);
+    // localResult가 null인 게 "아직 처리 전"인지 "처리했더니 매칭 0건"인지 구분하기 위한 플래그.
+    // 이게 없으면 K열 교체 등으로 실제 재처리 결과가 0건이 되어도 그 순간 syncedData(Firestore
+    // 구식 캐시)로 폴백해버려서, 교체 이전의 stale 발주/정산 데이터가 다시 화면에 살아난다.
+    const hasCompletedLocalProcessingRef = useRef(false);
 
     // 리셋 직후 Firestore 구독 업데이트 전까지 syncedData 억제
     const suppressSyncRef = useRef(false);
@@ -446,8 +451,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         suppressSyncRef.current = false;
     }
 
-    // Synced data (디바이스 2 - 로컬 처리 없을 때만)
-    const syncedData = (!localResult && !isLocalProcessing && !suppressSyncRef.current) ? sessionResults?.[sessionId] : undefined;
+    // Synced data (디바이스 2 - 로컬 처리 없을 때만, 그리고 이 기기에서 로컬 처리를 완료한 적이 없을 때만)
+    const syncedData = (!localResult && !hasCompletedLocalProcessingRef.current && !isLocalProcessing && !suppressSyncRef.current) ? sessionResults?.[sessionId] : undefined;
 
     // 가구매 주문번호가 발주서에 포함된 경우 경고
     const fakeOrderWarnings = (() => {
@@ -696,9 +701,19 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     useEffect(() => {
         if (!localResult) {
+            // 발주서(주문 데이터)가 없어도 수동으로 입력한 추가/차감 내역은 입금목록에 반영되어야 한다.
+            const adjTotalOnly = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
             // 모든 주문이 가구매(제외)인 경우: localResult는 null이지만 excludedList는 있음
             if (excludedList.length > 0) {
-                onResultUpdate(sessionId, 0, excludedList.length, excludedList);
+                onResultUpdate(sessionId, adjTotalOnly, excludedList.length, excludedList);
+            } else if (hasCompletedLocalProcessingRef.current) {
+                // 이 기기에서 재처리를 완료했는데 매칭 0건 → 부모(allOrderRows 등)에도 반드시
+                // 반영해야 한다. 안 그러면 K열 교체로 실제로는 0건이 됐는데도 부모가 들고 있던
+                // 예전 발주 데이터(불 켜짐/건수)가 그대로 남는다.
+                onResultUpdate(sessionId, adjTotalOnly, 0, []);
+                onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);
+            } else if (adjTotalOnly !== 0) {
+                onResultUpdate(sessionId, adjTotalOnly, 0, []);
             }
             return;
         }
@@ -869,15 +884,31 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 : []);
         try {
             const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
-            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude, workDate);
+            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude, workDate, addressOverrides);
             if (processResponse) {
                 setLocalResult(processResponse.result);
                 setExcludedList(processResponse.excluded);
                 setUnmatchedList(processResponse.unmatched || []);
+                const changes = processResponse.result?.addressChanges;
+                if (changes && changes.length > 0) {
+                    const names = changes.map(c => c.recipientName).join(', ');
+                    alert(`[${companyName}] 다음 주문은 사전등록된 주소로 변경되어 발주서에 반영되었습니다.\n${names}`);
+                }
+                if (!processResponse.result) {
+                    // 실제 재매칭 결과 매칭 0건 → 구식 Firestore 세션 데이터가 남아있으면
+                    // syncedData 폴백으로 되살아나지 않도록 함께 정리한다.
+                    onDeleteSessionResult(sessionId);
+                    const currentSummary = { ...(workspace?.sessionSummary || {}) };
+                    if (currentSummary[sessionId]) {
+                        delete currentSummary[sessionId];
+                        updateField('sessionSummary', currentSummary);
+                    }
+                }
             } else {
                 setLocalResult(null);
                 setUnmatchedList([]);
             }
+            hasCompletedLocalProcessingRef.current = true;
         } catch (error) {
             console.error(`[${companyName}] 처리 오류:`, error);
             setLocalResult(null);

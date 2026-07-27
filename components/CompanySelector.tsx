@@ -56,7 +56,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; addressOverrides?: Record<string, string>; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -704,7 +704,7 @@ function matchProductSync(
     return null;
 }
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, addressOverrides = {}, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
     const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
@@ -3314,7 +3314,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             const config = pricingConfig[name];
-            const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
+            const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount !== 0);
             if (sessionAmounts.length === 0) return;
             const companyTotal = sessionAmounts.reduce((sum, s) => sum + s.amount, 0);
             const label = name;
@@ -3402,7 +3402,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             const cfg = pricingConfig[name];
-            const sessionAmounts = sessions.map(s => ({ amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
+            const sessionAmounts = sessions.map(s => ({ amount: totalsMap[s.id] || 0 })).filter(s => s.amount !== 0);
             if (sessionAmounts.length === 0) return;
             const companyTotal = sessionAmounts.reduce((sum, s) => sum + s.amount, 0);
             baseRows.push([cfg?.bankName || '', cfg?.accountNumber || '', companyTotal, name, bizDisplayName]);
@@ -3484,7 +3484,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         sortedCompanyNames.forEach(name => {
             const sessions = companySessions[name] || [];
             const config = pricingConfig[name];
-            const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
+            const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount !== 0);
             if (sessionAmounts.length === 0) return;
             const companyTotal = sessionAmounts.reduce((sum, s) => sum + s.amount, 0);
             const roundDetail = sessionAmounts.length > 1
@@ -3683,7 +3683,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const config = pricingConfig[name];
             sessions.forEach(s => {
                 const amount = totalsMap[s.id] || 0;
-                if (amount > 0) {
+                if (amount !== 0) {
                     depositRows.push({ bankName: config?.bankName || '', accountNumber: config?.accountNumber || '', amount, company: name });
                     depTotal += amount;
                 }
@@ -5433,7 +5433,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <div className="flex flex-wrap gap-2 mt-1 min-h-[36px]">
                             {sortCompanies(Object.keys(pricingConfig)).map(name => {
                                 const sessions = companySessions[name] || [];
-                                const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount > 0);
+                                const sessionAmounts = sessions.map(s => ({ round: s.round, amount: totalsMap[s.id] || 0 })).filter(s => s.amount !== 0);
                                 if (sessionAmounts.length === 0) return null;
                                 const companyTotal = sessionAmounts.reduce((sum, s) => sum + s.amount, 0);
                                 return (
@@ -5873,6 +5873,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                         </div>
                                                     ) : undefined}
                                                     vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={[effectiveFakeInput, effectiveUnsentInput].filter(s => s.trim()).join('\n')}
+                                                    addressOverrides={addressOverrides}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}

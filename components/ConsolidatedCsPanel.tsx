@@ -423,7 +423,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
                 <div className="text-zinc-500 text-xs font-bold mt-0.5">{item.reason}</div>
                 <div className="text-xs font-black mt-0.5">
                   <span className="text-sky-400">[업체:{item.vendorMethod || '-'}]</span>{' '}
-                  <span className="text-rose-400">[고객:{item.customerMethod === '환불' ? (item.refundMethod || '환불') : item.customerMethod}]</span>
+                  <span className="text-sky-400">[고객:{item.customerMethod === '환불' ? (item.refundMethod || '환불') : item.customerMethod}]</span>
                 </div>
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-[10px] text-zinc-500 font-bold">
