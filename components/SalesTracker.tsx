@@ -282,6 +282,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     });
     const { upsertDailySales } = await import('../services/firestoreService');
     await upsertDailySales({ ...existing, csRecords: updated }, businessId);
+    window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
     await refreshDate(date);
   };
 

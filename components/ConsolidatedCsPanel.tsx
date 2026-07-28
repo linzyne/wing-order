@@ -4,6 +4,7 @@ import CsEntryModal, { type CsDraft, resolveOrderRowFields, buildCsDraft, buildC
 import { getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
 import type { CsRecord, PricingConfig } from '../types';
 import { getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
+import { CS_SAVED_EVENT } from '../services/firestoreService';
 
 interface Business { id: string; displayName: string; }
 
@@ -242,6 +243,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
         return next;
       });
       await upsertDailySales({ ...existing, csRecords: updated }, item.businessId);
+      window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId: item.businessId, date: item.date } }));
       if (!nextItem) return;
       if (isCsFullyCompleted(nextItem)) {
         setItems(prev => prev.filter(i => !(i.id === item.id && i.businessId === item.businessId)));
