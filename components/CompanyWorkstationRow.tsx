@@ -2,13 +2,13 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
-import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
+import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, pushManualToOutputRows } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
     PlusCircleIcon, TrashIcon, EyeIcon
 } from './icons';
-import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder, PlatformConfigs } from '../types';
+import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder, PlatformConfigs, ProductPricing } from '../types';
 import { DragHandleContext } from './DragHandleContext';
 import { getBusinessInfo } from '../types';
 import { deleteField } from 'firebase/firestore';
@@ -107,6 +107,7 @@ interface CompanyWorkstationRowProps {
     mergedDownloaded?: boolean;
     onWarningUpdate?: (sessionId: string, hasWarning: boolean) => void;
     onEffectiveTextChange?: (kakaoText: string, excelText: string) => void;
+    registerAppendRow?: (fn: (mo: ManualOrder) => void) => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -133,6 +134,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     mergedDownloaded = false,
     onWarningUpdate,
     onEffectiveTextChange,
+    registerAppendRow,
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -980,6 +982,69 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         onResultUpdate(sessionId, 0, 0, []);
         onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);
     };
+
+    // CS 재배송 등 외부(통합CS 패널)에서 이 세션의 발주서에 행을 하나 추가 요청할 때 사용.
+    // 매 렌더마다 최신 클로저를 ref에 담아두고, 부모에는 처음 한 번만 안정적인 래퍼를 등록한다.
+    const appendReshipRowFn = async (mo: ManualOrder) => {
+        const companyConfig = pricingConfig[companyName] || {} as any;
+        const products = companyConfig.products || {};
+        let productKey = mo.productKey;
+        let productConfig = productKey ? products[productKey] : undefined;
+        if (!productConfig) {
+            const matched = Object.entries(products).find(
+                ([, p]: [string, any]) => p.orderFormName === mo.productName || p.displayName === mo.productName
+            );
+            productKey = matched?.[0];
+            productConfig = matched?.[1] as any;
+        }
+        const config: ProductPricing = productConfig || ({ displayName: mo.productName, supplyPrice: 0 } as ProductPricing);
+        const splitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
+        const isQuantityMode = config.splitMode === 'quantity';
+        const poRowQty = isQuantityMode ? mo.qty : mo.qty * splitCount;
+        const perRowQty = isQuantityMode ? splitCount : 1;
+        const shipping = splitCount > 1 && config.shippingCost ? config.shippingCost : 0;
+        const summaryKey = productKey || mo.productName;
+
+        const newRows: any[][] = [];
+        await pushManualToOutputRows(companyName, newRows, mo, config, pricingConfig, undefined, undefined, undefined, poRowQty, perRowQty);
+
+        setLocalResult(prev => {
+            if (prev) {
+                const summary = { ...prev.summary };
+                const existing = summary[summaryKey] || { count: 0, totalPrice: 0 };
+                summary[summaryKey] = { count: existing.count + mo.qty, totalPrice: existing.totalPrice + mo.qty * config.supplyPrice + shipping };
+                return { ...prev, rows: [...prev.rows, ...newRows], summary };
+            }
+            // 아직 이 세션에 처리된 발주 파일이 없는 경우 (예: 오늘 1차수가 비어있음) — 최소한의 결과를 새로 만든다.
+            const headers = getHeaderForCompany(companyName, companyConfig);
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...newRows]);
+            ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: Math.max(headers.length - 1, 0), r: 0 } }) };
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, '발주서');
+            const bizShort = getBusinessInfo(businessId || '')?.displayName || '';
+            const todayStr = workDate || new Date().toLocaleDateString('en-CA');
+            return {
+                workbook: wb,
+                fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}${companyName} 발주서.xlsx`,
+                summary: { [summaryKey]: { count: mo.qty, totalPrice: mo.qty * config.supplyPrice + shipping } },
+                depositSummary: '',
+                depositSummaryExcel: '',
+                dailySummaries: [],
+                rows: newRows,
+                registeredProductNames: {},
+                orderItems: [],
+                includedOrderNumbers: [],
+            } as ProcessedResult;
+        });
+        hasCompletedLocalProcessingRef.current = true;
+    };
+    const appendReshipRowRef = useRef(appendReshipRowFn);
+    appendReshipRowRef.current = appendReshipRowFn;
+    useEffect(() => {
+        registerAppendRow?.((mo: ManualOrder) => { appendReshipRowRef.current(mo); });
+    // 마운트 시 1회만 등록 - registerAppendRow는 부모 렌더마다 새로 생성되므로 deps에 넣으면 안 됨
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const handleDownloadOrder = () => {
         if (fakeMismatch) alert('미매칭(수량)을 확인하세요.');

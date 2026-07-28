@@ -955,7 +955,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
     }
 }
 
-async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', overrideQty?: number, perRowQty: number = 1) {
+export async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', overrideQty?: number, perRowQty: number = 1) {
     const orderName = config.orderFormName || config.displayName;
     const rowQty = overrideQty ?? mo.qty;
     const rName = stripDigits(mo.recipientName);

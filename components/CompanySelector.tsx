@@ -57,7 +57,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -771,6 +771,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         updateField('companySessionRounds', registry);
     }, [companySessions, isReady, updateField]);
+
+    // 세션(회사+차수)별 "행 추가" 함수 등록소 — 통합CS 패널의 재배송 발주 추가 요청을 특정 차수로 전달할 때 사용
+    const appendRowFnsRef = useRef<Record<string, (mo: ManualOrder) => void>>({});
 
     const [workstationResetKey, setWorkstationResetKey] = useState(0);
 
@@ -2382,6 +2385,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const deleteBatchRoundRef = useRef<(round: number) => boolean>(() => false);
     const clearMasterRef = useRef<() => void>(() => {});
     const getOrderStateRef = useRef<() => { name: string; rounds: { round: number; hasData: boolean }[] }[]>(() => []);
+    const addReshipOrderRef = useRef<(companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => boolean>(() => false);
     const companyLastSettlementRef = useRef<Record<string, { kakaoText: string; excelText: string }>>({});
     const getLastSettlementSummariesRef = useRef<() => { companyName: string; kakaoText: string; excelText: string }[]>(() => []);
     const downloadCompanyMergedRef = useRef<(companyName: string) => void>(() => {});
@@ -2417,6 +2421,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 })),
             }))
             .filter(c => c.rounds.some(r => r.hasData));
+    };
+    addReshipOrderRef.current = (companyName, mo) => {
+        const sessions = (companySessions[companyName] || []) as SessionData[];
+        if (sessions.length === 0) return false;
+        const withData = sessions.filter(s => (allOrderRows[s.id]?.length || 0) > 0);
+        const target = withData.length > 0
+            ? withData.reduce((a, b) => (b.round > a.round ? b : a))
+            : sessions[0];
+        const fn = appendRowFnsRef.current[target.id];
+        if (!fn) return false;
+        fn({ id: `cs-${Date.now()}`, companyName, ...mo });
+        return true;
     };
     getLastSettlementSummariesRef.current = () => {
         const orderedNames = companyOrder.filter(id => !isDivider(id) && id in companySessions);
@@ -2485,6 +2501,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             getInvoiceWorkbookFile: () => getInvoiceWorkbookFileRef.current(),
             resetInvoiceMatching: () => resetInvoiceMatchingRef.current(),
             getLastSettlementSummaries: () => getLastSettlementSummariesRef.current(),
+            addReshipOrder: (companyName, mo) => addReshipOrderRef.current(companyName, mo),
         });
     // 마운트 시 1회만 실행 - onRegisterMasterUpload dep 변경 시 재실행하면 루프 발생
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -5950,6 +5967,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     mergedDownloaded={mergedDownloadedCompanies.has(company)}
                                                     onWarningUpdate={handleSessionWarningUpdate}
                                                     onEffectiveTextChange={sIdx === (companySessions[company] || []).length - 1 ? (kakaoText, excelText) => { companyLastSettlementRef.current[company] = { kakaoText, excelText }; } : undefined}
+                                                    registerAppendRow={(fn) => { appendRowFnsRef.current[session.id] = fn; }}
                                                 />
                                             </React.Fragment>
                                         ) : null;

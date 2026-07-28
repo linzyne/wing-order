@@ -12,7 +12,7 @@ import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayI
 import { useSharedSuppliers, useCourierTemplates } from './hooks/useFirestore';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
-import type { CourierTemplate, CompanyConfig } from './types';
+import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
 import { resolveSenderColumns } from './types';
 
 // 400레벨 원색을 약간 어둡게 (투명도 레이어 대신 직접 혼합한 값)
@@ -106,13 +106,13 @@ const App: React.FC = () => {
   const [refreshKeys, setRefreshKeys] = useState<Record<string, number>>({});
   const [editingBusiness, setEditingBusiness] = useState<ReturnType<typeof useBusinessList>['businesses'][0] | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; }>>({});
+  const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => boolean; }>>({});
   const directCoupangUploadRef = useRef<((businessId: string, file: File) => Promise<void>) | null>(null);
   const resetFnsRef = useRef<Record<string, () => void>>({});
   type DepositExtraRow = { bankName: string; accountNumber: string; amount: string; label: string };
   const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void }>>({});
 
-  const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; }) => {
+  const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => boolean; }) => {
     uploadFnsRef.current[businessId] = handlers;
   }, []);
 
@@ -1139,6 +1139,7 @@ const App: React.FC = () => {
               <ConsolidatedCsPanel
                 businesses={businessIdNamePairs}
                 onClose={() => setShowCs(false)}
+                onCreatePurchaseOrder={(businessId, company, mo) => uploadFnsRef.current[businessId]?.addReshipOrder?.(company, mo) ?? false}
               />
             )}
           </div>

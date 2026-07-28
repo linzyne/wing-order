@@ -148,6 +148,7 @@ export interface ManualOrder {
   productName: string;
   qty: number;
   memo?: string;
+  productKey?: string; // 이미 매칭된 품목 키가 있으면 이름 재매칭 없이 바로 사용 (예: CS 재배송 발주 추가)
 }
 
 export type ProcessingStatus = 'idle' | 'processing' | 'success' | 'error';
@@ -223,6 +224,7 @@ export interface CsRecord {
   customerCompletedAt?: string; // ISO timestamp (고객 완료 처리 시각)
   orderRowSnapshot?: any[];       // 접수 시점 원본 발주 행 스냅샷 (상세보기용, 재검색 방지)
   orderRowHeaders?: string[];     // 접수 시점 헤더 스냅샷
+  poAdded?: boolean;              // 고객 재배송용 발주 행을 오늘 발주서에 추가했는지 여부 (중복 추가 방지)
 }
 
 // 구버전 데이터는 status 필드만 있으므로, vendorStatus/customerStatus가 없으면 status로 대체한다.

@@ -1,8 +1,8 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import CsEntryModal, { type CsDraft, resolveOrderRowFields, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
-import { getHeaderForCompany } from '../hooks/useConsolidatedOrderConverter';
-import type { CsRecord, PricingConfig } from '../types';
+import { getHeaderForCompany, inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
+import type { CsRecord, PricingConfig, ManualOrder } from '../types';
 import { getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
 import { CS_SAVED_EVENT } from '../services/firestoreService';
 
@@ -17,6 +17,23 @@ interface OpenCsItem extends CsRecord {
 interface Props {
   businesses: Business[];
   onClose: () => void;
+  onCreatePurchaseOrder: (businessId: string, company: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => boolean;
+}
+
+/** 발주내역 행에서 업체 헤더 구조를 참고해 전화번호/주소 열을 찾아낸다 (resolveOrderRowFields의 phone/address 버전) */
+function resolvePhoneAddress(company: string, row: any[], pricingConfig?: PricingConfig): { phone: string; address: string } {
+  const config = pricingConfig?.[company];
+  const headers = config ? getHeaderForCompany(company, config) : [];
+  let phoneIdx = -1, addressIdx = -1;
+  headers.forEach((h, idx) => {
+    const field = config?.orderFormFieldMap?.[idx] || inferFieldFromHeader(h);
+    if (field === 'recipientPhone' && phoneIdx === -1) phoneIdx = idx;
+    if (field === 'recipientAddress' && addressIdx === -1) addressIdx = idx;
+  });
+  return {
+    phone: phoneIdx >= 0 ? String(row[phoneIdx] ?? '') : '',
+    address: addressIdx >= 0 ? String(row[addressIdx] ?? '') : '',
+  };
 }
 
 /** navigator.clipboard 실패(비보안 컨텍스트, 권한 거부 등) 시 execCommand로 폴백 */
@@ -132,12 +149,13 @@ const OrderDetailModal: React.FC<{ item: OpenCsItem; onClose: () => void }> = ({
   );
 };
 
-const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
+const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePurchaseOrder }) => {
   const [items, setItems] = useState<OpenCsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [sentId, setSentId] = useState<string | null>(null);
+  const [creatingPoId, setCreatingPoId] = useState<string | null>(null);
   const [viewingItem, setViewingItem] = useState<OpenCsItem | null>(null);
 
   // 검색용: 사업자 먼저 선택 → 그 사업자의 발주내역만 대상으로 검색 (사업자마다 같은 주문번호가 있을 수 있어 섞으면 안 됨)
@@ -281,6 +299,43 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
       }
     } finally {
       setSendingId(null);
+    }
+  };
+
+  const handleCreatePurchaseOrder = async (item: OpenCsItem) => {
+    const key = `${item.businessId}-${item.id}`;
+    setCreatingPoId(key);
+    try {
+      const { loadPricingConfig, loadDailySales, upsertDailySales } = await import('../services/firestoreService');
+      const { config } = await loadPricingConfig(item.businessId);
+      const row = item.orderRowSnapshot || [];
+      const fields = resolveOrderRowFields(item.company, row, config || undefined);
+      const { phone, address } = resolvePhoneAddress(item.company, row, config || undefined);
+      if (!fields.recipientName || !fields.productName) {
+        alert('원본 발주 정보가 없어 발주서를 생성할 수 없습니다.');
+        return;
+      }
+      const ok = onCreatePurchaseOrder(item.businessId, item.company, {
+        recipientName: fields.recipientName,
+        phone,
+        address,
+        productName: fields.productName,
+        qty: fields.qty,
+        productKey: item.productKey,
+        memo: `${item.orderNumber || ''} 재배송`.trim(),
+      });
+      if (!ok) {
+        alert('발주서 추가에 실패했습니다. 해당 사업자 탭이 열려있는지 확인해주세요.');
+        return;
+      }
+      const existing = await loadDailySales(item.date, item.businessId);
+      if (existing?.csRecords) {
+        const updated = existing.csRecords.map(r => r.id === item.id ? { ...r, poAdded: true } : r);
+        await upsertDailySales({ ...existing, csRecords: updated }, item.businessId);
+      }
+      setItems(prev => prev.map(i => (i.id === item.id && i.businessId === item.businessId) ? { ...i, poAdded: true } : i));
+    } finally {
+      setCreatingPoId(null);
     }
   };
 
@@ -460,6 +515,15 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose }) => {
                       </button>
                     );
                   })}
+                  {item.customerMethod === '재배송' && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleCreatePurchaseOrder(item); }}
+                      disabled={item.poAdded || creatingPoId === key}
+                      className="px-2.5 py-1 rounded-full text-[10px] font-black bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 disabled:opacity-50 transition-colors"
+                    >
+                      {item.poAdded ? '발주서생성됨' : creatingPoId === key ? '발주서생성 중...' : '→ 발주서생성'}
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <button
