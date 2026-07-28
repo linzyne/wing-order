@@ -10,6 +10,7 @@ import { getBusinessInfo, resolveSenderColumns } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
+import { deleteField } from 'firebase/firestore';
 import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import {
     DndContext,
@@ -2106,6 +2107,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const addedBatchPlatforms: Record<string, string> = {};
             const removedIds = new Set<string>();
             const newSelectedIds = new Set(selectedSessionIds);
+            const sessionIdMap: Record<string, string> = {};
 
             for (const session of targetSessions) {
                 const newRows = applyRowReplacement(batchMasterRows[session.id] || [], optionColIdx);
@@ -2124,6 +2126,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 addedBatchExpectedCounts[newSessionId] = newRows.length;
                 addedBatchPlatforms[newSessionId] = batchPlatforms[session.id] || '쿠팡';
                 removedIds.add(session.id);
+                sessionIdMap[session.id] = newSessionId;
                 newSelectedIds.delete(session.id);
                 newSelectedIds.add(newSessionId);
             }
@@ -2151,6 +2154,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setOrderLitSessions(prev => { const n = new Set(prev); removedIds.forEach(id => n.delete(id)); return n; });
             setInvoiceLitSessions(prev => { const n = new Set(prev); removedIds.forEach(id => n.delete(id)); return n; });
             removedIds.forEach(id => { handleDeleteSessionResult(id); });
+
+            // 옛 세션 ID에 붙어있던 정산 조정(통합CS관리에서 자동 기록한 추가/차감 포함)·워크플로우
+            // ·정산요약 수동수정 내역을 새 세션 ID로 옮긴다. 안 옮기면 세션 ID 자체가 없어져
+            // 화면 어디에도 표시되지 않는 채로 Firestore에 orphan 상태로 남아, 사용자 눈에는
+            // "삭제하지 말라고 했는데 지워졌다"처럼 보인다.
+            Object.entries(sessionIdMap).forEach(([oldId, newId]) => {
+                (['sessionAdjustments', 'sessionWorkflows', 'summaryOverrides'] as const).forEach(key => {
+                    const oldValue = (workspace as any)?.[key]?.[oldId];
+                    if (oldValue === undefined) return;
+                    updateWorkspaceSessionField(`${key}.${newId}`, oldValue);
+                    updateWorkspaceSessionField(`${key}.${oldId}`, deleteField());
+                });
+            });
         }
 
         setKReplaceHistory(prev => [...prev, { from: kReplaceFrom, to: kReplaceTo, productMap: hasProductMap ? { ...kReplaceProductMap } : undefined, round: kReplaceRound ?? 1 } as any]);
@@ -3877,6 +3893,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             expenseRecords: allExpenses.length > 0 ? allExpenses : undefined,
             returnRecords: allReturns.length > 0 ? allReturns : undefined,
             returnTotal: returnTotal !== 0 ? returnTotal : undefined,
+            // upsertDailySales는 문서 전체를 덮어쓰므로(setDoc, merge 없음), 이 화면이 모르는
+            // csRecords(통합CS접수/매출현황 CS탭에서 기록)를 명시적으로 이어받지 않으면
+            // 저장할 때마다 그날의 CS 접수 내역이 통째로 사라진다.
+            csRecords: existingDailySales?.csRecords,
         };
 
         setSaveStatus('saving');
