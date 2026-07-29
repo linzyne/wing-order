@@ -31,6 +31,7 @@ interface BusinessColumnProps {
   themeColor?: string;
   bank?: string;
   sharedSuppliers?: PricingConfig;
+  otherBusinesses?: { id: string; displayName: string }[];
   onSendToLibrary?: (companyName: string, companyConfig: CompanyConfig) => void;
   initiallyMounted?: boolean;
   refreshKey?: number;
@@ -48,7 +49,7 @@ interface BusinessColumnProps {
   onHasWarnings?: (has: boolean) => void;
 }
 
-const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, onEdit, onExposeOrderRows, onHasWarnings }) => {
+const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, otherBusinesses, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, onEdit, onExposeOrderRows, onHasWarnings }) => {
   const [activeTab, setActiveTab] = useState('converter');
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
@@ -179,6 +180,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               onConfigChange={saveConfig}
               businessId={businessId}
               businessDisplayName={displayName}
+              otherBusinesses={otherBusinesses}
               platformConfigs={platformConfigs}
               isActive={activeTab === 'converter'}
               isCurrent={true}

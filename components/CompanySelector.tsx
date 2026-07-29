@@ -57,7 +57,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -705,7 +705,7 @@ function matchProductSync(
     return null;
 }
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
     const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
@@ -919,6 +919,27 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     useEffect(() => {
         loadQuickRecipients(businessId).then(setQuickRecipients);
     }, [businessId]);
+
+    // 다른 사업자의 빠른 수령자 목록 가져오기
+    const [showImportRecipient, setShowImportRecipient] = useState(false);
+    const [importBusinessId, setImportBusinessId] = useState('');
+    const [importRecipients, setImportRecipients] = useState<QuickRecipientData[]>([]);
+    const [importSearch, setImportSearch] = useState('');
+    useEffect(() => {
+        if (!importBusinessId) { setImportRecipients([]); return; }
+        loadQuickRecipients(importBusinessId).then(setImportRecipients);
+    }, [importBusinessId]);
+    const filteredImportRecipients = useMemo(() => {
+        const q = importSearch.trim();
+        if (!q) return importRecipients;
+        return importRecipients.filter(p => p.name.includes(q) || p.phone.includes(q));
+    }, [importRecipients, importSearch]);
+    const handleAddToQuickRecipients = (p: QuickRecipientData) => {
+        if (quickRecipients.some(r => r.name === p.name)) return;
+        const updated = [...quickRecipients, p];
+        setQuickRecipients(updated);
+        saveQuickRecipients(updated, businessId);
+    };
 
     // 업체 순서 관리
     const [companyOrder, setCompanyOrder] = useState<string[]>([]);
@@ -4327,7 +4348,37 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 </div>
                             </div>
                         )}
+                        {otherBusinesses.length > 0 && (
+                            <button type="button" onClick={() => setShowImportRecipient(v => !v)} className={`px-2 py-1 border border-dashed rounded-full text-[10px] font-black transition-all ${showImportRecipient ? 'border-rose-500 text-rose-400' : 'border-zinc-700 text-zinc-600 hover:border-rose-500 hover:text-rose-400'}`}>다른 사업자에서 가져오기</button>
+                        )}
                     </div>
+                    {showImportRecipient && (
+                        <div className="flex flex-col gap-1.5 w-full bg-zinc-900 border border-zinc-700 rounded-xl px-2 py-1.5 mb-3">
+                            <div className="flex gap-1.5">
+                                <select value={importBusinessId} onChange={e => { setImportBusinessId(e.target.value); setImportSearch(''); }} className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-1.5 py-1 text-[10px] font-bold text-white outline-none">
+                                    <option value="">사업자 선택</option>
+                                    {otherBusinesses.map(b => <option key={b.id} value={b.id}>{b.displayName}</option>)}
+                                </select>
+                                {importBusinessId && (
+                                    <input placeholder="이름/전화번호 검색" value={importSearch} onChange={e => setImportSearch(e.target.value)} className="flex-1 bg-zinc-950 border border-zinc-800 rounded-lg px-1.5 py-1 text-[10px] font-bold text-white outline-none placeholder:text-zinc-600" />
+                                )}
+                            </div>
+                            {importBusinessId && (
+                                filteredImportRecipients.length === 0 ? (
+                                    <span className="text-[9px] text-zinc-600 px-1 py-1">등록된 수령자가 없습니다.</span>
+                                ) : (
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {filteredImportRecipients.map(p => (
+                                            <div key={p.name} className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-full pl-2.5 pr-1 py-1">
+                                                <button type="button" onClick={() => handleQuickSelect(p)} className="text-[10px] font-black text-zinc-300 hover:text-rose-400 transition-all">{p.name}</button>
+                                                <button type="button" title="내 빠른 선택에 추가" onClick={() => handleAddToQuickRecipients(p)} disabled={quickRecipients.some(r => r.name === p.name)} className="w-4 h-4 rounded-full text-[10px] font-black flex items-center justify-center transition-all disabled:text-zinc-700 disabled:cursor-default text-zinc-500 hover:text-white hover:bg-rose-500">+</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )
+                            )}
+                        </div>
+                    )}
                     <form onSubmit={handleAddManualOrder} className="flex flex-col gap-2">
                         <div className="grid grid-cols-2 gap-2">
                             <select value={manualInput.companyName} onChange={e => { setManualInput({...manualInput, companyName: e.target.value}); setManualSelectedProducts([]); }} className="bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-rose-500/30 outline-none">

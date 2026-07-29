@@ -1177,6 +1177,7 @@ const App: React.FC = () => {
               themeColor={dimThemeColor(b.themeColor)}
               bank={b.bank}
               sharedSuppliers={sharedSuppliers.config}
+              otherBusinesses={allBusinesses.filter(o => o.id !== b.id).map(o => ({ id: o.id, displayName: o.displayName }))}
               onSendToLibrary={handleSendCompanyToLibrary}
               initiallyMounted={true}
               onRegisterMasterUpload={handleRegisterMasterUpload}
