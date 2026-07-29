@@ -17,7 +17,7 @@ interface OpenCsItem extends CsRecord {
 interface Props {
   businesses: Business[];
   onClose: () => void;
-  onCreatePurchaseOrder: (businessId: string, company: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => boolean;
+  onCreatePurchaseOrder: (businessId: string, company: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>;
 }
 
 /** 발주내역 행에서 업체 헤더 구조를 참고해 전화번호/주소 열을 찾아낸다 (resolveOrderRowFields의 phone/address 버전) */
@@ -315,7 +315,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         alert('원본 발주 정보가 없어 발주서를 생성할 수 없습니다.');
         return;
       }
-      const ok = onCreatePurchaseOrder(item.businessId, item.company, {
+      const ok = await onCreatePurchaseOrder(item.businessId, item.company, {
         recipientName: fields.recipientName,
         phone,
         address,

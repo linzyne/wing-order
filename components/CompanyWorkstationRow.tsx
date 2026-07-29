@@ -107,7 +107,8 @@ interface CompanyWorkstationRowProps {
     mergedDownloaded?: boolean;
     onWarningUpdate?: (sessionId: string, hasWarning: boolean) => void;
     onEffectiveTextChange?: (kakaoText: string, excelText: string) => void;
-    registerAppendRow?: (fn: (mo: ManualOrder) => void) => void;
+    registerAppendRow?: (fn: (mo: ManualOrder) => Promise<{ amount: number; label: string }>) => void;
+    registerAddAdjustment?: (fn: (amount: number, label: string) => void) => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -135,6 +136,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     onWarningUpdate,
     onEffectiveTextChange,
     registerAppendRow,
+    registerAddAdjustment,
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -991,7 +993,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     // CS 재배송 등 외부(통합CS 패널)에서 이 세션의 발주서에 행을 하나 추가 요청할 때 사용.
     // 매 렌더마다 최신 클로저를 ref에 담아두고, 부모에는 처음 한 번만 안정적인 래퍼를 등록한다.
-    const appendReshipRowFn = async (mo: ManualOrder) => {
+    // 공급가차감 내역은 이 함수가 아니라 항상 1차수 쪽에서 registerAddAdjustment로 등록한 함수가 처리한다
+    // (사용자가 늘 확인하는 업체명 바로 아래 추가/차감 배지에 보이도록 하기 위함) — 그래서 금액/라벨만 리턴한다.
+    const appendReshipRowFn = async (mo: ManualOrder): Promise<{ amount: number; label: string }> => {
         const companyConfig = pricingConfig[companyName] || {} as any;
         const products = companyConfig.products || {};
         let productKey = mo.productKey;
@@ -1043,19 +1047,25 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             } as ProcessedResult;
         });
         hasCompletedLocalProcessingRef.current = true;
-        // 재배송은 고객에게 다시 받는 돈 없이 공급가만 추가로 나가므로, 업체 추가/차감에 공급가 차감 내역을 남긴다.
-        const deductAmount = -(mo.qty * config.supplyPrice + shipping);
-        setSessionAdjustments(prev => [...prev, {
-            id: `adj-cs-${Date.now()}`,
-            amount: deductAmount,
-            label: `${mo.recipientName}재배송`,
-        }]);
+        // 재배송은 고객에게 다시 받는 돈 없이 공급가만 추가로 나가므로, 공급가차감 금액/라벨만 돌려준다.
+        return { amount: -(mo.qty * config.supplyPrice + shipping), label: `${mo.recipientName}재배송` };
     };
     const appendReshipRowRef = useRef(appendReshipRowFn);
     appendReshipRowRef.current = appendReshipRowFn;
     useEffect(() => {
-        registerAppendRow?.((mo: ManualOrder) => { appendReshipRowRef.current(mo); });
+        registerAppendRow?.((mo: ManualOrder) => appendReshipRowRef.current(mo));
     // 마운트 시 1회만 등록 - registerAppendRow는 부모 렌더마다 새로 생성되므로 deps에 넣으면 안 됨
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // CS 재배송 공급가차감을 이 세션(항상 1차수)의 추가/차감 목록에 추가할 때 사용
+    const addAdjustmentFn = (amount: number, label: string) => {
+        setSessionAdjustments(prev => [...prev, { id: `adj-cs-${Date.now()}`, amount, label }]);
+    };
+    const addAdjustmentRef = useRef(addAdjustmentFn);
+    addAdjustmentRef.current = addAdjustmentFn;
+    useEffect(() => {
+        registerAddAdjustment?.((amount: number, label: string) => addAdjustmentRef.current(amount, label));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
