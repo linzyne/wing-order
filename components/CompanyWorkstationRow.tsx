@@ -1037,6 +1037,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             } as ProcessedResult;
         });
         hasCompletedLocalProcessingRef.current = true;
+        // 재배송은 고객에게 다시 받는 돈 없이 공급가만 추가로 나가므로, 업체 추가/차감에 공급가 차감 내역을 남긴다.
+        const deductAmount = -(mo.qty * config.supplyPrice + shipping);
+        setSessionAdjustments(prev => [...prev, {
+            id: `adj-cs-${Date.now()}`,
+            amount: deductAmount,
+            label: `${mo.productName} 재배송 공급가차감${mo.memo ? ` (${mo.memo})` : ''}`,
+        }]);
     };
     const appendReshipRowRef = useRef(appendReshipRowFn);
     appendReshipRowRef.current = appendReshipRowFn;
