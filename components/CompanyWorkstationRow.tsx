@@ -1042,7 +1042,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         setSessionAdjustments(prev => [...prev, {
             id: `adj-cs-${Date.now()}`,
             amount: deductAmount,
-            label: `${mo.productName} 재배송 공급가차감${mo.memo ? ` (${mo.memo})` : ''}`,
+            label: `${mo.recipientName}재배송`,
         }]);
     };
     const appendReshipRowRef = useRef(appendReshipRowFn);
