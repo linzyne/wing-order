@@ -556,6 +556,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const lastFirestoreWorkflowRef = useRef('');
     const lastFirestoreAdjRef = useRef('');
     const lastFirestoreOverrideRef = useRef('');
+    // 이 세션에서 로컬로 추가/차감을 한 번이라도 편집했으면, 그 이후로는 workspace(외부) 스냅샷이
+    // 우리 로컬 편집보다 먼저 도착한 오래된 값으로 되돌려쓰지 않도록 외부 동기화를 멈춘다.
+    // (수동 추가, CS 재배송 발주 추가 등 로컬 저장 경로가 항상 최신 소스이므로 외부 로드는 더 이상 필요 없음)
+    const hasLocalAdjEditRef = useRef(false);
 
     useEffect(() => {
         if (!workspace) return;
@@ -566,7 +570,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 lastFirestoreWorkflowRef.current = wsStr;
             }
         }
-        if (workspace.sessionAdjustments?.[sessionId]) {
+        if (!hasLocalAdjEditRef.current && workspace.sessionAdjustments?.[sessionId]) {
             const wsStr = JSON.stringify(workspace.sessionAdjustments[sessionId]);
             if (wsStr !== lastFirestoreAdjRef.current) {
                 setSessionAdjustments(workspace.sessionAdjustments[sessionId]);
@@ -609,6 +613,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (isInitialAdjLoad.current) { isInitialAdjLoad.current = false; return; }
         const currentStr = JSON.stringify(sessionAdjustments);
         if (currentStr === lastFirestoreAdjRef.current) return;
+        // 이 지점에 도달했다는 건 workspace 로드 에코가 아니라 진짜 로컬 편집이라는 뜻
+        hasLocalAdjEditRef.current = true;
         lastFirestoreAdjRef.current = currentStr;
         updateSessionField(`sessionAdjustments.${sessionId}`, sessionAdjustments);
     }, [sessionAdjustments, sessionId, updateSessionField]);
