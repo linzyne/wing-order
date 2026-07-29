@@ -4370,7 +4370,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <div className="flex flex-wrap gap-1.5">
                                         {filteredImportRecipients.map(p => (
                                             <div key={p.name} className="flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded-full pl-2.5 pr-1 py-1">
-                                                <button type="button" title="주소만 가져오기" onClick={() => setManualInput(prev => ({ ...prev, address: p.address }))} className="text-[10px] font-black text-zinc-300 hover:text-rose-400 transition-all">{p.name}</button>
+                                                <button type="button" onClick={() => handleQuickSelect(p)} className="text-[10px] font-black text-zinc-300 hover:text-rose-400 transition-all">{p.name}</button>
                                                 <button type="button" title="내 빠른 선택에 추가" onClick={() => handleAddToQuickRecipients(p)} disabled={quickRecipients.some(r => r.name === p.name)} className="w-4 h-4 rounded-full text-[10px] font-black flex items-center justify-center transition-all disabled:text-zinc-700 disabled:cursor-default text-zinc-500 hover:text-white hover:bg-rose-500">+</button>
                                             </div>
                                         ))}
