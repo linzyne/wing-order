@@ -134,6 +134,11 @@ const App: React.FC = () => {
   const [showBulkDepositModal, setShowBulkDepositModal] = useState(false);
   const [bulkPasteText, setBulkPasteText] = useState('');
   const [bulkBaseRowsMap, setBulkBaseRowsMap] = useState<Record<string, any[][]>>({});
+  const [bulkPasteSummary, setBulkPasteSummary] = useState<{ counts: { name: string; count: number }[]; unmatched: number; total: number } | null>(null);
+
+  useEffect(() => {
+    if (!showBulkDepositModal) setBulkPasteSummary(null);
+  }, [showBulkDepositModal]);
 
   useEffect(() => {
     const handler = () => setQuotaExceeded(true);
@@ -148,6 +153,29 @@ const App: React.FC = () => {
   }, []);
 
   const { businesses: allBusinesses, isLoading: businessListLoading, addBusiness, removeBusiness, updateBusiness } = useBusinessList();
+
+  const parseBulkDepositLines = useCallback((text: string) => {
+    const lines = text.trim().split('\n').filter(l => l.trim());
+    const grouped: Record<string, DepositExtraRow[]> = {};
+    const unmatched: string[] = [];
+    lines.forEach(line => {
+      const cols = line.split('\t');
+      if (cols.length < 3) { unmatched.push(line); return; }
+      const bankName = cols[0]?.trim() || '';
+      const accountNumber = cols[1]?.trim() || '';
+      const amount = cols[2]?.trim() || '';
+      const label = cols[3]?.trim() || '';
+      const bizRaw = (cols[4]?.trim() || '').replace(/\s*환불$/, '').trim();
+      const matched = allBusinesses.find(b => b.displayName === bizRaw || b.id === bizRaw || b.displayName.includes(bizRaw) || (bizRaw.length > 1 && bizRaw.includes(b.displayName)));
+      if (matched) {
+        if (!grouped[matched.id]) grouped[matched.id] = [];
+        grouped[matched.id].push({ bankName, accountNumber, amount, label });
+      } else {
+        unmatched.push(line);
+      }
+    });
+    return { grouped, unmatched };
+  }, [allBusinesses]);
   // id/displayName만 필요한 하위 패널에 매 렌더마다 새 배열을 넘기면 그걸 의존성으로 쓰는
   // useCallback/useEffect가 계속 재실행되므로(예: 통합송장변환 패널의 배지 새로고침) 메모이즈
   const businessIdNamePairs = useMemo(
@@ -1201,25 +1229,7 @@ const App: React.FC = () => {
 
       {/* 일괄 입금목록 모달 */}
       {showBulkDepositModal && (() => {
-        const lines = bulkPasteText.trim().split('\n').filter(l => l.trim());
-        const grouped: Record<string, DepositExtraRow[]> = {};
-        const unmatched: string[] = [];
-        lines.forEach(line => {
-          const cols = line.split('\t');
-          if (cols.length < 3) { unmatched.push(line); return; }
-          const bankName = cols[0]?.trim() || '';
-          const accountNumber = cols[1]?.trim() || '';
-          const amount = cols[2]?.trim() || '';
-          const label = cols[3]?.trim() || '';
-          const bizRaw = (cols[4]?.trim() || '').replace(/\s*환불$/, '').trim();
-          const matched = allBusinesses.find(b => b.displayName === bizRaw || b.id === bizRaw || b.displayName.includes(bizRaw) || (bizRaw.length > 1 && bizRaw.includes(b.displayName)));
-          if (matched) {
-            if (!grouped[matched.id]) grouped[matched.id] = [];
-            grouped[matched.id].push({ bankName, accountNumber, amount, label });
-          } else {
-            unmatched.push(line);
-          }
-        });
+        const { grouped, unmatched } = parseBulkDepositLines(bulkPasteText);
         // 기존 행이 있거나 붙여넣기 매칭된 사업자 모두 표시
         const allRelevantIds = [...new Set([
           ...Object.keys(bulkBaseRowsMap).filter(id => (bulkBaseRowsMap[id]?.length ?? 0) > 0),
@@ -1309,6 +1319,18 @@ const App: React.FC = () => {
                     rows={4}
                     value={bulkPasteText}
                     onChange={e => setBulkPasteText(e.target.value)}
+                    onPaste={e => {
+                      const el = e.currentTarget;
+                      setTimeout(() => {
+                        const { grouped: pastedGrouped, unmatched: pastedUnmatched } = parseBulkDepositLines(el.value);
+                        const counts = Object.entries(pastedGrouped).map(([id, rows]: [string, DepositExtraRow[]]) => ({
+                          name: allBusinesses.find(b => b.id === id)?.displayName || id,
+                          count: rows.length,
+                        }));
+                        const total = counts.reduce((sum, c) => sum + c.count, 0) + pastedUnmatched.length;
+                        setBulkPasteSummary({ counts, unmatched: pastedUnmatched.length, total });
+                      }, 0);
+                    }}
                     placeholder={"기업\t490-048665-01-021\t17400\t장혜옥\t안군농원 환불\n기업\t490-048665-01-021\t12000\t홍길동\t조에 환불"}
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-xs text-zinc-300 font-mono placeholder-zinc-700 focus:ring-1 focus:ring-emerald-500/30 outline-none resize-none"
                   />
@@ -1331,6 +1353,37 @@ const App: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* 일괄 입금목록 붙여넣기 자동배치 결과 팝업 */}
+      {bulkPasteSummary && (
+        <div className="fixed inset-0 z-[220] flex items-center justify-center bg-black/40" onClick={() => setBulkPasteSummary(null)}>
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-xs mx-4 p-5" onClick={e => e.stopPropagation()}>
+            <h4 className="text-white font-black text-sm mb-3">자동 배치 결과</h4>
+            <div className="space-y-1.5 mb-3">
+              {bulkPasteSummary.counts.map(c => (
+                <div key={c.name} className="flex items-center justify-between text-xs">
+                  <span className="text-zinc-400">{c.name}</span>
+                  <span className="text-emerald-400 font-bold tabular-nums">{c.count}건</span>
+                </div>
+              ))}
+              {bulkPasteSummary.unmatched > 0 && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-rose-400">미매칭</span>
+                  <span className="text-rose-400 font-bold tabular-nums">{bulkPasteSummary.unmatched}건</span>
+                </div>
+              )}
+              {bulkPasteSummary.counts.length === 0 && bulkPasteSummary.unmatched === 0 && (
+                <p className="text-zinc-600 text-xs">배치된 항목이 없습니다.</p>
+              )}
+            </div>
+            <div className="pt-2 border-t border-zinc-800 flex items-center justify-between">
+              <span className="text-zinc-500 text-[11px] font-bold">전체</span>
+              <span className="text-white font-black text-sm">{bulkPasteSummary.total}건</span>
+            </div>
+            <button onClick={() => setBulkPasteSummary(null)} className="mt-4 w-full px-4 py-2 text-xs font-bold text-zinc-300 bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all">확인</button>
+          </div>
+        </div>
+      )}
 
       {/* 사업자 추가/편집 모달 */}
       <AddBusinessModal
