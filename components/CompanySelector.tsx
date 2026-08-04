@@ -3501,7 +3501,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     };
 
-    const handleDownloadWorkLog = () => {
+    const handleDownloadWorkLog = async () => {
         if (recordedCompanies.size === 0) {
             alert('기록된 업체가 없습니다.\n업체별 기록 버튼을 먼저 눌러주세요.');
             return;
@@ -3653,14 +3653,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(expenseSheetData), "비용시트");
         }
 
-        // 품목별비용 시트 생성
-        if (returns.length > 0) {
+        // 품목별비용 시트 생성 (CS접수로 자동 생성된 반품은 로컬 returns state를 거치지 않고
+        // Firestore에 직접 저장되므로, 누락 방지를 위해 기존 저장분도 함께 불러와 병합)
+        let allReturns = [...returns];
+        try {
+            const recordDate = resolveRecordDate(workDate, masterOrderFile);
+            const { loadDailySales } = await import('../services/firestoreService');
+            const existingDailySales = await loadDailySales(recordDate, businessId);
+            if (existingDailySales?.returnRecords) {
+                allReturns = [...existingDailySales.returnRecords, ...returns];
+            }
+        } catch {}
+
+        if (allReturns.length > 0) {
             const returnSheetData: any[][] = [['구분', '날짜', '사유', '업체', '등록상품명', '품목명', '수량', '개당마진', '금액']];
-            returns.forEach(r => {
+            allReturns.forEach(r => {
                 returnSheetData.push([r.type || '반품', r.orderDate || '', r.memo || '', r.company, r.registeredName || '', r.productName, r.count, r.marginPerUnit, r.totalMargin]);
             });
             returnSheetData.push([]);
-            returnSheetData.push(['', '', '', '', '', '', '', '총 금액', returns.reduce((s, r) => s + r.totalMargin, 0)]);
+            returnSheetData.push(['', '', '', '', '', '', '', '총 금액', allReturns.reduce((s, r) => s + r.totalMargin, 0)]);
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnSheetData), "품목별비용");
         }
 
