@@ -627,7 +627,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
             <div style={{ color:'#fff', fontWeight:700, fontSize:'14px', marginBottom:'4px' }}>긴급공지</div>
             <div style={{ color:'#a1a1aa', fontSize:'11px', marginBottom:'16px' }}>발주서 생성 전 확인하세요</div>
             <div style={{ maxHeight:'240px', overflowY:'auto', marginBottom:'16px', padding:'10px 12px', borderRadius:'12px', border:'1px solid #3f3f46', background:'rgba(63,63,70,0.3)' }}>
-              <span style={{ fontSize:'12px', fontWeight:600, color:'#fff', whiteSpace:'pre-wrap' }}>{urgentNotice}</span>
+              <span style={{ fontSize:'16px', fontWeight:600, color:'#fff', whiteSpace:'pre-wrap' }}>{urgentNotice}</span>
             </div>
             <div style={{ display:'flex', gap:'8px' }}>
               <button onClick={handleUrgentNoticeConfirm} style={{ flex:1, background:'#f59e0b', color:'#fff', fontWeight:700, fontSize:'12px', padding:'10px', borderRadius:'12px', border:'none', cursor:'pointer' }}>
