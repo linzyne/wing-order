@@ -1208,13 +1208,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 비용(지출내역) 관리
     const EXPENSE_CATEGORIES = ['임대료', '통신비', '소모품비', '물류비', '마케팅', '식비', '기타', '이자'];
     const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
-    const [newExpense, setNewExpense] = useState({ category: '물류비', amount: '', description: '', company: '', productKey: '' });
-    const expenseProducts = useMemo(() => {
-        if (!newExpense.company || !pricingConfig[newExpense.company]) return [];
-        return Object.entries(pricingConfig[newExpense.company].products).map(([key, p]: [string, any]) => ({
-            key, name: p.orderFormName || p.displayName,
-        }));
-    }, [newExpense.company, pricingConfig]);
+    const [newExpense, setNewExpense] = useState({ category: '물류비', amount: '', description: '' });
 
     // 품목별관리
     const [returns, setReturns] = useState<ReturnRecord[]>([]);
@@ -5139,25 +5133,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             )}
                         </h3>
                     </div>
-                    <div className="flex flex-col gap-2 mb-2">
-                        <select
-                            value={newExpense.company}
-                            onChange={(e) => setNewExpense(prev => ({ ...prev, company: e.target.value, productKey: '' }))}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50"
-                        >
-                            <option value="">업체 선택 (선택)</option>
-                            {Object.keys(pricingConfig).sort().map(name => <option key={name} value={name}>{name}</option>)}
-                        </select>
-                        <select
-                            value={newExpense.productKey}
-                            onChange={(e) => setNewExpense(prev => ({ ...prev, productKey: e.target.value }))}
-                            disabled={!newExpense.company}
-                            className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50 disabled:opacity-40"
-                        >
-                            <option value="">품목 선택 (선택)</option>
-                            {expenseProducts.map(p => <option key={p.key} value={p.key}>{p.name}</option>)}
-                        </select>
-                    </div>
                     <div className="flex items-center gap-2 mb-2">
                         <select
                             value={newExpense.category}
@@ -5186,38 +5161,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-orange-500/50"
                             onKeyDown={(e) => {
                                 if (e.key === 'Enter' && newExpense.amount && parseInt(newExpense.amount) > 0) {
-                                    const selProduct = expenseProducts.find(p => p.key === newExpense.productKey);
                                     setExpenses(prev => [...prev, {
                                         id: `exp-${Date.now()}`,
                                         category: newExpense.category,
                                         amount: parseInt(newExpense.amount),
                                         description: newExpense.description,
-                                        ...(newExpense.company && newExpense.productKey ? {
-                                            company: newExpense.company,
-                                            productKey: newExpense.productKey,
-                                            productName: selProduct?.name,
-                                        } : {}),
                                     }]);
-                                    setNewExpense(prev => ({ ...prev, amount: '', description: '', company: '', productKey: '' }));
+                                    setNewExpense(prev => ({ ...prev, amount: '', description: '' }));
                                 }
                             }}
                         />
                         <button
                             onClick={() => {
                                 if (!newExpense.amount || parseInt(newExpense.amount) <= 0) return;
-                                const selProduct = expenseProducts.find(p => p.key === newExpense.productKey);
                                 setExpenses(prev => [...prev, {
                                     id: `exp-${Date.now()}`,
                                     category: newExpense.category,
                                     amount: parseInt(newExpense.amount),
                                     description: newExpense.description,
-                                    ...(newExpense.company && newExpense.productKey ? {
-                                        company: newExpense.company,
-                                        productKey: newExpense.productKey,
-                                        productName: selProduct?.name,
-                                    } : {}),
                                 }]);
-                                setNewExpense(prev => ({ ...prev, amount: '', description: '', company: '', productKey: '' }));
+                                setNewExpense(prev => ({ ...prev, amount: '', description: '' }));
                             }}
                             className="bg-orange-600 hover:bg-orange-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5"
                         >
