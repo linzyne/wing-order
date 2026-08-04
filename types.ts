@@ -194,6 +194,9 @@ export interface ReturnRecord {
   orderDate?: string;    // 주문 날짜 (YYYY-MM-DD)
   type?: '반품' | '광고비' | '슬롯' | 'CS환불'; // 품목별관리 구분 (없으면 반품)
   csRecordId?: string;   // 연결된 CsRecord.id (CS환불 - 수정/삭제 시 반품기록 재계산용)
+  bankName?: string;      // 계좌이체용 은행명 (입력 시 입금목록에 자동 반영)
+  accountNumber?: string; // 계좌이체용 계좌번호 (입력 시 입금목록에 자동 반영)
+  depositTransferId?: string; // 연동된 manualTransfer id (삭제 시 입금목록도 함께 제거)
 }
 
 export interface CsRecord {
@@ -248,6 +251,9 @@ export interface ExpenseRecord {
   company?: string;    // 연동 업체명 (마진시트 H/I열에 입력)
   productKey?: string; // 연동 품목 키
   productName?: string; // 연동 품목명
+  bankName?: string;      // 계좌이체용 은행명 (입력 시 입금목록에 자동 반영)
+  accountNumber?: string; // 계좌이체용 계좌번호 (입력 시 입금목록에 자동 반영)
+  depositTransferId?: string; // 연동된 manualTransfer id (삭제 시 입금목록도 함께 제거)
 }
 
 export interface CourierTemplate {

@@ -1208,7 +1208,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 비용(지출내역) 관리
     const EXPENSE_CATEGORIES = ['임대료', '통신비', '소모품비', '물류비', '마케팅', '식비', '기타', '이자'];
     const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
-    const [newExpense, setNewExpense] = useState({ category: '물류비', amount: '', description: '' });
+    const [newExpense, setNewExpense] = useState({ category: '물류비', amount: '', description: '', bankName: '', accountNumber: '' });
 
     // 품목별관리
     const [returns, setReturns] = useState<ReturnRecord[]>([]);
@@ -1218,6 +1218,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [returnProductKey, setReturnProductKey] = useState('');
     const [returnCount, setReturnCount] = useState('1');
     const [returnMemo, setReturnMemo] = useState('');
+    const [returnBankName, setReturnBankName] = useState('');
+    const [returnAccountNumber, setReturnAccountNumber] = useState('');
     const [returnOrderDate, setReturnOrderDate] = useState(() => new Date().toLocaleDateString('en-CA'));
     const returnRegisteredNames = useMemo(() => {
         if (!returnCompany || !pricingConfig[returnCompany]) return [];
@@ -1242,6 +1244,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setReturnDirectAmount('');
         setReturnDirectName('');
         setReturnMemo('');
+        setReturnBankName('');
+        setReturnAccountNumber('');
     }, [itemType]);
 
     // Firestore 동기화 - 값 비교로 에코 방지
@@ -2761,6 +2765,64 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             else next.add(id);
             return next;
         });
+    };
+
+    // 비용관리/품목별관리에서 계좌 입력 시 입금목록에 자동 등록 (계좌번호 미입력 건은 추가하지 않음)
+    const addAutoDepositTransfer = (bankName: string, accountNumber: string, amount: number, label: string): string | undefined => {
+        const bank = bankName.trim();
+        const account = accountNumber.trim();
+        if (!account || amount <= 0) return undefined;
+        const id = `auto-deposit-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+        setManualTransfers(prev => [...prev, { id, label, bankName: bank || '은행', accountNumber: account, amount }]);
+        return id;
+    };
+
+    const handleAddExpense = () => {
+        if (!newExpense.amount || parseInt(newExpense.amount) <= 0) return;
+        const amount = parseInt(newExpense.amount);
+        const depositTransferId = addAutoDepositTransfer(newExpense.bankName, newExpense.accountNumber, amount, newExpense.description || newExpense.category);
+        setExpenses(prev => [...prev, {
+            id: `exp-${Date.now()}`,
+            category: newExpense.category,
+            amount,
+            description: newExpense.description,
+            bankName: newExpense.bankName || undefined,
+            accountNumber: newExpense.accountNumber || undefined,
+            depositTransferId,
+        }]);
+        setNewExpense(prev => ({ ...prev, amount: '', description: '', bankName: '', accountNumber: '' }));
+    };
+
+    const handleAddReturnItem = () => {
+        if (!returnCompany || !returnProductKey || !returnCount || parseInt(returnCount) <= 0) return;
+        const p = returnProducts.find(p => p.key === returnProductKey);
+        if (!p) return;
+        const qty = parseInt(returnCount);
+        const totalMargin = -(p.margin * qty);
+        const depositTransferId = addAutoDepositTransfer(returnBankName, returnAccountNumber, -totalMargin, returnMemo || `${returnCompany} ${p.name} 반품`);
+        setReturns(prev => [...prev, {
+            company: returnCompany, productKey: returnProductKey, productName: p.name,
+            registeredName: returnRegisteredName || undefined,
+            count: qty, marginPerUnit: p.margin, totalMargin, memo: returnMemo || undefined,
+            orderDate: returnOrderDate || undefined, type: '반품',
+            bankName: returnBankName || undefined, accountNumber: returnAccountNumber || undefined, depositTransferId,
+        }]);
+        setReturnProductKey(''); setReturnCount('1'); setReturnMemo(''); setReturnBankName(''); setReturnAccountNumber('');
+    };
+
+    const handleAddDirectItem = () => {
+        if (!returnCompany || !returnProductKey || !returnDirectAmount || parseInt(returnDirectAmount) <= 0) return;
+        const p = returnProducts.find(p => p.key === returnProductKey);
+        const amount = parseInt(returnDirectAmount);
+        const depositTransferId = addAutoDepositTransfer(returnBankName, returnAccountNumber, amount, returnMemo || `${returnCompany} ${p?.name || itemType}`);
+        setReturns(prev => [...prev, {
+            company: returnCompany, productKey: returnProductKey, productName: p?.name || itemType,
+            registeredName: returnRegisteredName || undefined,
+            count: 1, marginPerUnit: amount, totalMargin: -amount,
+            memo: returnMemo || undefined, orderDate: returnOrderDate || undefined, type: itemType,
+            bankName: returnBankName || undefined, accountNumber: returnAccountNumber || undefined, depositTransferId,
+        }]);
+        setReturnProductKey(''); setReturnDirectAmount(''); setReturnMemo(''); setReturnBankName(''); setReturnAccountNumber('');
     };
 
     const handleAddManualTransfer = (e: React.FormEvent) => {
@@ -5152,6 +5214,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-orange-500/50 text-right"
                         />
                     </div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <input
+                            type="text"
+                            value={newExpense.bankName}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, bankName: e.target.value }))}
+                            placeholder="은행명 (선택)"
+                            className="w-28 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-orange-500/50 shrink-0"
+                        />
+                        <input
+                            type="text"
+                            value={newExpense.accountNumber}
+                            onChange={(e) => setNewExpense(prev => ({ ...prev, accountNumber: e.target.value }))}
+                            placeholder="계좌번호 (입력 시 입금목록 자동추가)"
+                            className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-orange-500/50"
+                        />
+                    </div>
                     <div className="flex items-center gap-2 mb-3">
                         <input
                             type="text"
@@ -5160,28 +5238,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             placeholder="지출내역"
                             className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-orange-500/50"
                             onKeyDown={(e) => {
-                                if (e.key === 'Enter' && newExpense.amount && parseInt(newExpense.amount) > 0) {
-                                    setExpenses(prev => [...prev, {
-                                        id: `exp-${Date.now()}`,
-                                        category: newExpense.category,
-                                        amount: parseInt(newExpense.amount),
-                                        description: newExpense.description,
-                                    }]);
-                                    setNewExpense(prev => ({ ...prev, amount: '', description: '' }));
-                                }
+                                if (e.key === 'Enter') handleAddExpense();
                             }}
                         />
                         <button
-                            onClick={() => {
-                                if (!newExpense.amount || parseInt(newExpense.amount) <= 0) return;
-                                setExpenses(prev => [...prev, {
-                                    id: `exp-${Date.now()}`,
-                                    category: newExpense.category,
-                                    amount: parseInt(newExpense.amount),
-                                    description: newExpense.description,
-                                }]);
-                                setNewExpense(prev => ({ ...prev, amount: '', description: '' }));
-                            }}
+                            onClick={handleAddExpense}
                             className="bg-orange-600 hover:bg-orange-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5"
                         >
                             <PlusCircleIcon className="w-3.5 h-3.5" />추가
@@ -5202,11 +5263,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         )}
                                         <span className="text-[10px] text-zinc-400 truncate">{exp.description}</span>
                                         {exp.isAuto && <span className="text-[9px] text-teal-600 font-bold shrink-0">자동</span>}
+                                        {exp.depositTransferId && <span className="text-[9px] text-indigo-400 font-bold shrink-0">입금목록✓</span>}
                                     </div>
                                     <div className="flex items-center gap-2">
                                         <span className="text-[10px] font-mono font-bold text-zinc-300">{exp.amount.toLocaleString()}원</span>
                                         {!exp.isAuto && (
-                                            <button onClick={() => setExpenses(prev => prev.filter(e => e.id !== exp.id))} className="text-zinc-700 hover:text-rose-500 transition-colors">
+                                            <button onClick={() => {
+                                                setExpenses(prev => prev.filter(e => e.id !== exp.id));
+                                                if (exp.depositTransferId) setManualTransfers(prev => prev.filter(t => t.id !== exp.depositTransferId));
+                                            }} className="text-zinc-700 hover:text-rose-500 transition-colors">
                                                 <TrashIcon className="w-3.5 h-3.5" />
                                             </button>
                                         )}
@@ -5297,39 +5362,32 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     placeholder="반품 사유 (선택)"
                                     className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
                                     onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && returnCompany && returnProductKey && returnCount && parseInt(returnCount) > 0) {
-                                            const p = returnProducts.find(p => p.key === returnProductKey);
-                                            if (!p) return;
-                                            const qty = parseInt(returnCount);
-                                            setReturns(prev => [...prev, {
-                                                company: returnCompany, productKey: returnProductKey, productName: p.name,
-                                                registeredName: returnRegisteredName || undefined,
-                                                count: qty, marginPerUnit: p.margin, totalMargin: -(p.margin * qty), memo: returnMemo || undefined,
-                                                orderDate: returnOrderDate || undefined, type: '반품',
-                                            }]);
-                                            setReturnProductKey(''); setReturnCount('1'); setReturnMemo('');
-                                        }
+                                        if (e.key === 'Enter') handleAddReturnItem();
                                     }}
                                 />
                                 <button
-                                    onClick={() => {
-                                        if (!returnCompany || !returnProductKey || !returnCount || parseInt(returnCount) <= 0) return;
-                                        const p = returnProducts.find(p => p.key === returnProductKey);
-                                        if (!p) return;
-                                        const qty = parseInt(returnCount);
-                                        setReturns(prev => [...prev, {
-                                            company: returnCompany, productKey: returnProductKey, productName: p.name,
-                                            registeredName: returnRegisteredName || undefined,
-                                            count: qty, marginPerUnit: p.margin, totalMargin: -(p.margin * qty),
-                                            memo: returnMemo || undefined, orderDate: returnOrderDate || undefined, type: '반품',
-                                        }]);
-                                        setReturnProductKey(''); setReturnCount('1'); setReturnMemo('');
-                                    }}
+                                    onClick={handleAddReturnItem}
                                     disabled={!returnCompany || !returnProductKey || !returnCount || parseInt(returnCount) <= 0}
                                     className="bg-violet-600 hover:bg-violet-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <PlusCircleIcon className="w-3.5 h-3.5" />추가
                                 </button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                                <input
+                                    type="text"
+                                    value={returnBankName}
+                                    onChange={(e) => setReturnBankName(e.target.value)}
+                                    placeholder="은행명 (선택)"
+                                    className="w-28 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50 shrink-0"
+                                />
+                                <input
+                                    type="text"
+                                    value={returnAccountNumber}
+                                    onChange={(e) => setReturnAccountNumber(e.target.value)}
+                                    placeholder="계좌번호 (입력 시 입금목록 자동추가)"
+                                    className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50"
+                                />
                             </div>
                             {returnProductKey && parseInt(returnCount) > 0 && (
                                 <div className="mb-3 text-right">
@@ -5384,37 +5442,32 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     placeholder="메모 (선택)"
                                     className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] text-zinc-300 focus:outline-none focus:border-violet-500/50"
                                     onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && returnCompany && returnProductKey && returnDirectAmount && parseInt(returnDirectAmount) > 0) {
-                                            const p = returnProducts.find(p => p.key === returnProductKey);
-                                            const amount = parseInt(returnDirectAmount);
-                                            setReturns(prev => [...prev, {
-                                                company: returnCompany, productKey: returnProductKey, productName: p?.name || itemType,
-                                                registeredName: returnRegisteredName || undefined,
-                                                count: 1, marginPerUnit: amount, totalMargin: -amount,
-                                                memo: returnMemo || undefined, orderDate: returnOrderDate || undefined, type: itemType,
-                                            }]);
-                                            setReturnProductKey(''); setReturnDirectAmount(''); setReturnMemo('');
-                                        }
+                                        if (e.key === 'Enter') handleAddDirectItem();
                                     }}
                                 />
                                 <button
-                                    onClick={() => {
-                                        if (!returnCompany || !returnProductKey || !returnDirectAmount || parseInt(returnDirectAmount) <= 0) return;
-                                        const p = returnProducts.find(p => p.key === returnProductKey);
-                                        const amount = parseInt(returnDirectAmount);
-                                        setReturns(prev => [...prev, {
-                                            company: returnCompany, productKey: returnProductKey, productName: p?.name || itemType,
-                                            registeredName: returnRegisteredName || undefined,
-                                            count: 1, marginPerUnit: amount, totalMargin: -amount,
-                                            memo: returnMemo || undefined, orderDate: returnOrderDate || undefined, type: itemType,
-                                        }]);
-                                        setReturnProductKey(''); setReturnDirectAmount(''); setReturnMemo('');
-                                    }}
+                                    onClick={handleAddDirectItem}
                                     disabled={!returnCompany || !returnProductKey || !returnDirectAmount || parseInt(returnDirectAmount) <= 0}
                                     className="bg-violet-600 hover:bg-violet-500 text-white font-black py-2.5 px-4 rounded-xl transition-all shadow-md text-[10px] flex items-center gap-1.5 disabled:opacity-30 disabled:cursor-not-allowed"
                                 >
                                     <PlusCircleIcon className="w-3.5 h-3.5" />추가
                                 </button>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 mb-3">
+                                <input
+                                    type="text"
+                                    value={returnBankName}
+                                    onChange={(e) => setReturnBankName(e.target.value)}
+                                    placeholder="은행명 (선택)"
+                                    className="w-28 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-bold text-zinc-300 focus:outline-none focus:border-violet-500/50 shrink-0"
+                                />
+                                <input
+                                    type="text"
+                                    value={returnAccountNumber}
+                                    onChange={(e) => setReturnAccountNumber(e.target.value)}
+                                    placeholder="계좌번호 (입력 시 입금목록 자동추가)"
+                                    className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2.5 text-[11px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50"
+                                />
                             </div>
                             {returnProductKey && returnDirectAmount && parseInt(returnDirectAmount) > 0 && (
                                 <div className="mb-3 text-right">
@@ -5439,10 +5492,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <span className="text-[10px] text-zinc-400">{ret.productName}</span>
                                             {(ret.type || '반품') === '반품' && <span className="text-[10px] text-zinc-500">{ret.count}개</span>}
                                             {ret.memo && <span className="text-[10px] text-zinc-600">{ret.memo}</span>}
+                                            {ret.depositTransferId && <span className="text-[9px] text-indigo-400 font-bold shrink-0">입금목록✓</span>}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <span className="text-[10px] font-mono font-bold text-violet-400">{ret.totalMargin.toLocaleString()}원</span>
-                                            <button onClick={() => setReturns(prev => prev.filter((_, idx) => idx !== originalIndex))} className="text-zinc-700 hover:text-violet-400 transition-colors">
+                                            <button onClick={() => {
+                                                setReturns(prev => prev.filter((_, idx) => idx !== originalIndex));
+                                                if (ret.depositTransferId) setManualTransfers(prev => prev.filter(t => t.id !== ret.depositTransferId));
+                                            }} className="text-zinc-700 hover:text-violet-400 transition-colors">
                                                 <TrashIcon className="w-3.5 h-3.5" />
                                             </button>
                                         </div>
