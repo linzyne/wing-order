@@ -225,6 +225,7 @@ export interface CsRecord {
   orderRowSnapshot?: any[];       // 접수 시점 원본 발주 행 스냅샷 (상세보기용, 재검색 방지)
   orderRowHeaders?: string[];     // 접수 시점 헤더 스냅샷
   poAdded?: boolean;              // 고객 재배송용 발주 행을 오늘 발주서에 추가했는지 여부 (중복 추가 방지)
+  pending?: boolean;              // 사전입력만 해두고 아직 확정 접수 전인 대기 상태 (반품기록/정산조정/계좌이체 등 실제 효과는 확정 시점에만 실행됨)
 }
 
 // 구버전 데이터는 status 필드만 있으므로, vendorStatus/customerStatus가 없으면 status로 대체한다.

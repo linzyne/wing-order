@@ -151,6 +151,7 @@ const OrderDetailModal: React.FC<{ item: OpenCsItem; onClose: () => void }> = ({
 
 const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePurchaseOrder }) => {
   const [items, setItems] = useState<OpenCsItem[]>([]);
+  const [pendingItems, setPendingItems] = useState<OpenCsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
@@ -176,14 +177,17 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     const results = await Promise.all(businesses.map(async b => {
       const history = await loadAllSalesHistory(b.id);
       const open: OpenCsItem[] = [];
+      const pending: OpenCsItem[] = [];
       history.forEach(d => {
         (d.csRecords || []).forEach(r => {
-          if (!isCsFullyCompleted(r)) open.push({ ...r, date: d.date, businessId: b.id, businessName: b.displayName });
+          if (r.pending) pending.push({ ...r, date: d.date, businessId: b.id, businessName: b.displayName });
+          else if (!isCsFullyCompleted(r)) open.push({ ...r, date: d.date, businessId: b.id, businessName: b.displayName });
         });
       });
-      return open;
+      return { open, pending };
     }));
-    setItems(results.flat().sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+    setItems(results.flatMap(r => r.open).sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+    setPendingItems(results.flatMap(r => r.pending).sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
     setLoading(false);
   }, [businesses]);
 
@@ -376,6 +380,44 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         </div>
         <button onClick={onClose} className="text-zinc-600 hover:text-white transition-colors text-2xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-zinc-800">×</button>
       </div>
+
+      {pendingItems.length > 0 && (
+        <div className="px-2 mb-3">
+          <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1.5">대기중 CS ({pendingItems.length}건)</p>
+          <div className="space-y-1.5 max-h-40 overflow-y-auto">
+            {pendingItems.map(item => {
+              const key = `${item.businessId}-${item.id}`;
+              return (
+                <div key={key} className="rounded-lg px-3 py-2 flex items-center justify-between gap-2 border bg-sky-500/5 border-sky-500/20">
+                  <div className="min-w-0">
+                    <div className="font-bold text-xs truncate text-white">
+                      {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}
+                    </div>
+                    <div className="text-zinc-500 text-[10px] font-bold truncate">
+                      {item.businessName} · {item.company} · {item.customerMethod} · {item.reason}
+                    </div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-1">
+                    <button
+                      onClick={() => handleEdit(item)}
+                      className="px-2 py-1 rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 text-[10px] font-black border border-sky-500/20 transition-colors"
+                    >
+                      확정하기
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item)}
+                      disabled={deletingKey === key}
+                      className="px-2 py-1 rounded-lg bg-zinc-800 text-zinc-500 hover:bg-rose-500/10 hover:text-rose-400 disabled:opacity-40 text-[10px] font-black border border-zinc-700 transition-colors"
+                    >
+                      {deletingKey === key ? '삭제 중...' : '삭제'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* 사업자 선택 + 검색 → CS 접수 */}
       <div className="px-2 mb-3 space-y-2">

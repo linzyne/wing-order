@@ -1,5 +1,6 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { CS_SAVED_EVENT } from '../services/firestoreService';
 
 export interface UploadResult {
   fileName: string;
@@ -34,6 +35,14 @@ interface MasterUploadHandlers {
 }
 
 interface Business { id: string; displayName: string; }
+
+interface PendingCsSummary {
+  businessName: string;
+  company: string;
+  recipientName: string;
+  orderNumber: string;
+  customerMethod: '재배송' | '환불';
+}
 
 interface Props {
   businesses: Business[];
@@ -80,6 +89,30 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const [copiedSettlement, setCopiedSettlement] = useState<string | null>(null);
   const [globalWorkDate, setGlobalWorkDate] = useState<string>(() => new Date().toLocaleDateString('en-CA'));
   const [pendingUrgentFiles, setPendingUrgentFiles] = useState<File[] | null>(null);
+  const [pendingCsItems, setPendingCsItems] = useState<PendingCsSummary[]>([]);
+
+  // 대기저장 CS 목록: 최신 상태를 유지하다가 발주서 생성 시 팝업으로 리마인드
+  const refreshPendingCs = useCallback(async () => {
+    const { loadAllSalesHistory } = await import('../services/firestoreService');
+    const results = await Promise.all(businesses.map(async b => {
+      const history = await loadAllSalesHistory(b.id);
+      const found: PendingCsSummary[] = [];
+      history.forEach(d => {
+        (d.csRecords || []).forEach(r => {
+          if (r.pending) found.push({ businessName: b.displayName, company: r.company, recipientName: r.recipientName, orderNumber: r.orderNumber, customerMethod: r.customerMethod });
+        });
+      });
+      return found;
+    }));
+    setPendingCsItems(results.flat());
+  }, [businesses]);
+
+  useEffect(() => {
+    refreshPendingCs();
+    const handler = () => refreshPendingCs();
+    window.addEventListener(CS_SAVED_EVENT, handler);
+    return () => window.removeEventListener(CS_SAVED_EVENT, handler);
+  }, [refreshPendingCs]);
 
   // 마운트 시 첫 번째 사업자의 작업날짜를 가져와 표시값 동기화
   useEffect(() => {
@@ -265,7 +298,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList).filter(f => /\.(xlsx|xls)$/i.test(f.name));
     if (files.length === 0) return;
-    if (urgentNotice?.trim()) {
+    if (urgentNotice?.trim() || pendingCsItems.length > 0) {
       setPendingUrgentFiles(files);
       return;
     }
@@ -624,11 +657,25 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
             style={{ background:'#27272a', borderRadius:'16px', padding:'24px', maxWidth:'400px', width:'90%', border:'2px solid #f59e0b', boxShadow:'0 25px 50px rgba(0,0,0,0.5)' }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ color:'#fff', fontWeight:700, fontSize:'14px', marginBottom:'4px' }}>긴급공지</div>
+            <div style={{ color:'#fff', fontWeight:700, fontSize:'14px', marginBottom:'4px' }}>{urgentNotice?.trim() ? '긴급공지' : '대기중 CS 확인'}</div>
             <div style={{ color:'#a1a1aa', fontSize:'11px', marginBottom:'16px' }}>발주서 생성 전 확인하세요</div>
-            <div style={{ maxHeight:'240px', overflowY:'auto', marginBottom:'16px', padding:'10px 12px', borderRadius:'12px', border:'1px solid #3f3f46', background:'rgba(63,63,70,0.3)' }}>
-              <span style={{ fontSize:'16px', fontWeight:600, color:'#fff', whiteSpace:'pre-wrap' }}>{urgentNotice}</span>
-            </div>
+            {urgentNotice?.trim() && (
+              <div style={{ maxHeight:'240px', overflowY:'auto', marginBottom:'16px', padding:'10px 12px', borderRadius:'12px', border:'1px solid #3f3f46', background:'rgba(63,63,70,0.3)' }}>
+                <span style={{ fontSize:'16px', fontWeight:600, color:'#fff', whiteSpace:'pre-wrap' }}>{urgentNotice}</span>
+              </div>
+            )}
+            {pendingCsItems.length > 0 && (
+              <div style={{ marginBottom:'16px' }}>
+                <div style={{ color:'#f59e0b', fontWeight:700, fontSize:'11px', marginBottom:'6px' }}>대기중 CS {pendingCsItems.length}건 — 접수 확정 잊지 마세요</div>
+                <div style={{ maxHeight:'180px', overflowY:'auto', padding:'10px 12px', borderRadius:'12px', border:'1px solid #3f3f46', background:'rgba(63,63,70,0.3)' }}>
+                  {pendingCsItems.map((item, i) => (
+                    <div key={i} style={{ fontSize:'12px', color:'#e4e4e7', fontWeight:600, padding: i > 0 ? '6px 0 0' : '0' }}>
+                      {item.businessName} · {item.company} · {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'} · {item.customerMethod}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             <div style={{ display:'flex', gap:'8px' }}>
               <button onClick={handleUrgentNoticeConfirm} style={{ flex:1, background:'#f59e0b', color:'#fff', fontWeight:700, fontSize:'12px', padding:'10px', borderRadius:'12px', border:'none', cursor:'pointer' }}>
                 확인, 계속 진행

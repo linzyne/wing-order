@@ -216,7 +216,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (asPending: boolean) => {
     if (!draft.reason.trim()) { setError('사유를 입력해주세요.'); return; }
     if (draft.customerMethod === '환불' && draft.deduction === 'full' && !draft.productKey) {
       setError('전액차감 처리를 위해 품목을 선택해주세요.');
@@ -269,14 +269,16 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         createdAt: editing ? editing.record.createdAt : now.toISOString(),
         orderRowSnapshot: draft.row.length > 0 ? draft.row : editing?.record.orderRowSnapshot,
         orderRowHeaders: draft.headers.length > 0 ? draft.headers : editing?.record.orderRowHeaders,
+        pending: asPending,
       };
 
       const csRecords = editing
         ? (base.csRecords || []).map(r => (r.id === id ? csRecord : r))
         : [...(base.csRecords || []), csRecord];
 
+      // 대기 저장 중엔 반품기록/정산조정/계좌이체 등 실제 재무 효과를 발생시키지 않는다 (확정 시점에만 실행)
       let returnRecords = (base.returnRecords || []).filter(r => r.csRecordId !== id);
-      const isRefundDeduction = draft.customerMethod === '환불' && draft.deduction === 'full';
+      const isRefundDeduction = !asPending && draft.customerMethod === '환불' && draft.deduction === 'full';
       if (isRefundDeduction) {
         returnRecords = [...returnRecords, {
           company: draft.company,
@@ -300,8 +302,8 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       }, businessId);
       window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: targetDate } }));
 
-      const wasRefundDeduction = editing ? (editing.record.deduction === 'full' && editing.record.customerMethod === '환불') : false;
-      const wasAccountRefund = editing ? (editing.record.customerMethod === '환불' && editing.record.refundMethod === '계좌환불') : false;
+      const wasRefundDeduction = editing ? (editing.record.deduction === 'full' && editing.record.customerMethod === '환불' && !editing.record.pending) : false;
+      const wasAccountRefund = editing ? (editing.record.customerMethod === '환불' && editing.record.refundMethod === '계좌환불' && !editing.record.pending) : false;
 
       if (isRefundDeduction && supplyPrice > 0) {
         await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice, `${draft.recipientName}환불`, false);
@@ -311,7 +313,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
       }
 
-      if (isAccountRefund) {
+      if (!asPending && isAccountRefund) {
         await setManualTransferForRefund(businessId, `cs-refund-${id}`, {
           label: `${draft.recipientName || '고객'} CS환불`,
           bankName: draft.refundBankName.trim(),
@@ -333,6 +335,14 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
     }
   };
 
+  // 이미 확정된 CS를 다시 대기로 되돌리는 상황은 없으므로, 신규 입력이거나 아직 대기중인 건일 때만 "대기 저장" 노출
+  const canSavePending = !editing || editing.record.pending === true;
+  const isSubmitDisabled =
+    saving ||
+    !draft.reason.trim() ||
+    (draft.customerMethod === '환불' && draft.deduction === 'full' && !draft.productKey) ||
+    (draft.customerMethod === '환불' && draft.refundMethod === '계좌환불' && (!draft.refundBankName.trim() || !draft.refundAccountNumber.trim() || !(parseInt(draft.refundAmount, 10) > 0)));
+
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
@@ -344,7 +354,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       >
         <div className="px-6 py-5 border-b border-zinc-800 flex items-center justify-between shrink-0">
           <div>
-            <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">{editing ? 'CS 수정' : 'CS 접수'}</div>
+            <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1">{editing?.record.pending ? 'CS 확정' : editing ? 'CS 수정' : 'CS 접수'}</div>
             <div className="text-white font-black text-lg">{draft.recipientName || '이름없음'} · {draft.orderNumber || '주문번호없음'}</div>
             <div className="text-[11px] text-zinc-500 font-bold mt-0.5">
               {draft.company} · {draft.productName}{draft.qty > 1 ? ` x${draft.qty}` : ''}
@@ -540,18 +550,22 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
           {error && <p className="text-rose-400 text-xs font-bold">{error}</p>}
         </div>
 
-        <div className="px-6 py-4 border-t border-zinc-800 shrink-0">
+        <div className="px-6 py-4 border-t border-zinc-800 shrink-0 flex gap-2">
+          {canSavePending && (
+            <button
+              onClick={() => handleSubmit(true)}
+              disabled={isSubmitDisabled}
+              className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-700 text-zinc-300 font-black text-sm border border-zinc-700 transition-all"
+            >
+              {saving ? '저장 중...' : '대기 저장'}
+            </button>
+          )}
           <button
-            onClick={handleSubmit}
-            disabled={
-              saving ||
-              !draft.reason.trim() ||
-              (draft.customerMethod === '환불' && draft.deduction === 'full' && !draft.productKey) ||
-              (draft.customerMethod === '환불' && draft.refundMethod === '계좌환불' && (!draft.refundBankName.trim() || !draft.refundAccountNumber.trim() || !(parseInt(draft.refundAmount, 10) > 0)))
-            }
-            className="w-full py-3 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black text-sm shadow-md shadow-violet-950/40 transition-all"
+            onClick={() => handleSubmit(false)}
+            disabled={isSubmitDisabled}
+            className="flex-1 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black text-sm shadow-md shadow-violet-950/40 transition-all"
           >
-            {saving ? '저장 중...' : editing ? '수정 완료' : '접수 완료'}
+            {saving ? '저장 중...' : editing?.record.pending ? '접수 확정' : editing ? '수정 완료' : '접수 완료'}
           </button>
         </div>
       </div>
