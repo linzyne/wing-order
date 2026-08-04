@@ -187,19 +187,6 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     return { records, total };
   }, [filteredHistory]);
 
-  // 비용 데이터 합산
-  const allExpenseData = useMemo(() => {
-    const records: (ExpenseRecord & { date: string })[] = [];
-    let total = 0;
-    filteredHistory.forEach(d => {
-      if (d.expenseRecords) {
-        d.expenseRecords.forEach(r => records.push({ ...r, date: d.date }));
-        total += d.expenseRecords.reduce((s, r) => s + r.amount, 0);
-      }
-    });
-    return { records, total };
-  }, [filteredHistory]);
-
   // 반품 데이터 합산
   const allReturnData = useMemo(() => {
     const records: (ReturnRecord & { date: string })[] = [];
@@ -943,9 +930,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       lines.push(`📊 ${periodLabel} 마진 현황`);
       lines.push(`총 마진: ${total.toLocaleString()}원`);
       if (allReturnData.total < 0) lines.push(`반품: ${allReturnData.total.toLocaleString()}원`);
-      if (allExpenseData.total > 0) lines.push(`비용: -${allExpenseData.total.toLocaleString()}원`);
-      if (allExpenseData.total > 0 || allReturnData.total < 0) {
-        lines.push(`순수익: ${(total + allReturnData.total - allExpenseData.total).toLocaleString()}원`);
+      if (allReturnData.total < 0) {
+        lines.push(`순수익: ${(total + allReturnData.total).toLocaleString()}원`);
       }
       lines.push('');
       allDates.forEach(date => {
@@ -968,12 +954,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
           {allReturnData.total < 0 && (
             <span className="text-zinc-400 font-black text-xs">반품 <span className="text-violet-400 text-sm ml-1">{allReturnData.total.toLocaleString()}원</span></span>
           )}
-          {allExpenseData.total > 0 && (
-            <span className="text-zinc-400 font-black text-xs">비용 <span className="text-orange-400 text-sm ml-1">-{allExpenseData.total.toLocaleString()}원</span></span>
-          )}
-          {(allExpenseData.total > 0 || allReturnData.total < 0) && (
-            <span className="text-zinc-400 font-black text-xs">순수익 <span className={`text-sm ml-1 font-black ${total + allReturnData.total - allExpenseData.total >= 0 ? 'text-emerald-400' : 'text-violet-400'}`}>
-              {(total + allReturnData.total - allExpenseData.total).toLocaleString()}원
+          {allReturnData.total < 0 && (
+            <span className="text-zinc-400 font-black text-xs">순수익 <span className={`text-sm ml-1 font-black ${total + allReturnData.total >= 0 ? 'text-emerald-400' : 'text-violet-400'}`}>
+              {(total + allReturnData.total).toLocaleString()}원
             </span></span>
           )}
           <button onClick={handleCopyMargin}
@@ -1430,6 +1413,20 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
 
     const totalByDate = new Map<string, number>();
     const kgByDate = new Map<string, number>();
+    // 품목(base)별 날짜별 무게(kg) 소계
+    const kgByGroupDate = new Map<string, Map<string, number>>();
+    groups.forEach(({ base, rows }) => {
+      const dateKgMap = new Map<string, number>();
+      trendDates.forEach(date => {
+        let kg = 0;
+        rows.forEach(({ name, dateMap }) => {
+          const w = getWeightKg(name);
+          if (w !== null) kg += (dateMap.get(date) || 0) * w;
+        });
+        dateKgMap.set(date, kg);
+      });
+      kgByGroupDate.set(base, dateKgMap);
+    });
     trendDates.forEach(date => {
       let totalKg = 0;
       productRows.forEach(({ name, dateMap }) => {
@@ -1505,14 +1502,22 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         <td className="py-1.5 px-3 font-bold text-zinc-400 whitespace-nowrap sticky left-0 bg-zinc-900 border-r border-zinc-700 text-xs">{base} 합계</td>
                         {trendDates.map(date => {
                           const sub = rows.reduce((s, { dateMap }) => s + (dateMap.get(date) || 0), 0);
+                          const subKg = kgByGroupDate.get(base)?.get(date) || 0;
                           return (
                             <td key={date} className="py-1.5 px-2 text-center font-bold text-zinc-300 tabular-nums bg-zinc-900 text-xs">
                               {formatVal(sub)}
+                              {trendMetric === 'count' && sub > 0 && subKg > 0 && (
+                                <span className="text-zinc-500 font-medium text-[9px] ml-0.5">({formatKg(subKg)})</span>
+                              )}
                             </td>
                           );
                         })}
                         <td className="py-1.5 px-3 text-center font-bold text-zinc-300 tabular-nums bg-zinc-900 text-xs border-l border-zinc-700">
                           {formatVal(trendDates.reduce((s, date) => s + rows.reduce((ss, { dateMap }) => ss + (dateMap.get(date) || 0), 0), 0))}
+                          {trendMetric === 'count' && (() => {
+                            const groupTotalKg = trendDates.reduce((s, date) => s + (kgByGroupDate.get(base)?.get(date) || 0), 0);
+                            return groupTotalKg > 0 ? <span className="text-zinc-500 font-medium text-[9px] ml-0.5">({formatKg(groupTotalKg)})</span> : null;
+                          })()}
                         </td>
                       </tr>
                     )}
