@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import CsEntryModal, { type CsDraft, resolveOrderRowFields, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
+import CsEntryModal, { type CsDraft, resolveOrderRowFields, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord, revertCsRecordToPending } from './CsEntryModal';
 import { getHeaderForCompany, inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
 import type { CsRecord, PricingConfig, ManualOrder } from '../types';
 import { getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
@@ -157,6 +157,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [sentId, setSentId] = useState<string | null>(null);
   const [creatingPoId, setCreatingPoId] = useState<string | null>(null);
+  const [revertingKey, setRevertingKey] = useState<string | null>(null);
   const [viewingItem, setViewingItem] = useState<OpenCsItem | null>(null);
 
   // 검색용: 사업자 먼저 선택 → 그 사업자의 발주내역만 대상으로 검색 (사업자마다 같은 주문번호가 있을 수 있어 섞으면 안 됨)
@@ -351,6 +352,19 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     setCsDraft(buildCsDraftFromRecord(item));
   };
 
+  const handleRevertToPending = async (item: OpenCsItem) => {
+    if (!window.confirm(`${item.recipientName || '이름없음'} · ${item.orderNumber || '주문번호없음'} 건을 접수대기 상태로 되돌리시겠습니까?\n확정 시 반영된 반품기록/정산조정/계좌이체 내역이 있다면 함께 취소됩니다.`)) return;
+    const key = `${item.businessId}-${item.id}`;
+    setRevertingKey(key);
+    try {
+      await revertCsRecordToPending(item.businessId, item.date, item);
+      setItems(prev => prev.filter(i => !(i.id === item.id && i.businessId === item.businessId)));
+      setPendingItems(prev => [...prev, { ...item, pending: true }].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+    } finally {
+      setRevertingKey(null);
+    }
+  };
+
   const handleDelete = async (item: OpenCsItem) => {
     if (!window.confirm(`${item.recipientName || '이름없음'} · ${item.orderNumber || '주문번호없음'} CS 접수를 삭제하시겠습니까?`)) return;
     const key = `${item.businessId}-${item.id}`;
@@ -398,6 +412,13 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
                     </div>
                   </div>
                   <div className="shrink-0 flex items-center gap-1">
+                    <button
+                      onClick={() => handleSendToVendor(item)}
+                      disabled={sendingId === key}
+                      className="px-2 py-1 rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 disabled:opacity-50 text-[10px] font-black border border-sky-500/20 transition-colors"
+                    >
+                      {sentId === key ? '복사됨' : sendingId === key ? '복사 중...' : '업체전송'}
+                    </button>
                     <button
                       onClick={() => handleEdit(item)}
                       className="px-2 py-1 rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 text-[10px] font-black border border-sky-500/20 transition-colors"
@@ -580,6 +601,13 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
                     className="px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 disabled:opacity-50 transition-colors"
                   >
                     {deletingKey === key ? '삭제 중...' : '삭제'}
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); handleRevertToPending(item); }}
+                    disabled={revertingKey === key}
+                    className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 disabled:opacity-50 transition-colors"
+                  >
+                    {revertingKey === key ? '되돌리는 중...' : '대기로 되돌리기'}
                   </button>
                 </div>
               </div>

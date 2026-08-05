@@ -201,6 +201,33 @@ export async function deleteCsRecord(businessId: string | undefined, date: strin
   }
 }
 
+/** 확정된 CS를 다시 대기 상태로 되돌리고, 확정 시점에 반영됐던 반품기록/정산조정/수동입금 내역도 함께 취소한다 */
+export async function revertCsRecordToPending(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
+  const { loadDailySales, upsertDailySales } = await import('../services/firestoreService');
+  const existing = await loadDailySales(date, businessId);
+  if (!existing) return;
+
+  const returnRecords = (existing.returnRecords || []).filter(r => r.csRecordId !== record.id);
+  const returnTotal = returnRecords.reduce((s, r) => s + r.totalMargin, 0);
+  const csRecords = (existing.csRecords || []).map(r => (r.id === record.id ? { ...r, pending: true } : r));
+
+  await upsertDailySales({
+    ...existing,
+    csRecords,
+    returnRecords: returnRecords.length > 0 ? returnRecords : undefined,
+    returnTotal: returnTotal || undefined,
+  }, businessId);
+  window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
+
+  const wasRefundDeduction = record.deduction === 'full' && record.customerMethod === '환불';
+  const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
+  if (wasRefundDeduction || wasAccountRefund) {
+    if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
+    if (wasAccountRefund) await setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null);
+    window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
+  }
+}
+
 interface Props {
   businessId?: string;
   pricingConfig?: PricingConfig;
