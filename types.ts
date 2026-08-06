@@ -161,6 +161,7 @@ export interface SalesRecord {
   supplyPrice: number;
   totalPrice: number;
   margin?: number;
+  isAdjustment?: boolean; // 정산요약 추가/차감(sessionAdjustments)에서 생성된 항목 — 판매추이엔 숨기고 반품 탭에만 노출
 }
 
 export interface DepositRecord {

@@ -398,7 +398,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
       {pendingItems.length > 0 && (
         <div className="px-2 mb-3">
           <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1.5">대기중 CS ({pendingItems.length}건)</p>
-          <div className="space-y-1.5 max-h-40 overflow-y-auto">
+          <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar pr-1">
             {pendingItems.map(item => {
               const key = `${item.businessId}-${item.id}`;
               return (
@@ -485,7 +485,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         )}
 
         {selectedBusinessId && search.trim() && (
-          <div className="space-y-1.5 max-h-64 overflow-y-auto">
+          <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar pr-1">
             {searchResults.length === 0 ? (
               <p className="text-zinc-600 text-xs font-bold text-center py-3">검색 결과가 없습니다.</p>
             ) : searchResults.map(({ company, row }, i) => {
@@ -524,7 +524,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
       ) : items.length === 0 ? (
         <p className="text-zinc-600 text-xs font-bold text-center py-10">진행중인 CS가 없습니다.</p>
       ) : (
-        <div className="space-y-2 max-h-[50vh] overflow-y-auto px-1">
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto custom-scrollbar px-1">
           {items.map(item => {
             const key = `${item.businessId}-${item.id}`;
             return (

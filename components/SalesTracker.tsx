@@ -187,17 +187,34 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     return { records, total };
   }, [filteredHistory]);
 
-  // 반품 데이터 합산
+  // 정산요약 추가/차감(sessionAdjustments)에서 생성된 항목인지 판별.
+  // isAdjustment 플래그가 없는 과거 저장분은 margin 필드가 아예 없다는 점으로 구분한다
+  // (실제 판매 레코드는 항상 margin을 0 이상의 값으로 채워 저장하기 때문).
+  const isAdjustmentRecord = (r: SalesRecord) => r.isAdjustment === true || r.margin === undefined;
+
+  // 반품 데이터 합산 (정산요약 추가/차감 항목도 여기에만 노출 — 판매추이에서는 제외)
   const allReturnData = useMemo(() => {
-    const records: (ReturnRecord & { date: string })[] = [];
-    let total = 0;
+    const records: (ReturnRecord & { date: string; isAdjustment?: boolean })[] = [];
     filteredHistory.forEach(d => {
       if (d.returnRecords) {
         d.returnRecords.forEach(r => records.push({ ...r, date: d.date }));
       }
-      if (d.returnTotal) total += d.returnTotal;
+      d.records.forEach(r => {
+        if (!isAdjustmentRecord(r)) return;
+        records.push({
+          date: d.date,
+          company: r.company,
+          productKey: '',
+          productName: '',
+          count: r.count,
+          marginPerUnit: r.supplyPrice,
+          totalMargin: r.totalPrice,
+          memo: r.product,
+          isAdjustment: true,
+        });
+      });
     });
-    if (total === 0) total = records.reduce((s, r) => s + r.totalMargin, 0);
+    const total = records.reduce((s, r) => s + r.totalMargin, 0);
     return { records, total };
   }, [filteredHistory]);
 
@@ -415,6 +432,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     const map = new Map<string, Map<string, number>>();
     filteredHistory.forEach(d => {
       d.records.forEach(r => {
+        if (isAdjustmentRecord(r)) return; // 정산요약 추가/차감 항목은 반품 탭에서만 표시
         if (r.company !== trendActiveCompany) return;
         const name = getOrderFormName(r.company, r.product);
         if (!map.has(name)) map.set(name, new Map());
@@ -433,6 +451,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     const companyMap = new Map<string, Map<string, Map<string, number>>>();
     filteredHistory.forEach(d => {
       d.records.forEach(r => {
+        if (isAdjustmentRecord(r)) return; // 정산요약 추가/차감 항목은 반품 탭에서만 표시
         const name = getOrderFormName(r.company, r.product);
         if (!companyMap.has(r.company)) companyMap.set(r.company, new Map());
         const productMap = companyMap.get(r.company)!;
@@ -1001,23 +1020,23 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     const { records, total } = allReturnData;
 
     // 날짜별로 그룹핑
-    const byDate = new Map<string, (ReturnRecord & { date: string })[]>();
+    const byDate = new Map<string, (ReturnRecord & { date: string; isAdjustment?: boolean })[]>();
     records.forEach(r => {
       const list = byDate.get(r.date) || [];
       list.push(r);
       byDate.set(r.date, list);
     });
 
-    // 품목별 반품 합산
-    const productReturnMap = new Map<string, { count: number; totalMargin: number; marginPerUnit: number; company: string }>();
+    // 사유별 반품 합산
+    const reasonReturnMap = new Map<string, { count: number; totalMargin: number; marginPerUnit: number; company: string }>();
     records.forEach(r => {
-      const key = `${r.company}::${r.productName}`;
-      const existing = productReturnMap.get(key) || { count: 0, totalMargin: 0, marginPerUnit: r.marginPerUnit, company: r.company };
+      const key = `${r.company}::${r.memo || ''}`;
+      const existing = reasonReturnMap.get(key) || { count: 0, totalMargin: 0, marginPerUnit: r.marginPerUnit, company: r.company };
       existing.count += r.count;
       existing.totalMargin += r.totalMargin;
-      productReturnMap.set(key, existing);
+      reasonReturnMap.set(key, existing);
     });
-    const productReturnSummary = Array.from(productReturnMap.entries()).sort(([, a], [, b]) => a.totalMargin - b.totalMargin);
+    const reasonReturnSummary = Array.from(reasonReturnMap.entries()).sort(([, a], [, b]) => a.totalMargin - b.totalMargin);
 
     return (
       <div className="divide-y divide-zinc-900">
@@ -1029,27 +1048,27 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
           </div>
         )}
 
-        {/* 품목별 반품 요약 테이블 */}
-        {productReturnSummary.length > 0 && (
+        {/* 사유별 반품 요약 테이블 */}
+        {reasonReturnSummary.length > 0 && (
           <div className="p-6">
-            <h4 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">품목별 반품 요약</h4>
+            <h4 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">사유별 반품 요약</h4>
             <table className="w-full text-left">
               <thead>
                 <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
                   <th className="pb-3 pr-4">업체</th>
-                  <th className="pb-3 pr-4">품목</th>
+                  <th className="pb-3 pr-4">사유</th>
                   <th className="pb-3 pr-4 text-right">수량</th>
                   <th className="pb-3 pr-4 text-right">개당 마진</th>
                   <th className="pb-3 text-right">반품 마진</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-900/50">
-                {productReturnSummary.map(([key, d]) => {
-                  const productName = key.split('::')[1];
+                {reasonReturnSummary.map(([key, d]) => {
+                  const reason = key.split('::')[1];
                   return (
                     <tr key={key} className="text-xs hover:bg-zinc-900/30 transition-colors">
                       <td className="py-3 pr-4 font-bold text-violet-400">{d.company}</td>
-                      <td className="py-3 pr-4 font-bold text-zinc-200">{productName}</td>
+                      <td className="py-3 pr-4 font-bold text-zinc-200">{reason}</td>
                       <td className="py-3 pr-4 text-right text-zinc-400 font-bold">{d.count}개</td>
                       <td className="py-3 pr-4 text-right text-zinc-400 font-mono">{d.marginPerUnit.toLocaleString()}원</td>
                       <td className="py-3 text-right text-violet-400 font-black">{d.totalMargin.toLocaleString()}원</td>
@@ -1113,12 +1132,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                           <td className="py-2 pr-4 text-right text-zinc-400 font-mono">{r.marginPerUnit.toLocaleString()}원</td>
                           <td className="py-2 pr-4 text-right text-violet-400 font-black">{r.totalMargin.toLocaleString()}원</td>
                           <td className="py-2 text-right">
-                            <button
-                              onClick={() => handleDeleteReturn(date, i)}
-                              className="text-zinc-700 hover:text-violet-400 p-1 transition-colors"
-                            >
-                              <TrashIcon className="w-3.5 h-3.5" />
-                            </button>
+                            {!r.isAdjustment && (
+                              <button
+                                onClick={() => handleDeleteReturn(date, i)}
+                                className="text-zinc-700 hover:text-violet-400 p-1 transition-colors"
+                              >
+                                <TrashIcon className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
