@@ -2485,7 +2485,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
-        XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} ${round}차발주서.xlsx`);
+        XLSX.writeFile(wb, `${dateStr} [발주서] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} ${round}차.xlsx`);
     };
     downloadAllCompaniesRef.current = () => {
         const allCompanies = Object.keys(companySessions).filter(name =>
@@ -2916,7 +2916,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, '발주서');
             const dateStr = new Date().toLocaleDateString('en-CA');
-            XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산발주서.xlsx`);
+            XLSX.writeFile(wb, `${dateStr} [발주서] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산.xlsx`);
             sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
             downloaded++;
         });
@@ -3132,7 +3132,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '업로드용');
         const dateStr = new Date().toLocaleDateString('en-CA');
-        XLSX.writeFile(wb, `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}${companyName}[업로드용_송장].xlsx`);
+        XLSX.writeFile(wb, `${dateStr} [송장] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 업로드용.xlsx`);
     };
 
 
@@ -3160,7 +3160,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '업로드용');
         const dateStr = new Date().toLocaleDateString('en-CA');
-        const fileName = `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}통합[업로드용_송장].xlsx`;
+        const fileName = `${dateStr} [송장] ${businessPrefix ? businessPrefix + ' ' : ''}통합 업로드용.xlsx`;
         return { wb, fileName };
     };
 
@@ -3352,7 +3352,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
-        XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산발주서.xlsx`);
+        XLSX.writeFile(wb, `${dateStr} [발주서] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산.xlsx`);
         // 합산 발주서 다운로드 시 해당 업체 모든 세션 불 끄기
         sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
         setMergedDownloadedCompanies(prev => { const n = new Set(prev); n.add(companyName); return n; });
@@ -3400,8 +3400,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const ws = XLSX.utils.aoa_to_sheet(aoa);
         XLSX.utils.book_append_sheet(wb, ws, type === 'mgmt' ? '기록용' : '업로드용');
         const dateStr = new Date().toLocaleDateString('en-CA');
-        const label = type === 'mgmt' ? '기록용_' : '';
-        XLSX.writeFile(wb, `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}${companyName}[${label}합산_송장].xlsx`);
+        const label = type === 'mgmt' ? ' 기록용' : '';
+        XLSX.writeFile(wb, `${dateStr} [송장] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산${label}.xlsx`);
         // 합산 송장 다운로드 시 해당 업체 모든 세션 불 끄기
         sessions.forEach(s => setInvoiceLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
     };
@@ -3433,7 +3433,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, "병합송장");
         const dateStr = new Date().toLocaleDateString('en-CA');
         const companiesStr = selectedCompanyNames.length > 3 ? `${selectedCompanyNames.slice(0, 3).join('_')} 외 ${selectedCompanyNames.length - 3}곳` : selectedCompanyNames.join('_');
-        XLSX.writeFile(wb, `${dateStr}_${businessPrefix ? businessPrefix + '_' : ''}${companiesStr}[병합_송장].xlsx`);
+        XLSX.writeFile(wb, `${dateStr} [송장] ${businessPrefix ? businessPrefix + ' ' : ''}${companiesStr} 병합.xlsx`);
     };
 
     const handleDownloadDepositList = () => {
@@ -3478,8 +3478,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.utils.book_new();
             const sheetRows = [...chunk];
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetRows), "입금내역");
-            const suffix = chunks.length > 1 ? `_${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr}_${businessPrefix}_입금목록${suffix}.xlsx`);
+            const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
+            XLSX.writeFile(wb, `${dateStr} [입금목록] ${businessPrefix}${suffix}.xlsx`);
         });
 
         setShowDepositModal(false);
@@ -3518,8 +3518,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         chunks.forEach((chunk, idx) => {
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunk), "입금내역");
-            const suffix = chunks.length > 1 ? `_${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr}_${businessPrefix}_입금목록${suffix}.xlsx`);
+            const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
+            XLSX.writeFile(wb, `${dateStr} [입금목록] ${businessPrefix}${suffix}.xlsx`);
         });
     };
 
@@ -3552,8 +3552,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         chunks.forEach((chunk, idx) => {
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunk), "입금내역");
-            const suffix = chunks.length > 1 ? `_${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr}_${businessPrefix}_입금목록${suffix}.xlsx`);
+            const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
+            XLSX.writeFile(wb, `${dateStr} [입금목록] ${businessPrefix}${suffix}.xlsx`);
         });
     };
 
@@ -3731,7 +3731,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnSheetData), "품목별비용");
         }
 
-        XLSX.writeFile(wb, `${workDate}_${businessPrefix}_업무일지.xlsx`);
+        XLSX.writeFile(wb, `${workDate} [업무일지] ${businessPrefix}.xlsx`);
     };
 
     const depositListFnRef = useRef<() => void>(() => {});
@@ -3931,7 +3931,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const adjustments = workspace?.sessionAdjustments?.[s.id];
                 if (!adjustments || adjustments.length === 0) return;
                 adjustments.forEach(adj => {
-                    records.push({ date: recordDate, company: name, product: adj.label, count: 1, supplyPrice: adj.amount, totalPrice: adj.amount });
+                    records.push({ date: recordDate, company: name, product: adj.label, count: 1, supplyPrice: adj.amount, totalPrice: adj.amount, isAdjustment: true });
                 });
             });
         });

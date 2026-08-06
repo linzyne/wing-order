@@ -138,7 +138,7 @@ export const useBatchInvoice = (
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...allRows]), '업로드용');
             const d = new Date();
             const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-            XLSX.writeFile(wb, `${dateStr}_${bizShort ? bizShort + '_' : ''}통합[송장].xlsx`);
+            XLSX.writeFile(wb, `${dateStr} [송장] ${bizShort ? bizShort + ' ' : ''}통합.xlsx`);
 
             doneItems.forEach(item => onDownloaded?.(item.companyName));
             return prev.map(i => i.status === 'done' ? { ...i, downloaded: true } : i);

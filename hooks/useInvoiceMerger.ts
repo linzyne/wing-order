@@ -581,7 +581,7 @@ export const useInvoiceMerger = () => {
                 XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([pHeader, ...rows]), '업로드용');
                 platformUploadWorkbooks[platform] = {
                     workbook: wb,
-                    fileName: `${dateStr}_${bizShort ? bizShort + '_' : ''}${companyName}[${platform}_송장].xlsx`,
+                    fileName: `${dateStr} [송장] ${bizShort ? bizShort + ' ' : ''}${companyName} ${platform}.xlsx`,
                     count: rows.length
                 };
             }
@@ -591,8 +591,8 @@ export const useInvoiceMerger = () => {
             setResults({
                 mgmtWorkbook: mgmtWb,
                 uploadWorkbook: uploadWb,
-                mgmtFileName: `${dateStr}_${bizShort ? bizShort + '_' : ''}${companyName}[기록용_송장].xlsx`,
-                uploadFileName: `${dateStr}_${bizShort ? bizShort + '_' : ''}${companyName}[송장].xlsx`,
+                mgmtFileName: `${dateStr} [송장] ${bizShort ? bizShort + ' ' : ''}${companyName} 기록용.xlsx`,
+                uploadFileName: `${dateStr} [송장] ${bizShort ? bizShort + ' ' : ''}${companyName}.xlsx`,
                 companyStats: { [companyName]: { mgmt: mgmtCount, upload: uploadCount, failures } },
                 header: invoiceHeader,
                 rows: mgmtRows.slice(1),
