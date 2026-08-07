@@ -12,6 +12,7 @@ export interface CsDraft {
   qty: number;
   productKey: string;
   reason: string;
+  deductionReason: string;
   vendorMethod: string;
   customerMethod: '재배송' | '환불';
   deduction: 'full' | 'none';
@@ -96,6 +97,7 @@ export function buildCsDraft(company: string, row: any[], pricingConfig?: Pricin
     qty: fields.qty,
     productKey: matched?.[0] || '',
     reason: fields.deliveryMessage,
+    deductionReason: '',
     vendorMethod: '',
     customerMethod: '재배송',
     deduction: 'none',
@@ -119,6 +121,7 @@ export function buildCsDraftFromRecord(record: CsRecord): CsDraft {
     qty: 1,
     productKey: record.productKey || '',
     reason: record.reason,
+    deductionReason: record.deductionReason || '',
     vendorMethod: record.vendorMethod || '',
     customerMethod: record.customerMethod,
     deduction: record.deduction,
@@ -255,7 +258,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
   const needsProductForDeduction = (draft.customerMethod === '환불' && draft.deduction === 'full') || isVendorRefund;
 
   const handleSubmit = async (asPending: boolean) => {
-    if (!draft.reason.trim()) { setError('사유를 입력해주세요.'); return; }
+    if (!draft.reason.trim()) { setError('접수사유를 입력해주세요.'); return; }
     if (needsProductForDeduction && !draft.productKey) {
       setError('공급가 차감 처리를 위해 품목을 선택해주세요.');
       return;
@@ -290,6 +293,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         productKey: draft.productKey || undefined,
         productName: product?.displayName || draft.productName || undefined,
         reason: draft.reason.trim(),
+        deductionReason: draft.deductionReason.trim() || undefined,
         vendorMethod: draft.vendorMethod.trim(),
         customerMethod: draft.customerMethod,
         deduction: draft.deduction,
@@ -345,7 +349,8 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
 
       const isVendorRefundDeduction = !asPending && isVendorRefund;
       if (isVendorRefundDeduction && supplyPrice > 0) {
-        await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice, `${draft.recipientName}업체환불`, false);
+        const deductionLabel = [draft.recipientName, draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불';
+        await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice, deductionLabel, false);
         window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
       } else if (wasRefundDeduction) {
         await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, 0, '', true);
@@ -443,12 +448,12 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
           </div>
 
           <div>
-            <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">사유</label>
+            <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">접수사유</label>
             <textarea
               value={draft.reason}
               onChange={e => onChange({ ...draft, reason: e.target.value })}
               rows={2}
-              placeholder="CS 발생 사유"
+              placeholder="CS 발생 사유 (업체전송 시 사용됩니다)"
               className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30 outline-none resize-none"
             />
           </div>
@@ -468,26 +473,39 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
           </div>
 
           {isVendorRefund && (
-            <div className="bg-zinc-950/60 border border-zinc-800 rounded-2xl p-4">
-              <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">업체 환불 품목 (공급가 차감)</label>
-              <select
-                value={draft.productKey}
-                onChange={e => onChange({ ...draft, productKey: e.target.value })}
-                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
-              >
-                <option value="">품목 선택...</option>
-                {Object.entries(pricingConfig?.[draft.company]?.products || {}).map(([key, p]: [string, any]) => (
-                  <option key={key} value={key}>
-                    {p.displayName}{p.orderFormName && p.orderFormName !== p.displayName ? ` → ${p.orderFormName}` : ''} (공급가 {(p.supplyPrice || 0).toLocaleString()}원)
-                  </option>
-                ))}
-              </select>
+            <div className="bg-zinc-950/60 border border-zinc-800 rounded-2xl p-4 space-y-3">
+              <div>
+                <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">업체 환불 품목 (공급가 차감)</label>
+                <select
+                  value={draft.productKey}
+                  onChange={e => onChange({ ...draft, productKey: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
+                >
+                  <option value="">품목 선택...</option>
+                  {Object.entries(pricingConfig?.[draft.company]?.products || {}).map(([key, p]: [string, any]) => (
+                    <option key={key} value={key}>
+                      {p.displayName}{p.orderFormName && p.orderFormName !== p.displayName ? ` → ${p.orderFormName}` : ''} (공급가 {(p.supplyPrice || 0).toLocaleString()}원)
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">차감사유</label>
+                <input
+                  type="text"
+                  value={draft.deductionReason}
+                  onChange={e => onChange({ ...draft, deductionReason: e.target.value })}
+                  placeholder="예: 파손"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
+                />
+              </div>
               {draft.productKey && (() => {
                 const p = pricingConfig?.[draft.company]?.products?.[draft.productKey] as any;
                 if (!p) return null;
+                const label = [draft.recipientName, draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불';
                 return (
-                  <p className="text-[11px] text-zinc-500 font-bold mt-1.5">
-                    공급가 {(p.supplyPrice || 0).toLocaleString()}원이 {draft.company} 정산요약 추가/차감에 자동으로 입력됩니다
+                  <p className="text-[11px] text-zinc-500 font-bold">
+                    공급가 {(p.supplyPrice || 0).toLocaleString()}원이 {draft.company} 정산요약 추가/차감에 "{label}"로 입력됩니다
                   </p>
                 );
               })()}

@@ -423,7 +423,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
                       onClick={() => handleEdit(item)}
                       className="px-2 py-1 rounded-lg bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 text-[10px] font-black border border-sky-500/20 transition-colors"
                     >
-                      확정하기
+                      수정/확정
                     </button>
                     <button
                       onClick={() => handleDelete(item)}

@@ -207,7 +207,8 @@ export interface CsRecord {
   company: string;
   productKey?: string;
   productName?: string;
-  reason: string;        // 사유
+  reason: string;        // 접수사유 (업체전송 시 사용)
+  deductionReason?: string; // 차감사유 (업체 정산 추가/차감 라벨에 "이름 차감사유"로 사용)
   vendorMethod: string;  // 업체방법
   customerMethod: '재배송' | '환불'; // 고객방법
   deduction: 'full' | 'none'; // 마진 차감 (전액차감/차감없음)
