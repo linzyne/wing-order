@@ -58,23 +58,25 @@ export function parseRefundAccountPaste(text: string) {
   return { bankName, accountNumber, holder, amount };
 }
 
-/** 발주내역 행에서 업체 헤더 구조를 참고해 주문번호/받는사람/품목명/수량 열을 찾아낸다 */
+/** 발주내역 행에서 업체 헤더 구조를 참고해 주문번호/받는사람/품목명/수량/배송메시지 열을 찾아낸다 */
 export function resolveOrderRowFields(company: string, row: any[], pricingConfig?: PricingConfig) {
   const config = pricingConfig?.[company];
   const headers = config ? getHeaderForCompany(company, config) : [];
-  let orderNumberIdx = -1, recipientNameIdx = -1, productNameIdx = -1, qtyIdx = -1;
+  let orderNumberIdx = -1, recipientNameIdx = -1, productNameIdx = -1, qtyIdx = -1, deliveryMessageIdx = -1;
   headers.forEach((h, idx) => {
     const field = config?.orderFormFieldMap?.[idx] || inferFieldFromHeader(h);
     if (field === 'orderNumber' && orderNumberIdx === -1) orderNumberIdx = idx;
     if (field === 'recipientName' && recipientNameIdx === -1) recipientNameIdx = idx;
     if (field === 'productName' && productNameIdx === -1) productNameIdx = idx;
     if (field === 'qty' && qtyIdx === -1) qtyIdx = idx;
+    if (field === 'deliveryMessage' && deliveryMessageIdx === -1) deliveryMessageIdx = idx;
   });
   return {
     orderNumber: orderNumberIdx >= 0 ? String(row[orderNumberIdx] ?? '') : '',
     recipientName: recipientNameIdx >= 0 ? String(row[recipientNameIdx] ?? '') : '',
     productName: productNameIdx >= 0 ? String(row[productNameIdx] ?? '') : '',
     qty: qtyIdx >= 0 ? (parseInt(String(row[qtyIdx]), 10) || 1) : 1,
+    deliveryMessage: deliveryMessageIdx >= 0 ? String(row[deliveryMessageIdx] ?? '').trim() : '',
   };
 }
 
@@ -93,7 +95,7 @@ export function buildCsDraft(company: string, row: any[], pricingConfig?: Pricin
     productName: fields.productName,
     qty: fields.qty,
     productKey: matched?.[0] || '',
-    reason: '',
+    reason: fields.deliveryMessage,
     vendorMethod: '',
     customerMethod: '재배송',
     deduction: 'none',
@@ -128,6 +130,11 @@ export function buildCsDraftFromRecord(record: CsRecord): CsDraft {
     row: record.orderRowSnapshot || [],
     headers: record.orderRowHeaders || [],
   };
+}
+
+/** 업체방법이 환불(업체가 공급가를 돌려주는 처리)일 때만 정산요약 추가/차감에 공급가 차감을 반영한다 — 이 발주서는 업체 앞으로 나가는 것이라 고객방법과는 무관 */
+function hasSettlementDeduction(record: Pick<CsRecord, 'vendorMethod'>): boolean {
+  return (record.vendorMethod || '').trim().includes('환불');
 }
 
 /** 그 업체의 세션에 정산요약 추가/차감 내역을 id 기준으로 반영(수정 시 갱신)하거나 제거한다 */
@@ -192,7 +199,7 @@ export async function deleteCsRecord(businessId: string | undefined, date: strin
   }, businessId);
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
 
-  const wasRefundDeduction = record.deduction === 'full' && record.customerMethod === '환불';
+  const wasRefundDeduction = hasSettlementDeduction(record);
   const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
   if (wasRefundDeduction || wasAccountRefund) {
     if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
@@ -219,7 +226,7 @@ export async function revertCsRecordToPending(businessId: string | undefined, da
   }, businessId);
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
 
-  const wasRefundDeduction = record.deduction === 'full' && record.customerMethod === '환불';
+  const wasRefundDeduction = hasSettlementDeduction(record);
   const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
   if (wasRefundDeduction || wasAccountRefund) {
     if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
@@ -243,10 +250,14 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 업체가 환불처리한다고 입력하면(예: "환불처리") 업체가 공급가를 돌려주는 것이므로 정산요약 추가/차감에 자동 반영
+  const isVendorRefund = draft.vendorMethod.trim().includes('환불');
+  const needsProductForDeduction = (draft.customerMethod === '환불' && draft.deduction === 'full') || isVendorRefund;
+
   const handleSubmit = async (asPending: boolean) => {
     if (!draft.reason.trim()) { setError('사유를 입력해주세요.'); return; }
-    if (draft.customerMethod === '환불' && draft.deduction === 'full' && !draft.productKey) {
-      setError('전액차감 처리를 위해 품목을 선택해주세요.');
+    if (needsProductForDeduction && !draft.productKey) {
+      setError('공급가 차감 처리를 위해 품목을 선택해주세요.');
       return;
     }
     const isAccountRefund = draft.customerMethod === '환불' && draft.refundMethod === '계좌환불';
@@ -257,7 +268,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
     setSaving(true);
     setError(null);
     try {
-      const product = draft.deduction === 'full'
+      const product = needsProductForDeduction
         ? (pricingConfig?.[draft.company]?.products?.[draft.productKey] as any)
         : undefined;
       const supplyPrice = product?.supplyPrice || 0;
@@ -282,8 +293,8 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         vendorMethod: draft.vendorMethod.trim(),
         customerMethod: draft.customerMethod,
         deduction: draft.deduction,
-        supplyPrice: draft.deduction === 'full' ? supplyPrice : undefined,
-        marginPerUnit: draft.deduction === 'full' ? marginPerUnit : undefined,
+        supplyPrice: needsProductForDeduction ? supplyPrice : undefined,
+        marginPerUnit: needsProductForDeduction ? marginPerUnit : undefined,
         refundMethod: draft.customerMethod === '환불' ? draft.refundMethod : undefined,
         refundBankName: isAccountRefund ? draft.refundBankName.trim() : undefined,
         refundAccountNumber: isAccountRefund ? draft.refundAccountNumber.trim() : undefined,
@@ -329,11 +340,12 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       }, businessId);
       window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: targetDate } }));
 
-      const wasRefundDeduction = editing ? (editing.record.deduction === 'full' && editing.record.customerMethod === '환불' && !editing.record.pending) : false;
+      const wasRefundDeduction = editing ? (hasSettlementDeduction(editing.record) && !editing.record.pending) : false;
       const wasAccountRefund = editing ? (editing.record.customerMethod === '환불' && editing.record.refundMethod === '계좌환불' && !editing.record.pending) : false;
 
-      if (isRefundDeduction && supplyPrice > 0) {
-        await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice, `${draft.recipientName}환불`, false);
+      const isVendorRefundDeduction = !asPending && isVendorRefund;
+      if (isVendorRefundDeduction && supplyPrice > 0) {
+        await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice, `${draft.recipientName}업체환불`, false);
         window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
       } else if (wasRefundDeduction) {
         await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, 0, '', true);
@@ -367,7 +379,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
   const isSubmitDisabled =
     saving ||
     !draft.reason.trim() ||
-    (draft.customerMethod === '환불' && draft.deduction === 'full' && !draft.productKey) ||
+    (needsProductForDeduction && !draft.productKey) ||
     (draft.customerMethod === '환불' && draft.refundMethod === '계좌환불' && (!draft.refundBankName.trim() || !draft.refundAccountNumber.trim() || !(parseInt(draft.refundAmount, 10) > 0)));
 
   return createPortal(
@@ -454,6 +466,33 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
               {CS_VENDOR_METHOD_SUGGESTIONS.map(o => <option key={o} value={o} />)}
             </datalist>
           </div>
+
+          {isVendorRefund && (
+            <div className="bg-zinc-950/60 border border-zinc-800 rounded-2xl p-4">
+              <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">업체 환불 품목 (공급가 차감)</label>
+              <select
+                value={draft.productKey}
+                onChange={e => onChange({ ...draft, productKey: e.target.value })}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
+              >
+                <option value="">품목 선택...</option>
+                {Object.entries(pricingConfig?.[draft.company]?.products || {}).map(([key, p]: [string, any]) => (
+                  <option key={key} value={key}>
+                    {p.displayName}{p.orderFormName && p.orderFormName !== p.displayName ? ` → ${p.orderFormName}` : ''} (공급가 {(p.supplyPrice || 0).toLocaleString()}원)
+                  </option>
+                ))}
+              </select>
+              {draft.productKey && (() => {
+                const p = pricingConfig?.[draft.company]?.products?.[draft.productKey] as any;
+                if (!p) return null;
+                return (
+                  <p className="text-[11px] text-zinc-500 font-bold mt-1.5">
+                    공급가 {(p.supplyPrice || 0).toLocaleString()}원이 {draft.company} 정산요약 추가/차감에 자동으로 입력됩니다
+                  </p>
+                );
+              })()}
+            </div>
+          )}
 
           <div>
             <label className="text-[11px] font-black text-zinc-500 uppercase tracking-widest mb-1.5 block">고객방법</label>
@@ -548,24 +587,26 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
 
               {draft.deduction === 'full' && (
                 <div className="pt-1">
-                  <select
-                    value={draft.productKey}
-                    onChange={e => onChange({ ...draft, productKey: e.target.value })}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
-                  >
-                    <option value="">품목 선택...</option>
-                    {Object.entries(pricingConfig?.[draft.company]?.products || {}).map(([key, p]: [string, any]) => (
-                      <option key={key} value={key}>
-                        {p.displayName}{p.orderFormName && p.orderFormName !== p.displayName ? ` → ${p.orderFormName}` : ''} (공급가 {(p.supplyPrice || 0).toLocaleString()}원)
-                      </option>
-                    ))}
-                  </select>
+                  {!isVendorRefund && (
+                    <select
+                      value={draft.productKey}
+                      onChange={e => onChange({ ...draft, productKey: e.target.value })}
+                      className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
+                    >
+                      <option value="">품목 선택...</option>
+                      {Object.entries(pricingConfig?.[draft.company]?.products || {}).map(([key, p]: [string, any]) => (
+                        <option key={key} value={key}>
+                          {p.displayName}{p.orderFormName && p.orderFormName !== p.displayName ? ` → ${p.orderFormName}` : ''} (공급가 {(p.supplyPrice || 0).toLocaleString()}원)
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {draft.productKey && (() => {
                     const p = pricingConfig?.[draft.company]?.products?.[draft.productKey] as any;
                     if (!p) return null;
                     return (
                       <p className="text-[11px] text-zinc-500 font-bold mt-1.5">
-                        공급가 {(p.supplyPrice || 0).toLocaleString()}원 · 마진 {(p.margin || 0).toLocaleString()}원 차감됩니다
+                        마진 {(p.margin || 0).toLocaleString()}원이 반품 집계에 반영됩니다
                       </p>
                     );
                   })()}
@@ -582,7 +623,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
             <button
               onClick={() => handleSubmit(true)}
               disabled={isSubmitDisabled}
-              className="flex-1 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 disabled:bg-zinc-900 disabled:text-zinc-700 text-zinc-300 font-black text-sm border border-zinc-700 transition-all"
+              className="flex-1 py-3 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black text-sm shadow-md shadow-rose-950/40 transition-all"
             >
               {saving ? '저장 중...' : '대기 저장'}
             </button>
@@ -590,7 +631,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
           <button
             onClick={() => handleSubmit(false)}
             disabled={isSubmitDisabled}
-            className="flex-1 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black text-sm shadow-md shadow-violet-950/40 transition-all"
+            className="flex-1 py-3 rounded-xl bg-zinc-700 hover:bg-zinc-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-black text-sm shadow-md shadow-black/20 transition-all"
           >
             {saving ? '저장 중...' : editing?.record.pending ? '접수 확정' : editing ? '수정 완료' : '접수 완료'}
           </button>
