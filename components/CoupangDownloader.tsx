@@ -417,7 +417,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
                   <PencilIcon className="w-3 h-3" />
                 </button>
                 {!editingPresets && timeLabel && (
-                  <span className="text-[9px] text-zinc-500 truncate">→ 파일명: 날짜_{timeLabel}.xlsx</span>
+                  <span className="text-[9px] text-zinc-500 truncate">→ 파일명: 날짜 [원본] 사업자명 {timeLabel}.xlsx</span>
                 )}
               </div>
               {editingPresets && (
@@ -578,7 +578,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
               className="w-full bg-zinc-800 border border-zinc-700/60 rounded-lg px-3 py-2 text-xs text-zinc-200 placeholder-zinc-600 outline-none"
             />
             {modalTimeLabel.trim() && (
-              <p className="mt-2 text-[10px] text-zinc-500 truncate">→ 파일명: 날짜_{modalTimeLabel.trim()}.xlsx</p>
+              <p className="mt-2 text-[10px] text-zinc-500 truncate">→ 파일명: 날짜 [원본] 사업자명 {modalTimeLabel.trim()}.xlsx</p>
             )}
 
             <div className="flex gap-2 mt-4">
