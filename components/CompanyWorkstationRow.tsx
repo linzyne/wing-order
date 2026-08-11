@@ -993,8 +993,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     // CS 재배송 등 외부(통합CS 패널)에서 이 세션의 발주서에 행을 하나 추가 요청할 때 사용.
     // 매 렌더마다 최신 클로저를 ref에 담아두고, 부모에는 처음 한 번만 안정적인 래퍼를 등록한다.
-    // 공급가차감 내역은 이 함수가 아니라 항상 1차수 쪽에서 registerAddAdjustment로 등록한 함수가 처리한다
-    // (사용자가 늘 확인하는 업체명 바로 아래 추가/차감 배지에 보이도록 하기 위함) — 그래서 금액/라벨만 리턴한다.
+    // 공급가차감 내역은 이 함수가 아니라 마지막 차수 쪽에서 registerAddAdjustment로 등록한 함수가 처리한다
+    // (정산요약은 마지막 차수 카드에서 누적 집계됨) — 그래서 금액/라벨만 리턴한다.
     const appendReshipRowFn = async (mo: ManualOrder): Promise<{ amount: number; label: string }> => {
         const companyConfig = pricingConfig[companyName] || {} as any;
         const products = companyConfig.products || {};

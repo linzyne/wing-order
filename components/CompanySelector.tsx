@@ -2453,8 +2453,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const fn = appendRowFnsRef.current[target.id];
         if (!fn) return false;
         const { amount, label } = await fn({ id: `cs-${Date.now()}`, companyName, ...mo });
-        // 공급가차감은 몇 차수에 들어갔든 항상 1차수의 추가/차감 목록에 남겨 눈에 잘 띄게 한다
-        addAdjustmentFnsRef.current[sessions[0].id]?.(amount, label);
+        // 공급가차감은 마지막 차수의 추가/차감 목록에 반영한다 (업체환불 차감과 동일한 위치 기준).
+        // 정산요약(카카오/엑셀 텍스트)은 마지막 차수 카드에서 이전 차수분까지 누적 집계하므로 여기 반영하면 자동으로 합산된다.
+        const lastRoundSession = sessions.reduce((a, b) => (b.round > a.round ? b : a));
+        addAdjustmentFnsRef.current[lastRoundSession.id]?.(amount, label);
         return true;
     };
     getLastSettlementSummariesRef.current = () => {
