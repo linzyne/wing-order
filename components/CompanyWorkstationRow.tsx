@@ -1023,7 +1023,16 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 const summary = { ...prev.summary };
                 const existing = summary[summaryKey] || { count: 0, totalPrice: 0 };
                 summary[summaryKey] = { count: existing.count + mo.qty, totalPrice: existing.totalPrice + mo.qty * config.supplyPrice + shipping };
-                return { ...prev, rows: [...prev.rows, ...newRows], summary };
+                // depositSummary/depositSummaryExcel은 파일 업로드 시 굳어진 텍스트라, 재배송으로 늘어난
+                // 총주문수·품목별 개수를 반영하려면 매번 다시 생성해야 한다 (안 그러면 정산요약 텍스트가
+                // 실제 발주 건수보다 적게 보임 — 금액 합계는 추가/차감으로 상쇄되어 우연히 맞아 보였을 뿐).
+                return {
+                    ...prev,
+                    rows: [...prev.rows, ...newRows],
+                    summary,
+                    depositSummary: buildDepositTextFromSummary(summary, prev.depositSummary),
+                    depositSummaryExcel: buildDepositExcelFromSummary(summary, prev.depositSummaryExcel),
+                };
             }
             // 아직 이 세션에 처리된 발주 파일이 없는 경우 (예: 오늘 1차수가 비어있음) — 최소한의 결과를 새로 만든다.
             const headers = getHeaderForCompany(companyName, companyConfig);
