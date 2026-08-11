@@ -1058,7 +1058,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // CS 재배송 공급가차감을 이 세션(항상 1차수)의 추가/차감 목록에 추가할 때 사용
+    // CS 재배송 공급가차감을 이 세션(마지막 차수)의 추가/차감 목록에 추가할 때 사용
     const addAdjustmentFn = (amount: number, label: string) => {
         setSessionAdjustments(prev => [...prev, { id: `adj-cs-${Date.now()}`, amount, label }]);
     };
@@ -1875,6 +1875,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         )}
                                     </div>
                                 </div>
+                                {sessionAdjustments.length > 0 && (
+                                    <div className="mb-3 flex flex-wrap gap-1">
+                                        {sessionAdjustments.map(adj => (
+                                            <div key={adj.id} className="bg-zinc-950/50 px-2 py-0.5 rounded border border-zinc-800 flex items-center gap-1.5 group">
+                                                <span className="text-[9px] font-bold text-zinc-500">{adj.label}</span>
+                                                <span className={`text-[9px] font-black ${adj.amount < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{adj.amount.toLocaleString()}원</span>
+                                                <button onClick={() => setSessionAdjustments(prev => prev.filter(a => a.id !== adj.id))} className="text-zinc-700 hover:text-rose-500"><TrashIcon className="w-2.5 h-2.5" /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                                 {isEditingSummary ? (
                                     <div className="bg-zinc-950/50 p-3 rounded-lg border border-zinc-800/50">
                                         <div className="space-y-1.5 mb-3">
