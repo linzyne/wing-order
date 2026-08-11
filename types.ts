@@ -149,6 +149,7 @@ export interface ManualOrder {
   qty: number;
   memo?: string;
   productKey?: string; // 이미 매칭된 품목 키가 있으면 이름 재매칭 없이 바로 사용 (예: CS 재배송 발주 추가)
+  csRecordId?: string; // 통합CS접수에서 재배송 발주로 추가된 경우, 원본 CS 기록 id (발주서 초기화 시 CS를 대기로 되돌리기 위한 역추적용)
 }
 
 export type ProcessingStatus = 'idle' | 'processing' | 'success' | 'error';

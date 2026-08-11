@@ -328,6 +328,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         qty: fields.qty,
         productKey: item.productKey,
         memo: `${item.orderNumber || ''} 재배송`.trim(),
+        csRecordId: item.id,
       });
       if (!ok) {
         alert('발주서 추가에 실패했습니다. 해당 사업자 탭이 열려있는지 확인해주세요.');

@@ -108,7 +108,7 @@ interface CompanyWorkstationRowProps {
     onWarningUpdate?: (sessionId: string, hasWarning: boolean) => void;
     onEffectiveTextChange?: (kakaoText: string, excelText: string) => void;
     registerAppendRow?: (fn: (mo: ManualOrder) => Promise<{ amount: number; label: string }>) => void;
-    registerAddAdjustment?: (fn: (amount: number, label: string) => void) => void;
+    registerAddAdjustment?: (fn: (amount: number, label: string, csRecordId?: string) => void) => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -956,7 +956,30 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
     };
 
+    // 발주서(로컬 처리 결과)를 초기화하면 재배송으로 추가됐던 행/차감도 함께 사라지는데,
+    // 통합CS접수 쪽 "발주서생성됨" 상태는 그대로 남아 실제로는 없는 발주가 있는 것처럼 보이는
+    // 불일치가 생긴다. 이 세션에 재배송(cs-reship-*)으로 반영된 차감을 지우면서, 그 원본 CS
+    // 기록도 함께 대기 상태로 되돌린다.
+    const revertReshipCsRecordsForReset = () => {
+        const reshipIds = sessionAdjustments
+            .filter(a => a.id.startsWith('cs-reship-'))
+            .map(a => a.id.slice('cs-reship-'.length));
+        if (reshipIds.length === 0) return;
+        setSessionAdjustments(prev => prev.filter(a => !a.id.startsWith('cs-reship-')));
+        (async () => {
+            const { loadDailySales, upsertDailySales, CS_SAVED_EVENT } = await import('../services/firestoreService');
+            const date = workDate || new Date().toLocaleDateString('en-CA');
+            const existing = await loadDailySales(date, businessId);
+            if (!existing?.csRecords) return;
+            const idSet = new Set(reshipIds);
+            const updated = existing.csRecords.map(r => idSet.has(r.id) ? { ...r, pending: true, poAdded: false } : r);
+            await upsertDailySales({ ...existing, csRecords: updated }, businessId);
+            window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
+        })();
+    };
+
     const resetLocalFile = () => {
+        revertReshipCsRecordsForReset();
         setLocalFile(null);
         setLocalResult(null);
         setExcludedList([]);
@@ -976,6 +999,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const resetSyncedData = () => {
+        revertReshipCsRecordsForReset();
         suppressSyncRef.current = true;
         onDeleteSessionResult(sessionId);
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
@@ -995,7 +1019,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // 매 렌더마다 최신 클로저를 ref에 담아두고, 부모에는 처음 한 번만 안정적인 래퍼를 등록한다.
     // 공급가차감 내역은 이 함수가 아니라 마지막 차수 쪽에서 registerAddAdjustment로 등록한 함수가 처리한다
     // (정산요약은 마지막 차수 카드에서 누적 집계됨) — 그래서 금액/라벨만 리턴한다.
-    const appendReshipRowFn = async (mo: ManualOrder): Promise<{ amount: number; label: string }> => {
+    const appendReshipRowFn = async (mo: ManualOrder): Promise<{ amount: number; label: string; csRecordId?: string }> => {
         const companyConfig = pricingConfig[companyName] || {} as any;
         const products = companyConfig.products || {};
         let productKey = mo.productKey;
@@ -1057,7 +1081,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         });
         hasCompletedLocalProcessingRef.current = true;
         // 재배송은 고객에게 다시 받는 돈 없이 공급가만 추가로 나가므로, 공급가차감 금액/라벨만 돌려준다.
-        return { amount: -(mo.qty * config.supplyPrice + shipping), label: `${mo.recipientName}재배송` };
+        // csRecordId를 함께 돌려줘야 발주서 초기화 시 이 차감/CS 기록을 역추적해서 되돌릴 수 있다.
+        return { amount: -(mo.qty * config.supplyPrice + shipping), label: `${mo.recipientName}재배송`, csRecordId: mo.csRecordId };
     };
     const appendReshipRowRef = useRef(appendReshipRowFn);
     appendReshipRowRef.current = appendReshipRowFn;
@@ -1067,14 +1092,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // CS 재배송 공급가차감을 이 세션(마지막 차수)의 추가/차감 목록에 추가할 때 사용
-    const addAdjustmentFn = (amount: number, label: string) => {
-        setSessionAdjustments(prev => [...prev, { id: `adj-cs-${Date.now()}`, amount, label }]);
+    // CS 재배송 공급가차감을 이 세션(마지막 차수)의 추가/차감 목록에 추가할 때 사용.
+    // id에 csRecordId를 심어두면(cs-reship-{csRecordId}) 발주서 초기화 시 원본 CS 기록을 역추적해 되돌릴 수 있다.
+    const addAdjustmentFn = (amount: number, label: string, csRecordId?: string) => {
+        setSessionAdjustments(prev => [...prev, { id: csRecordId ? `cs-reship-${csRecordId}` : `adj-cs-${Date.now()}`, amount, label }]);
     };
     const addAdjustmentRef = useRef(addAdjustmentFn);
     addAdjustmentRef.current = addAdjustmentFn;
     useEffect(() => {
-        registerAddAdjustment?.((amount: number, label: string) => addAdjustmentRef.current(amount, label));
+        registerAddAdjustment?.((amount: number, label: string, csRecordId?: string) => addAdjustmentRef.current(amount, label, csRecordId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 

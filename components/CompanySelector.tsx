@@ -775,7 +775,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 세션(회사+차수)별 "행 추가" 함수 등록소 — 통합CS 패널의 재배송 발주 추가 요청을 특정 차수로 전달할 때 사용
     const appendRowFnsRef = useRef<Record<string, (mo: ManualOrder) => Promise<{ amount: number; label: string }>>>({});
     // 세션(회사+차수)별 "추가/차감 항목 추가" 함수 등록소 — CS 재배송 공급가차감은 항상 1차수 쪽에 넣어 눈에 잘 띄게 한다
-    const addAdjustmentFnsRef = useRef<Record<string, (amount: number, label: string) => void>>({});
+    const addAdjustmentFnsRef = useRef<Record<string, (amount: number, label: string, csRecordId?: string) => void>>({});
 
     const [workstationResetKey, setWorkstationResetKey] = useState(0);
 
@@ -2450,11 +2450,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             : sessions[0];
         const fn = appendRowFnsRef.current[target.id];
         if (!fn) return false;
-        const { amount, label } = await fn({ id: `cs-${Date.now()}`, companyName, ...mo });
+        const { amount, label, csRecordId } = await fn({ id: `cs-${Date.now()}`, companyName, ...mo });
         // 공급가차감은 마지막 차수의 추가/차감 목록에 반영한다 (업체환불 차감과 동일한 위치 기준).
         // 정산요약(카카오/엑셀 텍스트)은 마지막 차수 카드에서 이전 차수분까지 누적 집계하므로 여기 반영하면 자동으로 합산된다.
         const lastRoundSession = sessions.reduce((a, b) => (b.round > a.round ? b : a));
-        addAdjustmentFnsRef.current[lastRoundSession.id]?.(amount, label);
+        addAdjustmentFnsRef.current[lastRoundSession.id]?.(amount, label, csRecordId);
         return true;
     };
     getLastSettlementSummariesRef.current = () => {
