@@ -1070,7 +1070,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     }, []);
 
     const handleDownloadOrder = () => {
-        if (fakeMismatch) alert('미매칭(수량)을 확인하세요.');
         if (localResult) {
             // 미리보기에서 수정한 내용을 반영해 워크북을 새로 생성 (원본 워크북은 수정 전 상태로 고정되어 있음)
             const headers = getHeaderForCompany(companyName, pricingConfig[companyName] || {} as any);

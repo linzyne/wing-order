@@ -1893,7 +1893,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const handleMasterUpload = async (file: File) => {
         console.log('🚀 [파일 업로드] 시작:', file.name);
         console.log('🚀 [platformConfigs]:', platformConfigs);
-        if (fakeMismatch) alert('미매칭(수량)을 확인해주세요.');
         masterOrderFileRef.current = file; // 공통 패널의 getNextRound가 React 재렌더 전에도 올바른 값을 읽도록
         setMasterOrderFile(file);
         try {
@@ -2250,7 +2249,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const handleBatchUpload = async (file: File) => {
         console.log('🚀 [배치 업로드] 시작:', file.name);
-        if (fakeMismatch) alert('미매칭(수량)을 확인해주세요.');
         try {
             const data = await file.arrayBuffer();
             const wb = XLSX.read(data, { type: 'array' });
