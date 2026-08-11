@@ -1446,6 +1446,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates, unmatchedLines, specialMatchLines };
     }, [effectiveFakeInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
 
+    // 발주서 생성(다운로드) 경로가 여러 곳(단일/합산/그룹/외부 명령)이라 공통 헬퍼로 체크
+    const fakeOrderAnalysisRef = useRef(fakeOrderAnalysis);
+    fakeOrderAnalysisRef.current = fakeOrderAnalysis;
+    const checkFakeUnmatchedAfterOrderDownload = () => {
+        if (fakeOrderAnalysisRef.current.unmatchedLines.length > 0) setShowUnmatchedFakeAlert(true);
+    };
+
     // 미발송 명단 분석 (입력된 번호 vs 실제 발견된 번호)
     const unsentOrderAnalysis = useMemo(() => {
         if (!effectiveUnsentInput.trim()) return { inputLineCount: 0, matched: [] as string[], missing: [] as string[], nameMap: {} as Record<string, string> };
@@ -2487,6 +2494,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${dateStr} [발주서] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} ${round}차.xlsx`);
+        checkFakeUnmatchedAfterOrderDownload();
     };
     downloadAllCompaniesRef.current = () => {
         const allCompanies = Object.keys(companySessions).filter(name =>
@@ -2922,6 +2930,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             downloaded++;
         });
         if (downloaded === 0) alert('다운받을 발주 데이터가 없습니다.');
+        else checkFakeUnmatchedAfterOrderDownload();
     };
 
     // 세션별 경고 집계 → 부모에게 전달
@@ -3357,6 +3366,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         // 합산 발주서 다운로드 시 해당 업체 모든 세션 불 끄기
         sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
         setMergedDownloadedCompanies(prev => { const n = new Set(prev); n.add(companyName); return n; });
+        checkFakeUnmatchedAfterOrderDownload();
     };
 
     // 업체별 가구매 택배 매칭 행 필터링
@@ -6051,7 +6061,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     pendingInvoiceLight={sIdx === 0 && (invoiceLitSessions.has(session.id) || batchInvoiceLit.has(company))}
                                                     onOrderDownloaded={() => {
                                                         setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; });
-                                                        if (fakeOrderAnalysis.unmatchedLines.length > 0) setShowUnmatchedFakeAlert(true);
+                                                        checkFakeUnmatchedAfterOrderDownload();
                                                     }}
                                                     onInvoiceDownloaded={() => { setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; }); }}
                                                     mergedDownloaded={mergedDownloadedCompanies.has(company)}
