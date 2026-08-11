@@ -96,7 +96,7 @@ export function buildCsDraft(company: string, row: any[], pricingConfig?: Pricin
     productName: fields.productName,
     qty: fields.qty,
     productKey: matched?.[0] || '',
-    reason: fields.deliveryMessage,
+    reason: '',
     deductionReason: '',
     vendorMethod: '',
     customerMethod: '재배송',
