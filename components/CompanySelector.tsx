@@ -1121,6 +1121,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [unsentOrderInput, setUnsentOrderInput] = useState('');
     const effectiveUnsentInput = globalUnsentOrderInput?.trim() ? globalUnsentOrderInput : unsentOrderInput;
     const [showFakeDetail, setShowFakeDetail] = useState(false);
+    const [showUnmatchedFakeAlert, setShowUnmatchedFakeAlert] = useState(false);
 
     const [courierFiles, setCourierFiles] = useState<Record<string, File>>({});
     const [courierResults, setCourierResults] = useState<Record<string, { matched: number; total: number; notFound: string[] }>>({});
@@ -6048,7 +6049,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     onDeleteSessionResult={handleDeleteSessionResult}
                                                     pendingOrderLight={sIdx === 0 && orderLitSessions.has(session.id)}
                                                     pendingInvoiceLight={sIdx === 0 && (invoiceLitSessions.has(session.id) || batchInvoiceLit.has(company))}
-                                                    onOrderDownloaded={() => setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; })}
+                                                    onOrderDownloaded={() => {
+                                                        setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; });
+                                                        if (fakeOrderAnalysis.unmatchedLines.length > 0) setShowUnmatchedFakeAlert(true);
+                                                    }}
                                                     onInvoiceDownloaded={() => { setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; }); }}
                                                     mergedDownloaded={mergedDownloadedCompanies.has(company)}
                                                     onWarningUpdate={handleSessionWarningUpdate}
@@ -6105,6 +6109,41 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 );
             })()}
             </div>
+
+            {/* 발주서 생성 후 가구매 명단 미매칭 알림 */}
+            {showUnmatchedFakeAlert && fakeOrderAnalysis.unmatchedLines.length > 0 && createPortal(
+                <div
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.75)' }}
+                    onClick={() => setShowUnmatchedFakeAlert(false)}
+                >
+                    <div
+                        style={{ background: '#1c1c1e', borderRadius: '16px', padding: '28px 28px 20px', maxWidth: '440px', width: '90%', maxHeight: '70vh', display: 'flex', flexDirection: 'column', border: '2px solid rgba(244,63,94,0.5)', boxShadow: '0 25px 60px rgba(0,0,0,0.6)' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ color: '#fb7185', fontWeight: 900, fontSize: '11px', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '6px', opacity: 0.8 }}>
+                            가구매 명단 미매칭 {fakeOrderAnalysis.unmatchedLines.length}건
+                        </div>
+                        <p style={{ color: '#fecdd3', fontSize: '13px', fontWeight: 600, margin: '0 0 14px' }}>
+                            발주서가 생성됐지만 가구매 명단에 매칭되지 않은 항목이 있습니다. 확인해주세요.
+                        </p>
+                        <div style={{ overflowY: 'auto', background: 'rgba(244,63,94,0.08)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: '10px', padding: '10px 12px', marginBottom: '18px' }}>
+                            {fakeOrderAnalysis.unmatchedLines.map((ld, idx) => (
+                                <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '11px', fontFamily: 'monospace', color: '#fda4af', padding: '2px 0' }}>
+                                    <span>{ld.line}</span>
+                                    {ld.nums.length === 0 && <span style={{ fontSize: '9px', color: 'rgba(253,164,175,0.7)', fontWeight: 900 }}>주문번호 없음</span>}
+                                </div>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setShowUnmatchedFakeAlert(false)}
+                            style={{ flex: 1, background: 'rgba(244,63,94,0.2)', color: '#fb7185', fontWeight: 900, fontSize: '12px', padding: '10px', borderRadius: '10px', border: '1px solid rgba(244,63,94,0.4)', cursor: 'pointer' }}
+                        >
+                            확인
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
 
             {/* 선택 발주건 정산요약 모달 */}
             {showSelectedSummaryModal && (() => {
