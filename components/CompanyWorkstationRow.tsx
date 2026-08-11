@@ -1147,10 +1147,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         setAdjLabel('');
     };
 
-    const removeAdj = (id: string) => {
-        setSessionAdjustments(prev => prev.filter(a => a.id !== id));
-    };
-
     const toggleStep = (step: keyof WorkflowStatus) => {
         setWorkflow(prev => ({ ...prev, [step]: !prev[step] }));
     };
@@ -1285,18 +1281,6 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </button>
                                         )}
                                     </div>
-                                    
-                                    {sessionAdjustments.length > 0 && (
-                                        <div className="flex flex-wrap gap-1">
-                                            {sessionAdjustments.map(adj => (
-                                                <div key={adj.id} className="bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-800 flex items-center gap-1.5 group animate-pop-in">
-                                                    <span className="text-[9px] font-bold text-zinc-500">{adj.label}</span>
-                                                    <span className={`text-[9px] font-black ${adj.amount < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>{adj.amount.toLocaleString()}원</span>
-                                                    <button onClick={() => removeAdj(adj.id)} className="text-zinc-700 hover:text-rose-500"><TrashIcon className="w-2.5 h-2.5" /></button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
 
                                 <div className={`flex flex-wrap gap-1 items-center mb-3 ${isClosed ? 'opacity-30 pointer-events-none' : ''}`}>
