@@ -1344,6 +1344,10 @@ const App: React.FC = () => {
               </div>
               <div className="px-6 py-4 border-t border-zinc-800 flex justify-end gap-2">
                 <button onClick={() => setShowBulkDepositModal(false)} className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all">취소</button>
+                <button onClick={handleBulkWorkLog} className="flex items-center gap-2 px-5 py-2 text-xs font-black text-violet-300 bg-violet-900/30 hover:bg-violet-900/50 border border-violet-500/50 rounded-xl transition-all">
+                  <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                  업무일지다운
+                </button>
                 <button onClick={handleDownload} disabled={allRelevantIds.length === 0} className="flex items-center gap-2 px-5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all">
                   <ArrowDownTrayIcon className="w-3.5 h-3.5" />
                   {allRelevantIds.length > 0 ? `${allRelevantIds.length}개 사업자 다운로드` : '다운로드'}
