@@ -1446,10 +1446,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates, unmatchedLines, specialMatchLines };
     }, [effectiveFakeInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
 
-    // 발주서 생성(다운로드) 경로가 여러 곳(단일/합산/그룹/외부 명령)이라 공통 헬퍼로 체크
+    // 발주서 생성(0건→N건 전환) 시점에 가구매 명단 미매칭이 있으면 팝업
     const fakeOrderAnalysisRef = useRef(fakeOrderAnalysis);
     fakeOrderAnalysisRef.current = fakeOrderAnalysis;
-    const checkFakeUnmatchedAfterOrderDownload = () => {
+    const checkFakeUnmatchedOnOrderGenerated = () => {
         if (fakeOrderAnalysisRef.current.unmatchedLines.length > 0) setShowUnmatchedFakeAlert(true);
     };
 
@@ -2494,7 +2494,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${dateStr} [발주서] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} ${round}차.xlsx`);
-        checkFakeUnmatchedAfterOrderDownload();
     };
     downloadAllCompaniesRef.current = () => {
         const allCompanies = Object.keys(companySessions).filter(name =>
@@ -2930,7 +2929,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             downloaded++;
         });
         if (downloaded === 0) alert('다운받을 발주 데이터가 없습니다.');
-        else checkFakeUnmatchedAfterOrderDownload();
     };
 
     // 세션별 경고 집계 → 부모에게 전달
@@ -3299,6 +3297,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     }
                 };
                 sendNotif(`${companyName} 발주서 생성`, `${newCount}건`);
+                checkFakeUnmatchedOnOrderGenerated();
             }
             // 발주서 불 켜기 (복원 억제 기간 이후 데이터가 있으면 항상 켬)
             setOrderLitSessions(prev => new Set([...prev, sessionId]));
@@ -3366,7 +3365,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         // 합산 발주서 다운로드 시 해당 업체 모든 세션 불 끄기
         sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
         setMergedDownloadedCompanies(prev => { const n = new Set(prev); n.add(companyName); return n; });
-        checkFakeUnmatchedAfterOrderDownload();
     };
 
     // 업체별 가구매 택배 매칭 행 필터링
@@ -6059,10 +6057,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     onDeleteSessionResult={handleDeleteSessionResult}
                                                     pendingOrderLight={sIdx === 0 && orderLitSessions.has(session.id)}
                                                     pendingInvoiceLight={sIdx === 0 && (invoiceLitSessions.has(session.id) || batchInvoiceLit.has(company))}
-                                                    onOrderDownloaded={() => {
-                                                        setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; });
-                                                        checkFakeUnmatchedAfterOrderDownload();
-                                                    }}
+                                                    onOrderDownloaded={() => setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; })}
                                                     onInvoiceDownloaded={() => { setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; }); }}
                                                     mergedDownloaded={mergedDownloadedCompanies.has(company)}
                                                     onWarningUpdate={handleSessionWarningUpdate}
