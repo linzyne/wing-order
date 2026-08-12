@@ -1446,13 +1446,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates, unmatchedLines, specialMatchLines };
     }, [effectiveFakeInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
 
-    // 발주서 생성(0건→N건 전환) 시점에 가구매 명단 미매칭이 있으면 팝업
-    const fakeOrderAnalysisRef = useRef(fakeOrderAnalysis);
-    fakeOrderAnalysisRef.current = fakeOrderAnalysis;
-    const checkFakeUnmatchedOnOrderGenerated = () => {
-        if (fakeOrderAnalysisRef.current.unmatchedLines.length > 0) setShowUnmatchedFakeAlert(true);
-    };
-
     // 미발송 명단 분석 (입력된 번호 vs 실제 발견된 번호)
     const unsentOrderAnalysis = useMemo(() => {
         if (!effectiveUnsentInput.trim()) return { inputLineCount: 0, matched: [] as string[], missing: [] as string[], nameMap: {} as Record<string, string> };
@@ -3297,7 +3290,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     }
                 };
                 sendNotif(`${companyName} 발주서 생성`, `${newCount}건`);
-                checkFakeUnmatchedOnOrderGenerated();
             }
             // 발주서 불 켜기 (복원 억제 기간 이후 데이터가 있으면 항상 켬)
             setOrderLitSessions(prev => new Set([...prev, sessionId]));
@@ -3331,6 +3323,22 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         else if (orderRows.length === 0) setAllOrderItems(prev => ({ ...prev, [sessionId]: [] }));
         if (preConsolidationByGroup) setAllPreConsolidationByGroup(prev => ({ ...prev, [sessionId]: preConsolidationByGroup }));
     }, [addToast]);
+
+    // 발주서 생성 후 가구매 명단에 새로 미매칭이 생기면 팝업 (초기 복원 시 억제, 동일한 미매칭 상태로는 재알림 안 함)
+    const lastAlertedUnmatchedKeyRef = useRef('');
+    useEffect(() => {
+        if (Date.now() <= toastSuppressUntilRef.current) return;
+        const hasAnyOrders = (Object.values(allOrderRows) as any[][][]).some(rows => rows && rows.length > 0);
+        const key = fakeOrderAnalysis.unmatchedLines.map(ld => ld.line).sort().join('|');
+        if (!hasAnyOrders || !key) {
+            lastAlertedUnmatchedKeyRef.current = key;
+            return;
+        }
+        if (key !== lastAlertedUnmatchedKeyRef.current) {
+            lastAlertedUnmatchedKeyRef.current = key;
+            setShowUnmatchedFakeAlert(true);
+        }
+    }, [fakeOrderAnalysis.unmatchedLines, allOrderRows]);
 
     const handleToggleSessionSelection = (sessionId: string) => {
         setSelectedSessionIds(prev => {
