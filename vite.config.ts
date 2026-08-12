@@ -119,7 +119,7 @@ async function runWingDownload(
 
     const d = new Date();
     const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-    const fileName = `${dateStr} [원본] ${businessName}${timeLabel ? ' ' + timeLabel : ''}.xlsx`;
+    const fileName = `${dateStr} [원본${timeLabel ? ' ' + timeLabel : ''}] ${businessName}.xlsx`;
     const filePath = path.join(tmpDir, fileName);
     await download.saveAs(filePath);
 
