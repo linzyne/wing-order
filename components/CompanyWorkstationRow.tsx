@@ -1068,7 +1068,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const todayStr = workDate || new Date().toLocaleDateString('en-CA');
             return {
                 workbook: wb,
-                fileName: `${todayStr} [발주서] ${bizShort ? bizShort + ' ' : ''}${companyName}.xlsx`,
+                fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}[발주서_${companyName}].xlsx`,
                 summary: { [summaryKey]: { count: mo.qty, totalPrice: mo.qty * config.supplyPrice + shipping } },
                 depositSummary: '',
                 depositSummaryExcel: '',

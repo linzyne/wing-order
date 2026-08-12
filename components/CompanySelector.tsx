@@ -2486,7 +2486,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
-        XLSX.writeFile(wb, `${dateStr} [발주서] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} ${round}차.xlsx`);
+        XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}[발주서_${companyName}] ${round}차.xlsx`);
     };
     downloadAllCompaniesRef.current = () => {
         const allCompanies = Object.keys(companySessions).filter(name =>
@@ -2917,7 +2917,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, '발주서');
             const dateStr = new Date().toLocaleDateString('en-CA');
-            XLSX.writeFile(wb, `${dateStr} [발주서] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산.xlsx`);
+            XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}[발주서_${companyName}] 합산.xlsx`);
             sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
             downloaded++;
         });
@@ -3370,7 +3370,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
-        XLSX.writeFile(wb, `${dateStr} [발주서] ${businessPrefix ? businessPrefix + ' ' : ''}${companyName} 합산.xlsx`);
+        XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}[발주서_${companyName}] 합산.xlsx`);
         // 합산 발주서 다운로드 시 해당 업체 모든 세션 불 끄기
         sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
         setMergedDownloadedCompanies(prev => { const n = new Set(prev); n.add(companyName); return n; });

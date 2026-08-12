@@ -752,7 +752,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} [발주서] ${bizShort ? bizShort + ' ' : ''}${companyName}.xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}[발주서_${companyName}].xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];
