@@ -3328,12 +3328,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const lastAlertedUnmatchedKeyRef = useRef('');
     useEffect(() => {
         if (Date.now() <= toastSuppressUntilRef.current) return;
-        const hasAnyOrders = (Object.values(allOrderRows) as any[][][]).some(rows => rows && rows.length > 0);
         const key = fakeOrderAnalysis.unmatchedLines.map(ld => ld.line).sort().join('|');
-        if (!hasAnyOrders || !key) {
-            lastAlertedUnmatchedKeyRef.current = key;
-            return;
-        }
+        // 미매칭이 없으면 추적 초기화 (나중에 같은 조합이 다시 생겨도 재알림되도록)
+        if (!key) { lastAlertedUnmatchedKeyRef.current = ''; return; }
+        // 발주 데이터가 아직 없으면 대기 (키를 소비하지 않음 — 마스터 업로드 시 주문 데이터보다
+        // 가구매 매칭 분석이 먼저 갱신되는 경우가 있어, 여기서 소비하면 정작 주문이 생겼을 때 못 뜸)
+        const hasAnyOrders = (Object.values(allOrderRows) as any[][][]).some(rows => rows && rows.length > 0);
+        if (!hasAnyOrders) return;
         if (key !== lastAlertedUnmatchedKeyRef.current) {
             lastAlertedUnmatchedKeyRef.current = key;
             setShowUnmatchedFakeAlert(true);
