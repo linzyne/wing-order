@@ -52,7 +52,7 @@ function loadPersistedUrgentNotice(): string {
   } catch { return ''; }
 }
 
-// "사업자_이름_주문번호" 형식 파싱 (이름에 _가 있어도 마지막 _로 분리)
+// "사업자_이름_주문번호" 또는 이름 없이 "사업자_주문번호" 형식 파싱 (이름에 _가 있어도 마지막 _로 분리)
 const SPECIAL_MATCH_KEYWORDS = ['실배'];
 const isSpecialMatchOrderNum = (orderNum: string) => SPECIAL_MATCH_KEYWORDS.some(kw => orderNum.includes(kw));
 
@@ -63,10 +63,11 @@ function parseGlobalFakeLine(line: string, businesses: { id: string; displayName
   if (firstUnderscore === -1) return null;
   const businessName = trimmed.slice(0, firstUnderscore);
   const rest = trimmed.slice(firstUnderscore + 1);
+  if (!rest) return null;
   const lastUnderscore = rest.lastIndexOf('_');
-  if (lastUnderscore === -1) return null;
-  const name = rest.slice(0, lastUnderscore);
-  const orderNum = rest.slice(lastUnderscore + 1);
+  // 밑줄이 하나뿐이면(이름 없이 사업자_주문번호) rest 전체가 주문번호
+  const name = lastUnderscore === -1 ? '' : rest.slice(0, lastUnderscore);
+  const orderNum = lastUnderscore === -1 ? rest : rest.slice(lastUnderscore + 1);
   if (!orderNum) return null;
   const business = businesses.find(b => b.displayName === businessName || b.id === businessName);
   return { businessName, name, orderNum, businessId: business?.id ?? null };
@@ -552,8 +553,8 @@ const App: React.FC = () => {
     const result: Record<string, string> = {};
     globalFakeOrderInput.split('\n').forEach(line => {
       const parsed = parseGlobalFakeLine(line, allBusinesses);
-      if (!parsed?.businessId || !parsed.name || !parsed.orderNum) return;
-      const entry = `${parsed.name} ${parsed.orderNum}`;
+      if (!parsed?.businessId || !parsed.orderNum) return;
+      const entry = parsed.name ? `${parsed.name} ${parsed.orderNum}` : parsed.orderNum;
       result[parsed.businessId] = result[parsed.businessId]
         ? `${result[parsed.businessId]}\n${entry}`
         : entry;
@@ -566,8 +567,8 @@ const App: React.FC = () => {
     const result: Record<string, string> = {};
     globalUnsentOrderInput.split('\n').forEach(line => {
       const parsed = parseGlobalFakeLine(line, allBusinesses);
-      if (!parsed?.businessId || !parsed.name || !parsed.orderNum) return;
-      const entry = `${parsed.name} ${parsed.orderNum}`;
+      if (!parsed?.businessId || !parsed.orderNum) return;
+      const entry = parsed.name ? `${parsed.name} ${parsed.orderNum}` : parsed.orderNum;
       result[parsed.businessId] = result[parsed.businessId]
         ? `${result[parsed.businessId]}\n${entry}`
         : entry;
@@ -789,7 +790,7 @@ const App: React.FC = () => {
                     )}
                   </div>
                 </div>
-                <p className="text-zinc-600 text-[10px] mb-2 font-mono">형식: 사업자_이름_주문번호</p>
+                <p className="text-zinc-600 text-[10px] mb-2 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
 
                 {/* 편집 모드 또는 비어있을 때: textarea */}
                 {(isEditingGlobalFake || !globalFakeOrderInput.trim()) ? (
@@ -891,7 +892,7 @@ const App: React.FC = () => {
                       )}
                     </div>
                   </div>
-                  <p className="text-zinc-600 text-[10px] mb-2 font-mono">형식: 사업자_이름_주문번호</p>
+                  <p className="text-zinc-600 text-[10px] mb-2 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
 
                   {(isEditingGlobalUnsent || !globalUnsentOrderInput.trim()) ? (
                     <textarea
