@@ -55,10 +55,10 @@ const parsePastedTable = (text: string): { products: ProductPricing[]; error?: s
         if (percentColIdx >= 3) {
             supplyIdx = percentColIdx - 2; // 총합계
             sellingIdx = percentColIdx - 1; // 판매가
-            // 마진: % 컬럼 이후 마지막 양수 비-% 컬럼
+            // 마진: % 컬럼 이후 마지막 비어있지 않은 비-% 컬럼 (마이너스 마진도 인정)
             for (let i = firstRow.length - 1; i > percentColIdx; i--) {
-                const v = parseNum(firstRow[i] || '');
-                if (v > 0 && !hasPercent(firstRow[i] || '')) { marginIdx = i; break; }
+                const cell = firstRow[i] || '';
+                if (cell !== '' && !hasPercent(cell) && parseNum(cell) !== 0) { marginIdx = i; break; }
             }
         } else {
             supplyIdx = 1; sellingIdx = 2;
@@ -70,8 +70,8 @@ const parsePastedTable = (text: string): { products: ProductPricing[]; error?: s
         const dataRow = rows[dataStartRow];
         const afterSell = sellingIdx >= 0 ? sellingIdx : 0;
         for (let i = dataRow.length - 1; i > afterSell; i--) {
-            const v = parseNum(dataRow[i] || '');
-            if (v > 0 && !hasPercent(dataRow[i] || '')) { marginIdx = i; break; }
+            const cell = dataRow[i] || '';
+            if (cell !== '' && !hasPercent(cell) && parseNum(cell) !== 0) { marginIdx = i; break; }
         }
     }
 
@@ -817,6 +817,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    const handleUpdateShippingSettlementSplit = (companyName: string, enabled: boolean) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].shippingSettlementSplit = enabled || undefined;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateDeadline = (companyName: string, deadline: string) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].deadline = deadline || undefined;
@@ -1139,6 +1145,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
                             onUpdateDeadline={(deadline) => handleUpdateDeadline(companyName, deadline)}
                             onUpdateAutoConsolidate={(enabled) => handleUpdateAutoConsolidate(companyName, enabled)}
+                            onUpdateShippingSettlementSplit={(enabled) => handleUpdateShippingSettlementSplit(companyName, enabled)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
@@ -1210,6 +1217,7 @@ const CompanyCard: React.FC<{
     onUpdateCourier: (courier: string) => void;
     onUpdateDeadline: (deadline: string) => void;
     onUpdateAutoConsolidate: (enabled: boolean) => void;
+    onUpdateShippingSettlementSplit: (enabled: boolean) => void;
     onUpdateKeywords: (keywords: string[]) => void;
     onUpdateOrderFormHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
@@ -1319,6 +1327,21 @@ const CompanyCard: React.FC<{
                         <p className="text-[13px] text-zinc-400 leading-relaxed">
                             고객이 같은 단위를 여러개 샀을 경우 하나로 합산해서 묶음배송
                             · ex) 1kg 4개 구매 → 4kg 1개로 합산
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-4 bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">
+                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                            <input
+                                type="checkbox"
+                                checked={companyConfig.shippingSettlementSplit ?? false}
+                                onChange={(e) => props.onUpdateShippingSettlementSplit(e.target.checked)}
+                                className="w-4 h-4 rounded border-zinc-700 bg-zinc-950 text-rose-500 focus:ring-rose-500/20"
+                            />
+                            <span className="text-sm font-bold text-zinc-400">배송지정산분리</span>
+                        </label>
+                        <p className="text-[13px] text-zinc-400 leading-relaxed">
+                            정산요약을 품목구매(공급가)와 택배(배송비)로 나눠서 표시
+                            · 택배 수량은 자동합산 이후 실제 발송 박스 수 기준
                         </p>
                     </div>
                     <div className="bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">

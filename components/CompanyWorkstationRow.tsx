@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
-import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, pushManualToOutputRows } from '../hooks/useConsolidatedOrderConverter';
+import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, pushManualToOutputRows, isParcelEntryName } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
@@ -295,6 +295,59 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         return [...merged.entries()].sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
     };
 
+    // 품목/택배 라인 분리 (배송지정산분리 켜진 업체는 mergedEntries에 "(택배)" suffix 항목이 섞여 있음)
+    const splitMergedByParcel = (entries: [string, { count: number; totalPrice: number }][]) => ({
+        itemEntries: entries.filter(([name]) => !isParcelEntryName(name)),
+        parcelEntries: entries.filter(([name]) => isParcelEntryName(name)),
+    });
+
+    // 정산요약(카카오톡용 텍스트) 본문 라인 생성: 택배 라인이 있으면 [품목구매]/[택배] 섹션으로 분리
+    const renderSummaryLines = (entries: [string, { count: number; totalPrice: number }][]): string[] => {
+        const { itemEntries, parcelEntries } = splitMergedByParcel(entries);
+        if (parcelEntries.length === 0) {
+            return itemEntries.map(([name, stat]) => `${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+        }
+        const lines: string[] = [];
+        if (itemEntries.length > 0) {
+            lines.push('[품목구매]');
+            let subtotal = 0;
+            itemEntries.forEach(([name, stat]) => { lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`); subtotal += stat.totalPrice; });
+            lines.push(`품목 소계\t\t${subtotal.toLocaleString()}원`);
+        }
+        lines.push('', '[택배]');
+        let parcelSubtotal = 0;
+        parcelEntries.forEach(([name, stat]) => { lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`); parcelSubtotal += stat.totalPrice; });
+        lines.push(`택배 소계\t\t${parcelSubtotal.toLocaleString()}원`);
+        return lines;
+    };
+
+    // 정산요약(엑셀용) 라인 생성: idx 0/1행에 타이틀/총건수를 얹는 기존 레이아웃을 유지하면서, 택배 라인이 있으면 섹션으로 분리
+    const renderSummaryExcelLines = (entries: [string, { count: number; totalPrice: number }][], titleCol1: string, totalCount: number): string[] => {
+        const { itemEntries, parcelEntries } = splitMergedByParcel(entries);
+        if (parcelEntries.length === 0) {
+            return entries.map(([name, stat], idx) => {
+                const col1 = idx === 0 ? titleCol1 : idx === 1 ? `총 ${totalCount}개` : '';
+                return `${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
+            });
+        }
+        const lines: string[] = [];
+        let rowIdx = 0;
+        const pushSection = (label: string, secEntries: [string, { count: number; totalPrice: number }][]) => {
+            if (secEntries.length === 0) return;
+            const headerCol1 = rowIdx === 0 ? titleCol1 : rowIdx === 1 ? `총 ${totalCount}개` : '';
+            lines.push(`${headerCol1}\t${label}\t\t`);
+            rowIdx++;
+            secEntries.forEach(([name, stat]) => {
+                const col1 = rowIdx === 0 ? titleCol1 : rowIdx === 1 ? `총 ${totalCount}개` : '';
+                lines.push(`${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`);
+                rowIdx++;
+            });
+        };
+        pushSection('[품목구매]', itemEntries);
+        pushSection('[택배]', parcelEntries);
+        return lines;
+    };
+
     // depositSummaryExcel 텍스트를 파싱해 itemSummary(productKey→{count,totalPrice}) 재구성
     // stale Firestore itemSummary 대신 항상 최신 표시 텍스트 기반으로 복원하기 위한 역변환
     const parseSummaryFromExcelText = (excelText: string): Record<string, { count: number; totalPrice: number }> => {
@@ -333,9 +386,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lines.push(`${dateTitle} (${companyName})${bizShort ? ' ' + bizShort : ''} - 1~${roundNumber}차 합산`);
         lines.push(`총주문수\t${totalCount}개`);
         lines.push('');
-        mergedEntries.forEach(([displayName, stat]) => {
-            lines.push(`${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-        });
+        lines.push(...renderSummaryLines(mergedEntries));
 
         // 현재 차수 추가분 표시
         if (currentSessionSummary && Object.keys(currentSessionSummary).length > 0) {
@@ -366,9 +417,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         lines.push(`${dateTitle} (${companyName})${bizShort2 ? ' ' + bizShort2 : ''}`);
         lines.push(`총주문수\t${totalCount}개`);
         lines.push('');
-        mergedEntries.forEach(([displayName, stat]) => {
-            lines.push(`${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-        });
+        lines.push(...renderSummaryLines(mergedEntries));
         lines.push('');
         lines.push(`총 합계\t\t${grandTotal.toLocaleString()}원`);
         lines.push(`(입금자 ${getBusinessInfo(businessId ?? '')?.senderName || '안군농원'})`);
@@ -383,13 +432,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const mergedEntries = mergeByDisplayName(combinedSummary as Record<string, { count: number; totalPrice: number }>);
         const totalCount = mergedEntries.reduce((acc, [, s]) => acc + s.count, 0);
         const grandTotal = mergedEntries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
-        const lines: string[] = [];
-        mergedEntries.forEach(([displayName, stat], idx) => {
-            let col1 = idx === 0 ? dateTitle : idx === 1 ? `총 ${totalCount}개` : '';
-            let line = `${col1}\t${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
-            if (idx === mergedEntries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
-            lines.push(line);
-        });
+        const lines = renderSummaryExcelLines(mergedEntries, dateTitle, totalCount);
+        if (lines.length > 0) lines[lines.length - 1] += `\t${grandTotal.toLocaleString()}`;
         return lines.join('\n');
     })();
 
@@ -400,9 +444,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const totalCount = mergedEntries.reduce((a, [, b]) => a + b.count, 0);
         const grandTotal = mergedEntries.reduce((a, [, b]) => a + b.totalPrice, 0);
         const lines = [firstLine, `총주문수\t${totalCount}개`, ''];
-        mergedEntries.forEach(([displayName, stat]) => {
-            lines.push(`${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-        });
+        lines.push(...renderSummaryLines(mergedEntries));
         lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${senderName})`);
         return lines.join('\n');
     };
@@ -412,13 +454,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const totalCount = mergedEntries.reduce((a, [, s]) => a + s.count, 0);
         const grandTotal = mergedEntries.reduce((a, [, s]) => a + s.totalPrice, 0);
         const firstLineTitle = originalExcel?.split('\t')[0] || '';
-        const lines: string[] = [];
-        mergedEntries.forEach(([displayName, stat], idx) => {
-            let col1 = idx === 0 ? firstLineTitle : idx === 1 ? `총 ${totalCount}개` : '';
-            let line = `${col1}\t${displayName}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
-            if (idx === mergedEntries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
-            lines.push(line);
-        });
+        const lines = renderSummaryExcelLines(mergedEntries, firstLineTitle, totalCount);
+        if (lines.length > 0) lines[lines.length - 1] += `\t${grandTotal.toLocaleString()}`;
         return lines.join('\n');
     };
 
@@ -1620,7 +1657,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 {(() => {
                                     const syncedProcessed = syncedData.originalOrderCount
                                         || (syncedData.itemSummary
-                                            ? Object.values(syncedData.itemSummary).reduce((a: number, b: any) => a + (b.count || 0), 0)
+                                            ? Object.entries(syncedData.itemSummary).filter(([k]) => !isParcelEntryName(k)).reduce((a: number, [, b]: [string, any]) => a + (b.count || 0), 0)
                                             : syncedData.orderCount || 0);
                                     const excludedQtyTotal = (syncedData.excludedDetails || excludedList).reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
                                     const unmatchedQtyTotal = unmatchedList.reduce((sum: number, u: any) => sum + (u.qty || 1), 0);
@@ -1994,7 +2031,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                             </div>
                             <div className="bg-zinc-900/60 p-4 rounded-xl border border-zinc-800 shadow-xl">
-                                <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">원본 품목 검증 <span className="text-zinc-600">({(cumulativeDepositText !== null ? (Object.values(combinedSummary) as { count: number }[]).reduce((a, b) => a + b.count, 0) : (localResult?.orderItems || syncedData?.orderItems || []).length)}건)</span></h5>
+                                <h5 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">원본 품목 검증 <span className="text-zinc-600">({(cumulativeDepositText !== null ? (Object.entries(combinedSummary) as [string, { count: number }][]).filter(([k]) => !isParcelEntryName(k)).reduce((a, [, b]) => a + b.count, 0) : (localResult?.orderItems || syncedData?.orderItems || []).length)}건)</span></h5>
                                 <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800/50 max-h-[300px] overflow-auto custom-scrollbar">
                                     {(() => {
                                         const isCumulative = cumulativeDepositText !== null;
@@ -2012,7 +2049,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             const rawKey = `${item.registeredProductName} ${item.registeredOptionName}`.trim();
                                             grouped[mk][rawKey] = (grouped[mk][rawKey] || 0) + item.qty;
                                         });
-                                        const summaryKeys = Object.keys(summary);
+                                        // 택배(배송비) 라인은 원본 주문(orderItems)과 1:1 대조 대상이 아니므로 검증 목록에서 제외
+                                        const summaryKeys = Object.keys(summary).filter(k => !isParcelEntryName(k));
                                         let totalItems = 0;
                                         let grandTotalMargin = 0;
                                         return (

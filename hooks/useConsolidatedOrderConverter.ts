@@ -92,33 +92,101 @@ class StatsManager {
         }
     }
 
-    generateText(data: Record<string, { count: number, totalPrice: number }>, title: string): string {
+    generateText(data: Record<string, { count: number, totalPrice: number }>, title: string, splitSections: boolean = false): string {
         const totalCount = Object.values(data).reduce((acc, curr) => acc + curr.count, 0);
-        let grandTotal = 0;
         const lines = [title, `총주문수\t${totalCount}개`, ''];
-        Object.entries(data)
-            .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
-            .forEach(([name, stat]) => {
+
+        if (!splitSections) {
+            let grandTotal = 0;
+            Object.entries(data)
+                .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+                .forEach(([name, stat]) => {
+                    lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+                    grandTotal += stat.totalPrice;
+                });
+            lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${this.senderName})`);
+            return lines.join('\n');
+        }
+
+        const { itemEntries, parcelEntries } = splitParcelEntries(data);
+        let grandTotal = 0;
+        if (itemEntries.length > 0) {
+            lines.push('[품목구매]');
+            let subtotal = 0;
+            itemEntries.forEach(([name, stat]) => {
                 lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-                grandTotal += stat.totalPrice;
+                subtotal += stat.totalPrice;
             });
+            lines.push(`품목 소계\t\t${subtotal.toLocaleString()}원`);
+            grandTotal += subtotal;
+        }
+        if (parcelEntries.length > 0) {
+            lines.push('', '[택배]');
+            let subtotal = 0;
+            parcelEntries.forEach(([name, stat]) => {
+                lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
+                subtotal += stat.totalPrice;
+            });
+            lines.push(`택배 소계\t\t${subtotal.toLocaleString()}원`);
+            grandTotal += subtotal;
+        }
         lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${this.senderName})`);
         return lines.join('\n');
     }
 
-    generateExcelText(data: Record<string, { count: number, totalPrice: number }>, title: string): string {
-        const entries = Object.entries(data).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
-        const totalCount = entries.reduce((acc, [, s]) => acc + s.count, 0);
-        const grandTotal = entries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
+    generateExcelText(data: Record<string, { count: number, totalPrice: number }>, title: string, splitSections: boolean = false): string {
+        if (!splitSections) {
+            const entries = Object.entries(data).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
+            const totalCount = entries.reduce((acc, [, s]) => acc + s.count, 0);
+            const grandTotal = entries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
+            const lines: string[] = [];
+            entries.forEach(([name, stat], idx) => {
+                let col1 = idx === 0 ? title : idx === 1 ? `총 ${totalCount}개` : '';
+                let line = `${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
+                if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
+                lines.push(line);
+            });
+            return lines.join('\n');
+        }
+
+        const { itemEntries, parcelEntries } = splitParcelEntries(data);
+        const allEntries = [...itemEntries, ...parcelEntries];
+        const totalCount = allEntries.reduce((acc, [, s]) => acc + s.count, 0);
+        const grandTotal = allEntries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
         const lines: string[] = [];
-        entries.forEach(([name, stat], idx) => {
-            let col1 = idx === 0 ? title : idx === 1 ? `총 ${totalCount}개` : '';
-            let line = `${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`;
-            if (idx === entries.length - 1) line += `\t${grandTotal.toLocaleString()}`;
-            lines.push(line);
-        });
+        let rowIdx = 0;
+        const pushSection = (label: string, entries: [string, { count: number, totalPrice: number }][]) => {
+            if (entries.length === 0) return;
+            lines.push(`${rowIdx === 0 ? title : rowIdx === 1 ? `총 ${totalCount}개` : ''}\t${label}\t\t`);
+            rowIdx++;
+            entries.forEach(([name, stat]) => {
+                let col1 = rowIdx === 0 ? title : rowIdx === 1 ? `총 ${totalCount}개` : '';
+                lines.push(`${col1}\t${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}`);
+                rowIdx++;
+            });
+        };
+        pushSection('[품목구매]', itemEntries);
+        pushSection('[택배]', parcelEntries);
+        if (lines.length > 0) lines[lines.length - 1] += `\t${grandTotal.toLocaleString()}`;
         return lines.join('\n');
     }
+}
+
+/** 이름이 " (택배)"로 끝나는 항목을 택배(배송비) 라인으로, 나머지를 품목구매 라인으로 분리 (정렬 포함) */
+function splitParcelEntries(data: Record<string, { count: number, totalPrice: number }>): {
+    itemEntries: [string, { count: number, totalPrice: number }][];
+    parcelEntries: [string, { count: number, totalPrice: number }][];
+} {
+    const sorted = Object.entries(data).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
+    return {
+        itemEntries: sorted.filter(([name]) => !isParcelEntryName(name)),
+        parcelEntries: sorted.filter(([name]) => isParcelEntryName(name)),
+    };
+}
+
+export const PARCEL_SUFFIX = ' (택배)';
+export function isParcelEntryName(name: string): boolean {
+    return name.endsWith(PARCEL_SUFFIX);
 }
 
 const findHeaderRowIndex = (aoa: any[][]): number => {
@@ -671,6 +739,18 @@ const generateWorkbookForCompany = async (
                 finalOrders = matchedOrders;
             }
 
+            // 배송지정산분리: 품목구매(제품비)는 합산 "전" 원본 주문 단위 기준으로 별도 집계.
+            // 합산 후 수량으로 집계하면 2kg+3kg가 5kg 1개로 뭉쳐져 실제 구매 내역(2kg/3kg)이 사라지기 때문.
+            if (companyConfig.shippingSettlementSplit) {
+                for (const o of matchedOrders) {
+                    if (!summary[o.productKey]) summary[o.productKey] = { count: 0, totalPrice: 0 };
+                    summary[o.productKey].count += o.qty;
+                    summary[o.productKey].totalPrice += o.qty * o.config.supplyPrice;
+                    const itemStatsName = o.config.orderFormName || o.config.displayName;
+                    stats.add(itemStatsName, o.qty, o.config.supplyPrice, o.dateStr);
+                }
+            }
+
             // Phase 3: 출력 생성 (기존 로직과 동일)
             for (const order of finalOrders) {
                 const { row, productKey, config, qty, dateStr } = order;
@@ -680,16 +760,26 @@ const generateWorkbookForCompany = async (
                 const poPerRowQty = isQuantityMode ? splitCount : 1;
                 const shipping = splitCount > 1 && config.shippingCost ? config.shippingCost : 0;
 
-                if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
-                summary[productKey].count += qty;
-                summary[productKey].totalPrice += qty * config.supplyPrice + shipping;
-
-                const statsName = config.orderFormName || config.displayName;
-                if (shipping > 0) {
-                    stats.add(statsName, 1, config.supplyPrice + shipping, dateStr);
-                    if (qty > 1) stats.add(statsName, qty - 1, config.supplyPrice, dateStr);
+                if (companyConfig.shippingSettlementSplit) {
+                    // 품목구매는 위에서 이미 집계했으므로, 여기서는 택배(배송비)만 "합산 후" 실제 발송 박스 수 기준으로 집계
+                    const parcelKey = `${productKey}${PARCEL_SUFFIX}`;
+                    if (!summary[parcelKey]) summary[parcelKey] = { count: 0, totalPrice: 0 };
+                    summary[parcelKey].count += qty;
+                    summary[parcelKey].totalPrice += qty * (config.shippingCost || 0);
+                    const parcelStatsName = `${config.orderFormName || config.displayName}${PARCEL_SUFFIX}`;
+                    stats.add(parcelStatsName, qty, config.shippingCost || 0, dateStr);
                 } else {
-                    stats.add(statsName, qty, config.supplyPrice, dateStr);
+                    if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
+                    summary[productKey].count += qty;
+                    summary[productKey].totalPrice += qty * config.supplyPrice + shipping;
+
+                    const statsName = config.orderFormName || config.displayName;
+                    if (shipping > 0) {
+                        stats.add(statsName, 1, config.supplyPrice + shipping, dateStr);
+                        if (qty > 1) stats.add(statsName, qty - 1, config.supplyPrice, dateStr);
+                    } else {
+                        stats.add(statsName, qty, config.supplyPrice, dateStr);
+                    }
                 }
 
                 if (!registeredProductNames[config.displayName]) {
@@ -715,18 +805,30 @@ const generateWorkbookForCompany = async (
             const moPoRowQty = moIsQuantityMode ? mo.qty : mo.qty * moSplitCount;
             const moPerRowQty = moIsQuantityMode ? moSplitCount : 1;
             const moShipping = moSplitCount > 1 && config.shippingCost ? config.shippingCost : 0;
-
-            if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
-            summary[productKey].count += mo.qty;
-            summary[productKey].totalPrice += mo.qty * config.supplyPrice + moShipping;
             manualOrderCounts[productKey] = (manualOrderCounts[productKey] || 0) + mo.qty;
-
             const moStatsName = config.orderFormName || config.displayName;
-            if (moShipping > 0) {
-                stats.add(moStatsName, 1, config.supplyPrice + moShipping, todayStr);
-                if (mo.qty > 1) stats.add(moStatsName, mo.qty - 1, config.supplyPrice, todayStr);
-            } else {
+
+            if (companyConfig.shippingSettlementSplit) {
+                if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
+                summary[productKey].count += mo.qty;
+                summary[productKey].totalPrice += mo.qty * config.supplyPrice;
                 stats.add(moStatsName, mo.qty, config.supplyPrice, todayStr);
+
+                const parcelKey = `${productKey}${PARCEL_SUFFIX}`;
+                if (!summary[parcelKey]) summary[parcelKey] = { count: 0, totalPrice: 0 };
+                summary[parcelKey].count += mo.qty;
+                summary[parcelKey].totalPrice += mo.qty * (config.shippingCost || 0);
+                stats.add(`${moStatsName}${PARCEL_SUFFIX}`, mo.qty, config.shippingCost || 0, todayStr);
+            } else {
+                if (!summary[productKey]) summary[productKey] = { count: 0, totalPrice: 0 };
+                summary[productKey].count += mo.qty;
+                summary[productKey].totalPrice += mo.qty * config.supplyPrice + moShipping;
+                if (moShipping > 0) {
+                    stats.add(moStatsName, 1, config.supplyPrice + moShipping, todayStr);
+                    if (mo.qty > 1) stats.add(moStatsName, mo.qty - 1, config.supplyPrice, todayStr);
+                } else {
+                    stats.add(moStatsName, mo.qty, config.supplyPrice, todayStr);
+                }
             }
             await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moPoRowQty, moPerRowQty);
         }
@@ -749,9 +851,10 @@ const generateWorkbookForCompany = async (
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
         const bizShort = getBusinessInfo(businessId || '')?.displayName || '';
         const summaryTitle = bizShort ? `${dateTitle} (${companyName}) ${bizShort}` : `${dateTitle} (${companyName})`;
-        const depositSummary = stats.generateText(stats.total, summaryTitle);
-        const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle);
-        const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date) }));
+        const splitSections = !!companyConfig.shippingSettlementSplit;
+        const depositSummary = stats.generateText(stats.total, summaryTitle, splitSections);
+        const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle, splitSections);
+        const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date, splitSections) }));
         return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}[발주서_${companyName}].xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
