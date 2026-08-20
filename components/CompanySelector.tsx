@@ -210,6 +210,14 @@ const SortableDividerRow: React.FC<{
 // 열 인덱스를 알파벳으로 변환 (0→A, 1→B, ...)
 const colIndexToLetter = (idx: number) => String.fromCharCode(65 + idx);
 
+// Firestore에 이미 저장된 returnRecords와 아직 저장 안 된 로컬 returns를 id 기준으로 중복 없이 병합
+// (로컬 returns가 저장 후에도 비워지지 않을 수 있어 같은 항목이 여러 번 합쳐지는 것을 방지)
+const mergeReturnRecords = (existing: ReturnRecord[] = [], local: ReturnRecord[] = []): ReturnRecord[] => {
+    const existingIds = new Set(existing.filter(r => r.id).map(r => r.id));
+    const newOnes = local.filter(r => !r.id || !existingIds.has(r.id));
+    return [...existing, ...newOnes];
+};
+
 // 가구매 입력에서 주문번호 + 한글 이름 추출 → 마스터 데이터로 이름→주문번호 해석
 const resolveFakeOrderNumbers = (
     fakeInput: string,
@@ -2802,6 +2810,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const totalMargin = -(p.margin * qty);
         const depositTransferId = addAutoDepositTransfer(returnBankName, returnAccountNumber, -totalMargin, returnMemo || `${returnCompany} ${p.name} 반품`);
         setReturns(prev => [...prev, {
+            id: `ret-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             company: returnCompany, productKey: returnProductKey, productName: p.name,
             registeredName: returnRegisteredName || undefined,
             count: qty, marginPerUnit: p.margin, totalMargin, memo: returnMemo || undefined,
@@ -2817,6 +2826,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const amount = parseInt(returnDirectAmount);
         const depositTransferId = addAutoDepositTransfer(returnBankName, returnAccountNumber, amount, returnMemo || `${returnCompany} ${p?.name || itemType}`);
         setReturns(prev => [...prev, {
+            id: `ret-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
             company: returnCompany, productKey: returnProductKey, productName: p?.name || itemType,
             registeredName: returnRegisteredName || undefined,
             count: 1, marginPerUnit: amount, totalMargin: -amount,
@@ -3735,7 +3745,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const { loadDailySales } = await import('../services/firestoreService');
             const existingDailySales = await loadDailySales(recordDate, businessId);
             if (existingDailySales?.returnRecords) {
-                allReturns = [...existingDailySales.returnRecords, ...returns];
+                allReturns = mergeReturnRecords(existingDailySales.returnRecords, returns);
             }
         } catch {}
 
@@ -3970,7 +3980,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const { loadDailySales } = await import('../services/firestoreService');
             existingDailySales = await loadDailySales(recordDate, businessId);
             if (existingDailySales?.returnRecords) {
-                allReturns = [...existingDailySales.returnRecords, ...returns];
+                allReturns = mergeReturnRecords(existingDailySales.returnRecords, returns);
             }
         } catch {}
         const returnTotal = allReturns.reduce((s, r) => s + r.totalMargin, 0);
@@ -4030,6 +4040,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         try {
             await upsertDailySales(dailySales, businessId);
             setSaveStatus('success');
+            // 방금 저장된 로컬 슬롯/반품 항목은 Firestore에 반영됐으므로 비워서
+            // 다음 저장 때 다시 합쳐져 중복 저장되는 것을 방지
+            setReturns([]);
             setRecordedCompanies(prev => {
                 const next = new Set(prev);
                 recordedCompanyNamesThisSave.forEach(n => next.add(n));

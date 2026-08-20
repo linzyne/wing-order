@@ -186,6 +186,7 @@ export interface MarginRecord {
 }
 
 export interface ReturnRecord {
+  id?: string;            // 고유 id (저장 시 중복 병합 방지용, 없으면 레거시 데이터)
   company: string;       // 업체명
   productKey: string;    // 품목 키
   productName: string;   // 품목명
