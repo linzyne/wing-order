@@ -378,7 +378,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
         const mergedEntries = mergeByDisplayName(combinedSummary as Record<string, { count: number; totalPrice: number }>);
-        const totalCount = mergedEntries.reduce((a, [, b]) => a + b.count, 0);
+        // 총주문수는 품목(구매) 수량만 집계 — 택배(배송비) 라인 제외
+        const totalCount = splitMergedByParcel(mergedEntries).itemEntries.reduce((a, [, b]) => a + b.count, 0);
         const grandTotal = mergedEntries.reduce((a, [, b]) => a + b.totalPrice, 0);
 
         const lines: string[] = [];
@@ -410,7 +411,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
         const mergedEntries = mergeByDisplayName(combinedSummary as Record<string, { count: number; totalPrice: number }>);
-        const totalCount = mergedEntries.reduce((a, [, b]) => a + b.count, 0);
+        // 총주문수는 품목(구매) 수량만 집계 — 택배(배송비) 라인 제외
+        const totalCount = splitMergedByParcel(mergedEntries).itemEntries.reduce((a, [, b]) => a + b.count, 0);
         const grandTotal = mergedEntries.reduce((a, [, b]) => a + b.totalPrice, 0);
         const lines: string[] = [];
         const bizShort2 = getBusinessInfo(businessId ?? '')?.shortName || '';
@@ -430,7 +432,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
         const dateTitle = `${today.getMonth() + 1}/${today.getDate()} (${weekdays[today.getDay()]})`;
         const mergedEntries = mergeByDisplayName(combinedSummary as Record<string, { count: number; totalPrice: number }>);
-        const totalCount = mergedEntries.reduce((acc, [, s]) => acc + s.count, 0);
+        // 총 N개는 품목(구매) 수량만 집계 — 택배(배송비) 라인 제외
+        const totalCount = splitMergedByParcel(mergedEntries).itemEntries.reduce((acc, [, s]) => acc + s.count, 0);
         const grandTotal = mergedEntries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
         const lines = renderSummaryExcelLines(mergedEntries, dateTitle, totalCount);
         if (lines.length > 0) lines[lines.length - 1] += `\t${grandTotal.toLocaleString()}`;
@@ -441,7 +444,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const senderName = getBusinessInfo(businessId ?? '')?.senderName || '안군농원';
         const firstLine = originalText?.split('\n')[0] || '';
         const mergedEntries = mergeByDisplayName(summary);
-        const totalCount = mergedEntries.reduce((a, [, b]) => a + b.count, 0);
+        // 총주문수는 품목(구매) 수량만 집계 — 택배(배송비) 라인 제외
+        const totalCount = splitMergedByParcel(mergedEntries).itemEntries.reduce((a, [, b]) => a + b.count, 0);
         const grandTotal = mergedEntries.reduce((a, [, b]) => a + b.totalPrice, 0);
         const lines = [firstLine, `총주문수\t${totalCount}개`, ''];
         lines.push(...renderSummaryLines(mergedEntries));
@@ -451,7 +455,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const buildDepositExcelFromSummary = (summary: Record<string, { count: number; totalPrice: number }>, originalExcel: string | null | undefined): string => {
         const mergedEntries = mergeByDisplayName(summary);
-        const totalCount = mergedEntries.reduce((a, [, s]) => a + s.count, 0);
+        // 총 N개는 품목(구매) 수량만 집계 — 택배(배송비) 라인 제외
+        const totalCount = splitMergedByParcel(mergedEntries).itemEntries.reduce((a, [, s]) => a + s.count, 0);
         const grandTotal = mergedEntries.reduce((a, [, s]) => a + s.totalPrice, 0);
         const firstLineTitle = originalExcel?.split('\t')[0] || '';
         const lines = renderSummaryExcelLines(mergedEntries, firstLineTitle, totalCount);

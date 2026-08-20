@@ -93,7 +93,8 @@ class StatsManager {
     }
 
     generateText(data: Record<string, { count: number, totalPrice: number }>, title: string, splitSections: boolean = false): string {
-        const totalCount = Object.values(data).reduce((acc, curr) => acc + curr.count, 0);
+        // 총주문수는 품목(구매) 수량만 집계 — 택배(배송비) 라인은 실물 주문이 아니므로 제외
+        const totalCount = Object.entries(data).filter(([name]) => !isParcelEntryName(name)).reduce((acc, [, curr]) => acc + curr.count, 0);
         const lines = [title, `총주문수\t${totalCount}개`, ''];
 
         if (!splitSections) {
@@ -151,7 +152,8 @@ class StatsManager {
 
         const { itemEntries, parcelEntries } = splitParcelEntries(data);
         const allEntries = [...itemEntries, ...parcelEntries];
-        const totalCount = allEntries.reduce((acc, [, s]) => acc + s.count, 0);
+        // 총 N개는 품목(구매) 수량만 집계 — 택배(배송비) 라인은 실물 주문이 아니므로 제외
+        const totalCount = itemEntries.reduce((acc, [, s]) => acc + s.count, 0);
         const grandTotal = allEntries.reduce((acc, [, s]) => acc + s.totalPrice, 0);
         const lines: string[] = [];
         let rowIdx = 0;
