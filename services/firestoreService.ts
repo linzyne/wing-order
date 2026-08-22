@@ -631,6 +631,24 @@ export const saveSharedSuppliers = async (config: PricingConfig): Promise<void> 
   await setDoc(docRef, { data: config, updatedAt: Timestamp.now() });
 };
 
+// ===== Urgent Notice (긴급공지) =====
+
+export const subscribeUrgentNotice = (
+  callback: (text: string) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', 'urgentNotice');
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().text as string) || '' : '');
+  }, (error) => {
+    console.error('[Firestore] UrgentNotice 구독 오류:', error);
+  });
+};
+
+export const saveUrgentNotice = async (text: string): Promise<void> => {
+  const docRef = doc(db, 'config', 'urgentNotice');
+  await setDoc(docRef, { text, updatedAt: Timestamp.now() });
+};
+
 export const loadTodos = async (businessId?: string): Promise<TodoItem[] | null> => {
   try {
     const docRef = doc(db, 'config', getTodosDocId(businessId));

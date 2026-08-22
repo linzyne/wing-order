@@ -18,6 +18,8 @@ import {
   saveFakeCourierSettings as saveFakeCourierSettingsToFirestore,
   subscribeSharedSuppliers,
   saveSharedSuppliers,
+  subscribeUrgentNotice,
+  saveUrgentNotice,
   type DailyWorkspaceData,
   type FakeCourierSettings,
   DEFAULT_FAKE_COURIER_SETTINGS,
@@ -247,6 +249,27 @@ export const useSharedSuppliers = () => {
   }, []);
 
   return { config, saveConfig, isLoading };
+};
+
+// ===== Urgent Notice Hook (긴급공지) =====
+export const useUrgentNotice = () => {
+  const [notice, setNotice] = useState('');
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeUrgentNotice((text) => setNotice(text));
+    return unsubscribe;
+  }, []);
+
+  const updateNotice = useCallback((text: string) => {
+    setNotice(text);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      saveUrgentNotice(text).catch((e) => console.error('[UrgentNotice] 저장 실패:', e));
+    }, 500);
+  }, []);
+
+  return { notice, updateNotice };
 };
 
 // ===== Todos Hook =====

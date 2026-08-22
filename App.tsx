@@ -9,7 +9,7 @@ import SharedMasterUpload, { type UploadResult } from './components/SharedMaster
 import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from './components/ConsolidatedInvoicePanel';
 import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon } from './components/icons';
-import { useSharedSuppliers, useCourierTemplates } from './hooks/useFirestore';
+import { useSharedSuppliers, useCourierTemplates, useUrgentNotice } from './hooks/useFirestore';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
@@ -44,13 +44,7 @@ function loadPersistedFakeOrder(): string {
 
 // 긴급공지: 만료 없이 수동 삭제 전까지 유지 (가구매 명단과 달리 TTL 없음).
 // 발주서 생성(마스터/N차 업로드) 시마다 팝업으로 띄워 깜빡하기 쉬운 주소변경 등을 상기시킴.
-const URGENT_NOTICE_KEY = 'globalUrgentNotice';
-
-function loadPersistedUrgentNotice(): string {
-  try {
-    return localStorage.getItem(URGENT_NOTICE_KEY) || '';
-  } catch { return ''; }
-}
+// Firestore(config/urgentNotice)에 동기화되어 여러 컴퓨터에서 동일하게 보임 (useUrgentNotice 훅).
 
 // "사업자_이름_주문번호" 또는 이름 없이 "사업자_주문번호" 형식 파싱 (이름에 _가 있어도 마지막 _로 분리)
 const SPECIAL_MATCH_KEYWORDS = ['실배'];
@@ -87,10 +81,7 @@ const App: React.FC = () => {
   const [isEditingGlobalUnsent, setIsEditingGlobalUnsent] = useState(false);
   const [matchedFakeNums, setMatchedFakeNums] = useState<Record<string, string[]>>({});
   const [showUrgentNotice, setShowUrgentNotice] = useState(false);
-  const [globalUrgentNotice, setGlobalUrgentNotice] = useState(() => loadPersistedUrgentNotice());
-  useEffect(() => {
-    try { localStorage.setItem(URGENT_NOTICE_KEY, globalUrgentNotice); } catch {}
-  }, [globalUrgentNotice]);
+  const { notice: globalUrgentNotice, updateNotice: setGlobalUrgentNotice } = useUrgentNotice();
   const globalFakeOrderInputRef = useRef('');
   useEffect(() => { globalFakeOrderInputRef.current = globalFakeOrderInput; }, [globalFakeOrderInput]);
   useEffect(() => {
