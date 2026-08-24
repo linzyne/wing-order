@@ -93,6 +93,7 @@ const App: React.FC = () => {
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [invoiceResults, setInvoiceResults] = useState<InvoiceResult[]>([]);
   const [businessWarnings, setBusinessWarnings] = useState<Record<string, boolean>>({});
+  const [businessWarningCompanies, setBusinessWarningCompanies] = useState<Record<string, string[]>>({});
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [activePanelIndex, setActivePanelIndex] = useState(0);
   const [refreshKeys, setRefreshKeys] = useState<Record<string, number>>({});
@@ -1059,6 +1060,7 @@ const App: React.FC = () => {
                 results={uploadResults}
                 onResultsChange={setUploadResults}
                 warningBusinessIds={new Set(Object.keys(businessWarnings).filter(id => businessWarnings[id]))}
+                warningCompanyIds={new Set(Object.entries(businessWarningCompanies).flatMap(([bizId, companies]) => (companies as string[]).map(c => `${bizId}_${c}`)))}
                 urgentNotice={globalUrgentNotice}
               />
             </div>
@@ -1213,7 +1215,15 @@ const App: React.FC = () => {
               fakeOrderCourierRows={courierRowsByBusiness[b.id] || []}
               onEdit={b.isDynamic ? () => setEditingBusiness(b) : undefined}
               onExposeOrderRows={(header, dataRows) => handleExposeOrderRows(b.id, header, dataRows)}
-              onHasWarnings={(has) => setBusinessWarnings(prev => prev[b.id] === has ? prev : { ...prev, [b.id]: has })}
+              onHasWarnings={(has, companies) => {
+                setBusinessWarnings(prev => prev[b.id] === has ? prev : { ...prev, [b.id]: has });
+                setBusinessWarningCompanies(prev => {
+                  const next = companies || [];
+                  const cur = prev[b.id] || [];
+                  if (cur.length === next.length && cur.every((c, i) => c === next[i])) return prev;
+                  return { ...prev, [b.id]: next };
+                });
+              }}
             />
           ))}
         </div>

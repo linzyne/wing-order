@@ -51,6 +51,7 @@ interface Props {
   results: UploadResult[];
   onResultsChange: React.Dispatch<React.SetStateAction<UploadResult[]>>;
   warningBusinessIds?: Set<string>;
+  warningCompanyIds?: Set<string>;
   urgentNotice?: string;
 }
 
@@ -76,7 +77,7 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
   return null;
 }
 
-const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, urgentNotice }) => {
+const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, warningCompanyIds, urgentNotice }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
@@ -487,6 +488,8 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   .filter((e): e is { biz: typeof downloadSnapshot[0]; company: NonNullable<typeof e.company> } => !!e.company);
                 if (bizEntries.length === 0) return null;
 
+                const companyHasWarning = bizEntries.some(({ biz }) => warningCompanyIds?.has(`${biz.businessId}_${companyName}`) ?? false);
+
                 // 업체 단위 마감/기록 상태: 같은 업체명이 여러 사업자에 걸쳐 있을 때, "하나라도"(OR) 기준으로
                 // 배지를 켜면 실제로는 기록 안 된 사업자가 있어도 켜진 것처럼 보이고, 토글 시에도 이미
                 // 목표상태와 같은 사업자는 건너뛰어 조용히 누락된다. "전부 다"(AND) 기준으로 통일한다.
@@ -528,6 +531,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   <div key={companyName}>
                     <div className="flex items-center gap-2 mb-1.5">
                       <span className="text-sm font-black text-white tracking-tight">{companyName}</span>
+                      {companyHasWarning && (
+                        <span title="워크스테이션에 경고가 있습니다" className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-black border border-amber-500/40">⚠ 경고</span>
+                      )}
                       <button
                         onClick={() => setSettlementCompany(companyName)}
                         className="shrink-0 px-2 py-0.5 rounded text-[11px] font-black tracking-tight border transition-all bg-transparent text-rose-500 border-rose-700/50 hover:text-rose-300 hover:border-rose-500"
@@ -561,9 +567,13 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                     <div className="flex flex-col gap-1.5">
                       {bizEntries.map(({ biz, company }) => {
                         const totalCount = company.rounds.reduce((s, r) => s + (r.count ?? 0), 0);
+                        const hasWarning = warningCompanyIds?.has(`${biz.businessId}_${companyName}`) ?? false;
                         return (
                           <div key={biz.businessId} className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-[11px] text-zinc-400 w-16 shrink-0 truncate font-bold" title={biz.displayName ?? ''}>{biz.displayName}</span>
+                            {hasWarning && (
+                              <span title="워크스테이션에 경고가 있습니다" className="text-amber-400 text-xs leading-none shrink-0">⚠</span>
+                            )}
                             <button
                               onClick={() => { uploadFns[biz.businessId]?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(`${biz.businessId}_${companyName}_merged`); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); }}
                               className={`px-2.5 py-0.5 text-[11px] font-black rounded-lg transition-colors border ${downloadedButtons.has(`${biz.businessId}_${companyName}_merged`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-teal-700 text-white hover:bg-teal-600 border-teal-600'}`}

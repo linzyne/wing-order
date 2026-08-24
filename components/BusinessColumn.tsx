@@ -46,7 +46,7 @@ interface BusinessColumnProps {
   onWorkstationReset?: () => void;
   onEdit?: () => void;
   onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void;
-  onHasWarnings?: (has: boolean) => void;
+  onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void;
 }
 
 const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, otherBusinesses, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, onEdit, onExposeOrderRows, onHasWarnings }) => {

@@ -57,7 +57,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -2951,18 +2951,23 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (downloaded === 0) alert('다운받을 발주 데이터가 없습니다.');
     };
 
-    // 세션별 경고 집계 → 부모에게 전달
-    const [sessionWarningsMap, setSessionWarningsMap] = useState<Record<string, boolean>>({});
-    const handleSessionWarningUpdate = useCallback((sessionId: string, hasWarning: boolean) => {
+    // 세션별 경고 집계(업체명 포함) → 부모에게 전달
+    const [sessionWarningsMap, setSessionWarningsMap] = useState<Record<string, { company: string; hasWarning: boolean }>>({});
+    const handleSessionWarningUpdate = useCallback((sessionId: string, hasWarning: boolean, companyName: string) => {
         setSessionWarningsMap(prev => {
-            if (prev[sessionId] === hasWarning) return prev;
-            return { ...prev, [sessionId]: hasWarning };
+            const existing = prev[sessionId];
+            if (existing && existing.hasWarning === hasWarning && existing.company === companyName) return prev;
+            return { ...prev, [sessionId]: { company: companyName, hasWarning } };
         });
     }, []);
     const onHasWarningsRef = useRef(onHasWarnings);
     onHasWarningsRef.current = onHasWarnings;
     useEffect(() => {
-        onHasWarningsRef.current?.(Object.values(sessionWarningsMap).some(Boolean));
+        const warningCompanies = new Set<string>();
+        Object.values(sessionWarningsMap).forEach(({ company, hasWarning }) => {
+            if (hasWarning) warningCompanies.add(company);
+        });
+        onHasWarningsRef.current?.(warningCompanies.size > 0, Array.from(warningCompanies));
     }, [sessionWarningsMap]);
 
     // 빠른 다운로드 바: 부모에게 미다운로드 업체 수와 다운로드 함수 전달
@@ -6150,7 +6155,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     onOrderDownloaded={() => setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; })}
                                                     onInvoiceDownloaded={() => { setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; }); }}
                                                     mergedDownloaded={mergedDownloadedCompanies.has(company)}
-                                                    onWarningUpdate={handleSessionWarningUpdate}
+                                                    onWarningUpdate={(sessionId, hasWarning) => handleSessionWarningUpdate(sessionId, hasWarning, company)}
                                                     onEffectiveTextChange={sIdx === (companySessions[company] || []).length - 1 ? (kakaoText, excelText) => { companyLastSettlementRef.current[company] = { kakaoText, excelText }; } : undefined}
                                                     registerAppendRow={(fn) => { appendRowFnsRef.current[session.id] = fn; }}
                                                     registerAddAdjustment={(fn) => { addAdjustmentFnsRef.current[session.id] = fn; }}
