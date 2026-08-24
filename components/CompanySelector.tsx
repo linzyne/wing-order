@@ -11,7 +11,7 @@ import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, 
 import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
-import { loadManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import {
     DndContext,
     closestCenter,
@@ -1094,15 +1094,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // externalRecordRefresh: 매출현황 등 다른 화면에서 기록을 지우거나 저장했을 때도 재조회
     }, [businessId, workDate, masterOrderFile, resolveRecordDate, externalRecordRefresh?.n]);
 
-    // 수동발주 초기 로드 (getDoc 1회)
+    // 수동발주 실시간 구독 (다른 PC에서 추가/삭제해도 즉시 반영)
+    const knownManualOrderIdsRef = useRef<Set<string>>(new Set());
     useEffect(() => {
-        loadManualOrders(businessId).then(orders => {
+        knownManualOrderIdsRef.current = new Set();
+        const unsubscribe = subscribeManualOrders((orders) => {
             const str = JSON.stringify(orders);
+            if (str === lastWrittenManualOrdersRef.current) return; // 자신이 방금 저장한 echo는 무시
             lastWrittenManualOrdersRef.current = str;
             const typedOrders = orders as ManualOrder[];
             setManualOrders(typedOrders);
-            setSelectedManualOrderIds(new Set(typedOrders.map(o => o.id)));
-        });
+            const newIds = new Set(typedOrders.map(o => o.id));
+            const knownIds = knownManualOrderIdsRef.current;
+            setSelectedManualOrderIds(prev => {
+                const next = new Set<string>();
+                newIds.forEach(id => { if (prev.has(id) || !knownIds.has(id)) next.add(id); });
+                return next;
+            });
+            knownManualOrderIdsRef.current = newIds;
+        }, businessId);
+        return unsubscribe;
     }, [businessId]);
 
     // 수동발주 변경 → Firestore에 저장

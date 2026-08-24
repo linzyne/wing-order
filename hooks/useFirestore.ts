@@ -5,10 +5,9 @@ import {
   subscribePricingConfig,
   loadPricingConfig,
   savePricingConfigToFirestore,
-  getDailyWorkspace,
+  subscribeDailyWorkspace,
   updateDailyWorkspaceField,
   updateDailyWorkspaceSessionField,
-  WORKSPACE_ADJUSTMENT_EVENT,
   loadPlatformConfigs,
   savePlatformConfigs,
   loadTodos,
@@ -178,25 +177,14 @@ export const useDailyWorkspace = (businessId?: string) => {
     currentBusinessIdRef.current = businessId;
     setWorkspace(null);
     setIsReady(false);
-    getDailyWorkspace(businessId).then(data => {
+    // 실시간 구독: 다른 PC에서 저장한 수동입금/수동발주/정산조정 등도 즉시 반영된다
+    // (통합CS현황 등 다른 화면에서의 저장도 같은 문서를 향하므로 이 구독 하나로 함께 반영됨)
+    const unsubscribe = subscribeDailyWorkspace((data) => {
       if (currentBusinessIdRef.current !== businessId) return;
       setWorkspace(data);
       setIsReady(true);
-    });
-  }, [businessId]);
-
-  // 통합CS현황 등 다른 화면에서 이 사업자의 정산 조정을 저장했을 때도 반영되도록 갱신
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
-      if (detail?.businessId !== businessId) return;
-      getDailyWorkspace(businessId).then(data => {
-        if (currentBusinessIdRef.current !== businessId) return;
-        setWorkspace(data);
-      });
-    };
-    window.addEventListener(WORKSPACE_ADJUSTMENT_EVENT, handler);
-    return () => window.removeEventListener(WORKSPACE_ADJUSTMENT_EVENT, handler);
+    }, businessId);
+    return unsubscribe;
   }, [businessId]);
 
   const updateField = useCallback(async (field: string, value: any) => {
