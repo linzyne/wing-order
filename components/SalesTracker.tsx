@@ -12,6 +12,167 @@ declare var XLSX: any;
 type ViewMode = 'settlement' | 'orders' | 'invoices' | 'margin' | 'returns' | 'cs' | 'trend' | 'fake';
 type DateMode = 'month' | 'range';
 
+// 판매추이 그래프용 8색 카테고리 팔레트 (다크모드 고정 순서, CVD 검증됨)
+const TREND_PALETTE = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+const TREND_OTHER_COLOR = '#898781';
+
+type TrendSeries = { key: string; label: string; color: string; values: number[] };
+
+// 깔끔한 축 눈금 최댓값 계산 (1/2/5 * 10^n 단위로 반올림)
+const niceMax = (max: number): number => {
+  if (max <= 0) return 1;
+  const exp = Math.floor(Math.log10(max));
+  const base = Math.pow(10, exp);
+  const frac = max / base;
+  const niceFrac = frac <= 1 ? 1 : frac <= 2 ? 2 : frac <= 5 ? 5 : 10;
+  return niceFrac * base;
+};
+
+const TrendLineChart: React.FC<{
+  series: TrendSeries[];
+  dates: string[];
+  hiddenKeys: Set<string>;
+  onToggleKey: (key: string) => void;
+  formatVal: (v: number) => string;
+}> = ({ series, dates, hiddenKeys, onToggleKey, formatVal }) => {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const visibleSeries = series.filter(s => !hiddenKeys.has(s.key));
+
+  const PAD_L = 52, PAD_R = 16, PAD_T = 16, PAD_B = 28;
+  const H = 300;
+  const stepW = 44;
+  const W = Math.max(560, dates.length * stepW) ;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+
+  const maxVal = niceMax(Math.max(1, ...visibleSeries.flatMap(s => s.values)));
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(maxVal * f));
+
+  const xAt = (i: number) => dates.length <= 1 ? PAD_L + plotW / 2 : PAD_L + (plotW * i) / (dates.length - 1);
+  const yAt = (v: number) => PAD_T + plotH - (plotH * v) / maxVal;
+
+  // 날짜 라벨은 겹치지 않도록 일정 간격으로만 표시
+  const labelEvery = Math.max(1, Math.ceil((dates.length * 30) / plotW));
+
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect || dates.length === 0) return;
+    const relX = ((e.clientX - rect.left) / rect.width) * W;
+    const ratio = dates.length <= 1 ? 0 : (relX - PAD_L) / plotW;
+    const idx = Math.round(ratio * (dates.length - 1));
+    setHoverIdx(Math.min(dates.length - 1, Math.max(0, idx)));
+  };
+
+  if (dates.length === 0 || series.length === 0) {
+    return <p className="text-zinc-600 text-sm py-8 text-center">데이터 없음</p>;
+  }
+
+  const hovered = hoverIdx !== null;
+  const tooltipItems = hovered
+    ? visibleSeries.map(s => ({ ...s, value: s.values[hoverIdx!] })).sort((a, b) => b.value - a.value)
+    : [];
+  // 툴팁이 오른쪽 경계를 넘어가지 않도록 위치 보정
+  const tooltipLeftPct = hoverIdx !== null ? Math.min(78, Math.max(2, (xAt(hoverIdx) / W) * 100)) : 0;
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto relative">
+        <svg
+          ref={svgRef}
+          viewBox={`0 0 ${W} ${H}`}
+          width={W}
+          className="block"
+          onMouseMove={handleMove}
+          onMouseLeave={() => setHoverIdx(null)}
+        >
+          {/* 그리드라인 + Y축 눈금 */}
+          {yTicks.map((t, i) => (
+            <g key={i}>
+              <line x1={PAD_L} x2={W - PAD_R} y1={yAt(t)} y2={yAt(t)} stroke="#2c2c2a" strokeWidth={1} />
+              <text x={PAD_L - 8} y={yAt(t)} textAnchor="end" dominantBaseline="middle" fontSize={10} fill="#898781">
+                {t.toLocaleString()}
+              </text>
+            </g>
+          ))}
+          {/* X축 베이스라인 */}
+          <line x1={PAD_L} x2={W - PAD_R} y1={PAD_T + plotH} y2={PAD_T + plotH} stroke="#383835" strokeWidth={1} />
+          {/* X축 날짜 라벨 (주말은 빨간색) */}
+          {dates.map((d, i) => {
+            if (i % labelEvery !== 0) return null;
+            const dow = new Date(d).getUTCDay();
+            const isWeekend = dow === 0 || dow === 6;
+            return (
+              <text key={d} x={xAt(i)} y={H - 8} textAnchor="middle" fontSize={10} fill={isWeekend ? '#fb7185' : '#898781'}>
+                {parseInt(d.slice(8))}
+              </text>
+            );
+          })}
+          {/* 호버 크로스헤어 */}
+          {hoverIdx !== null && (
+            <line x1={xAt(hoverIdx)} x2={xAt(hoverIdx)} y1={PAD_T} y2={PAD_T + plotH} stroke="#52514e" strokeWidth={1} strokeDasharray="3,3" />
+          )}
+          {/* 라인 */}
+          {visibleSeries.map(s => (
+            <path
+              key={s.key}
+              d={s.values.map((v, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)},${yAt(v)}`).join(' ')}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+          ))}
+          {/* 호버 위치 점 (surface 링 포함) */}
+          {hoverIdx !== null && visibleSeries.map(s => (
+            <circle key={s.key} cx={xAt(hoverIdx)} cy={yAt(s.values[hoverIdx!])} r={4} fill={s.color} stroke="#09090b" strokeWidth={2} />
+          ))}
+        </svg>
+
+        {/* 툴팁 */}
+        {hoverIdx !== null && tooltipItems.length > 0 && (
+          <div
+            className="absolute top-2 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl px-3 py-2 text-xs pointer-events-none z-20 min-w-[140px]"
+            style={{ left: `${tooltipLeftPct}%` }}
+          >
+            <div className="text-zinc-400 font-bold mb-1.5 border-b border-zinc-700 pb-1">{dates[hoverIdx]}</div>
+            <div className="space-y-1">
+              {tooltipItems.map(item => (
+                <div key={item.key} className="flex items-center gap-2 justify-between">
+                  <span className="flex items-center gap-1.5 text-zinc-300 truncate max-w-[140px]">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
+                    {item.label}
+                  </span>
+                  <span className="text-zinc-100 font-semibold tabular-nums">{formatVal(item.value) || '0'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 범례 (클릭하여 표시/숨김 토글) */}
+      <div className="flex flex-wrap gap-2">
+        {series.map(s => {
+          const isHidden = hiddenKeys.has(s.key);
+          return (
+            <button
+              key={s.key}
+              onClick={() => onToggleKey(s.key)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${isHidden ? 'bg-zinc-900 text-zinc-600' : 'bg-zinc-800 text-zinc-300'}`}
+            >
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: isHidden ? '#52514e' : s.color }} />
+              <span className={isHidden ? 'line-through' : ''}>{s.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshTrigger?: { date: string; n: number }; onCompanyRecordChanged?: (date: string) => void }> = ({ isActive, businessId, refreshTrigger, onCompanyRecordChanged }) => {
   const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
   const { salesHistory, load, loadMonth, refresh, refreshDate, remove } = useSalesTracker(businessId);
@@ -55,6 +216,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   const [trendDays, setTrendDays] = useState(14);
   const [trendMetric, setTrendMetric] = useState<'count' | 'totalPrice' | 'margin'>('count');
   const [trendCompany, setTrendCompany] = useState<string>('');
+  const [trendViewType, setTrendViewType] = useState<'table' | 'graph'>('table');
+  const [trendHiddenKeys, setTrendHiddenKeys] = useState<Set<string>>(new Set());
 
   // 업체별정산 선택 업체
   const [settlementCompany, setSettlementCompany] = useState<string>('');
@@ -1609,16 +1772,58 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       totalByDate.set(date, productRows.reduce((s, { dateMap }) => s + (dateMap.get(date) || 0), 0));
     });
 
+    // 그래프용 시리즈: 품목(base) 합계 상위 8개 + 나머지는 "기타"로 묶음
+    const groupValueAtDate = (rows: typeof productRows, date: string) =>
+      rows.reduce((s, r) => s + (r.dateMap.get(date) || 0), 0);
+    const groupTotal = (rows: typeof productRows) =>
+      trendDates.reduce((s, d) => s + groupValueAtDate(rows, d), 0);
+    const sortedGroups = [...groups].sort((a, b) => groupTotal(b.rows) - groupTotal(a.rows));
+    const TOP_N = 8;
+    const topGroups = sortedGroups.slice(0, TOP_N);
+    const otherGroups = sortedGroups.slice(TOP_N);
+    const graphSeries: TrendSeries[] = topGroups.map((g, i) => ({
+      key: g.base,
+      label: g.base,
+      color: TREND_PALETTE[i % TREND_PALETTE.length],
+      values: trendDates.map(date => groupValueAtDate(g.rows, date)),
+    }));
+    if (otherGroups.length > 0) {
+      graphSeries.push({
+        key: '__other__',
+        label: `기타 (${otherGroups.length}개)`,
+        color: TREND_OTHER_COLOR,
+        values: trendDates.map(date => otherGroups.reduce((s, g) => s + groupValueAtDate(g.rows, date), 0)),
+      });
+    }
+
+    const toggleTrendKey = (key: string) => {
+      setTrendHiddenKeys(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+      });
+    };
+
     return (
       <div className="space-y-4">
         {/* 컨트롤 */}
-        <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 w-fit">
-          {([['count', '수량'], ['totalPrice', '매출'], ['margin', '마진']] as const).map(([key, label]) => (
-            <button key={key} onClick={() => setTrendMetric(key as typeof trendMetric)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendMetric === key ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
-              {label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 w-fit">
+            {([['count', '수량'], ['totalPrice', '매출'], ['margin', '마진']] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setTrendMetric(key as typeof trendMetric)}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendMetric === key ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 w-fit">
+            {([['table', '테이블'], ['graph', '그래프']] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setTrendViewType(key as typeof trendViewType)}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendViewType === key ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* 업체 탭 */}
@@ -1631,8 +1836,15 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
           ))}
         </div>
 
-        {/* 트렌드 테이블 */}
-        {productRows.length === 0 ? (
+        {trendViewType === 'graph' ? (
+          <TrendLineChart
+            series={graphSeries}
+            dates={trendDates}
+            hiddenKeys={trendHiddenKeys}
+            onToggleKey={toggleTrendKey}
+            formatVal={formatVal}
+          />
+        ) : productRows.length === 0 ? (
           <p className="text-zinc-600 text-sm py-8 text-center">데이터 없음</p>
         ) : (
           <div className="overflow-x-auto">
