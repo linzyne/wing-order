@@ -1213,7 +1213,7 @@ const App: React.FC = () => {
               fakeOrderCourierRows={courierRowsByBusiness[b.id] || []}
               onEdit={b.isDynamic ? () => setEditingBusiness(b) : undefined}
               onExposeOrderRows={(header, dataRows) => handleExposeOrderRows(b.id, header, dataRows)}
-              onWarningUpdate={(_sessionId, has) => setBusinessWarnings(prev => prev[b.id] === has ? prev : { ...prev, [b.id]: has })}
+              onHasWarnings={(has) => setBusinessWarnings(prev => prev[b.id] === has ? prev : { ...prev, [b.id]: has })}
             />
           ))}
         </div>
