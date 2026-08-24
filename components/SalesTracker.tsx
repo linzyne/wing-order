@@ -4,12 +4,12 @@ import { usePricingConfig } from '../hooks/useFirestore';
 import CsEntryModal, { type CsDraft, resolveOrderRowFields, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
 import { CS_SAVED_EVENT } from '../services/firestoreService';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
-import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord, CsRecord } from '../types';
+import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord, CsRecord, ExcludedOrder } from '../types';
 import { getBusinessInfo, getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
 
 declare var XLSX: any;
 
-type ViewMode = 'settlement' | 'orders' | 'invoices' | 'margin' | 'returns' | 'cs' | 'trend';
+type ViewMode = 'settlement' | 'orders' | 'invoices' | 'margin' | 'returns' | 'cs' | 'trend' | 'fake';
 type DateMode = 'month' | 'range';
 
 const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshTrigger?: { date: string; n: number }; onCompanyRecordChanged?: (date: string) => void }> = ({ isActive, businessId, refreshTrigger, onCompanyRecordChanged }) => {
@@ -218,6 +218,16 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     return { records, total };
   }, [filteredHistory]);
 
+  // 가구매 명단과 매칭되어 제외된 주문 합산 (기간 필터 기준 — 가구매 탭 목록용)
+  // _idx: 삭제 시 원본 DailySales.fakeOrderRecords 배열에서의 위치 (spread로 참조가 바뀌어 indexOf를 못 쓰므로 별도 보관)
+  const allFakeOrderData = useMemo(() => {
+    const records: (ExcludedOrder & { date: string; _idx: number })[] = [];
+    filteredHistory.forEach(d => {
+      (d.fakeOrderRecords || []).forEach((r, idx) => records.push({ ...r, date: d.date, _idx: idx }));
+    });
+    return records;
+  }, [filteredHistory]);
+
   // CS 데이터 합산 (기간 필터 기준 — CS 탭 목록용)
   const allCsData = useMemo(() => {
     const records: (CsRecord & { date: string })[] = [];
@@ -245,6 +255,15 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     const updatedReturnTotal = updatedReturns.reduce((s, r) => s + r.totalMargin, 0);
     const { upsertDailySales } = await import('../services/firestoreService');
     await upsertDailySales({ ...existing, returnRecords: updatedReturns.length > 0 ? updatedReturns : undefined, returnTotal: updatedReturnTotal || undefined }, businessId);
+    await refreshDate(date);
+  };
+
+  const handleDeleteFakeOrder = async (date: string, index: number) => {
+    const existing = salesHistory.find(d => d.date === date);
+    if (!existing || !existing.fakeOrderRecords) return;
+    const updated = existing.fakeOrderRecords.filter((_, i) => i !== index);
+    const { upsertDailySales } = await import('../services/firestoreService');
+    await upsertDailySales({ ...existing, fakeOrderRecords: updated.length > 0 ? updated : undefined }, businessId);
     await refreshDate(date);
   };
 
@@ -1161,6 +1180,136 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     );
   };
 
+  /** 가구매 렌더링 */
+  const renderFakeOrderView = () => {
+    const records = allFakeOrderData;
+
+    // 날짜별로 그룹핑
+    const byDate = new Map<string, (ExcludedOrder & { date: string; _idx: number })[]>();
+    records.forEach(r => {
+      const list = byDate.get(r.date) || [];
+      list.push(r);
+      byDate.set(r.date, list);
+    });
+
+    // 업체별 요약
+    const companyMap = new Map<string, { count: number; qty: number }>();
+    records.forEach(r => {
+      const existing = companyMap.get(r.companyName) || { count: 0, qty: 0 };
+      existing.count += 1;
+      existing.qty += r.qty || 1;
+      companyMap.set(r.companyName, existing);
+    });
+    const companySummary = Array.from(companyMap.entries()).sort(([, a], [, b]) => b.qty - a.qty);
+    const totalQty = records.reduce((s, r) => s + (r.qty || 1), 0);
+
+    const cleanOrderNumber = (n: string) => String(n || '').replace(/\s*\(제외\)\s*/, '').trim();
+
+    return (
+      <div className="divide-y divide-zinc-900">
+        {/* 총 가구매 건수 */}
+        {records.length > 0 && (
+          <div className="px-6 py-4 flex items-center justify-between bg-zinc-900/30">
+            <span className="text-zinc-400 font-black text-xs">기간 총 가구매 제외</span>
+            <span className="text-pink-400 font-black text-lg">{records.length}건 / {totalQty}개</span>
+          </div>
+        )}
+
+        {/* 업체별 요약 테이블 */}
+        {companySummary.length > 0 && (
+          <div className="p-6">
+            <h4 className="text-zinc-500 font-black text-[10px] uppercase tracking-widest mb-3">업체별 가구매 요약</h4>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
+                  <th className="pb-3 pr-4">업체</th>
+                  <th className="pb-3 pr-4 text-right">건수</th>
+                  <th className="pb-3 text-right">수량</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-900/50">
+                {companySummary.map(([company, d]) => (
+                  <tr key={company} className="text-xs hover:bg-zinc-900/30 transition-colors">
+                    <td className="py-3 pr-4 font-bold text-pink-400">{company}</td>
+                    <td className="py-3 pr-4 text-right text-zinc-400 font-bold">{d.count}건</td>
+                    <td className="py-3 text-right text-zinc-400 font-bold">{d.qty}개</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-zinc-700 text-sm">
+                  <td className="pt-3 font-black text-zinc-400">합계</td>
+                  <td className="pt-3 text-right font-black text-zinc-400">{records.length}건</td>
+                  <td className="pt-3 text-right font-black text-pink-500">{totalQty}개</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {/* 날짜별 상세 */}
+        {Array.from(byDate.entries()).map(([date, recs]) => (
+          <div key={`fake-${date}`}>
+            <button
+              onClick={() => toggleDate(`fake-${date}`)}
+              className="w-full px-6 py-4 flex items-center justify-between hover:bg-zinc-900/50 transition-all"
+            >
+              <div className="flex items-center gap-4">
+                <span className="text-white font-black text-sm">{formatDate(date)}</span>
+                <span className="text-[10px] bg-pink-500/10 text-pink-400 px-2.5 py-1 rounded-full font-black border border-pink-500/20">
+                  {recs.length}건 가구매
+                </span>
+              </div>
+              {expandedDates.has(`fake-${date}`) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
+            </button>
+            {expandedDates.has(`fake-${date}`) && (
+              <div className="px-6 pb-4 animate-fade-in">
+                <table className="w-full text-left">
+                  <thead>
+                    <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest">
+                      <th className="pb-2 pr-4">업체</th>
+                      <th className="pb-2 pr-4">수취인</th>
+                      <th className="pb-2 pr-4">품목</th>
+                      <th className="pb-2 pr-4">주문번호</th>
+                      <th className="pb-2 pr-4 text-right">수량</th>
+                      <th className="pb-2 text-right">삭제</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-zinc-900/50">
+                    {recs.map((r, i) => (
+                      <tr key={i} className="text-xs">
+                        <td className="py-2 pr-4 font-bold text-pink-400">{r.companyName}</td>
+                        <td className="py-2 pr-4 font-bold text-zinc-300">{r.recipientName}</td>
+                        <td className="py-2 pr-4 text-zinc-400">{r.productName}</td>
+                        <td className="py-2 pr-4 text-zinc-500 font-mono">{cleanOrderNumber(r.orderNumber)}</td>
+                        <td className="py-2 pr-4 text-right text-zinc-400 font-bold">{r.qty || 1}개</td>
+                        <td className="py-2 text-right">
+                          <button
+                            onClick={() => handleDeleteFakeOrder(date, r._idx)}
+                            className="text-zinc-700 hover:text-pink-400 p-1 transition-colors"
+                          >
+                            <TrashIcon className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {records.length === 0 && (
+          <div className="p-12 text-center">
+            <p className="text-zinc-600 font-bold text-sm">해당 기간의 가구매 데이터가 없습니다.</p>
+            <p className="text-zinc-700 text-xs mt-2">발주처리 시 가구매 명단과 매칭되어 제외된 주문이 기록 저장 시 여기 표시됩니다.</p>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   /** CS 렌더링 */
   const renderCsView = () => {
     const records = allCsData;
@@ -1760,6 +1909,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     ['invoices', '송장내역'],
     ['margin', '합계표(마진)'],
     ['returns', '반품'],
+    ['fake', '가구매'],
     ['cs', 'CS'],
   ];
 
@@ -1983,6 +2133,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
           {viewMode === 'invoices' && renderInvoicesView()}
           {viewMode === 'margin' && renderMarginView()}
           {viewMode === 'returns' && renderReturnView()}
+          {viewMode === 'fake' && renderFakeOrderView()}
           {viewMode === 'cs' && renderCsView()}
           {viewMode === 'trend' && renderTrendView()}
         </section>

@@ -360,6 +360,7 @@ export interface DailySales {
   returnTotal?: number;
   expenseRecords?: ExpenseRecord[];
   csRecords?: CsRecord[];
+  fakeOrderRecords?: ExcludedOrder[]; // 가구매 명단과 매칭되어 발주서에서 제외된 주문 (매출현황 "가구매" 탭 표시용)
 }
 
 // ===== Todo List =====

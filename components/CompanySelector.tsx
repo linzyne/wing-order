@@ -3898,6 +3898,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             depTotal += deliveryFee;
         }
 
+        // 가구매 명단과 매칭되어 제외된 주문 수집 (선택된 업체만) — 매출현황 "가구매" 탭 저장용
+        const newFakeOrderRecords: ExcludedOrder[] = [];
+        sortedCompanyNames.forEach(name => {
+            if (!selectedCompanyNames.has(name)) return;
+            (companySessions[name] || []).forEach(s => {
+                const details = allExcludedDetails[s.id];
+                if (details && details.length > 0) newFakeOrderRecords.push(...details);
+            });
+        });
+
         // 마진 데이터 수집 (선택된 업체만, company 필드 포함)
         const marginMap = new Map<string, MarginRecord>();
         sortedCompanyNames.forEach(name => {
@@ -4035,6 +4045,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 ...depositRows,
             ];
         }
+        let mergedFakeOrderRecords = newFakeOrderRecords;
+        if (isPartialSave && existingDailySales) {
+            mergedFakeOrderRecords = [
+                ...(existingDailySales.fakeOrderRecords || []).filter(f => !selectedCompanyNames.has(f.companyName)),
+                ...newFakeOrderRecords,
+            ];
+        }
 
         const totalAmount = mergedRecords.reduce((sum, r) => sum + r.totalPrice, 0);
         const marginTotal = mergedMarginRecords.reduce((sum, r) => sum + r.totalMargin, 0);
@@ -4069,6 +4086,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             expenseRecords: allExpenses.length > 0 ? allExpenses : undefined,
             returnRecords: allReturns.length > 0 ? allReturns : undefined,
             returnTotal: returnTotal !== 0 ? returnTotal : undefined,
+            fakeOrderRecords: mergedFakeOrderRecords.length > 0 ? mergedFakeOrderRecords : undefined,
             // upsertDailySales는 문서 전체를 덮어쓰므로(setDoc, merge 없음), 이 화면이 모르는
             // csRecords(통합CS접수/매출현황 CS탭에서 기록)를 명시적으로 이어받지 않으면
             // 저장할 때마다 그날의 CS 접수 내역이 통째로 사라진다.

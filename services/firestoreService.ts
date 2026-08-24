@@ -228,6 +228,7 @@ export const deleteCompanyFromDailySales = async (
     records: (existing.records || []).filter(r => r.company !== companyName),
     marginRecords: (existing.marginRecords || []).filter(r => !r.company || r.company !== companyName),
     depositRecords: (existing.depositRecords || []).filter(d => !d.company || d.company !== companyName),
+    fakeOrderRecords: (existing.fakeOrderRecords || []).filter(f => f.companyName !== companyName),
     companyOrderRows: Object.fromEntries(Object.entries(existing.companyOrderRows || {}).filter(([k]) => k !== companyName)),
     companyInvoiceRows: Object.fromEntries(Object.entries(existing.companyInvoiceRows || {}).filter(([k]) => k !== companyName)),
     companyOrderNumbers: Object.fromEntries(Object.entries(existing.companyOrderNumbers || {}).filter(([k]) => k !== companyName)),
