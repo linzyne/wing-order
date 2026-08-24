@@ -66,7 +66,7 @@ interface CompanyWorkstationRowProps {
     onSelectToggle?: (sessionId: string) => void;
     onVendorFileChange: (files: File[]) => void;
     onResultUpdate: (sessionId: string, totalPrice: number, excludedCount?: number, excludedDetails?: ExcludedOrder[]) => void;
-    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[]) => void;
+    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]) => void;
     onAddSession: () => void;
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
@@ -790,7 +790,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // 정산내역 텍스트를 역파싱해 itemSummary 도출 (공통 업로드 경로의 매칭 오류 방지)
         const parsedFromExcel = parseSummaryFromExcelText(effectiveExcel);
         const itemSummaryForUpdate = Object.keys(parsedFromExcel).length > 0 ? parsedFromExcel : effectiveSummary;
-        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, itemSummaryForUpdate, localResult.orderItems, localResult.preConsolidationByGroup, localResult.rowOrderNumbers);
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, itemSummaryForUpdate, localResult.orderItems, localResult.preConsolidationByGroup, localResult.rowOrderNumbers, localResult.rowPricing);
     }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments, summaryOverride]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
@@ -825,6 +825,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 orderItems: localResult.orderItems || [],
                 includedOrderNumbers: localResult.includedOrderNumbers || [],
                 rowOrderNumbers: localResult.rowOrderNumbers || [],
+                rowPricing: localResult.rowPricing || [],
                 unmatchedOrders: unmatchedList.length > 0 ? unmatchedList : [],
             };
             const resultStr = JSON.stringify(resultData);
@@ -870,7 +871,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             if (Object.keys(parsed).length > 0) return parsed;
             return syncedData.itemSummary;
         })();
-        onDataUpdate(sessionId, parseRows(syncedData.orderRows), syncedInvoiceRows, syncedUploadRows, syncedData.summaryExcel, syncedHeader.length > 0 ? syncedHeader : undefined, syncedData.registeredProductNames, effectiveItemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup, syncedData.rowOrderNumbers);
+        onDataUpdate(sessionId, parseRows(syncedData.orderRows), syncedInvoiceRows, syncedUploadRows, syncedData.summaryExcel, syncedHeader.length > 0 ? syncedHeader : undefined, syncedData.registeredProductNames, effectiveItemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup, syncedData.rowOrderNumbers, syncedData.rowPricing);
         if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 

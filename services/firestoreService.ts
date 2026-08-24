@@ -231,6 +231,7 @@ export const deleteCompanyFromDailySales = async (
     companyOrderRows: Object.fromEntries(Object.entries(existing.companyOrderRows || {}).filter(([k]) => k !== companyName)),
     companyInvoiceRows: Object.fromEntries(Object.entries(existing.companyInvoiceRows || {}).filter(([k]) => k !== companyName)),
     companyOrderNumbers: Object.fromEntries(Object.entries(existing.companyOrderNumbers || {}).filter(([k]) => k !== companyName)),
+    companyOrderPricing: Object.fromEntries(Object.entries(existing.companyOrderPricing || {}).filter(([k]) => k !== companyName)),
   };
   updated.totalAmount = (updated.records || []).reduce((s, r) => s + r.totalPrice, 0);
   updated.marginTotal = (updated.marginRecords || []).reduce((s, r) => s + r.totalMargin, 0) || undefined;
@@ -238,6 +239,7 @@ export const deleteCompanyFromDailySales = async (
   if (!Object.keys(updated.companyOrderRows).length) delete updated.companyOrderRows;
   if (!Object.keys(updated.companyInvoiceRows).length) delete updated.companyInvoiceRows;
   if (!Object.keys(updated.companyOrderNumbers).length) delete updated.companyOrderNumbers;
+  if (!Object.keys(updated.companyOrderPricing).length) delete updated.companyOrderPricing;
   await upsertDailySales(updated, businessId);
 };
 
@@ -260,6 +262,7 @@ export interface SessionResultData {
   orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName?: string; orderNumber?: string; bundleNumber?: string }[];
   includedOrderNumbers?: string[];
   rowOrderNumbers?: string[]; // orderRows와 동일한 순서/길이의 원본 주문번호 목록
+  rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]; // orderRows와 동일한 순서/길이의 공급가/판매가/마진 목록
   unmatchedOrders?: { companyName: string; recipientName: string; productName: string; phone: string; orderNumber: string }[];
 }
 
