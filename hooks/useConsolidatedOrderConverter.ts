@@ -18,6 +18,8 @@ export interface OrderItem {
     matchedProductKey: string;     // 매칭된 품목키 (summary 키와 동일)
     qty: number;
     recipientName: string;         // 수취인명 (누락 이름 계산용)
+    orderNumber: string;           // 원본 주문번호 (autoConsolidate로 합산된 경우 콤마로 나열)
+    bundleNumber: string;          // 묶음배송번호
 }
 
 export type ProcessedResult = {
@@ -28,6 +30,7 @@ export type ProcessedResult = {
     depositSummaryExcel: string;
     dailySummaries: { date: string, content: string }[];
     rows: any[][];
+    rowOrderNumbers?: string[]; // rows와 동일한 순서/길이의 원본 주문번호 목록 (저장용)
     registeredProductNames: Record<string, string>;
     orderItems: OrderItem[];
     includedOrderNumbers: string[];
@@ -574,8 +577,10 @@ const consolidateMatchedOrders = (
 
             if (greedyBoxCount < originalBoxCount) {
                 // 박스 수가 줄어드는 경우만 합산
+                // 합산으로 여러 원본 주문이 하나의 행으로 뭉쳐지므로, 관련된 모든 원본 주문번호를 콤마로 나열해 보존
+                const mergedOrderNumbers = Array.from(new Set(famOrders.map(o => o.orderNumber).filter(Boolean))).join(',');
                 for (const r of greedyResult) {
-                    result.push({ ...template, productKey: r.productKey, config: r.config, qty: r.qty });
+                    result.push({ ...template, productKey: r.productKey, config: r.config, qty: r.qty, orderNumber: mergedOrderNumbers });
                     after.push({ displayName: r.config.displayName, qty: r.qty });
                 }
             } else {
@@ -631,6 +636,8 @@ const generateWorkbookForCompany = async (
 
         let headerRow: string[] = [];
         let outputRows: any[][] = [];
+        // outputRows 각 행(참조)이 어느 원본 주문번호에서 나왔는지 추적 (발주서 물리 행 자체는 건드리지 않음)
+        const rowOrderNumberMap = new Map<any[], string>();
         const registeredProductNames: Record<string, string> = {};
         const orderItems: OrderItem[] = [];
         const includedOrderNumbers: string[] = [];
@@ -787,13 +794,17 @@ const generateWorkbookForCompany = async (
                 if (!registeredProductNames[config.displayName]) {
                     registeredProductNames[config.displayName] = order.groupColValue;
                 }
+                const rowsBeforePush = outputRows.length;
                 await pushToOutputRows(companyName, outputRows, row, config, poRowQty, pricingConfig, senderName, senderPhone, senderAddress, poPerRowQty);
+                for (let i = rowsBeforePush; i < outputRows.length; i++) rowOrderNumberMap.set(outputRows[i], order.orderNumber);
                 orderItems.push({
                     registeredProductName: order.groupColValue,
                     registeredOptionName: order.regOptionValue,
                     matchedProductKey: productKey,
                     qty,
                     recipientName: order.recipientName,
+                    orderNumber: order.orderNumber,
+                    bundleNumber: order.bundleNumber,
                 });
             }
         }
@@ -832,7 +843,9 @@ const generateWorkbookForCompany = async (
                     stats.add(moStatsName, mo.qty, config.supplyPrice, todayStr);
                 }
             }
+            const moRowsBeforePush = outputRows.length;
             await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moPoRowQty, moPerRowQty);
+            for (let i = moRowsBeforePush; i < outputRows.length; i++) rowOrderNumberMap.set(outputRows[i], '수동');
         }
 
         headerRow = getHeaderForCompany(companyName, companyConfig);
@@ -843,6 +856,8 @@ const generateWorkbookForCompany = async (
         if (sortColIdx !== -1) {
             outputRows.sort((a, b) => String(a[sortColIdx] || '').localeCompare(String(b[sortColIdx] || ''), 'ko'));
         }
+        // rows(=outputRows)와 동일한 순서/길이로 정렬된 원본 주문번호 목록 (저장용, 발주서 물리 행에는 영향 없음)
+        const rowOrderNumbers: string[] = outputRows.map(r => rowOrderNumberMap.get(r) || '');
 
         const ws = XLSX.utils.aoa_to_sheet([headerRow, ...outputRows]);
         ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: headerRow.length - 1, r: 0 } }) };
@@ -857,7 +872,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle, splitSections);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle, splitSections);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date, splitSections) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}[발주서_${companyName}].xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}[발주서_${companyName}].xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, rowOrderNumbers, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

@@ -843,6 +843,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setExcludedCountsMap({});
         setAllExcludedDetails({});
         setAllOrderRows({});
+        setAllRowOrderNumbers({});
         setAllInvoiceRows({});
         setOrderLitSessions(new Set());
         setInvoiceLitSessions(new Set());
@@ -2064,6 +2065,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setAllOrderItems({});
         setAllRegisteredNames({});
         setAllPreConsolidationByGroup({});
+        setAllRowOrderNumbers({});
         setOrderLitSessions(new Set());
         setInvoiceLitSessions(new Set());
         setBatchInvoiceLit(new Set());
@@ -2180,6 +2182,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setAllOrderItems(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
             setAllRegisteredNames(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
             setAllPreConsolidationByGroup(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
+            setAllRowOrderNumbers(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
             setTotalsMap(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
             setExcludedCountsMap(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
             setAllExcludedDetails(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
@@ -3267,7 +3270,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, []);
 
     const [allRegisteredNames, setAllRegisteredNames] = useState<Record<string, Record<string, string>>>({});
-    const [allOrderItems, setAllOrderItems] = useState<Record<string, { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string }[]>>({});
+    const [allOrderItems, setAllOrderItems] = useState<Record<string, { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[]>>({});
+    // allOrderRows[sessionId]와 동일한 순서/길이로 정렬된 원본 주문번호 목록 (매출현황 저장용)
+    const [allRowOrderNumbers, setAllRowOrderNumbers] = useState<Record<string, string[]>>({});
     const [allPreConsolidationByGroup, setAllPreConsolidationByGroup] = useState<Record<string, Record<string, number>>>({});
 
     // 수동발주 취소/승인 상태 (업체별)
@@ -3281,7 +3286,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, []);
 
-    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string }[], preConsolidationByGroup?: Record<string, number>) => {
+    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[]) => {
         // 새 발주서 생성 감지 → 토스트 (초기 복원 시 억제)
         const prevCount = prevOrderRowsRef.current[sessionId] || 0;
         const newCount = orderRows.length;
@@ -3332,6 +3337,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (orderItems) setAllOrderItems(prev => ({ ...prev, [sessionId]: orderItems }));
         else if (orderRows.length === 0) setAllOrderItems(prev => ({ ...prev, [sessionId]: [] }));
         if (preConsolidationByGroup) setAllPreConsolidationByGroup(prev => ({ ...prev, [sessionId]: preConsolidationByGroup }));
+        if (rowOrderNumbers) setAllRowOrderNumbers(prev => ({ ...prev, [sessionId]: rowOrderNumbers }));
+        else if (orderRows.length === 0) setAllRowOrderNumbers(prev => ({ ...prev, [sessionId]: [] }));
     }, [addToast]);
 
     // 발주서 생성 후 가구매 명단에 새로 미매칭이 생기면 팝업 (초기 복원 시 억제, 동일한 미매칭 상태로는 재알림 안 함)
@@ -3830,16 +3837,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         // 발주/송장 데이터 수집 (선택된 업체별 map)
         const newCompanyOrderRows: Record<string, any[][]> = {};
         const newCompanyInvoiceRows: Record<string, any[][]> = {};
+        // newCompanyOrderRows[name]과 동일한 순서/길이로 정렬된 원본 주문번호 목록 (발주서 생성 로직은 그대로 두고 저장 시에만 함께 기록)
+        const newCompanyOrderNumbers: Record<string, string[]> = {};
         sortedCompanyNames.forEach(name => {
             if (!selectedCompanyNames.has(name)) return;
             const orderRows: any[][] = [];
             const invoiceRows: any[][] = [];
+            const orderNumbers: string[] = [];
             (companySessions[name] || []).forEach(s => {
-                if (allOrderRows[s.id]) orderRows.push(...allOrderRows[s.id]);
+                if (allOrderRows[s.id]) {
+                    orderRows.push(...allOrderRows[s.id]);
+                    const rowNums = allRowOrderNumbers[s.id] || [];
+                    // 세션별 rowOrderNumbers 길이가 orderRows와 어긋나면(구버전 데이터 등) 빈 값으로 채워 정렬 유지
+                    for (let i = 0; i < allOrderRows[s.id].length; i++) orderNumbers.push(rowNums[i] || '');
+                }
                 if (allInvoiceRows[s.id]) invoiceRows.push(...allInvoiceRows[s.id]);
             });
             if (orderRows.length > 0) newCompanyOrderRows[name] = orderRows;
             if (invoiceRows.length > 0) newCompanyInvoiceRows[name] = invoiceRows;
+            if (orderNumbers.some(n => n)) newCompanyOrderNumbers[name] = orderNumbers;
         });
 
         // 입금 데이터 수집 (선택된 업체만, company 필드 포함)
@@ -4016,6 +4032,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const mergedCompanyInvoiceRows: Record<string, any[][]> = isPartialSave
             ? { ...(existingDailySales?.companyInvoiceRows || {}), ...newCompanyInvoiceRows }
             : newCompanyInvoiceRows;
+        const mergedCompanyOrderNumbers: Record<string, string[]> = isPartialSave
+            ? { ...(existingDailySales?.companyOrderNumbers || {}), ...newCompanyOrderNumbers }
+            : newCompanyOrderNumbers;
         const flatOrderRows = Object.values(mergedCompanyOrderRows).flat();
         const flatInvoiceRows = Object.values(mergedCompanyInvoiceRows).flat();
 
@@ -4023,6 +4042,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             date: recordDate, records: mergedRecords, totalAmount, savedAt: new Date().toISOString(),
             companyOrderRows: Object.keys(mergedCompanyOrderRows).length > 0 ? mergedCompanyOrderRows : undefined,
             companyInvoiceRows: Object.keys(mergedCompanyInvoiceRows).length > 0 ? mergedCompanyInvoiceRows : undefined,
+            companyOrderNumbers: Object.keys(mergedCompanyOrderNumbers).length > 0 ? mergedCompanyOrderNumbers : undefined,
             depositRecords: mergedDepositRows.length > 0 ? mergedDepositRows : undefined,
             depositTotal: depositTotal > 0 ? depositTotal : undefined,
             marginRecords: mergedMarginRecords.length > 0 ? mergedMarginRecords : undefined,
