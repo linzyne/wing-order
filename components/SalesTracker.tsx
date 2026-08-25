@@ -28,40 +28,65 @@ const niceMax = (max: number): number => {
   return niceFrac * base;
 };
 
-// 월요일 몰림 완화(그래프 전용): 토/일에는 발주서를 만들지 않아 두 요일치가 월요일에 합산되므로,
-// 해당 주말에 데이터가 전혀 없는 월요일에 한해 값을 토/일/월 3등분해서 표시한다. 원본 데이터/테이블은 그대로 유지.
-const splitMondaySpike = (dates: string[], series: TrendSeries[]): { dates: string[]; series: TrendSeries[] } => {
-  const dateIdx = new Map(dates.map((d, i) => [d, i]));
-  const shareOf = new Map<string, string>(); // 새로 삽입될 토/일 날짜 -> 원본 월요일 날짜
-  const mondaysToSplit = new Set<string>();
+const addDays = (d: string, n: number): string => {
+  const dt = new Date(`${d}T00:00:00Z`);
+  dt.setUTCDate(dt.getUTCDate() + n);
+  return dt.toISOString().slice(0, 10);
+};
 
-  dates.forEach(d => {
-    if (new Date(`${d}T00:00:00Z`).getUTCDay() !== 1) return; // 월요일만 대상
-    const mon = new Date(`${d}T00:00:00Z`);
-    const sat = new Date(mon); sat.setUTCDate(mon.getUTCDate() - 2);
-    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() - 1);
-    const satStr = sat.toISOString().slice(0, 10);
-    const sunStr = sun.toISOString().slice(0, 10);
-    if (dateIdx.has(satStr) || dateIdx.has(sunStr)) return; // 주말에 이미 데이터가 있으면 분할하지 않음
-    mondaysToSplit.add(d);
-    shareOf.set(satStr, d);
-    shareOf.set(sunStr, d);
+// 주말 몰림 완화(그래프 전용): 토/일에는 발주서를 만들지 않아 그 며칠치가 다음 영업일(월요일,
+// 늦으면 화요일)에 한꺼번에 찍힌다. 토요일부터 화요일까지 훑어 값이 0이다가 처음 값이 잡히는
+// 날을 찾으면, 그 값을 토요일부터 그 날까지 균등 분배해서 보여준다. 실제로 주말에 데이터가
+// 있으면 건드리지 않는다. 원본 데이터/테이블은 그대로 유지.
+const splitWeekendBacklog = (dates: string[], series: TrendSeries[]): { dates: string[]; series: TrendSeries[] } => {
+  if (dates.length === 0) return { dates, series };
+  const dateIdx = new Map(dates.map((d, i) => [d, i]));
+  const minDate = dates[0];
+  const maxDate = dates[dates.length - 1];
+
+  const saturdays: string[] = [];
+  for (let d = minDate; d <= maxDate; d = addDays(d, 1)) {
+    if (new Date(`${d}T00:00:00Z`).getUTCDay() === 6) saturdays.push(d);
+  }
+  if (saturdays.length === 0) return { dates, series };
+
+  const overridesBySeries = new Map<string, Map<string, number>>();
+  const extraDates = new Set<string>();
+
+  series.forEach(s => {
+    const valAt = (d: string): number => {
+      const idx = dateIdx.get(d);
+      return idx !== undefined ? (s.values[idx] || 0) : 0;
+    };
+    const overrides = new Map<string, number>();
+    saturdays.forEach(sat => {
+      const candidates = [sat, addDays(sat, 1), addDays(sat, 2), addDays(sat, 3)]; // 토, 일, 월, 화
+      const absorbIdx = candidates.findIndex(d => valAt(d) !== 0);
+      if (absorbIdx <= 0) return; // 토요일 자체에 값이 있거나(분할 불필요), 화요일까지도 전부 0(모를 일)
+      const runDates = candidates.slice(0, absorbIdx + 1);
+      const share = Math.round((valAt(candidates[absorbIdx]) / runDates.length) * 10) / 10;
+      runDates.forEach(d => {
+        overrides.set(d, share);
+        if (!dateIdx.has(d)) extraDates.add(d);
+      });
+    });
+    if (overrides.size > 0) overridesBySeries.set(s.key, overrides);
   });
 
-  if (mondaysToSplit.size === 0) return { dates, series };
+  if (overridesBySeries.size === 0) return { dates, series };
 
-  const newDates = Array.from(new Set([...dates, ...shareOf.keys()])).sort();
-  const splitVal = (v: number) => Math.round((v / 3) * 10) / 10;
-  const newSeries = series.map(s => ({
-    ...s,
-    values: newDates.map(d => {
-      if (mondaysToSplit.has(d)) return splitVal(s.values[dateIdx.get(d)!] || 0);
-      const mon = shareOf.get(d);
-      if (mon) return splitVal(s.values[dateIdx.get(mon)!] || 0);
-      const idx = dateIdx.get(d);
-      return idx !== undefined ? s.values[idx] : 0;
-    }),
-  }));
+  const newDates = Array.from(new Set([...dates, ...extraDates])).sort();
+  const newSeries = series.map(s => {
+    const overrides = overridesBySeries.get(s.key);
+    return {
+      ...s,
+      values: newDates.map(d => {
+        if (overrides?.has(d)) return overrides.get(d)!;
+        const idx = dateIdx.get(d);
+        return idx !== undefined ? s.values[idx] : 0;
+      }),
+    };
+  });
 
   return { dates: newDates, series: newSeries };
 };
@@ -76,7 +101,7 @@ const TrendLineChart: React.FC<{
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  const { dates, series } = useMemo(() => splitMondaySpike(rawDates, rawSeries), [rawDates, rawSeries]);
+  const { dates, series } = useMemo(() => splitWeekendBacklog(rawDates, rawSeries), [rawDates, rawSeries]);
 
   const visibleSeries = series.filter(s => !hiddenKeys.has(s.key));
 
