@@ -28,15 +28,55 @@ const niceMax = (max: number): number => {
   return niceFrac * base;
 };
 
+// 월요일 몰림 완화(그래프 전용): 토/일에는 발주서를 만들지 않아 두 요일치가 월요일에 합산되므로,
+// 해당 주말에 데이터가 전혀 없는 월요일에 한해 값을 토/일/월 3등분해서 표시한다. 원본 데이터/테이블은 그대로 유지.
+const splitMondaySpike = (dates: string[], series: TrendSeries[]): { dates: string[]; series: TrendSeries[] } => {
+  const dateIdx = new Map(dates.map((d, i) => [d, i]));
+  const shareOf = new Map<string, string>(); // 새로 삽입될 토/일 날짜 -> 원본 월요일 날짜
+  const mondaysToSplit = new Set<string>();
+
+  dates.forEach(d => {
+    if (new Date(`${d}T00:00:00Z`).getUTCDay() !== 1) return; // 월요일만 대상
+    const mon = new Date(`${d}T00:00:00Z`);
+    const sat = new Date(mon); sat.setUTCDate(mon.getUTCDate() - 2);
+    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() - 1);
+    const satStr = sat.toISOString().slice(0, 10);
+    const sunStr = sun.toISOString().slice(0, 10);
+    if (dateIdx.has(satStr) || dateIdx.has(sunStr)) return; // 주말에 이미 데이터가 있으면 분할하지 않음
+    mondaysToSplit.add(d);
+    shareOf.set(satStr, d);
+    shareOf.set(sunStr, d);
+  });
+
+  if (mondaysToSplit.size === 0) return { dates, series };
+
+  const newDates = Array.from(new Set([...dates, ...shareOf.keys()])).sort();
+  const splitVal = (v: number) => Math.round((v / 3) * 10) / 10;
+  const newSeries = series.map(s => ({
+    ...s,
+    values: newDates.map(d => {
+      if (mondaysToSplit.has(d)) return splitVal(s.values[dateIdx.get(d)!] || 0);
+      const mon = shareOf.get(d);
+      if (mon) return splitVal(s.values[dateIdx.get(mon)!] || 0);
+      const idx = dateIdx.get(d);
+      return idx !== undefined ? s.values[idx] : 0;
+    }),
+  }));
+
+  return { dates: newDates, series: newSeries };
+};
+
 const TrendLineChart: React.FC<{
   series: TrendSeries[];
   dates: string[];
   hiddenKeys: Set<string>;
   onToggleKey: (key: string) => void;
   formatVal: (v: number) => string;
-}> = ({ series, dates, hiddenKeys, onToggleKey, formatVal }) => {
+}> = ({ series: rawSeries, dates: rawDates, hiddenKeys, onToggleKey, formatVal }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  const { dates, series } = useMemo(() => splitMondaySpike(rawDates, rawSeries), [rawDates, rawSeries]);
 
   const visibleSeries = series.filter(s => !hiddenKeys.has(s.key));
 
