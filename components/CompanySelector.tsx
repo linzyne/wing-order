@@ -3537,7 +3537,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const sheetRows = [...chunk];
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetRows), "입금내역");
             const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr} [입금목록] ${businessPrefix}${suffix}.xlsx`);
+            XLSX.writeFile(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
         });
 
         setShowDepositModal(false);
@@ -3577,7 +3577,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunk), "입금내역");
             const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr} [입금목록] ${businessPrefix}${suffix}.xlsx`);
+            XLSX.writeFile(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
         });
     };
 
@@ -3611,7 +3611,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunk), "입금내역");
             const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr} [입금목록] ${businessPrefix}${suffix}.xlsx`);
+            XLSX.writeFile(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
         });
     };
 
