@@ -57,7 +57,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -2444,6 +2444,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const downloadAllCompaniesRef = useRef<() => void>(() => {});
     const uploadVendorInvoiceRef = useRef((_files: File[]) => {});
     const getInvoiceStateRef = useRef(() => [] as { name: string; uploadCount: number }[]);
+    const getInvoiceMatchStateRef = useRef(() => [] as { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]);
     const downloadAllInvoicesRef = useRef(() => {});
     const getInvoiceWorkbookFileRef = useRef<() => File | null>(() => null);
     const resetInvoiceMatchingRef = useRef(() => {});
@@ -2548,6 +2549,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             getWorkDate: () => workDateRef.current,
             uploadVendorInvoice: (files) => uploadVendorInvoiceRef.current(files),
             getInvoiceState: () => getInvoiceStateRef.current(),
+            getInvoiceMatchState: () => getInvoiceMatchStateRef.current(),
             downloadInvoice: (companyName) => wsInvoiceDownloadRef.current(companyName),
             downloadAllInvoices: () => downloadAllInvoicesRef.current(),
             getInvoiceWorkbookFile: () => getInvoiceWorkbookFileRef.current(),
@@ -3108,6 +3110,36 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return result;
     };
 
+    // 통합송장변환 패널: 업체별 발주수량 대비 송장 매칭/미매칭 현황 (주문번호 기준 실매칭, useInvoiceMerger의 failures 재사용)
+    getInvoiceMatchStateRef.current = () => {
+        const orderedNames = companyOrder.filter(id => !isDivider(id) && id in companySessions);
+        const unordered = Object.keys(companySessions).filter(n => !orderedNames.includes(n));
+        return [...orderedNames, ...unordered]
+            .map(name => {
+                const sessions = (companySessions[name] || []) as SessionData[];
+                let orderCount = 0, matchedCount = 0;
+                const unmatchedOrders: { orderNum: string; recipient: string }[] = [];
+                sessions.forEach(s => {
+                    orderCount += allOrderRows[s.id]?.length || 0;
+
+                    const mem = allUploadInvoiceRows[s.id];
+                    if (mem && mem.length > 0) {
+                        matchedCount += mem.length;
+                    } else {
+                        const saved = sessionResults?.[s.id];
+                        if (saved) {
+                            const rows = typeof saved.uploadInvoiceRows === 'string' ? JSON.parse(saved.uploadInvoiceRows) : (saved.uploadInvoiceRows || []);
+                            matchedCount += rows.length;
+                        }
+                    }
+
+                    (allInvoiceFailures[s.id] || []).forEach(f => unmatchedOrders.push({ orderNum: f.orderNum, recipient: f.recipient }));
+                });
+                return { name, orderCount, matchedCount, unmatchedCount: unmatchedOrders.length, unmatchedOrders };
+            })
+            .filter(c => c.orderCount > 0);
+    };
+
     // 항상 최신 state를 참조하는 ref 기반 다운로드 함수 (stale closure 방지)
     const wsInvoiceDownloadRef = useRef((_companyName: string) => {});
     wsInvoiceDownloadRef.current = (companyName: string) => {
@@ -3298,6 +3330,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // allOrderRows[sessionId]와 동일한 순서/길이로 정렬된 공급가/판매가/마진 목록 (매출현황 저장용)
     const [allRowPricing, setAllRowPricing] = useState<Record<string, { supplyPrice: number; sellingPrice: number; margin: number }[]>>({});
     const [allPreConsolidationByGroup, setAllPreConsolidationByGroup] = useState<Record<string, Record<string, number>>>({});
+    // 세션별 송장 미매칭 주문 목록 (통합송장변환 패널의 미변환 현황 집계용, 세션 메모리에만 존재)
+    const [allInvoiceFailures, setAllInvoiceFailures] = useState<Record<string, { orderNum: string; recipient: string; reason: string }[]>>({});
 
     // 수동발주 취소/승인 상태 (업체별)
     const [manualOrdersRejectedCompanies, setManualOrdersRejectedCompanies] = useState<Set<string>>(new Set());
@@ -3310,7 +3344,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, []);
 
-    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]) => {
+    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[], invoiceFailures?: { orderNum: string; recipient: string; reason: string }[]) => {
         // 새 발주서 생성 감지 → 토스트 (초기 복원 시 억제)
         const prevCount = prevOrderRowsRef.current[sessionId] || 0;
         const newCount = orderRows.length;
@@ -3366,6 +3400,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         else if (orderRows.length === 0) setAllRowOrderNumbers(prev => ({ ...prev, [sessionId]: [] }));
         if (rowPricing) setAllRowPricing(prev => ({ ...prev, [sessionId]: rowPricing }));
         else if (orderRows.length === 0) setAllRowPricing(prev => ({ ...prev, [sessionId]: [] }));
+        if (invoiceFailures) setAllInvoiceFailures(prev => ({ ...prev, [sessionId]: invoiceFailures }));
+        else if (orderRows.length === 0) setAllInvoiceFailures(prev => ({ ...prev, [sessionId]: [] }));
     }, [addToast]);
 
     // 발주서 생성 후 가구매 명단에 새로 미매칭이 생기면 팝업 (초기 복원 시 억제, 동일한 미매칭 상태로는 재알림 안 함)

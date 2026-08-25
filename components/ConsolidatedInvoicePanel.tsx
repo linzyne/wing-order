@@ -13,6 +13,7 @@ export interface InvoiceResult {
 interface MasterUploadHandlers {
   uploadVendorInvoice?: (files: File[]) => void;
   getInvoiceState?: () => { name: string; uploadCount: number }[];
+  getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[];
   downloadInvoice?: (companyName: string) => void;
   downloadAllInvoices?: () => void;
 }
@@ -71,6 +72,8 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
   const [isDragging, setIsDragging] = useState(false);
   const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; uploadCount: number }[] }[]>([]);
   const [invoiceCountMap, setInvoiceCountMap] = useState<Record<string, number>>({});
+  const [matchSnapshot, setMatchSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[] }[]>([]);
+  const [expandedUnmatched, setExpandedUnmatched] = useState<string | null>(null);
   const [courierBizPicker, setCourierBizPicker] = useState<string | null>(null);
   const [coupangStates, setCoupangStates] = useState<Record<string, 'idle' | 'loading' | 'success'>>({});
   const [courierCoupangStates, setCourierCoupangStates] = useState<Record<string, 'idle' | 'loading' | 'success'>>({});
@@ -95,11 +98,24 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
     return snapshot;
   }, [businesses, uploadFns]);
 
+  const refreshMatchSnapshot = useCallback(() => {
+    const snapshot = businesses
+      .map(b => ({
+        businessId: b.id,
+        displayName: b.displayName,
+        companies: uploadFns[b.id]?.getInvoiceMatchState?.() ?? [],
+      }))
+      .filter(b => b.companies.length > 0);
+    setMatchSnapshot(snapshot);
+    return snapshot;
+  }, [businesses, uploadFns]);
+
   useEffect(() => {
     const t1 = setTimeout(refreshInvoiceCounts, 100);
     const t2 = setTimeout(refreshDownloadSnapshot, 200);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [refreshInvoiceCounts, refreshDownloadSnapshot]);
+    const t3 = setTimeout(refreshMatchSnapshot, 200);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [refreshInvoiceCounts, refreshDownloadSnapshot, refreshMatchSnapshot]);
 
   // 결과 목록이 바뀔 때마다 다운로드 스냅샷도 재갱신 (파일 추가 후 반응 없음 방지)
   useEffect(() => {
@@ -107,9 +123,10 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
     const t = setTimeout(() => {
       refreshInvoiceCounts();
       refreshDownloadSnapshot();
+      refreshMatchSnapshot();
     }, 3000);
     return () => clearTimeout(t);
-  }, [results.length, refreshInvoiceCounts, refreshDownloadSnapshot]);
+  }, [results.length, refreshInvoiceCounts, refreshDownloadSnapshot, refreshMatchSnapshot]);
 
   const detectCourier = (filename: string): CourierItem | null => {
     if (!couriers || couriers.length === 0) return null;
@@ -221,6 +238,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                 onReset?.();
                 setDownloadSnapshot([]);
                 setInvoiceCountMap({});
+                setMatchSnapshot([]);
               }}
               className="text-xs font-black text-zinc-400 hover:text-rose-400 border border-zinc-700 hover:border-rose-400/50 rounded-lg px-2.5 py-1 transition-colors"
             >
@@ -252,6 +270,61 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
           );
         })}
       </div>
+
+      {/* 발주 대비 미변환 현황 */}
+      {matchSnapshot.length > 0 && (
+        <div className="border-t border-zinc-800/60 pt-3 flex flex-col gap-3">
+          <div className="flex items-center justify-between px-1">
+            <span className="text-[10px] font-black text-zinc-500">발주 대비 미변환 현황</span>
+            <button
+              onClick={refreshMatchSnapshot}
+              className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors font-bold"
+            >
+              새로고침
+            </button>
+          </div>
+          {matchSnapshot.map(biz => (
+            <div key={biz.businessId}>
+              {businesses.length > 1 && (
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="text-[13px] font-black text-white">{biz.displayName}</span>
+                  <div className="flex-1 h-px bg-zinc-600" />
+                </div>
+              )}
+              <div className="flex flex-col gap-1">
+                {biz.companies.map(c => {
+                  const key = `${biz.businessId}_${c.name}`;
+                  const hasUnmatched = c.unmatchedCount > 0;
+                  return (
+                    <div key={c.name} className="flex flex-col">
+                      <div
+                        className={`flex items-center gap-1.5 px-2 py-1 rounded-lg ${hasUnmatched ? 'cursor-pointer hover:bg-rose-950/30' : ''}`}
+                        onClick={() => hasUnmatched && setExpandedUnmatched(prev => prev === key ? null : key)}
+                      >
+                        <span className={`text-[11px] flex-1 ${hasUnmatched ? 'text-rose-300' : 'text-zinc-400'}`}>{c.name}</span>
+                        <span className="text-[10px] text-zinc-500">발주 {c.orderCount}건</span>
+                        <span className="text-[10px] text-emerald-500">매칭 {c.matchedCount}건</span>
+                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${hasUnmatched ? 'bg-rose-500 text-white' : 'bg-zinc-800 text-zinc-600'}`}>
+                          미변환 {c.unmatchedCount}건
+                        </span>
+                      </div>
+                      {expandedUnmatched === key && hasUnmatched && (
+                        <div className="flex flex-wrap gap-1 px-2 pb-1.5">
+                          {c.unmatchedOrders.map((o, i) => (
+                            <span key={`${o.orderNum}-${i}`} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded text-[8px] font-mono">
+                              {o.orderNum} ({o.recipient})
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 안내 */}
       <div className="bg-zinc-800/60 rounded-xl px-3 py-2 text-[10px] text-zinc-500 leading-relaxed">
