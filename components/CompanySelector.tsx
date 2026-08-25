@@ -792,8 +792,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [excludedCountsMap, setExcludedCountsMap] = useState<Record<string, number>>({});
     const [allExcludedDetails, setAllExcludedDetails] = useState<Record<string, ExcludedOrder[]>>({});
     const [allOrderRows, setAllOrderRows] = useState<Record<string, any[][]>>({});
-    // 세션(회사+차수)별 발주서 생성(업로드) 시각 — 공통 업로드 패널의 차수 배지에 표시
-    const [sessionUploadTimes, setSessionUploadTimes] = useState<Record<string, number>>({});
+    // 차수별 업로드 파일명에서 추출한 시간 라벨(예: "8시") — 공통 업로드 패널의 차수 배지에 표시
+    const [roundTimeLabels, setRoundTimeLabels] = useState<Record<number, string>>({});
     const [allInvoiceRows, setAllInvoiceRows] = useState<Record<string, any[][]>>({});
     const [allUploadInvoiceRows, setAllUploadInvoiceRows] = useState<Record<string, any[][]>>({});
     const [allHeaders, setAllHeaders] = useState<Record<string, any[]>>({});
@@ -817,6 +817,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         return baseDate;
     }, []);
+    // 업로드 파일명에서 시간 라벨 추출 (예: "2026-08-25 [원본 8시] 쿠팡.xlsx" → "8시")
+    const extractTimeLabelFromFileName = (fname: string): string | undefined => {
+        const match = fname.match(/(\d{1,2}시(?:\s?\d{1,2}분)?)/);
+        return match ? match[1].replace(/\s+/g, '') : undefined;
+    };
     // 불 켜기/끄기: 세션별 미다운로드 추적
     const [orderLitSessions, setOrderLitSessions] = useState<Set<string>>(new Set());
     const [invoiceLitSessions, setInvoiceLitSessions] = useState<Set<string>>(new Set());
@@ -1919,6 +1924,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         console.log('🚀 [platformConfigs]:', platformConfigs);
         masterOrderFileRef.current = file; // 공통 패널의 getNextRound가 React 재렌더 전에도 올바른 값을 읽도록
         setMasterOrderFile(file);
+        const masterTimeLabel = extractTimeLabelFromFileName(file.name);
+        setRoundTimeLabels(prev => {
+            const next = { ...prev };
+            if (masterTimeLabel) next[1] = masterTimeLabel; else delete next[1];
+            return next;
+        });
         try {
             const data = await file.arrayBuffer();
             const wb = XLSX.read(data, { type: 'array' });
@@ -2063,6 +2074,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             initial[name] = [{ id: `${name}-1`, companyName: name, round: 1 }];
         });
         setCompanySessions(initial);
+        setRoundTimeLabels({});
         // 세션이 재생성되면서 이전 세션의 id(예: `${name}-1`)가 재사용되므로,
         // 그 id에 매달려 있던 발주/송장 데이터를 함께 비우지 않으면
         // 마스터 삭제 후에도 이전에 생성된 발주서가 그대로 남아 다운로드된다.
@@ -2366,6 +2378,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (companiesInFile.size === 0) { throw new Error('주문서에서 매칭되는 업체를 찾지 못했습니다. (키워드 확인 필요)'); }
             const nextRound = nextBatchRoundRef.current + 2;
             nextBatchRoundRef.current += 1;
+            const batchTimeLabel = extractTimeLabelFromFileName(file.name);
+            if (batchTimeLabel) setRoundTimeLabels(prev => ({ ...prev, [nextRound]: batchTimeLabel }));
             const newBatchFiles: Record<string, File> = {};
             const newExpectedCounts: Record<string, number> = {};
             const newBatchMasterRows: Record<string, any[][]> = {};
@@ -2466,7 +2480,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     round: s.round,
                     hasData: (allOrderRows[s.id]?.length || 0) > 0,
                     count: allOrderRows[s.id]?.length || 0,
-                    uploadedAt: sessionUploadTimes[s.id],
+                    timeLabel: roundTimeLabels[s.round],
                 })),
             }))
             .filter(c => c.rounds.some(r => r.hasData));
@@ -3120,7 +3134,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 let orderCount = 0, matchedCount = 0;
                 const unmatchedOrders: { orderNum: string; recipient: string }[] = [];
                 sessions.forEach(s => {
-                    orderCount += allOrderRows[s.id]?.length || 0;
+                    const memOrder = allOrderRows[s.id];
+                    if (memOrder && memOrder.length > 0) {
+                        orderCount += memOrder.length;
+                    } else {
+                        const saved = sessionResults?.[s.id];
+                        if (saved) {
+                            orderCount += saved.orderCount || (typeof saved.orderRows === 'string' ? JSON.parse(saved.orderRows) : (saved.orderRows || [])).length;
+                        }
+                    }
 
                     const mem = allUploadInvoiceRows[s.id];
                     if (mem && mem.length > 0) {
@@ -3135,7 +3157,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
                     (allInvoiceFailures[s.id] || []).forEach(f => unmatchedOrders.push({ orderNum: f.orderNum, recipient: f.recipient }));
                 });
-                return { name, orderCount, matchedCount, unmatchedCount: unmatchedOrders.length, unmatchedOrders };
+                // 미매칭 건수는 발주수량-매칭건수 차이를 기준으로 함 (failures 목록은 이 세션에서 직접 송장을 처리했을 때만
+                // 채워지는 값이라, 다른 기기에서 처리했거나 새로고침 후에는 비어있어도 발주/매칭 건수 차이로는 항상 알 수 있음)
+                const unmatchedCount = Math.max(0, orderCount - matchedCount);
+                return { name, orderCount, matchedCount, unmatchedCount, unmatchedOrders };
             })
             .filter(c => c.orderCount > 0);
     };
@@ -3282,6 +3307,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setExcludedCountsMap(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
         setAllExcludedDetails(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
         setSelectedSessionIds(prev => { const next = new Set(prev); sessionIds.forEach(id => next.delete(id)); return next; });
+        setRoundTimeLabels(prev => { const n = { ...prev }; delete n[round]; return n; });
         return true;
     };
     deleteBatchRoundRef.current = handleDeleteBatchRound;
@@ -3366,7 +3392,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             // 발주서 불 켜기 (복원 억제 기간 이후 데이터가 있으면 항상 켬)
             setOrderLitSessions(prev => new Set([...prev, sessionId]));
-            setSessionUploadTimes(prev => ({ ...prev, [sessionId]: Date.now() }));
         }
         // 발주서 rows 삭제 시 불 끄기
         if (newCount === 0) setOrderLitSessions(prev => { const s = new Set(prev); s.delete(sessionId); return s; });

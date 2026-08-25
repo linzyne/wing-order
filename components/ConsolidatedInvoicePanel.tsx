@@ -310,11 +310,13 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                       </div>
                       {expandedUnmatched === key && hasUnmatched && (
                         <div className="flex flex-wrap gap-1 px-2 pb-1.5">
-                          {c.unmatchedOrders.map((o, i) => (
+                          {c.unmatchedOrders.length > 0 ? c.unmatchedOrders.map((o, i) => (
                             <span key={`${o.orderNum}-${i}`} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded text-[8px] font-mono">
                               {o.orderNum} ({o.recipient})
                             </span>
-                          ))}
+                          )) : (
+                            <span className="text-[9px] text-zinc-600">상세 주문번호는 이 기기에서 송장을 다시 처리하면 표시됩니다</span>
+                          )}
                         </div>
                       )}
                     </div>
