@@ -792,6 +792,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [excludedCountsMap, setExcludedCountsMap] = useState<Record<string, number>>({});
     const [allExcludedDetails, setAllExcludedDetails] = useState<Record<string, ExcludedOrder[]>>({});
     const [allOrderRows, setAllOrderRows] = useState<Record<string, any[][]>>({});
+    // 세션(회사+차수)별 발주서 생성(업로드) 시각 — 공통 업로드 패널의 차수 배지에 표시
+    const [sessionUploadTimes, setSessionUploadTimes] = useState<Record<string, number>>({});
     const [allInvoiceRows, setAllInvoiceRows] = useState<Record<string, any[][]>>({});
     const [allUploadInvoiceRows, setAllUploadInvoiceRows] = useState<Record<string, any[][]>>({});
     const [allHeaders, setAllHeaders] = useState<Record<string, any[]>>({});
@@ -2463,6 +2465,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     round: s.round,
                     hasData: (allOrderRows[s.id]?.length || 0) > 0,
                     count: allOrderRows[s.id]?.length || 0,
+                    uploadedAt: sessionUploadTimes[s.id],
                 })),
             }))
             .filter(c => c.rounds.some(r => r.hasData));
@@ -3329,6 +3332,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             }
             // 발주서 불 켜기 (복원 억제 기간 이후 데이터가 있으면 항상 켬)
             setOrderLitSessions(prev => new Set([...prev, sessionId]));
+            setSessionUploadTimes(prev => ({ ...prev, [sessionId]: Date.now() }));
         }
         // 발주서 rows 삭제 시 불 끄기
         if (newCount === 0) setOrderLitSessions(prev => { const s = new Set(prev); s.delete(sessionId); return s; });

@@ -18,7 +18,7 @@ interface MasterUploadHandlers {
   getNextRound?: () => number;
   deleteBatchRound?: (round: number) => boolean;
   clearMaster?: () => void;
-  getOrderState?: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[];
+  getOrderState?: () => { name: string; rounds: { round: number; hasData: boolean; count: number; uploadedAt?: number }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
   downloadAllCompanies?: () => void;
@@ -81,7 +81,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
-  const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[] }[]>([]);
+  const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; rounds: { round: number; hasData: boolean; count: number; uploadedAt?: number }[] }[] }[]>([]);
   const [nextRounds, setNextRounds] = useState<Record<string, number>>({});
   const [companyClosedMap, setCompanyClosedMap] = useState<Record<string, boolean>>({});
   const [companyRecordedMap, setCompanyRecordedMap] = useState<Record<string, boolean>>({});
@@ -347,6 +347,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const roundLabel = (round: number) =>
     <span className={roundColors(round).text}>{round}차</span>;
 
+  const formatUploadTime = (ts?: number) =>
+    ts ? new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : null;
+
   const indexedResults = results.map((r, idx) => ({ ...r, globalIdx: idx }));
 
   return (
@@ -584,9 +587,12 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                               <button
                                 key={r.round}
                                 onClick={() => { uploadFns[biz.businessId]?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(`${biz.businessId}_${companyName}_${r.round}`)); }}
-                                className={`px-2.5 py-0.5 text-[11px] font-black rounded-lg transition-colors border ${downloadedButtons.has(`${biz.businessId}_${companyName}_${r.round}`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : roundColors(r.round).bg}`}
+                                className={`px-2.5 py-0.5 leading-tight text-[11px] font-black rounded-lg transition-colors border flex flex-col items-center ${downloadedButtons.has(`${biz.businessId}_${companyName}_${r.round}`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : roundColors(r.round).bg}`}
                               >
-                                {r.round}차{r.count > 0 ? ` ${r.count}` : ''}
+                                <span>{r.round}차{r.count > 0 ? ` ${r.count}` : ''}</span>
+                                {formatUploadTime(r.uploadedAt) && (
+                                  <span className="text-[9px] font-normal opacity-70">{formatUploadTime(r.uploadedAt)}</span>
+                                )}
                               </button>
                             ))}
                           </div>
