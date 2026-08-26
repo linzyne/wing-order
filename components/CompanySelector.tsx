@@ -11,7 +11,7 @@ import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, 
 import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
-import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import {
     DndContext,
     closestCenter,
@@ -57,7 +57,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -792,8 +792,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [excludedCountsMap, setExcludedCountsMap] = useState<Record<string, number>>({});
     const [allExcludedDetails, setAllExcludedDetails] = useState<Record<string, ExcludedOrder[]>>({});
     const [allOrderRows, setAllOrderRows] = useState<Record<string, any[][]>>({});
-    // 차수별 업로드 파일명에서 추출한 시간 라벨(예: "8시") — 공통 업로드 패널의 차수 배지에 표시
-    const [roundTimeLabels, setRoundTimeLabels] = useState<Record<number, string>>({});
+    // 세션(회사+차수)별 업로드 파일명에서 추출한 시간 라벨(예: "8시") — 공통 업로드 패널의 차수 배지에 표시.
+    // Firestore(sessionResults[id].timeLabel)에도 함께 저장해 새로고침/다른 PC에서도 유지된다.
+    const [sessionTimeLabels, setSessionTimeLabels] = useState<Record<string, string>>({});
     const [allInvoiceRows, setAllInvoiceRows] = useState<Record<string, any[][]>>({});
     const [allUploadInvoiceRows, setAllUploadInvoiceRows] = useState<Record<string, any[][]>>({});
     const [allHeaders, setAllHeaders] = useState<Record<string, any[]>>({});
@@ -1925,11 +1926,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         masterOrderFileRef.current = file; // 공통 패널의 getNextRound가 React 재렌더 전에도 올바른 값을 읽도록
         setMasterOrderFile(file);
         const masterTimeLabel = extractTimeLabelFromFileName(file.name);
-        setRoundTimeLabels(prev => {
-            const next = { ...prev };
-            if (masterTimeLabel) next[1] = masterTimeLabel; else delete next[1];
-            return next;
-        });
         try {
             const data = await file.arrayBuffer();
             const wb = XLSX.read(data, { type: 'array' });
@@ -2030,6 +2026,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (bestCompany) companiesInFile.add(bestCompany);
             }
             setDetectedCompanies(companiesInFile);
+            if (masterTimeLabel) {
+                const sessionIds = [...companiesInFile].map(c => `${c}-1`);
+                setSessionTimeLabels(prev => {
+                    const next = { ...prev };
+                    sessionIds.forEach(id => { next[id] = masterTimeLabel; });
+                    return next;
+                });
+                sessionIds.forEach(id => { saveSessionTimeLabel(id, masterTimeLabel, businessId).catch(() => {}); });
+            }
             setMasterOrderData(json);
             setKReplaceFrom('');
             setKReplaceTo('');
@@ -2074,7 +2079,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             initial[name] = [{ id: `${name}-1`, companyName: name, round: 1 }];
         });
         setCompanySessions(initial);
-        setRoundTimeLabels({});
+        setSessionTimeLabels({});
         // 세션이 재생성되면서 이전 세션의 id(예: `${name}-1`)가 재사용되므로,
         // 그 id에 매달려 있던 발주/송장 데이터를 함께 비우지 않으면
         // 마스터 삭제 후에도 이전에 생성된 발주서가 그대로 남아 다운로드된다.
@@ -2379,7 +2384,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const nextRound = nextBatchRoundRef.current + 2;
             nextBatchRoundRef.current += 1;
             const batchTimeLabel = extractTimeLabelFromFileName(file.name);
-            if (batchTimeLabel) setRoundTimeLabels(prev => ({ ...prev, [nextRound]: batchTimeLabel }));
             const newBatchFiles: Record<string, File> = {};
             const newExpectedCounts: Record<string, number> = {};
             const newBatchMasterRows: Record<string, any[][]> = {};
@@ -2409,6 +2413,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     if (bestCompany === companyName) companyRows.push(json[i]);
                 }
                 newBatchMasterRows[newSessionId] = companyRows;
+            }
+            if (batchTimeLabel) {
+                setSessionTimeLabels(prev => {
+                    const next = { ...prev };
+                    newSessionsByCompany.forEach(([, session]) => { next[session.id] = batchTimeLabel; });
+                    return next;
+                });
+                newSessionsByCompany.forEach(([, session]) => { saveSessionTimeLabel(session.id, batchTimeLabel, businessId).catch(() => {}); });
             }
             // functional update로 이전 배치 세션 덮어쓰기 방지
             setCompanySessions(prev => {
@@ -2445,7 +2457,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const getNextRoundRef = useRef<() => number>(() => 1);
     const deleteBatchRoundRef = useRef<(round: number) => boolean>(() => false);
     const clearMasterRef = useRef<() => void>(() => {});
-    const getOrderStateRef = useRef<() => { name: string; rounds: { round: number; hasData: boolean }[] }[]>(() => []);
+    const getOrderStateRef = useRef<() => { name: string; rounds: { round: number; hasData: boolean; count?: number; matchedCount?: number; timeLabel?: string }[] }[]>(() => []);
     const addReshipOrderRef = useRef<(companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>>(async () => false);
     const companyLastSettlementRef = useRef<Record<string, { kakaoText: string; excelText: string }>>({});
     const getLastSettlementSummariesRef = useRef<() => { companyName: string; kakaoText: string; excelText: string }[]>(() => []);
@@ -2476,12 +2488,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return [...orderedNames, ...unordered]
             .map(companyName => ({
                 name: companyName,
-                rounds: (companySessions[companyName] as SessionData[]).map(s => ({
-                    round: s.round,
-                    hasData: (allOrderRows[s.id]?.length || 0) > 0,
-                    count: allOrderRows[s.id]?.length || 0,
-                    timeLabel: roundTimeLabels[s.round],
-                })),
+                rounds: (companySessions[companyName] as SessionData[]).map(s => {
+                    // 매칭 건수: 발주수량과 같은 단위(주문번호당 1건)로 세기 위해 mgmt(송장 단위, 분할배송 시 뻥튀기)가 아니라
+                    // upload(주문 단위) 카운트인 allUploadInvoiceRows를 사용 (getInvoiceMatchStateRef와 동일한 기준)
+                    const mem = allUploadInvoiceRows[s.id];
+                    let matchedCount = mem?.length || 0;
+                    if (!mem || mem.length === 0) {
+                        const saved = sessionResults?.[s.id];
+                        if (saved) {
+                            const rows = typeof saved.uploadInvoiceRows === 'string' ? JSON.parse(saved.uploadInvoiceRows) : (saved.uploadInvoiceRows || []);
+                            matchedCount = rows.length;
+                        }
+                    }
+                    return {
+                        round: s.round,
+                        hasData: (allOrderRows[s.id]?.length || 0) > 0,
+                        count: allOrderRows[s.id]?.length || 0,
+                        matchedCount,
+                        timeLabel: sessionTimeLabels[s.id] ?? sessionResults?.[s.id]?.timeLabel,
+                    };
+                }),
             }))
             .filter(c => c.rounds.some(r => r.hasData));
     };
@@ -3307,7 +3333,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setExcludedCountsMap(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
         setAllExcludedDetails(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
         setSelectedSessionIds(prev => { const next = new Set(prev); sessionIds.forEach(id => next.delete(id)); return next; });
-        setRoundTimeLabels(prev => { const n = { ...prev }; delete n[round]; return n; });
+        setSessionTimeLabels(prev => { const n = { ...prev }; sessionIds.forEach(id => delete n[id]); return n; });
         return true;
     };
     deleteBatchRoundRef.current = handleDeleteBatchRound;

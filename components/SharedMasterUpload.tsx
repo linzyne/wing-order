@@ -18,7 +18,7 @@ interface MasterUploadHandlers {
   getNextRound?: () => number;
   deleteBatchRound?: (round: number) => boolean;
   clearMaster?: () => void;
-  getOrderState?: () => { name: string; rounds: { round: number; hasData: boolean; count: number; timeLabel?: string }[] }[];
+  getOrderState?: () => { name: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
   downloadAllCompanies?: () => void;
@@ -76,6 +76,10 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
   }
   return null;
 }
+
+// 미변환/매칭완료 배지: 매칭 건수 계산이 아직 정확하지 않아(매칭된 건도 미변환으로 표시되는 버그) 임시로 비활성화.
+// 계산 로직(matchedCount)은 그대로 두었으니, 원인 파악 후 이 값만 true로 되돌리면 다시 켜진다.
+const SHOW_MATCH_BADGE = false;
 
 const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, warningCompanyIds, urgentNotice }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -568,6 +572,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                     <div className="flex flex-col gap-1.5">
                       {bizEntries.map(({ biz, company }) => {
                         const totalCount = company.rounds.reduce((s, r) => s + (r.count ?? 0), 0);
+                        const hasMatchData = company.rounds.some(r => r.matchedCount !== undefined);
+                        const totalMatched = company.rounds.reduce((s, r) => s + (r.matchedCount ?? 0), 0);
+                        const totalUnmatched = Math.max(0, totalCount - totalMatched);
                         const hasWarning = warningCompanyIds?.has(`${biz.businessId}_${companyName}`) ?? false;
                         return (
                           <div key={biz.businessId} className="flex items-center gap-1.5 flex-wrap">
@@ -575,24 +582,41 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                             {hasWarning && (
                               <span title="워크스테이션에 경고가 있습니다" className="text-amber-400 text-xs leading-none shrink-0">⚠</span>
                             )}
-                            <button
-                              onClick={() => { uploadFns[biz.businessId]?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(`${biz.businessId}_${companyName}_merged`); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); }}
-                              className={`px-2.5 py-0.5 text-[11px] font-black rounded-lg transition-colors border ${downloadedButtons.has(`${biz.businessId}_${companyName}_merged`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-teal-700 text-white hover:bg-teal-600 border-teal-600'}`}
-                            >
-                              합산{totalCount > 0 ? ` ${totalCount}` : ''}
-                            </button>
-                            {company.rounds.filter(r => r.hasData).map(r => (
+                            <div className="flex flex-col items-center gap-0.5">
                               <button
-                                key={r.round}
-                                onClick={() => { uploadFns[biz.businessId]?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(`${biz.businessId}_${companyName}_${r.round}`)); }}
-                                className={`px-2.5 py-0.5 leading-tight text-[11px] font-black rounded-lg transition-colors border flex flex-col items-center ${downloadedButtons.has(`${biz.businessId}_${companyName}_${r.round}`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : roundColors(r.round).bg}`}
+                                onClick={() => { uploadFns[biz.businessId]?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(`${biz.businessId}_${companyName}_merged`); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); }}
+                                className={`px-2.5 py-0.5 text-[11px] font-black rounded-lg transition-colors border ${downloadedButtons.has(`${biz.businessId}_${companyName}_merged`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-teal-700 text-white hover:bg-teal-600 border-teal-600'}`}
                               >
-                                <span>{r.round}차{r.count > 0 ? ` ${r.count}` : ''}</span>
-                                {r.timeLabel && (
-                                  <span className="text-[9px] font-normal opacity-70">{r.timeLabel}</span>
-                                )}
+                                합산{totalCount > 0 ? ` ${totalCount}` : ''}
                               </button>
-                            ))}
+                              {SHOW_MATCH_BADGE && hasMatchData && totalCount > 0 && (
+                                <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${totalUnmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
+                                  {totalUnmatched > 0 ? `미변환 ${totalUnmatched}` : '매칭완료'}
+                                </span>
+                              )}
+                            </div>
+                            {company.rounds.filter(r => r.hasData).map(r => {
+                              const matched = r.matchedCount ?? 0;
+                              const unmatched = Math.max(0, (r.count ?? 0) - matched);
+                              return (
+                                <div key={r.round} className="flex flex-col items-center gap-0.5">
+                                  <button
+                                    onClick={() => { uploadFns[biz.businessId]?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(`${biz.businessId}_${companyName}_${r.round}`)); }}
+                                    className={`px-2.5 py-0.5 leading-tight text-[11px] font-black rounded-lg transition-colors border flex flex-col items-center ${downloadedButtons.has(`${biz.businessId}_${companyName}_${r.round}`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : roundColors(r.round).bg}`}
+                                  >
+                                    <span>{r.round}차{r.count > 0 ? ` ${r.count}` : ''}</span>
+                                    {r.timeLabel && (
+                                      <span className="text-[9px] font-normal opacity-70">{r.timeLabel}</span>
+                                    )}
+                                  </button>
+                                  {SHOW_MATCH_BADGE && r.matchedCount !== undefined && r.count > 0 && (
+                                    <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${unmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
+                                      {unmatched > 0 ? `미변환 ${unmatched}` : '매칭완료'}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })}

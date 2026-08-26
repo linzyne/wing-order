@@ -265,6 +265,7 @@ export interface SessionResultData {
   rowOrderNumbers?: string[]; // orderRows와 동일한 순서/길이의 원본 주문번호 목록
   rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]; // orderRows와 동일한 순서/길이의 공급가/판매가/마진 목록
   unmatchedOrders?: { companyName: string; recipientName: string; productName: string; phone: string; orderNumber: string }[];
+  timeLabel?: string; // 업로드 파일명에서 추출한 시간 라벨(예: "8시") — 공통 업로드 패널 회차 배지 표시용
 }
 
 export interface DailyWorkspaceData {
@@ -318,6 +319,16 @@ export const saveSessionResult = async (
 ): Promise<void> => {
   const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
   await setDoc(docRef, { [sessionId]: data }, { merge: true });
+};
+
+// 세션 결과 전체(orderRows 등)를 다시 쓰지 않고 timeLabel 필드만 부분 갱신 (merge:true라 나머지 필드는 그대로 유지됨)
+export const saveSessionTimeLabel = async (
+  sessionId: string,
+  timeLabel: string,
+  businessId?: string
+): Promise<void> => {
+  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
+  await setDoc(docRef, { [sessionId]: { timeLabel } }, { merge: true });
 };
 
 export const deleteSessionResult = async (
