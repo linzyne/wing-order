@@ -820,7 +820,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, []);
     // 업로드 파일명에서 시간 라벨 추출 (예: "2026-08-25 [원본 8시] 쿠팡.xlsx" → "8시")
     const extractTimeLabelFromFileName = (fname: string): string | undefined => {
-        const match = fname.match(/(\d{1,2}시(?:\s?\d{1,2}분)?)/);
+        // macOS에서 넘어오는 파일명이 유니코드 분해형(NFD)일 수 있어("시"가 자모로 분리됨) 정규화 후 매칭
+        const match = fname.normalize('NFC').match(/(\d{1,2}시(?:\s?\d{1,2}분)?)/);
         return match ? match[1].replace(/\s+/g, '') : undefined;
     };
     // 불 켜기/끄기: 세션별 미다운로드 추적
