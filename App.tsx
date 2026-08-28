@@ -187,7 +187,21 @@ const App: React.FC = () => {
     setShowBulkDepositModal(true);
   }, [allBusinesses]);
   const sharedSuppliers = useSharedSuppliers();
-  const { courierTemplates } = useCourierTemplates();
+  const { courierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates();
+
+  // 오늘 사용한 택배대행 양식이 지정되어 있으면 그 양식의 이름·단가·계좌를, 아니면 기본값을 사용
+  const resolvedFakeCourier = useMemo(() => {
+    const tmpl = fakeCourierSettings.activeTemplateId
+      ? courierTemplates.find((t: CourierTemplate) => t.id === fakeCourierSettings.activeTemplateId)
+      : undefined;
+    if (!tmpl) return { ...fakeCourierSettings };
+    return {
+      name: tmpl.name,
+      unitPrice: tmpl.unitPrice || fakeCourierSettings.unitPrice,
+      bankName: tmpl.depositBankName || fakeCourierSettings.bankName,
+      accountNumber: tmpl.depositAccountNumber || fakeCourierSettings.accountNumber,
+    };
+  }, [fakeCourierSettings, courierTemplates]);
 
   const handleSendCompanyToLibrary = useCallback((companyName: string, companyConfig: CompanyConfig) => {
     sharedSuppliers.saveConfig({ ...sharedSuppliers.config, [companyName]: companyConfig });
@@ -870,6 +884,28 @@ const App: React.FC = () => {
                     </div>
                   );
                 })()}
+
+                {/* 오늘 사용한 택배대행 */}
+                {courierTemplates.length > 0 && (
+                  <div className={`mt-4 p-3 rounded-xl border ${fakeCourierSettings.activeTemplateId ? 'bg-cyan-950/30 border-cyan-500/40' : 'bg-zinc-900/50 border-zinc-800'}`}>
+                    <label className="text-[9px] text-cyan-400 font-black uppercase tracking-widest mb-1 block">오늘 사용한 택배대행</label>
+                    <select
+                      value={fakeCourierSettings.activeTemplateId || ''}
+                      onChange={(e) => saveFakeCourierSettings({ ...fakeCourierSettings, activeTemplateId: e.target.value || undefined })}
+                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50"
+                    >
+                      <option value="">기본값 (가구매 택배 설정)</option>
+                      {courierTemplates.map((t: CourierTemplate) => (
+                        <option key={t.id} value={t.id}>{t.name}{t.label ? ` (${t.label})` : ''} — {t.unitPrice.toLocaleString()}원/건</option>
+                      ))}
+                    </select>
+                    <p className="text-[9px] text-zinc-500 mt-1.5">
+                      입금목록 택배대행 줄: <span className="text-cyan-300 font-bold">{resolvedFakeCourier.name}</span>
+                      {' · '}<span className="text-emerald-400 font-bold">{resolvedFakeCourier.unitPrice.toLocaleString()}원/건</span>
+                      {' · '}{resolvedFakeCourier.bankName} {resolvedFakeCourier.accountNumber}
+                    </p>
+                  </div>
+                )}
 
                 {/* 미발송 명단 */}
                 <div className="mt-4 border-t border-zinc-800 pt-4">
