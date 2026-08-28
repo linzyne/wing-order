@@ -480,6 +480,7 @@ export interface FakeCourierSettings {
   unitPrice: number;
   bankName: string;
   accountNumber: string;
+  activeTemplateId?: string; // 오늘 사용한 택배대행 양식 id — 지정 시 입금목록/물류비가 해당 양식의 이름·단가·계좌를 사용 (미지정 시 위 기본값)
 }
 
 export const DEFAULT_FAKE_COURIER_SETTINGS: FakeCourierSettings = {
@@ -504,6 +505,25 @@ export const loadCourierTemplates = async (): Promise<{ templates: CourierTempla
     }
   } catch {}
   return { templates: [], fakeCourierSettings: DEFAULT_FAKE_COURIER_SETTINGS };
+};
+
+export const subscribeCourierTemplates = (
+  cb: (data: { templates: CourierTemplate[]; fakeCourierSettings: FakeCourierSettings }) => void
+) => {
+  const docRef = doc(db, 'config', getCourierTemplatesDocId());
+  return onSnapshot(docRef, (snapshot) => {
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      cb({
+        templates: data.templates || [],
+        fakeCourierSettings: data.fakeCourierSettings
+          ? { ...DEFAULT_FAKE_COURIER_SETTINGS, ...data.fakeCourierSettings }
+          : DEFAULT_FAKE_COURIER_SETTINGS,
+      });
+    } else {
+      cb({ templates: [], fakeCourierSettings: DEFAULT_FAKE_COURIER_SETTINGS });
+    }
+  });
 };
 
 export const saveCourierTemplates = async (templates: CourierTemplate[]): Promise<void> => {

@@ -266,6 +266,8 @@ const CourierTemplateManager: React.FC<{
     const [newName, setNewName] = useState('');
     const [newLabel, setNewLabel] = useState('');
     const [newUnitPrice, setNewUnitPrice] = useState('2270');
+    const [newDepositBank, setNewDepositBank] = useState('');
+    const [newDepositAccount, setNewDepositAccount] = useState('');
     const [newHeaders, setNewHeaders] = useState<string[]>([]);
     const [newMapping, setNewMapping] = useState<Record<string, number>>({});
     const [newFixedValues, setNewFixedValues] = useState<Record<number, string>>({});
@@ -286,6 +288,8 @@ const CourierTemplateManager: React.FC<{
         setNewName('');
         setNewLabel('');
         setNewUnitPrice('2270');
+        setNewDepositBank('');
+        setNewDepositAccount('');
         setNewHeaders([]);
         setNewMapping({});
         setNewFixedValues({});
@@ -301,6 +305,8 @@ const CourierTemplateManager: React.FC<{
         setNewName(tmpl.name);
         setNewLabel(tmpl.label || '');
         setNewUnitPrice(String(tmpl.unitPrice));
+        setNewDepositBank(tmpl.depositBankName || '');
+        setNewDepositAccount(tmpl.depositAccountNumber || '');
         setNewHeaders(tmpl.headers);
         setNewMapping({ ...tmpl.mapping } as Record<string, number>);
         setNewFixedValues({ ...tmpl.fixedValues });
@@ -419,6 +425,8 @@ const CourierTemplateManager: React.FC<{
             fixedValues: newFixedValues,
             senderNameColumns: newSenderNameColumns.length > 0 ? newSenderNameColumns : undefined,
             unitPrice: Number(newUnitPrice) || 2270,
+            depositBankName: newDepositBank.trim() || undefined,
+            depositAccountNumber: newDepositAccount.trim() || undefined,
             returnHeaders: newReturnHeaders.length > 0 ? newReturnHeaders : undefined,
             returnMapping: (newReturnMapping.orderNumber !== undefined && newReturnMapping.trackingNumber !== undefined)
                 ? { orderNumber: newReturnMapping.orderNumber, trackingNumber: newReturnMapping.trackingNumber }
@@ -470,6 +478,9 @@ const CourierTemplateManager: React.FC<{
                             </span>
                         )}
                         <span className="bg-zinc-800 text-zinc-400 text-[9px] px-2 py-0.5 rounded-full">{tmpl.unitPrice.toLocaleString()}원/건</span>
+                        {(tmpl.depositBankName || tmpl.depositAccountNumber) && (
+                            <span className="bg-zinc-800 text-cyan-400/80 text-[9px] px-2 py-0.5 rounded-full font-mono">{[tmpl.depositBankName, tmpl.depositAccountNumber].filter(Boolean).join(' ')}</span>
+                        )}
                     </div>
                     <div className="flex items-center gap-2">
                         <button onClick={() => handleEditTemplate(tmpl)} className="text-[9px] font-black text-zinc-500 hover:text-pink-400 transition-colors px-2 py-1 border border-zinc-800 hover:border-pink-500/40 rounded-lg">
@@ -505,6 +516,17 @@ const CourierTemplateManager: React.FC<{
                                 <input value={newUnitPrice} onChange={(e) => setNewUnitPrice(e.target.value)} placeholder="2270" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
                             </div>
                         </div>
+                        <div className="flex gap-3">
+                            <div className="w-32">
+                                <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">입금 은행</label>
+                                <input value={newDepositBank} onChange={(e) => setNewDepositBank(e.target.value)} placeholder="비우면 기본값" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                            </div>
+                            <div className="flex-1">
+                                <label className="text-[9px] text-zinc-500 font-black uppercase tracking-widest mb-1 block">입금 계좌번호</label>
+                                <input value={newDepositAccount} onChange={(e) => setNewDepositAccount(e.target.value)} placeholder="비우면 가구매 택배 설정 계좌 사용" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-200 focus:outline-none focus:border-pink-500/50" />
+                            </div>
+                        </div>
+                        <p className="text-[8px] text-zinc-600 -mt-1">입금 은행/계좌는 이 택배대행사에 택배비를 입금할 계좌입니다. 비워두면 "가구매 택배 설정"의 계좌가 쓰입니다.</p>
                     </div>
 
                     <div>
@@ -1748,6 +1770,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return { rounds, groupToCompany, realTotal, fakeTotal };
     }, [companySessions, allOrderRows, effectiveFakeInput, batchMasterRows, batchPlatforms]);
 
+    // 오늘 사용한 택배대행 양식이 지정되어 있으면 그 양식의 이름·단가·계좌를 쓰고,
+    // 아니면 "가구매 택배 설정"의 기본값을 그대로 사용한다. (입금목록 / 기본 물류비 계산용)
+    const resolvedFakeCourier = useMemo(() => {
+        const tmpl = fakeCourierSettings.activeTemplateId
+            ? courierTemplates.find((t: CourierTemplate) => t.id === fakeCourierSettings.activeTemplateId)
+            : undefined;
+        if (!tmpl) return { ...fakeCourierSettings };
+        return {
+            name: tmpl.name,
+            unitPrice: tmpl.unitPrice || fakeCourierSettings.unitPrice,
+            bankName: tmpl.depositBankName || fakeCourierSettings.bankName,
+            accountNumber: tmpl.depositAccountNumber || fakeCourierSettings.accountNumber,
+        };
+    }, [fakeCourierSettings, courierTemplates]);
+
     // 전체 비용 목록: 수동 입력 + 자동 물류비(택배사별)
     const allExpenses = useMemo(() => {
         const autoExpenses: ExpenseRecord[] = [];
@@ -1771,13 +1808,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             autoExpenses.push({
                 id: 'auto-fake-default',
                 category: '물류비',
-                amount: fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice,
-                description: `${fakeCourierSettings.name} ${fakeOrderAnalysis.inputNumbers.size}건`,
+                amount: fakeOrderAnalysis.inputNumbers.size * resolvedFakeCourier.unitPrice,
+                description: `${resolvedFakeCourier.name} ${fakeOrderAnalysis.inputNumbers.size}건`,
                 isAuto: true,
             });
         }
         return [...autoExpenses, ...expenses];
-    }, [expenses, courierResults, courierTemplates, fakeOrderAnalysis.inputNumbers.size]);
+    }, [expenses, courierResults, courierTemplates, fakeOrderAnalysis.inputNumbers.size, resolvedFakeCourier]);
 
     // 플랫폼 자동 감지 (헤더 행 자동 탐색 + 이름 기반 열 리맵)
     const detectPlatform = (allRows: any[][]): { platform: PlatformConfig; name: string; score: number; columnRemap?: Record<number, number>; actualHeaderRowIdx: number; actualDataStartRow: number } | null => {
@@ -3601,8 +3638,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         manualTransfers.forEach(t => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label || '', bizDisplayName ? `${bizDisplayName} 환불` : '']); });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
-            depositRows.push([fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, `${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * resolvedFakeCourier.unitPrice;
+            depositRows.push([resolvedFakeCourier.bankName, resolvedFakeCourier.accountNumber, deliveryFee, `${resolvedFakeCourier.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
         }
         setDepositBaseRows(depositRows);
         setDepositExtraRows([{ bankName: '', accountNumber: '', amount: '', label: '' }]);
@@ -3648,8 +3685,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         manualTransfers.forEach((t: any) => { depositRows.push([t.bankName, t.accountNumber, t.amount, t.label || '', bizDisplayName ? `${bizDisplayName} 환불` : '']); });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
-            depositRows.push([fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, `${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * resolvedFakeCourier.unitPrice;
+            depositRows.push([resolvedFakeCourier.bankName, resolvedFakeCourier.accountNumber, deliveryFee, `${resolvedFakeCourier.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
         }
         return depositRows;
     };
@@ -3688,8 +3725,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         manualTransfers.forEach(t => { baseRows.push([t.bankName, t.accountNumber, t.amount, t.label || '', bizDisplayName ? `${bizDisplayName} 환불` : '']); });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
-            baseRows.push([fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, `${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * resolvedFakeCourier.unitPrice;
+            baseRows.push([resolvedFakeCourier.bankName, resolvedFakeCourier.accountNumber, deliveryFee, `${resolvedFakeCourier.name}(${fakeOrderAnalysis.inputNumbers.size}건)`]);
         }
         const extraFormatted: any[][] = injectedExtra
             .filter(r => r.bankName || r.accountNumber || r.amount)
@@ -3774,8 +3811,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         manualTransfers.forEach(t => { depositRows.push([t.label || '', t.bankName, t.accountNumber, t.amount, '']); depTotal += t.amount; });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
-            depositRows.push([`${fakeCourierSettings.name}(${fakeOrderAnalysis.inputNumbers.size}건)`, fakeCourierSettings.bankName, fakeCourierSettings.accountNumber, deliveryFee, '']);
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * resolvedFakeCourier.unitPrice;
+            depositRows.push([`${resolvedFakeCourier.name}(${fakeOrderAnalysis.inputNumbers.size}건)`, resolvedFakeCourier.bankName, resolvedFakeCourier.accountNumber, deliveryFee, '']);
             depTotal += deliveryFee;
         }
         if (depositRows.length > 1) depositRows.push([], ['', '', '합계', depTotal, '']);
@@ -4001,8 +4038,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             depTotal += t.amount;
         });
         if (fakeOrderAnalysis.inputNumbers.size > 0) {
-            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * fakeCourierSettings.unitPrice;
-            depositRows.push({ bankName: fakeCourierSettings.bankName, accountNumber: fakeCourierSettings.accountNumber, amount: deliveryFee });
+            const deliveryFee = fakeOrderAnalysis.inputNumbers.size * resolvedFakeCourier.unitPrice;
+            depositRows.push({ bankName: resolvedFakeCourier.bankName, accountNumber: resolvedFakeCourier.accountNumber, amount: deliveryFee });
             depTotal += deliveryFee;
         }
 
@@ -5244,6 +5281,27 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     }} className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50" />
                                 </div>
                             </div>
+                        </div>
+                    )}
+
+                    {courierTemplates.length > 0 && (
+                        <div className={`mb-3 p-3 rounded-xl border animate-fade-in ${fakeCourierSettings.activeTemplateId ? 'bg-cyan-950/30 border-cyan-500/40' : 'bg-zinc-900/50 border-zinc-800'}`}>
+                            <label className="text-[9px] text-cyan-400 font-black uppercase tracking-widest mb-1 block">오늘 사용한 택배대행</label>
+                            <select
+                                value={fakeCourierSettings.activeTemplateId || ''}
+                                onChange={(e) => saveFakeCourierSettings({ ...fakeCourierSettings, activeTemplateId: e.target.value || undefined })}
+                                className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50"
+                            >
+                                <option value="">기본값 (가구매 택배 설정)</option>
+                                {courierTemplates.map((t: CourierTemplate) => (
+                                    <option key={t.id} value={t.id}>{t.name}{t.label ? ` (${t.label})` : ''} — {t.unitPrice.toLocaleString()}원/건</option>
+                                ))}
+                            </select>
+                            <p className="text-[9px] text-zinc-500 mt-1.5">
+                                입금목록 택배대행 줄: <span className="text-cyan-300 font-bold">{resolvedFakeCourier.name}</span>
+                                {' · '}<span className="text-emerald-400 font-bold">{resolvedFakeCourier.unitPrice.toLocaleString()}원/건</span>
+                                {' · '}{resolvedFakeCourier.bankName} {resolvedFakeCourier.accountNumber}
+                            </p>
                         </div>
                     )}
 

@@ -277,6 +277,8 @@ export interface CourierTemplate {
   senderNameColumn?: number; // (legacy) 보내는사람 열 index — 구버전 데이터 호환용, 신규 저장 시 senderNameColumns 사용
   senderNameColumns?: number[]; // 보내는사람 열 index 목록 (다운로드 시 사업자명 자동 입력, 복수 열 선택 가능 — 예: 보내는사람 + 보내는사람(지정))
   unitPrice: number;      // 건당 단가 (물류비 계산용)
+  depositBankName?: string;      // 택배대행비 입금 계좌 은행 (입금목록용, 미입력 시 가구매 택배 설정 기본값)
+  depositAccountNumber?: string; // 택배대행비 입금 계좌번호 (입금목록용, 미입력 시 가구매 택배 설정 기본값)
   returnHeaders?: string[];   // 운송장 완료 파일(택배사→우리) 헤더
   returnMapping?: {
     orderNumber: number;      // 운송장 완료 파일의 주문번호 열 index

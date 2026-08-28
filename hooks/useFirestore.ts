@@ -12,7 +12,7 @@ import {
   savePlatformConfigs,
   loadTodos,
   saveTodos as saveTodosToFirestore,
-  loadCourierTemplates,
+  subscribeCourierTemplates,
   saveCourierTemplates as saveCourierTemplatesToFirestore,
   saveFakeCourierSettings as saveFakeCourierSettingsToFirestore,
   subscribeSharedSuppliers,
@@ -140,10 +140,12 @@ export const useCourierTemplates = () => {
   const [fakeCourierSettings, setFakeCourierSettings] = useState<FakeCourierSettings>(DEFAULT_FAKE_COURIER_SETTINGS);
 
   useEffect(() => {
-    loadCourierTemplates().then(({ templates, fakeCourierSettings: settings }) => {
+    // 실시간 구독: 다른 작업대/PC에서 양식·"오늘 사용한 택배대행" 변경 시 즉시 반영
+    const unsub = subscribeCourierTemplates(({ templates, fakeCourierSettings: settings }) => {
       setCourierTemplates(templates);
       setFakeCourierSettings(settings);
     });
+    return unsub;
   }, []);
 
   const saveTemplates = useCallback(async (newTemplates: CourierTemplate[]) => {
