@@ -42,6 +42,16 @@ function loadPersistedFakeOrder(): string {
   return '';
 }
 
+// 일괄 입금목록 하단 직접 입력: 만료 없이 "초기화" 누르기 전까지 유지 (모달을 닫거나 다른 패널로 이동해도 보존)
+const BULK_DEPOSIT_PASTE_KEY = 'bulkDepositPasteText';
+function loadPersistedBulkDepositPaste(): string {
+  try {
+    return localStorage.getItem(BULK_DEPOSIT_PASTE_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
 // 긴급공지: 만료 없이 수동 삭제 전까지 유지 (가구매 명단과 달리 TTL 없음).
 // 발주서 생성(마스터/N차 업로드) 시마다 팝업으로 띄워 깜빡하기 쉬운 주소변경 등을 상기시킴.
 // Firestore(config/urgentNotice)에 동기화되어 여러 컴퓨터에서 동일하게 보임 (useUrgentNotice 훅).
@@ -125,13 +135,21 @@ const App: React.FC = () => {
   }, []);
 
   const [showBulkDepositModal, setShowBulkDepositModal] = useState(false);
-  const [bulkPasteText, setBulkPasteText] = useState('');
+  const [bulkPasteText, setBulkPasteText] = useState(() => loadPersistedBulkDepositPaste());
   const [bulkBaseRowsMap, setBulkBaseRowsMap] = useState<Record<string, any[][]>>({});
   const [bulkPasteSummary, setBulkPasteSummary] = useState<{ counts: { name: string; count: number }[]; unmatched: number; total: number } | null>(null);
 
   useEffect(() => {
     if (!showBulkDepositModal) setBulkPasteSummary(null);
   }, [showBulkDepositModal]);
+
+  // 일괄 입금목록 직접 입력 내용을 localStorage에 유지 ("초기화" 누르기 전까지)
+  useEffect(() => {
+    try {
+      if (bulkPasteText.trim()) localStorage.setItem(BULK_DEPOSIT_PASTE_KEY, bulkPasteText);
+      else localStorage.removeItem(BULK_DEPOSIT_PASTE_KEY);
+    } catch {}
+  }, [bulkPasteText]);
 
   useEffect(() => {
     const handler = () => setQuotaExceeded(true);
@@ -183,7 +201,7 @@ const App: React.FC = () => {
       if (rows.length > 0) loaded[b.id] = rows;
     });
     setBulkBaseRowsMap(loaded);
-    setBulkPasteText('');
+    // 직접 입력한 내용은 "초기화" 누르기 전까지 유지 (모달을 닫았다 다시 열어도 보존)
     setShowBulkDepositModal(true);
   }, [allBusinesses]);
   const sharedSuppliers = useSharedSuppliers();
@@ -1303,11 +1321,16 @@ const App: React.FC = () => {
                   const baseRows = bulkBaseRowsMap[id] ?? [];
                   const extraRows = grouped[id] ?? [];
                   const totalCount = baseRows.length + extraRows.length;
+                  const totalAmount =
+                    baseRows.reduce((s, r) => s + (Number(r[2]) || 0), 0) +
+                    extraRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
                   return (
                     <div key={id} className="bg-zinc-950 rounded-xl border border-zinc-800 overflow-hidden">
                       <div className="px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
                         <p className="text-[11px] font-black text-white">{biz?.displayName || id}</p>
-                        <span className="text-zinc-600 text-[10px] font-bold">{totalCount}건</span>
+                        <span className="text-zinc-500 text-[10px] font-bold">
+                          {totalCount}건 · <span className="text-emerald-400 tabular-nums">{totalAmount.toLocaleString()}원</span>
+                        </span>
                       </div>
                       <table className="w-full text-xs">
                         <thead>
@@ -1352,7 +1375,17 @@ const App: React.FC = () => {
                 })}
                 {/* 붙여넣기 영역 */}
                 <div>
-                  <p className="text-zinc-600 text-[10px] font-bold mb-1.5">엑셀에서 복사 후 붙여넣기 (열 순서: 은행 / 계좌번호 / 금액 / 이름 / 사업자명 환불)</p>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <p className="text-zinc-600 text-[10px] font-bold">엑셀에서 복사 후 붙여넣기 (열 순서: 은행 / 계좌번호 / 금액 / 이름 / 사업자명 환불)</p>
+                    {bulkPasteText.trim() && (
+                      <button
+                        onClick={() => { if (window.confirm('직접 입력한 내용을 모두 지울까요?')) setBulkPasteText(''); }}
+                        className="flex-shrink-0 ml-2 px-2 py-0.5 text-[10px] font-bold text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-500/30 rounded-lg transition-all"
+                      >
+                        초기화
+                      </button>
+                    )}
+                  </div>
                   <textarea
                     rows={4}
                     value={bulkPasteText}
