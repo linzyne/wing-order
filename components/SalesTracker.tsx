@@ -335,9 +335,16 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   // 발주 데이터 합산 (companyOrderRows 우선, 없으면 flat orderRows 폴백)
   // 업체명을 행별로 같이 들고 있어야 CS 접수 시 그 업체의 헤더 구조/등록상품을 조회할 수 있음
   const allOrderRows = useMemo(() => {
-    const rows: { date: string; data: { company: string; row: any[]; orderNumber: string }[] }[] = [];
+    type OrderRowItem = {
+      company: string;
+      row: any[];
+      orderNumber: string;
+      fake?: boolean; // 가구매 명단 매칭으로 발주서에서 제외된 주문 (공급사 발주 X, 기록용)
+      fields?: ReturnType<typeof resolveOrderRowFields>;
+    };
+    const rows: { date: string; data: OrderRowItem[] }[] = [];
     filteredHistory.forEach(d => {
-      let data: { company: string; row: any[]; orderNumber: string }[];
+      let data: OrderRowItem[];
       if (d.companyOrderRows) {
         data = [];
         Object.entries(d.companyOrderRows).forEach(([company, companyRows]) => {
@@ -348,6 +355,23 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       } else {
         data = (d.orderRows || []).map(row => ({ company: '', row, orderNumber: '' }));
       }
+      // 가구매 건도 발주내역에 함께 표시 (원본 행이 없으므로 저장된 필드로 직접 구성)
+      (d.fakeOrderRecords || []).forEach(f => data.push({
+        company: f.companyName || '',
+        row: [],
+        orderNumber: f.orderNumber || '',
+        fake: true,
+        fields: {
+          orderNumber: f.orderNumber || '',
+          recipientName: f.recipientName || '',
+          productName: f.productName || '',
+          qty: f.qty || 1,
+          deliveryMessage: '',
+          recipientPhone: f.phone || '',
+          recipientAddress: '',
+          recipientZipcode: '',
+        },
+      }));
       if (data.length > 0) rows.push({ date: d.date, data });
     });
     return rows;
@@ -372,9 +396,10 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     return allOrderRows
       .map(({ date, data }) => ({
         date,
-        data: data.filter(({ row, orderNumber }) =>
+        data: data.filter(({ row, orderNumber, fields }) =>
           (orderNumber && orderNumber.toLowerCase().includes(q)) ||
-          row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q))),
+          row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q)) ||
+          (fields && Object.values(fields).some(v => v != null && String(v).toLowerCase().includes(q)))),
       }))
       .filter(({ data }) => data.length > 0);
   }, [allOrderRows, orderSearch]);
@@ -803,12 +828,13 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     // 4. 발주 시트 — 업체마다 원본 열 구조가 달라 그대로 이어붙이면 열이 어긋나므로
     //    업체별 헤더/필드맵으로 공통 열(통합 표준 양식)에 정규화해서 저장한다.
     if (allOrderRows.length > 0) {
-      const orderSheetRows: any[][] = [['날짜', '업체', '주문번호', '수취인', '품목', '수량', '배송메시지', '우편번호', '주소', '연락처']];
+      const orderSheetRows: any[][] = [['날짜', '구분', '업체', '주문번호', '수취인', '품목', '수량', '배송메시지', '우편번호', '주소', '연락처']];
       allOrderRows.forEach(({ date, data }) => {
-        data.forEach(({ company, row, orderNumber }) => {
-          const f = resolveOrderRowFields(company, row, pricingConfig);
+        data.forEach(({ company, row, orderNumber, fake, fields: fakeFields }) => {
+          const f = fakeFields ?? resolveOrderRowFields(company, row, pricingConfig);
           orderSheetRows.push([
             date,
+            fake ? '가구매' : '발주',
             company,
             orderNumber || f.orderNumber,
             f.recipientName,
@@ -1001,8 +1027,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-900/50">
-                      {data.map(({ company, row, orderNumber }, i) => {
-                        const fields = resolveOrderRowFields(company, row, pricingConfig);
+                      {data.map(({ company, row, orderNumber, fake, fields: fakeFields }, i) => {
+                        const fields = fakeFields ?? resolveOrderRowFields(company, row, pricingConfig);
                         const openCs = (orderNumber && openCsByOrderNumber.get(orderNumber))
                           || (fields.orderNumber ? openCsByOrderNumber.get(fields.orderNumber) : undefined);
                         const cell = (v: any) => (v != null && String(v).trim() !== '')
@@ -1012,12 +1038,19 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         const matchedProduct = Object.values(pricingConfig?.[company]?.products || {}).find(
                           (p: any) => p.orderFormName === fields.productName || p.displayName === fields.productName
                         ) as any;
-                        const rowMargin = typeof matchedProduct?.margin === 'number'
+                        const rowMargin = !fake && typeof matchedProduct?.margin === 'number'
                           ? matchedProduct.margin * fields.qty
                           : undefined;
                         return (
-                          <tr key={i} className="text-xs">
-                            <td className="py-1.5 pr-3 text-violet-400 font-black whitespace-nowrap">{company || <span className="text-zinc-700">—</span>}</td>
+                          <tr key={i} className={`text-xs ${fake ? 'bg-sky-500/[0.04]' : ''}`}>
+                            <td className="py-1.5 pr-3 font-black whitespace-nowrap">
+                              {fake && (
+                                <span className="mr-2 text-[10px] bg-sky-500/10 text-sky-400 px-2 py-0.5 rounded-full font-black border border-sky-500/20">
+                                  가구매
+                                </span>
+                              )}
+                              <span className="text-violet-400">{company || <span className="text-zinc-700">—</span>}</span>
+                            </td>
                             <td className="py-1.5 pr-3 whitespace-nowrap font-mono font-black text-emerald-400" title="원본 주문번호">
                               {orderNumber || fields.orderNumber || <span className="text-zinc-700">—</span>}
                             </td>
@@ -1034,17 +1067,23 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientAddress)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientPhone)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">
-                              {openCs && (
-                                <span className="mr-2 text-[10px] bg-amber-500/10 text-amber-400 px-2 py-1 rounded-full font-black border border-amber-500/20">
-                                  CS 처리중
-                                </span>
+                              {fake ? (
+                                <span className="text-[10px] text-zinc-600 font-bold">공급사 발주 제외</span>
+                              ) : (
+                                <>
+                                  {openCs && (
+                                    <span className="mr-2 text-[10px] bg-amber-500/10 text-amber-400 px-2 py-1 rounded-full font-black border border-amber-500/20">
+                                      CS 처리중
+                                    </span>
+                                  )}
+                                  <button
+                                    onClick={() => openCsDetail(company, row, orderNumber)}
+                                    className="px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-[10px] font-black border border-rose-500/20 transition-colors"
+                                  >
+                                    CS 접수
+                                  </button>
+                                </>
                               )}
-                              <button
-                                onClick={() => openCsDetail(company, row, orderNumber)}
-                                className="px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-[10px] font-black border border-rose-500/20 transition-colors"
-                              >
-                                CS 접수
-                              </button>
                             </td>
                           </tr>
                         );
