@@ -18,6 +18,25 @@ const TREND_OTHER_COLOR = '#898781';
 
 type TrendSeries = { key: string; label: string; color: string; values: number[] };
 
+// 가구매(자가구매) 비용 = 기본비 1,000원 + 배송비 2,300원(고정) + 판매수수료(판매가의 12%)
+// 공급사 발주가 없어 매출은 없고 비용만 발생 → 마진은 항상 역마진(음수).
+const FAKE_PURCHASE_BASE_FEE = 1000;
+const FAKE_PURCHASE_SHIPPING_FEE = 2300;
+const SALES_COMMISSION_RATE = 0.12;
+
+/** 가구매 1건의 역마진(음수). 판매가를 못 찾으면 undefined */
+const fakePurchaseMargin = (sellingPrice: number | undefined, qty: number): number | undefined => {
+  if (typeof sellingPrice !== 'number' || sellingPrice <= 0) return undefined;
+  const commission = Math.round(sellingPrice * qty * SALES_COMMISSION_RATE);
+  return -(FAKE_PURCHASE_BASE_FEE + FAKE_PURCHASE_SHIPPING_FEE + commission);
+};
+
+/** 업체 설정에서 발주서명 또는 표시명이 일치하는 품목을 찾는다 */
+const findProductByName = (config: CompanyConfig | undefined, productName: string): any =>
+  Object.values(config?.products || {}).find(
+    (p: any) => p.orderFormName === productName || p.displayName === productName
+  );
+
 // 깔끔한 축 눈금 최댓값 계산 (1/2/5 * 10^n 단위로 반올림)
 const niceMax = (max: number): number => {
   if (max <= 0) return 1;
@@ -828,10 +847,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     // 4. 발주 시트 — 업체마다 원본 열 구조가 달라 그대로 이어붙이면 열이 어긋나므로
     //    업체별 헤더/필드맵으로 공통 열(통합 표준 양식)에 정규화해서 저장한다.
     if (allOrderRows.length > 0) {
-      const orderSheetRows: any[][] = [['날짜', '구분', '업체', '주문번호', '수취인', '품목', '수량', '배송메시지', '우편번호', '주소', '연락처']];
+      const orderSheetRows: any[][] = [['날짜', '구분', '업체', '주문번호', '수취인', '품목', '수량', '마진', '배송메시지', '우편번호', '주소', '연락처']];
       allOrderRows.forEach(({ date, data }) => {
         data.forEach(({ company, row, orderNumber, fake, fields: fakeFields }) => {
           const f = fakeFields ?? resolveOrderRowFields(company, row, pricingConfig);
+          const p = findProductByName(pricingConfig?.[company], f.productName);
+          const margin = fake
+            ? fakePurchaseMargin(p?.sellingPrice, f.qty)
+            : (typeof p?.margin === 'number' ? p.margin * f.qty : undefined);
           orderSheetRows.push([
             date,
             fake ? '가구매' : '발주',
@@ -840,6 +863,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
             f.recipientName,
             f.productName,
             f.qty,
+            margin ?? '',
             f.deliveryMessage,
             f.recipientZipcode,
             f.recipientAddress,
@@ -1034,13 +1058,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         const cell = (v: any) => (v != null && String(v).trim() !== '')
                           ? <span className="text-zinc-300 font-mono">{String(v)}</span>
                           : <span className="text-zinc-700">—</span>;
-                        // 업체+품목을 품목/업체 설정에서 찾아 마진 표기 (수량 × 개당마진)
-                        const matchedProduct = Object.values(pricingConfig?.[company]?.products || {}).find(
-                          (p: any) => p.orderFormName === fields.productName || p.displayName === fields.productName
-                        ) as any;
-                        const rowMargin = !fake && typeof matchedProduct?.margin === 'number'
-                          ? matchedProduct.margin * fields.qty
-                          : undefined;
+                        // 업체+품목을 품목/업체 설정에서 찾아 마진 표기
+                        const matchedProduct = findProductByName(pricingConfig?.[company], fields.productName);
+                        const rowMargin = fake
+                          ? fakePurchaseMargin(matchedProduct?.sellingPrice, fields.qty) // 가구매: 역마진
+                          : (typeof matchedProduct?.margin === 'number' ? matchedProduct.margin * fields.qty : undefined); // 발주: 수량 × 개당마진
                         return (
                           <tr key={i} className={`text-xs ${fake ? 'bg-sky-500/[0.04]' : ''}`}>
                             <td className="py-1.5 pr-3 font-black whitespace-nowrap">
@@ -1059,7 +1081,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.qty)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap text-right">
                               {rowMargin != null && rowMargin !== 0
-                                ? <span className="text-emerald-500 font-bold">{rowMargin.toLocaleString()}원</span>
+                                ? <span className={`font-bold ${rowMargin < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{rowMargin.toLocaleString()}원</span>
                                 : <span className="text-zinc-700">—</span>}
                             </td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.deliveryMessage)}</td>
@@ -1511,16 +1533,20 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       byDate.set(r.date, list);
     });
 
-    // 업체별 요약
-    const companyMap = new Map<string, { count: number; qty: number }>();
+    // 업체별 요약 (역마진 = 가구매 비용 합계)
+    const marginOf = (r: ExcludedOrder) =>
+      fakePurchaseMargin(findProductByName(pricingConfig?.[r.companyName], r.productName)?.sellingPrice, r.qty || 1) || 0;
+    const companyMap = new Map<string, { count: number; qty: number; margin: number }>();
     records.forEach(r => {
-      const existing = companyMap.get(r.companyName) || { count: 0, qty: 0 };
+      const existing = companyMap.get(r.companyName) || { count: 0, qty: 0, margin: 0 };
       existing.count += 1;
       existing.qty += r.qty || 1;
+      existing.margin += marginOf(r);
       companyMap.set(r.companyName, existing);
     });
     const companySummary = Array.from(companyMap.entries()).sort(([, a], [, b]) => b.qty - a.qty);
     const totalQty = records.reduce((s, r) => s + (r.qty || 1), 0);
+    const totalMargin = records.reduce((s, r) => s + marginOf(r), 0);
 
     const cleanOrderNumber = (n: string) => String(n || '').replace(/\s*\(제외\)\s*/, '').trim();
 
@@ -1530,7 +1556,10 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
         {records.length > 0 && (
           <div className="px-6 py-4 flex items-center justify-between bg-zinc-900/30">
             <span className="text-zinc-400 font-black text-xs">기간 총 가구매 제외</span>
-            <span className="text-pink-400 font-black text-lg">{records.length}건 / {totalQty}개</span>
+            <span className="flex items-baseline gap-3">
+              <span className="text-pink-400 font-black text-lg">{records.length}건 / {totalQty}개</span>
+              {totalMargin < 0 && <span className="text-rose-500 font-black text-sm">{totalMargin.toLocaleString()}원</span>}
+            </span>
           </div>
         )}
 
@@ -1543,7 +1572,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
                   <th className="pb-3 pr-4">업체</th>
                   <th className="pb-3 pr-4 text-right">건수</th>
-                  <th className="pb-3 text-right">수량</th>
+                  <th className="pb-3 pr-4 text-right">수량</th>
+                  <th className="pb-3 text-right">역마진</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-900/50">
@@ -1551,7 +1581,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                   <tr key={company} className="text-xs hover:bg-zinc-900/30 transition-colors">
                     <td className="py-3 pr-4 font-bold text-pink-400">{company}</td>
                     <td className="py-3 pr-4 text-right text-zinc-400 font-bold">{d.count}건</td>
-                    <td className="py-3 text-right text-zinc-400 font-bold">{d.qty}개</td>
+                    <td className="py-3 pr-4 text-right text-zinc-400 font-bold">{d.qty}개</td>
+                    <td className="py-3 text-right font-bold text-rose-500">{d.margin < 0 ? `${d.margin.toLocaleString()}원` : '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1560,6 +1591,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                   <td className="pt-3 font-black text-zinc-400">합계</td>
                   <td className="pt-3 text-right font-black text-zinc-400">{records.length}건</td>
                   <td className="pt-3 text-right font-black text-pink-500">{totalQty}개</td>
+                  <td className="pt-3 text-right font-black text-rose-500">{totalMargin < 0 ? `${totalMargin.toLocaleString()}원` : '-'}</td>
                 </tr>
               </tfoot>
             </table>
@@ -1591,17 +1623,21 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                       <th className="pb-2 pr-4">품목</th>
                       <th className="pb-2 pr-4">주문번호</th>
                       <th className="pb-2 pr-4 text-right">수량</th>
+                      <th className="pb-2 pr-4 text-right">역마진</th>
                       <th className="pb-2 text-right">삭제</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-zinc-900/50">
-                    {recs.map((r, i) => (
+                    {recs.map((r, i) => {
+                      const m = marginOf(r);
+                      return (
                       <tr key={i} className="text-xs">
                         <td className="py-2 pr-4 font-bold text-pink-400">{r.companyName}</td>
                         <td className="py-2 pr-4 font-bold text-zinc-300">{r.recipientName}</td>
                         <td className="py-2 pr-4 text-zinc-400">{r.productName}</td>
                         <td className="py-2 pr-4 text-zinc-500 font-mono">{cleanOrderNumber(r.orderNumber)}</td>
                         <td className="py-2 pr-4 text-right text-zinc-400 font-bold">{r.qty || 1}개</td>
+                        <td className="py-2 pr-4 text-right font-bold text-rose-500">{m < 0 ? `${m.toLocaleString()}원` : '-'}</td>
                         <td className="py-2 text-right">
                           <button
                             onClick={() => handleDeleteFakeOrder(date, r._idx)}
@@ -1611,7 +1647,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
