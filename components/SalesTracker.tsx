@@ -985,24 +985,41 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
               {(expandedDates.has(`order-${date}`) || isSearching) && (
                 <div className="px-6 pb-4 animate-fade-in overflow-x-auto">
                   <table className="w-full text-left">
+                    <thead>
+                      <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
+                        <th className="pb-2 pr-3 whitespace-nowrap">업체</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">주문번호</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">수취인</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">품목</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">수량</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">배송메시지</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">우편번호</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">주소</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">연락처</th>
+                        <th className="pb-2" />
+                      </tr>
+                    </thead>
                     <tbody className="divide-y divide-zinc-900/50">
                       {data.map(({ company, row, orderNumber }, i) => {
                         const fields = resolveOrderRowFields(company, row, pricingConfig);
                         const openCs = (orderNumber && openCsByOrderNumber.get(orderNumber))
                           || (fields.orderNumber ? openCsByOrderNumber.get(fields.orderNumber) : undefined);
+                        const cell = (v: any) => (v != null && String(v).trim() !== '')
+                          ? <span className="text-zinc-300 font-mono">{String(v)}</span>
+                          : <span className="text-zinc-700">—</span>;
                         return (
                           <tr key={i} className="text-xs">
-                            {company && (
-                              <td className="py-1.5 pr-3 text-violet-400 font-black whitespace-nowrap">{company}</td>
-                            )}
+                            <td className="py-1.5 pr-3 text-violet-400 font-black whitespace-nowrap">{company || <span className="text-zinc-700">—</span>}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap font-mono font-black text-emerald-400" title="원본 주문번호">
-                              {orderNumber || <span className="text-zinc-700">—</span>}
+                              {orderNumber || fields.orderNumber || <span className="text-zinc-700">—</span>}
                             </td>
-                            {row.map((cell: any, j: number) => (
-                              <td key={j} className="py-1.5 pr-3 text-zinc-300 font-mono whitespace-nowrap">
-                                {cell != null ? String(cell) : ''}
-                              </td>
-                            ))}
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientName)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.productName)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.qty)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.deliveryMessage)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientZipcode)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientAddress)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientPhone)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">
                               {openCs && (
                                 <span className="mr-2 text-[10px] bg-amber-500/10 text-amber-400 px-2 py-1 rounded-full font-black border border-amber-500/20">
