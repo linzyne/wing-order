@@ -992,6 +992,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         <th className="pb-2 pr-3 whitespace-nowrap">수취인</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">품목</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">수량</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap text-right">마진</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">배송메시지</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">우편번호</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">주소</th>
@@ -1007,6 +1008,13 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         const cell = (v: any) => (v != null && String(v).trim() !== '')
                           ? <span className="text-zinc-300 font-mono">{String(v)}</span>
                           : <span className="text-zinc-700">—</span>;
+                        // 업체+품목을 품목/업체 설정에서 찾아 마진 표기 (수량 × 개당마진)
+                        const matchedProduct = Object.values(pricingConfig?.[company]?.products || {}).find(
+                          (p: any) => p.orderFormName === fields.productName || p.displayName === fields.productName
+                        ) as any;
+                        const rowMargin = typeof matchedProduct?.margin === 'number'
+                          ? matchedProduct.margin * fields.qty
+                          : undefined;
                         return (
                           <tr key={i} className="text-xs">
                             <td className="py-1.5 pr-3 text-violet-400 font-black whitespace-nowrap">{company || <span className="text-zinc-700">—</span>}</td>
@@ -1016,6 +1024,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientName)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.productName)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.qty)}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap text-right">
+                              {rowMargin != null && rowMargin !== 0
+                                ? <span className="text-emerald-500 font-bold">{rowMargin.toLocaleString()}원</span>
+                                : <span className="text-zinc-700">—</span>}
+                            </td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.deliveryMessage)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientZipcode)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientAddress)}</td>
