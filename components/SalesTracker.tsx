@@ -847,7 +847,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     // 4. 발주 시트 — 업체마다 원본 열 구조가 달라 그대로 이어붙이면 열이 어긋나므로
     //    업체별 헤더/필드맵으로 공통 열(통합 표준 양식)에 정규화해서 저장한다.
     if (allOrderRows.length > 0) {
-      const orderSheetRows: any[][] = [['날짜', '구분', '업체', '주문번호', '수취인', '품목', '수량', '공급가', '판매가', '마진', '배송메시지', '우편번호', '주소', '연락처']];
+      const orderSheetRows: any[][] = [['날짜', '구분', '업체', '주문번호', '수취인', '품목', '수량', '공급가', '마진', '판매가', '배송메시지', '우편번호', '주소', '연락처']];
       allOrderRows.forEach(({ date, data }) => {
         data.forEach(({ company, row, orderNumber, fake, fields: fakeFields }) => {
           const f = fakeFields ?? resolveOrderRowFields(company, row, pricingConfig);
@@ -866,8 +866,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
             f.productName,
             f.qty,
             supply ?? '',
-            selling ?? '',
             margin ?? '',
+            selling ?? '',
             f.deliveryMessage,
             f.recipientZipcode,
             f.recipientAddress,
@@ -1047,8 +1047,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         <th className="pb-2 pr-3 whitespace-nowrap">품목</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">수량</th>
                         <th className="pb-2 pr-3 whitespace-nowrap text-right">공급가</th>
-                        <th className="pb-2 pr-3 whitespace-nowrap text-right">판매가</th>
                         <th className="pb-2 pr-3 whitespace-nowrap text-right">마진</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap text-right">판매가</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">배송메시지</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">우편번호</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">주소</th>
@@ -1091,13 +1091,13 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientName)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.productName)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.qty)}</td>
-                            <td className="py-1.5 pr-3 whitespace-nowrap text-right">{money(rowSupply, 'text-zinc-400')}</td>
-                            <td className="py-1.5 pr-3 whitespace-nowrap text-right">{money(rowSelling, 'text-zinc-300')}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap text-right">{money(rowSupply, 'text-zinc-300')}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap text-right">
                               {rowMargin != null && rowMargin !== 0
-                                ? <span className={`font-bold ${rowMargin < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{rowMargin.toLocaleString()}원</span>
+                                ? <span className="font-mono text-zinc-300">{rowMargin.toLocaleString()}원</span>
                                 : <span className="text-zinc-700">—</span>}
                             </td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap text-right">{money(rowSelling, 'text-zinc-300')}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.deliveryMessage)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientZipcode)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientAddress)}</td>
