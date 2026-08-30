@@ -93,6 +93,10 @@ const OrderDetailModal: React.FC<{ item: OpenCsItem; onClose: () => void }> = ({
         const rows = d.companyOrderRows
           ? (d.companyOrderRows[item.company] || [])
           : (d.orderRows || []);
+        // 저장된 원본 주문번호 목록으로 우선 매칭 (발주서 행에는 묶음배송번호만 있을 수 있음)
+        const nums = d.companyOrderNumbers?.[item.company] || [];
+        const idxByOrderNumber = nums.findIndex(n => n && n.split(',').map(s => s.trim()).includes(item.orderNumber));
+        if (idxByOrderNumber >= 0 && rows[idxByOrderNumber]) { found = rows[idxByOrderNumber]; break; }
         found = rows.find(r => resolveOrderRowFields(item.company, r, configResult.config || undefined).orderNumber === item.orderNumber) || null;
         if (found) break;
       }
@@ -162,7 +166,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
 
   // 검색용: 사업자 먼저 선택 → 그 사업자의 발주내역만 대상으로 검색 (사업자마다 같은 주문번호가 있을 수 있어 섞으면 안 됨)
   const [selectedBusinessId, setSelectedBusinessId] = useState('');
-  const [businessOrderRows, setBusinessOrderRows] = useState<{ company: string; row: any[] }[]>([]);
+  const [businessOrderRows, setBusinessOrderRows] = useState<{ company: string; row: any[]; orderNumber: string }[]>([]);
   const [businessPricingConfig, setBusinessPricingConfig] = useState<PricingConfig | null>(null);
   const [loadingBusinessData, setLoadingBusinessData] = useState(false);
   const [search, setSearch] = useState('');
@@ -211,14 +215,16 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         loadPricingConfig(selectedBusinessId),
       ]);
       if (cancelled) return;
-      const rows: { company: string; row: any[] }[] = [];
+      const rows: { company: string; row: any[]; orderNumber: string }[] = [];
       history.forEach(d => {
         if (d.companyOrderRows) {
           Object.entries(d.companyOrderRows).forEach(([company, companyRows]) => {
-            (companyRows as any[][]).forEach(row => rows.push({ company, row }));
+            // companyOrderNumbers[company]는 companyOrderRows[company]와 동일한 순서/길이의 원본 주문번호 목록
+            const nums = d.companyOrderNumbers?.[company] || [];
+            (companyRows as any[][]).forEach((row, i) => rows.push({ company, row, orderNumber: nums[i] || '' }));
           });
         } else if (d.orderRows) {
-          d.orderRows.forEach(row => rows.push({ company: '', row }));
+          d.orderRows.forEach(row => rows.push({ company: '', row, orderNumber: '' }));
         }
       });
       setBusinessOrderRows(rows);
@@ -232,7 +238,9 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     const q = search.trim().toLowerCase();
     if (!q) return [];
     return businessOrderRows
-      .filter(({ row }) => row.some(cell => cell != null && String(cell).toLowerCase().includes(q)))
+      .filter(({ row, orderNumber }) =>
+        (orderNumber && orderNumber.toLowerCase().includes(q)) ||
+        row.some(cell => cell != null && String(cell).toLowerCase().includes(q)))
       .slice(0, 50);
   }, [businessOrderRows, search]);
 
@@ -489,20 +497,28 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
           <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar pr-1">
             {searchResults.length === 0 ? (
               <p className="text-zinc-600 text-xs font-bold text-center py-3">검색 결과가 없습니다.</p>
-            ) : searchResults.map(({ company, row }, i) => {
+            ) : searchResults.map(({ company, row, orderNumber }, i) => {
               const fields = resolveOrderRowFields(company, row, businessPricingConfig || undefined);
-              const isOpen = fields.orderNumber && openOrderNumbersForBusiness.has(fields.orderNumber);
+              const displayOrderNumber = orderNumber || fields.orderNumber;
+              const isOpen = (orderNumber && openOrderNumbersForBusiness.has(orderNumber))
+                || (fields.orderNumber && openOrderNumbersForBusiness.has(fields.orderNumber));
               return (
                 <div key={i} className="bg-zinc-800/50 border border-zinc-700/40 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-white font-bold text-xs truncate">{fields.recipientName || '이름없음'} · {fields.orderNumber || '주문번호없음'}</div>
-                    <div className="text-zinc-500 text-[10px] font-bold truncate">{company} · {fields.productName}{fields.qty > 1 ? ` x${fields.qty}` : ''}</div>
+                    <div className="text-white font-bold text-xs truncate">{fields.recipientName || '이름없음'} · {displayOrderNumber || '주문번호없음'}</div>
+                    <div className="text-zinc-500 text-[10px] font-bold truncate">
+                      {company} · {fields.productName}{fields.qty > 1 ? ` x${fields.qty}` : ''}
+                      {orderNumber && orderNumber !== fields.orderNumber && fields.orderNumber ? ` · 묶음 ${fields.orderNumber}` : ''}
+                    </div>
                   </div>
                   {isOpen ? (
                     <span className="shrink-0 text-[10px] bg-amber-500/10 text-amber-400 px-2 py-1 rounded-full font-black border border-amber-500/20">CS 처리중</span>
                   ) : (
                     <button
-                      onClick={() => setCsDraft(buildCsDraft(company, row, businessPricingConfig || undefined))}
+                      onClick={() => {
+                        const draft = buildCsDraft(company, row, businessPricingConfig || undefined);
+                        setCsDraft(orderNumber ? { ...draft, orderNumber } : draft);
+                      }}
                       className="shrink-0 px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-[10px] font-black border border-rose-500/20 transition-colors"
                     >
                       CS 접수

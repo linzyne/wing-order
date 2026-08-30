@@ -335,16 +335,18 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   // 발주 데이터 합산 (companyOrderRows 우선, 없으면 flat orderRows 폴백)
   // 업체명을 행별로 같이 들고 있어야 CS 접수 시 그 업체의 헤더 구조/등록상품을 조회할 수 있음
   const allOrderRows = useMemo(() => {
-    const rows: { date: string; data: { company: string; row: any[] }[] }[] = [];
+    const rows: { date: string; data: { company: string; row: any[]; orderNumber: string }[] }[] = [];
     filteredHistory.forEach(d => {
-      let data: { company: string; row: any[] }[];
+      let data: { company: string; row: any[]; orderNumber: string }[];
       if (d.companyOrderRows) {
         data = [];
         Object.entries(d.companyOrderRows).forEach(([company, companyRows]) => {
-          (companyRows as any[][]).forEach(row => data.push({ company, row }));
+          // companyOrderNumbers[company]는 companyOrderRows[company]와 동일한 순서/길이의 원본 주문번호 목록
+          const nums = d.companyOrderNumbers?.[company] || [];
+          (companyRows as any[][]).forEach((row, i) => data.push({ company, row, orderNumber: nums[i] || '' }));
         });
       } else {
-        data = (d.orderRows || []).map(row => ({ company: '', row }));
+        data = (d.orderRows || []).map(row => ({ company: '', row, orderNumber: '' }));
       }
       if (data.length > 0) rows.push({ date: d.date, data });
     });
@@ -370,7 +372,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     return allOrderRows
       .map(({ date, data }) => ({
         date,
-        data: data.filter(({ row }) => row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q))),
+        data: data.filter(({ row, orderNumber }) =>
+          (orderNumber && orderNumber.toLowerCase().includes(q)) ||
+          row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q))),
       }))
       .filter(({ data }) => data.length > 0);
   }, [allOrderRows, orderSearch]);
@@ -503,8 +507,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     onCompanyRecordChanged?.(date);
   };
 
-  const openCsDetail = (company: string, row: any[]) => {
-    setCsDraft(buildCsDraft(company, row, pricingConfig));
+  const openCsDetail = (company: string, row: any[], orderNumberOverride?: string) => {
+    const draft = buildCsDraft(company, row, pricingConfig);
+    setCsDraft(orderNumberOverride ? { ...draft, orderNumber: orderNumberOverride } : draft);
   };
 
   const handleCsSaved = () => {
@@ -968,14 +973,18 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 <div className="px-6 pb-4 animate-fade-in overflow-x-auto">
                   <table className="w-full text-left">
                     <tbody className="divide-y divide-zinc-900/50">
-                      {data.map(({ company, row }, i) => {
+                      {data.map(({ company, row, orderNumber }, i) => {
                         const fields = resolveOrderRowFields(company, row, pricingConfig);
-                        const openCs = fields.orderNumber ? openCsByOrderNumber.get(fields.orderNumber) : undefined;
+                        const openCs = (orderNumber && openCsByOrderNumber.get(orderNumber))
+                          || (fields.orderNumber ? openCsByOrderNumber.get(fields.orderNumber) : undefined);
                         return (
                           <tr key={i} className="text-xs">
                             {company && (
                               <td className="py-1.5 pr-3 text-violet-400 font-black whitespace-nowrap">{company}</td>
                             )}
+                            <td className="py-1.5 pr-3 whitespace-nowrap font-mono font-black text-emerald-400" title="원본 주문번호">
+                              {orderNumber || <span className="text-zinc-700">—</span>}
+                            </td>
                             {row.map((cell: any, j: number) => (
                               <td key={j} className="py-1.5 pr-3 text-zinc-300 font-mono whitespace-nowrap">
                                 {cell != null ? String(cell) : ''}
@@ -988,7 +997,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                                 </span>
                               )}
                               <button
-                                onClick={() => openCsDetail(company, row)}
+                                onClick={() => openCsDetail(company, row, orderNumber)}
                                 className="px-2 py-1 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 text-[10px] font-black border border-rose-500/20 transition-colors"
                               >
                                 CS 접수
