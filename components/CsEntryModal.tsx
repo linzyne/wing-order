@@ -64,6 +64,7 @@ export function resolveOrderRowFields(company: string, row: any[], pricingConfig
   const config = pricingConfig?.[company];
   const headers = config ? getHeaderForCompany(company, config) : [];
   let orderNumberIdx = -1, recipientNameIdx = -1, productNameIdx = -1, qtyIdx = -1, deliveryMessageIdx = -1;
+  let recipientPhoneIdx = -1, recipientAddressIdx = -1, recipientZipcodeIdx = -1;
   headers.forEach((h, idx) => {
     const field = config?.orderFormFieldMap?.[idx] || inferFieldFromHeader(h);
     if (field === 'orderNumber' && orderNumberIdx === -1) orderNumberIdx = idx;
@@ -71,6 +72,9 @@ export function resolveOrderRowFields(company: string, row: any[], pricingConfig
     if (field === 'productName' && productNameIdx === -1) productNameIdx = idx;
     if (field === 'qty' && qtyIdx === -1) qtyIdx = idx;
     if (field === 'deliveryMessage' && deliveryMessageIdx === -1) deliveryMessageIdx = idx;
+    if (field === 'recipientPhone' && recipientPhoneIdx === -1) recipientPhoneIdx = idx;
+    if (field === 'recipientAddress' && recipientAddressIdx === -1) recipientAddressIdx = idx;
+    if (field === 'recipientZipcode' && recipientZipcodeIdx === -1) recipientZipcodeIdx = idx;
   });
   return {
     orderNumber: orderNumberIdx >= 0 ? String(row[orderNumberIdx] ?? '') : '',
@@ -78,6 +82,9 @@ export function resolveOrderRowFields(company: string, row: any[], pricingConfig
     productName: productNameIdx >= 0 ? String(row[productNameIdx] ?? '') : '',
     qty: qtyIdx >= 0 ? (parseInt(String(row[qtyIdx]), 10) || 1) : 1,
     deliveryMessage: deliveryMessageIdx >= 0 ? String(row[deliveryMessageIdx] ?? '').trim() : '',
+    recipientPhone: recipientPhoneIdx >= 0 ? String(row[recipientPhoneIdx] ?? '').trim() : '',
+    recipientAddress: recipientAddressIdx >= 0 ? String(row[recipientAddressIdx] ?? '').trim() : '',
+    recipientZipcode: recipientZipcodeIdx >= 0 ? String(row[recipientZipcodeIdx] ?? '').trim() : '',
   };
 }
 

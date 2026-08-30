@@ -800,13 +800,26 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     companySummary.forEach(([name, data]) => companyRows.push([name, data.count, data.totalPrice]));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(companyRows), '업체별');
 
-    // 4. 발주 시트 (복구)
+    // 4. 발주 시트 — 업체마다 원본 열 구조가 달라 그대로 이어붙이면 열이 어긋나므로
+    //    업체별 헤더/필드맵으로 공통 열(통합 표준 양식)에 정규화해서 저장한다.
     if (allOrderRows.length > 0) {
-      const orderSheetRows: any[][] = [];
-      allOrderRows.forEach(({ data }) => {
-        // 헤더는 첫 번째 데이터에서만 가져오거나 생략 (데이터 구조상 헤더가 포함된 경우도 있음)
-        // 여기서는 단순히 모든 행을 추가 (헤더 중복 가능성 유의)
-        data.forEach(({ row }) => orderSheetRows.push(row));
+      const orderSheetRows: any[][] = [['날짜', '업체', '주문번호', '수취인', '품목', '수량', '배송메시지', '우편번호', '주소', '연락처']];
+      allOrderRows.forEach(({ date, data }) => {
+        data.forEach(({ company, row, orderNumber }) => {
+          const f = resolveOrderRowFields(company, row, pricingConfig);
+          orderSheetRows.push([
+            date,
+            company,
+            orderNumber || f.orderNumber,
+            f.recipientName,
+            f.productName,
+            f.qty,
+            f.deliveryMessage,
+            f.recipientZipcode,
+            f.recipientAddress,
+            f.recipientPhone,
+          ]);
+        });
       });
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(orderSheetRows), '발주');
     }
