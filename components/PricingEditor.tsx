@@ -11,6 +11,17 @@ import {
 
 declare var XLSX: any;
 
+// 중복 헤더명에 접미사를 붙여 유일하게 만든다.
+// (같은 이름 열이 여러 개면 React key가 충돌해 리렌더 시 화면이 통째로 날아가고,
+//  송장 매칭키는 헤더명으로 저장되므로 중복 시 어느 열인지 구분도 불가능하다.)
+const dedupeHeaders = (headers: string[]): string[] => {
+    const seen: Record<string, number> = {};
+    return headers.map(h => {
+        seen[h] = (seen[h] || 0) + 1;
+        return seen[h] > 1 ? `${h} (${seen[h]})` : h;
+    });
+};
+
 // undefined 값 제거 (Firestore는 undefined를 지원하지 않음)
 const stripUndefined = <T extends Record<string, any>>(obj: T): T => {
     return Object.fromEntries(
@@ -1544,7 +1555,7 @@ const CompanyCard: React.FC<{
                                                         }
                                                         if (headerRowIdx === -1) headerRowIdx = 0;
                                                     }
-                                                    const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
+                                                    const headers = dedupeHeaders((aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean));
                                                     if (headers.length > 0) {
                                                         props.onUpdateVendorInvoiceHeaders(headers, headers.map((h: string) => inferVendorInvoiceField(h)));
                                                     }
@@ -1602,7 +1613,8 @@ const CompanyCard: React.FC<{
                                         {(() => {
                                             const headers = companyConfig.vendorInvoiceHeaders!;
                                             const fieldMap = companyConfig.vendorInvoiceFieldMap || headers.map(h => inferVendorInvoiceField(h));
-                                            const candidateHeaders = headers.filter((_, i) => fieldMap[i] !== 'trackingNumber');
+                                            // 이미 저장된 설정에 중복 헤더가 있어도 key 충돌로 화면이 날아가지 않도록 중복 제거
+                                            const candidateHeaders = [...new Set(headers.filter((_, i) => fieldMap[i] !== 'trackingNumber'))];
                                             if (candidateHeaders.length === 0) return null;
                                             const currentMatchHeaders = (companyConfig.vendorInvoiceMatchKey || '').split('|').filter(Boolean);
                                             return (
@@ -1610,10 +1622,10 @@ const CompanyCard: React.FC<{
                                                     <span className="text-[11px] font-black text-amber-500/80 uppercase">매칭 기준</span>
                                                     <p className="text-[10px] text-zinc-600 mb-1">업체 송장파일의 어떤 열로 주문서와 매칭할지 선택 (복수 선택 가능)</p>
                                                     <div className="flex flex-wrap gap-1.5 mt-1">
-                                                        {candidateHeaders.map(header => {
+                                                        {candidateHeaders.map((header, ci) => {
                                                             const isChecked = currentMatchHeaders.includes(header);
                                                             return (
-                                                                <label key={header} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition-all ${isChecked ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : 'border-zinc-700 text-zinc-500 hover:border-zinc-600'}`}>
+                                                                <label key={`${header}__${ci}`} className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer border transition-all ${isChecked ? 'border-amber-500/60 bg-amber-500/10 text-amber-400' : 'border-zinc-700 text-zinc-500 hover:border-zinc-600'}`}>
                                                                     <input type="checkbox" className="sr-only" checked={isChecked} onChange={() => {
                                                                         const newKeys = isChecked ? currentMatchHeaders.filter(k => k !== header) : [...currentMatchHeaders, header];
                                                                         props.onUpdateVendorInvoiceMatchKey(newKeys.length > 0 ? newKeys.join('|') : '');
