@@ -2412,72 +2412,153 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             // 마스터가 바뀌므로 품목 매칭 캐시를 비운다 (1차 경로와 동일한 이유)
             clearProductMatchCache();
 
+            const headers = masterOrderData?.[0] || [];
+            const buildBatchFile = (rows: any[][], name: string): File => {
+                const ws2 = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+                const wb2 = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb2, ws2, 'Sheet1');
+                return new File([XLSX.write(wb2, { bookType: 'xlsx', type: 'array' })], name, {
+                    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                });
+            };
+            const kToNorm = kReplaceTo.replace(/\s+/g, '').normalize('NFC');
+
+            // kReplaceToCompany가 이미 그 차수에 갖고 있는 배치 세션 (있으면 교체/삭제가 아니라 병합해야 함)
+            const targetExistingByRound = new Map<number, SessionData>();
+            (companySessions[kReplaceToCompany] || []).forEach(s => {
+                if (batchFiles[s.id]) targetExistingByRound.set(s.round, s);
+            });
+
             const newCompanySessions = { ...companySessions };
             const addedBatchFiles: Record<string, File> = {};
             const addedBatchMasterRows: Record<string, any[][]> = {};
             const addedBatchExpectedCounts: Record<string, number> = {};
             const addedBatchPlatforms: Record<string, string> = {};
-            const removedIds = new Set<string>();
+            const removedIds = new Set<string>();          // from 세션에서 교체 대상만 있어 통째로 사라지는 세션
+            const updatedFromRows = new Map<string, any[][]>(); // from 세션에 남는 행 (교체 대상 아닌 행)
+            const mergeAppendRows = new Map<string, any[][]>(); // 기존 target 세션 id → 이어붙일 행
+            const newTargetRowsByRound = new Map<number, any[][]>(); // target에 세션 없을 때 새로 만들 행
+            const newTargetPlatformByRound = new Map<number, string>();
             const newSelectedIds = new Set(selectedSessionIds);
-            const sessionIdMap: Record<string, string> = {};
+            const sessionIdMap: Record<string, string> = {}; // from 세션 id → 정산조정 이관 대상 id
+            const dirtyIds = new Set<string>();             // 재처리가 필요한 살아있는 세션 (캐시만 비움, 문서는 유지)
 
             for (const session of targetSessions) {
-                const newRows = applyRowReplacement(batchMasterRows[session.id] || [], optionColIdx);
-                const newSessionId = `${kReplaceToCompany}-batch-${session.round}-${Date.now()}`;
-                newCompanySessions[kReplaceToCompany] = [
-                    ...(newCompanySessions[kReplaceToCompany] || []).filter(s => s.round !== session.round),
-                    { id: newSessionId, companyName: kReplaceToCompany, round: session.round },
-                ];
-                const headers = masterOrderData?.[0] || [];
-                const ws2 = XLSX.utils.aoa_to_sheet([headers, ...newRows]);
-                const wb2 = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb2, ws2, 'Sheet1');
-                const buf2 = XLSX.write(wb2, { bookType: 'xlsx', type: 'array' });
-                addedBatchFiles[newSessionId] = new File([buf2], `k교체_${kReplaceToCompany}_${session.round}차.xlsx`);
-                addedBatchMasterRows[newSessionId] = newRows;
-                addedBatchExpectedCounts[newSessionId] = newRows.length;
-                addedBatchPlatforms[newSessionId] = batchPlatforms[session.id] || '쿠팡';
-                removedIds.add(session.id);
-                sessionIdMap[session.id] = newSessionId;
-                newSelectedIds.delete(session.id);
-                newSelectedIds.add(newSessionId);
+                const replaced = applyRowReplacement(batchMasterRows[session.id] || [], optionColIdx);
+                const moved = replaced.filter(r => String(r?.[10] || '').replace(/\s+/g, '').normalize('NFC') === kToNorm);
+                const stay = replaced.filter(r => String(r?.[10] || '').replace(/\s+/g, '').normalize('NFC') !== kToNorm);
+                if (moved.length === 0) continue; // 이 세션엔 교체 대상 행이 없음 → 손대지 않음
+
+                const existingTarget = targetExistingByRound.get(session.round);
+                if (existingTarget) {
+                    // ★ 기존 target 세션에 "병합" — 조정금 등 원래 있던 행을 절대 밀어내지 않는다
+                    mergeAppendRows.set(existingTarget.id, [...(mergeAppendRows.get(existingTarget.id) || []), ...moved]);
+                    sessionIdMap[session.id] = existingTarget.id;
+                    newSelectedIds.add(existingTarget.id);
+                    dirtyIds.add(existingTarget.id);
+                } else {
+                    newTargetRowsByRound.set(session.round, [...(newTargetRowsByRound.get(session.round) || []), ...moved]);
+                    if (!newTargetPlatformByRound.has(session.round)) newTargetPlatformByRound.set(session.round, batchPlatforms[session.id] || '쿠팡');
+                }
+
+                if (stay.length > 0) {
+                    // from 세션은 유지하되, 교체 안 된 행만 남긴다
+                    updatedFromRows.set(session.id, stay);
+                    dirtyIds.add(session.id);
+                    newSelectedIds.add(session.id);
+                } else {
+                    removedIds.add(session.id);
+                    newSelectedIds.delete(session.id);
+                }
             }
+
+            if (removedIds.size === 0 && updatedFromRows.size === 0 && mergeAppendRows.size === 0 && newTargetRowsByRound.size === 0) {
+                alert('이 차수에서 교체 대상 행을 찾지 못했습니다.');
+                return;
+            }
+
+            // target에 세션이 없던 차수 → 새 세션 생성
+            for (const [round, rows] of newTargetRowsByRound.entries()) {
+                const newSessionId = `${kReplaceToCompany}-batch-${round}-${Date.now()}`;
+                newCompanySessions[kReplaceToCompany] = [
+                    ...(newCompanySessions[kReplaceToCompany] || []),
+                    { id: newSessionId, companyName: kReplaceToCompany, round },
+                ];
+                addedBatchFiles[newSessionId] = buildBatchFile(rows, `k교체_${kReplaceToCompany}_${round}차.xlsx`);
+                addedBatchMasterRows[newSessionId] = rows;
+                addedBatchExpectedCounts[newSessionId] = rows.length;
+                addedBatchPlatforms[newSessionId] = newTargetPlatformByRound.get(round) || '쿠팡';
+                newSelectedIds.add(newSessionId);
+                // 이 라운드의 from 세션들의 정산조정을 이 새 세션으로 이관
+                targetSessions.filter(s => s.round === round && !sessionIdMap[s.id]).forEach(s => { sessionIdMap[s.id] = newSessionId; });
+            }
+
+            // from 세션 정리: 통째로 사라지는 것만 companySessions에서 제거
             newCompanySessions[kReplaceFromCompany] = (newCompanySessions[kReplaceFromCompany] || []).filter(s => !removedIds.has(s.id));
             if (newCompanySessions[kReplaceFromCompany].length === 0) delete newCompanySessions[kReplaceFromCompany];
 
+            // 병합 대상별 최종 행 = 기존 target 세션 행 + 이번에 옮겨온 행 (조정금 등 기존 행 보존)
+            const mergedTargetRows = new Map<string, any[][]>();
+            mergeAppendRows.forEach((rows, id) => { mergedTargetRows.set(id, [...(batchMasterRows[id] || []), ...rows]); });
+
             setCompanySessions(newCompanySessions);
             setSelectedSessionIds(newSelectedIds);
-            setBatchFiles(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchFiles }; });
-            setBatchMasterRows(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchMasterRows }; });
-            setBatchExpectedCounts(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchExpectedCounts }; });
+            setBatchFiles(prev => {
+                const n = { ...prev };
+                removedIds.forEach(id => delete n[id]);
+                updatedFromRows.forEach((rows, id) => { n[id] = buildBatchFile(rows, prev[id]?.name || `${kReplaceFromCompany}_잔여.xlsx`); });
+                mergedTargetRows.forEach((rows, id) => { n[id] = buildBatchFile(rows, prev[id]?.name || `${kReplaceToCompany}_병합.xlsx`); });
+                return { ...n, ...addedBatchFiles };
+            });
+            setBatchMasterRows(prev => {
+                const n = { ...prev };
+                removedIds.forEach(id => delete n[id]);
+                updatedFromRows.forEach((rows, id) => { n[id] = rows; });
+                mergedTargetRows.forEach((rows, id) => { n[id] = rows; });
+                return { ...n, ...addedBatchMasterRows };
+            });
+            setBatchExpectedCounts(prev => {
+                const n = { ...prev };
+                removedIds.forEach(id => delete n[id]);
+                updatedFromRows.forEach((rows, id) => { n[id] = rows.length; });
+                mergedTargetRows.forEach((rows, id) => { n[id] = rows.length; });
+                return { ...n, ...addedBatchExpectedCounts };
+            });
             setBatchPlatforms(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return { ...n, ...addedBatchPlatforms }; });
 
-            // 옛 세션 ID에 남아있던 처리 결과(품목 합계·발주행 등)를 정리한다.
-            // 안 지우면 다음 차수의 누적 정산요약(previousRoundItems)이 교체 전 데이터를
-            // 계속 합산해 통합주문서업로드 정산요약이 실제 워크스테이션 화면과 어긋난다.
-            setAllItemSummaries(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setAllOrderRows(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setAllOrderItems(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setAllRegisteredNames(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setAllPreConsolidationByGroup(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setAllRowOrderNumbers(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setAllRowPricing(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setTotalsMap(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setExcludedCountsMap(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setAllExcludedDetails(prev => { const n = { ...prev }; removedIds.forEach(id => delete n[id]); return n; });
-            setOrderLitSessions(prev => { const n = new Set(prev); removedIds.forEach(id => n.delete(id)); return n; });
-            setInvoiceLitSessions(prev => { const n = new Set(prev); removedIds.forEach(id => n.delete(id)); return n; });
+            // 사라지는 from 세션의 캐시/문서는 완전히 정리. 살아있는(dirty) 세션은 로컬 캐시만 비워
+            // 새 배치파일 기준으로 재처리되게 하고, Firestore 문서는 재처리가 다시 채운다.
+            const clearIds = new Set<string>([...removedIds, ...dirtyIds]);
+            setAllItemSummaries(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setAllOrderRows(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setAllOrderItems(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setAllRegisteredNames(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setAllPreConsolidationByGroup(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setAllRowOrderNumbers(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setAllRowPricing(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setTotalsMap(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setExcludedCountsMap(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setAllExcludedDetails(prev => { const n = { ...prev }; clearIds.forEach(id => delete n[id]); return n; });
+            setOrderLitSessions(prev => { const n = new Set(prev); clearIds.forEach(id => n.delete(id)); return n; });
+            setInvoiceLitSessions(prev => { const n = new Set(prev); clearIds.forEach(id => n.delete(id)); return n; });
             removedIds.forEach(id => { handleDeleteSessionResult(id); });
 
-            // 옛 세션 ID에 붙어있던 정산 조정(통합CS관리에서 자동 기록한 추가/차감 포함)·워크플로우
-            // ·정산요약 수동수정 내역을 새 세션 ID로 옮긴다. 안 옮기면 세션 ID 자체가 없어져
-            // 화면 어디에도 표시되지 않는 채로 Firestore에 orphan 상태로 남아, 사용자 눈에는
-            // "삭제하지 말라고 했는데 지워졌다"처럼 보인다.
+            // 옛 from 세션 ID에 붙어있던 정산 조정·워크플로우·정산요약 수동수정 내역을 이관한다.
+            // 병합 대상(기존 target 세션)은 자기 내역이 이미 있을 수 있으므로 덮어쓰지 않고 합친다.
             Object.entries(sessionIdMap).forEach(([oldId, newId]) => {
-                (['sessionAdjustments', 'sessionWorkflows', 'summaryOverrides'] as const).forEach(key => {
+                if (oldId === newId) return;
+                const oldAdj = (workspace as any)?.sessionAdjustments?.[oldId];
+                if (Array.isArray(oldAdj) && oldAdj.length > 0) {
+                    const existing = (workspace as any)?.sessionAdjustments?.[newId];
+                    const mergedAdj = Array.isArray(existing) ? [...existing, ...oldAdj] : oldAdj;
+                    updateWorkspaceSessionField(`sessionAdjustments.${newId}`, mergedAdj);
+                    updateWorkspaceSessionField(`sessionAdjustments.${oldId}`, deleteField());
+                }
+                (['sessionWorkflows', 'summaryOverrides'] as const).forEach(key => {
                     const oldValue = (workspace as any)?.[key]?.[oldId];
                     if (oldValue === undefined) return;
-                    updateWorkspaceSessionField(`${key}.${newId}`, oldValue);
+                    const existing = (workspace as any)?.[key]?.[newId];
+                    if (existing === undefined) updateWorkspaceSessionField(`${key}.${newId}`, oldValue);
                     updateWorkspaceSessionField(`${key}.${oldId}`, deleteField());
                 });
             });
