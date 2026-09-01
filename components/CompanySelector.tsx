@@ -822,6 +822,68 @@ function diffRoutingLoss(
     return out;
 }
 
+/** 선택한 차수 행에서 kFrom(K열)과 일치하는 행들이 실제로 매칭되는 a업체 품목 displayName 목록 */
+function matchedFromProductList(rows: any[][], kFrom: string, fromProducts: Record<string, import('../types').ProductPricing>, optionColIdx: number): string[] {
+    const set = new Set<string>();
+    for (const r of rows) {
+        if (!r || String(r[10] || '').trim() !== kFrom) continue;
+        const rowL = String(r[11] || '').trim();
+        let rpn = `${kFrom} ${rowL}`.trim();
+        if (optionColIdx !== -1 && r[optionColIdx]) rpn += ' ' + String(r[optionColIdx]).trim();
+        const dn = matchProductSync(rpn, fromProducts, kFrom);
+        if (dn) set.add(dn);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, 'ko'));
+}
+
+/**
+ * a업체 품목 displayName 목록 → b업체 품목 displayName 자동 매핑.
+ * 업체명 토큰을 제거한 "핵심어" + kg 수치로 최적 후보를 고른다. 확신 없으면 비워둔다(수동 선택).
+ */
+function autoMapProducts(
+    fromList: string[],
+    fromCompany: string,
+    toCompany: string,
+    cfg: import('../types').PricingConfig,
+): Record<string, string> {
+    const toProducts = cfg[toCompany]?.products || {};
+    const coTokens = (name: string) => [name, ...getKeywordsForCompany(name, cfg)].filter(Boolean) as string[];
+    const stripCo = (s: string, name: string) => {
+        let out = s;
+        for (const t of coTokens(name)) if (t) out = out.split(t).join(' ');
+        return out;
+    };
+    const kgOf = (s: string) => { const m = String(s).match(/(\d+(?:\.\d+)?)\s*kg/i); return m ? m[1].replace(/\.0$/, '') : null; };
+    const core = (s: string) => s.toLowerCase().replace(/(\d+(?:\.\d+)?)\s*kg/ig, '').replace(/[^가-힣a-z0-9]/g, '');
+    const out: Record<string, string> = {};
+    const toEntries = Object.values(toProducts);
+    for (const fromDN of fromList) {
+        const fCore = core(stripCo(fromDN, fromCompany));
+        const fKg = kgOf(fromDN);
+        let best: string | null = null;
+        let bestScore = 0;
+        for (const p of toEntries) {
+            const tName = p.displayName || '';
+            const tCore = core(stripCo(tName, toCompany));
+            const tKg = kgOf(tName);
+            if (fKg && tKg && fKg !== tKg) continue; // kg 불일치 후보 제외
+            let score = 0;
+            if (fCore && tCore) {
+                if (fCore === tCore) score = 100;
+                else if (fCore.includes(tCore) || tCore.includes(fCore)) score = 50 + Math.min(fCore.length, tCore.length);
+                else { const setT = new Set(tCore); score = [...new Set(fCore)].filter(c => setT.has(c)).length; }
+            }
+            // siteProductName이 핵심어에 포함되면 가산
+            if (p.siteProductName && fCore.includes(core(p.siteProductName))) score += 15;
+            if (fKg && tKg && fKg === tKg) score += 20;
+            if (toEntries.length === 1) score = Math.max(score, 10);
+            if (score > bestScore) { bestScore = score; best = tName; }
+        }
+        if (best && bestScore >= 10) out[fromDN] = best;
+    }
+    return out;
+}
+
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
@@ -5156,9 +5218,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         const idx = e.target.value.indexOf('::');
                                         const company = e.target.value.slice(0, idx);
                                         const kw = e.target.value.slice(idx + 2);
-                                        if (company !== kReplaceToCompany) setKReplaceProductMap({});
                                         setKReplaceTo(kw);
                                         setKReplaceToCompany(company);
+                                        // 품목 매핑 자동 채우기 (수동으로 하나씩 고르는 수고 제거 — 확신 없는 항목만 비워둠)
+                                        if (kReplaceFrom && kReplaceFromCompany) {
+                                            const fromProducts = (pricingConfig as import('../types').PricingConfig)[kReplaceFromCompany]?.products || {};
+                                            const hdrs = ((masterOrderData?.[0] as any[]) || []).map((h: any) => String(h || '').trim());
+                                            let oi = hdrs.findIndex((h: string) => h.includes('옵션정보'));
+                                            if (oi === -1) oi = hdrs.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
+                                            const fromList = matchedFromProductList(roundRows, kReplaceFrom, fromProducts, oi);
+                                            setKReplaceProductMap(autoMapProducts(fromList, kReplaceFromCompany, company, pricingConfig as import('../types').PricingConfig));
+                                        } else {
+                                            setKReplaceProductMap({});
+                                        }
                                     }}
                                     className="w-full bg-zinc-900 border border-zinc-700 text-zinc-200 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50"
                                 >
@@ -5192,7 +5264,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     return (
                                         <>
                                             <div className="h-px bg-zinc-800 my-0.5" />
-                                            <span className="text-[9px] font-black text-zinc-600 uppercase tracking-wide">품목 매핑 ({kReplaceFromCompany} → {kReplaceToCompany || '?'})</span>
+                                            <div className="flex items-center justify-between gap-1">
+                                                <span className="text-[9px] font-black text-zinc-600 uppercase tracking-wide">품목 매핑 ({kReplaceFromCompany} → {kReplaceToCompany || '?'})</span>
+                                                {kReplaceToCompany && (
+                                                    <button
+                                                        onClick={() => setKReplaceProductMap(autoMapProducts(fromList, kReplaceFromCompany, kReplaceToCompany, pricingConfig as import('../types').PricingConfig))}
+                                                        className="shrink-0 text-[9px] font-black text-amber-400 hover:text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/30 hover:border-amber-400/50 transition-all"
+                                                        title="이름·kg 기준으로 자동 채우기 (확신 없는 항목은 비워둠)"
+                                                    >✨ 자동 매칭</button>
+                                                )}
+                                            </div>
                                             {fromList.map(fromDN => (
                                                 <div key={fromDN} className="flex flex-col gap-0.5">
                                                     <span className="text-[10px] text-zinc-500 truncate">{fromDN}</span>
@@ -5205,7 +5286,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             return next;
                                                         })}
                                                         disabled={!kReplaceToCompany}
-                                                        className="w-full bg-zinc-900 border border-zinc-700 text-zinc-300 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50 disabled:opacity-40"
+                                                        className={`w-full bg-zinc-900 border text-zinc-300 text-[11px] font-bold rounded-lg px-2 py-1.5 focus:outline-none focus:border-amber-500/50 disabled:opacity-40 ${kReplaceProductMap[fromDN] ? 'border-zinc-700' : 'border-rose-500/50'}`}
                                                     >
                                                         <option value="">{kReplaceToCompany ? '→ 새 업체 품목명 선택' : '(K열 대상 먼저 선택)'}</option>
                                                         {targetProducts.map(v => (
