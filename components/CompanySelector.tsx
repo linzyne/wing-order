@@ -751,7 +751,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             await saveSessionResult(sessionId, data, businessId);
         } catch (e: any) {
             console.error('[Firestore] 세션 결과 저장 실패:', e);
-            alert('⚠️ Firestore 저장 실패: 정산 데이터가 저장되지 않았습니다. Firebase 용량 초과 여부를 확인해주세요.');
+            const code = String(e?.code || e?.message || '');
+            if (code.includes('invalid-argument') || code.includes('longer than') || code.includes('exceeds the maximum')) {
+                alert('⚠️ 정산 데이터가 너무 커서 저장되지 않았습니다. 송장 파일을 나눠서 업로드해 주세요.\n(화면에 보이는 결과·다운로드는 정상이지만 다른 기기와 동기화되지 않습니다.)');
+            } else {
+                alert('⚠️ Firestore 저장 실패: 정산 데이터가 저장되지 않았습니다. 네트워크 상태를 확인하거나 잠시 후 다시 시도해 주세요.\n(' + code + ')');
+            }
         }
     }, [businessId]);
 

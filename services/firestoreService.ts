@@ -283,16 +283,41 @@ export interface DailyWorkspaceData {
 
 const getTodayDocId = () => new Date().toLocaleDateString('en-CA');
 
-// ===== Session Results (별도 문서 — 대용량 데이터 분리) =====
+// ===== Session Results (세션별 문서 분리 — Firestore 1 MiB/문서 한도 회피) =====
+//
+// 예전 구조: 하루치 문서 1개(`{collName}/{today}`)에 { [sessionId]: data } 를 merge 로 계속 쌓음.
+//            통합송장변환처럼 업체·송장이 많으면 이 문서 하나가 1 MiB 를 넘어 setDoc 이 거부됨.
+// 현재 구조: `{collName}/{today}/entries/{sessionId}` 하위 컬렉션에 세션마다 문서 1개.
+//            (예전 하루 문서에 남아있는 데이터는 load 시 fallback 으로 함께 읽어 마이그레이션)
 
 const getSessionsCollectionName = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'dailyWorkspaceSessions' : `dailyWorkspaceSessions_${businessId}`;
 
+const SESSION_ENTRIES_SUBCOLLECTION = 'entries';
+
+const getSessionEntriesRef = (businessId?: string) =>
+  collection(db, getSessionsCollectionName(businessId), getTodayDocId(), SESSION_ENTRIES_SUBCOLLECTION);
+
+const getSessionEntryRef = (sessionId: string, businessId?: string) =>
+  doc(db, getSessionsCollectionName(businessId), getTodayDocId(), SESSION_ENTRIES_SUBCOLLECTION, sessionId);
+
 export const loadSessionResults = async (businessId?: string): Promise<Record<string, SessionResultData> | null> => {
   try {
-    const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
-    const snapshot = await getDoc(docRef);
-    return snapshot.exists() ? (snapshot.data() as Record<string, SessionResultData>) : null;
+    const result: Record<string, SessionResultData> = {};
+    // 예전 하루 문서(fallback): 아직 하위 컬렉션으로 옮겨지지 않은 세션 데이터
+    try {
+      const legacySnap = await getDoc(doc(db, getSessionsCollectionName(businessId), getTodayDocId()));
+      if (legacySnap.exists()) {
+        for (const [sid, data] of Object.entries(legacySnap.data() || {})) {
+          if (sid === 'updatedAt') continue;
+          result[sid] = data as SessionResultData;
+        }
+      }
+    } catch { /* 예전 문서가 없거나 접근 불가면 무시 */ }
+    // 현재 구조: 세션별 문서 (있으면 예전 값을 덮어씀)
+    const entriesSnap = await getDocs(getSessionEntriesRef(businessId));
+    entriesSnap.forEach(d => { result[d.id] = d.data() as SessionResultData; });
+    return Object.keys(result).length > 0 ? result : null;
   } catch (e) {
     if (isQuotaError(e)) notifyQuotaExceeded();
     return null;
@@ -303,9 +328,11 @@ export const subscribeSessionResults = (
   callback: (results: Record<string, SessionResultData> | null) => void,
   businessId?: string
 ): Unsubscribe => {
-  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
-  return onSnapshot(docRef, (snapshot) => {
-    callback(snapshot.exists() ? (snapshot.data() as Record<string, SessionResultData>) : null);
+  return onSnapshot(getSessionEntriesRef(businessId), (snapshot) => {
+    if (snapshot.empty) { callback(null); return; }
+    const result: Record<string, SessionResultData> = {};
+    snapshot.forEach(d => { result[d.id] = d.data() as SessionResultData; });
+    callback(result);
   }, (error) => {
     console.error('[Firestore] SessionResults 구독 오류:', error);
     callback(null);
@@ -317,8 +344,8 @@ export const saveSessionResult = async (
   data: SessionResultData,
   businessId?: string
 ): Promise<void> => {
-  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
-  await setDoc(docRef, { [sessionId]: data }, { merge: true });
+  // merge:true — 별도로 저장된 timeLabel 등 이 data 에 없는 필드를 보존 (예전 하루 문서 구조와 동일 동작)
+  await setDoc(getSessionEntryRef(sessionId, businessId), data, { merge: true });
 };
 
 // 세션 결과 전체(orderRows 등)를 다시 쓰지 않고 timeLabel 필드만 부분 갱신 (merge:true라 나머지 필드는 그대로 유지됨)
@@ -327,21 +354,31 @@ export const saveSessionTimeLabel = async (
   timeLabel: string,
   businessId?: string
 ): Promise<void> => {
-  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
-  await setDoc(docRef, { [sessionId]: { timeLabel } }, { merge: true });
+  await setDoc(getSessionEntryRef(sessionId, businessId), { timeLabel }, { merge: true });
 };
 
 export const deleteSessionResult = async (
   sessionId: string,
   businessId?: string
 ): Promise<void> => {
-  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
-  await setDoc(docRef, { [sessionId]: deleteField() }, { merge: true });
+  await deleteDoc(getSessionEntryRef(sessionId, businessId));
+  // 예전 하루 문서에 남아있을 수 있는 동일 세션 필드도 제거
+  try {
+    await setDoc(
+      doc(db, getSessionsCollectionName(businessId), getTodayDocId()),
+      { [sessionId]: deleteField() },
+      { merge: true }
+    );
+  } catch { /* 예전 문서가 없으면 무시 */ }
 };
 
 export const clearSessionResults = async (businessId?: string): Promise<void> => {
-  const docRef = doc(db, getSessionsCollectionName(businessId), getTodayDocId());
-  await deleteDoc(docRef);
+  const entriesSnap = await getDocs(getSessionEntriesRef(businessId));
+  await Promise.all(entriesSnap.docs.map(d => deleteDoc(d.ref)));
+  // 예전 하루 문서도 함께 삭제
+  try {
+    await deleteDoc(doc(db, getSessionsCollectionName(businessId), getTodayDocId()));
+  } catch { /* 없으면 무시 */ }
 };
 
 export const subscribeDailyWorkspace = (
