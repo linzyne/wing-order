@@ -139,6 +139,8 @@ const App: React.FC = () => {
   const [showBulkDepositModal, setShowBulkDepositModal] = useState(false);
   const [bulkPasteText, setBulkPasteText] = useState(() => loadPersistedBulkDepositPaste());
   const [bulkBaseRowsMap, setBulkBaseRowsMap] = useState<Record<string, any[][]>>({});
+  // 붙여넣기로 매칭된 "직접 입력" 행 — 텍스트에서 파싱해 seed하되, 셀 클릭으로 개별 편집 가능
+  const [bulkExtraRowsMap, setBulkExtraRowsMap] = useState<Record<string, DepositExtraRow[]>>({});
   const [bulkPasteSummary, setBulkPasteSummary] = useState<{ counts: { name: string; count: number }[]; unmatched: number; total: number } | null>(null);
 
   useEffect(() => {
@@ -204,8 +206,10 @@ const App: React.FC = () => {
     });
     setBulkBaseRowsMap(loaded);
     // 직접 입력한 내용은 "초기화" 누르기 전까지 유지 (모달을 닫았다 다시 열어도 보존)
+    // 저장된 붙여넣기 텍스트에서 편집용 행을 seed
+    setBulkExtraRowsMap(parseBulkDepositLines(bulkPasteText).grouped);
     setShowBulkDepositModal(true);
-  }, [allBusinesses]);
+  }, [allBusinesses, bulkPasteText, parseBulkDepositLines]);
   const sharedSuppliers = useSharedSuppliers();
   const { courierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates();
 
@@ -1309,11 +1313,12 @@ const App: React.FC = () => {
 
       {/* 일괄 입금목록 모달 */}
       {showBulkDepositModal && (() => {
-        const { grouped, unmatched } = parseBulkDepositLines(bulkPasteText);
+        const { unmatched } = parseBulkDepositLines(bulkPasteText);
+        const grouped = bulkExtraRowsMap;
         // 기존 행이 있거나 붙여넣기 매칭된 사업자 모두 표시
         const allRelevantIds = [...new Set([
           ...Object.keys(bulkBaseRowsMap).filter(id => (bulkBaseRowsMap[id]?.length ?? 0) > 0),
-          ...Object.keys(grouped),
+          ...Object.keys(grouped).filter(id => (grouped[id]?.length ?? 0) > 0),
         ])];
         const handleDownload = () => {
           if (allRelevantIds.length === 0) { alert('다운로드할 내역이 없습니다.'); return; }
@@ -1326,13 +1331,32 @@ const App: React.FC = () => {
           });
           setShowBulkDepositModal(false);
         };
+        // 셀 클릭 편집 — 발주서 자동생성(base) 행
+        const updateBaseCell = (id: string, rowIdx: number, colIdx: number, raw: string) => {
+          setBulkBaseRowsMap(prev => {
+            const rows = (prev[id] ?? []).map(r => [...r]);
+            if (!rows[rowIdx]) return prev;
+            rows[rowIdx][colIdx] = colIdx === 2 ? (Number(raw.replace(/[,\s원]/g, '')) || 0) : raw;
+            return { ...prev, [id]: rows };
+          });
+        };
+        // 셀 클릭 편집 — 직접 입력(extra) 행
+        const updateExtraCell = (id: string, rowIdx: number, key: keyof DepositExtraRow, value: string) => {
+          setBulkExtraRowsMap(prev => {
+            const rows = (prev[id] ?? []).map(r => ({ ...r }));
+            if (!rows[rowIdx]) return prev;
+            rows[rowIdx][key] = value;
+            return { ...prev, [id]: rows };
+          });
+        };
+        const cellInput = "w-full bg-transparent outline-none rounded px-1 -mx-1 py-0.5 focus:bg-zinc-900 focus:ring-1 focus:ring-emerald-500/40 transition-colors";
         return (
           <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={e => { if (e.target === e.currentTarget) setShowBulkDepositModal(false); }}>
             <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
                 <div>
                   <h3 className="text-white font-black text-sm">일괄 입금목록</h3>
-                  <p className="text-zinc-500 text-[11px] mt-0.5">붙여넣기 — 열 순서: 은행 / 계좌번호 / 금액 / 이름 / 사업자명 환불</p>
+                  <p className="text-zinc-500 text-[11px] mt-0.5">붙여넣기 — 열 순서: 은행 / 계좌번호 / 금액 / 이름 / 사업자명 환불 · 표의 셀을 클릭해 직접 수정</p>
                 </div>
                 <button onClick={() => setShowBulkDepositModal(false)} className="text-zinc-500 hover:text-white transition-colors p-1">
                   <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1369,10 +1393,10 @@ const App: React.FC = () => {
                         <tbody className="divide-y divide-zinc-900">
                           {baseRows.map((r, i) => (
                             <tr key={`base-${i}`} className="text-zinc-400 group">
-                              <td className="px-3 py-1.5">{r[0]}</td>
-                              <td className="px-3 py-1.5 font-mono">{r[1]}</td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400">{Number(r[2]).toLocaleString()}</td>
-                              <td className="px-3 py-1.5 text-zinc-500">{r[3]}</td>
+                              <td className="px-3 py-1.5"><input className={cellInput} value={r[0] ?? ''} onChange={e => updateBaseCell(id, i, 0, e.target.value)} /></td>
+                              <td className="px-3 py-1.5 font-mono"><input className={cellInput} value={r[1] ?? ''} onChange={e => updateBaseCell(id, i, 1, e.target.value)} /></td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400"><input className={`${cellInput} text-right`} inputMode="numeric" value={r[2] ?? ''} onChange={e => updateBaseCell(id, i, 2, e.target.value)} /></td>
+                              <td className="px-3 py-1.5 text-zinc-500"><input className={cellInput} value={r[3] ?? ''} onChange={e => updateBaseCell(id, i, 3, e.target.value)} /></td>
                               <td className="px-3 py-1.5">
                                 <button
                                   onClick={() => setBulkBaseRowsMap(prev => ({ ...prev, [id]: (prev[id] ?? []).filter((_, j) => j !== i) }))}
@@ -1384,12 +1408,19 @@ const App: React.FC = () => {
                             </tr>
                           ))}
                           {extraRows.map((r, i) => (
-                            <tr key={`extra-${i}`} className="text-zinc-500 bg-emerald-950/20">
-                              <td className="px-3 py-1.5">{r.bankName}</td>
-                              <td className="px-3 py-1.5 font-mono">{r.accountNumber}</td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400">{Number(r.amount).toLocaleString()}</td>
-                              <td className="px-3 py-1.5 text-zinc-600">{r.label}</td>
-                              <td className="px-3 py-1.5" />
+                            <tr key={`extra-${i}`} className="text-zinc-500 bg-emerald-950/20 group">
+                              <td className="px-3 py-1.5"><input className={cellInput} value={r.bankName} onChange={e => updateExtraCell(id, i, 'bankName', e.target.value)} /></td>
+                              <td className="px-3 py-1.5 font-mono"><input className={cellInput} value={r.accountNumber} onChange={e => updateExtraCell(id, i, 'accountNumber', e.target.value)} /></td>
+                              <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400"><input className={`${cellInput} text-right`} value={r.amount} onChange={e => updateExtraCell(id, i, 'amount', e.target.value)} /></td>
+                              <td className="px-3 py-1.5 text-zinc-600"><input className={cellInput} value={r.label} onChange={e => updateExtraCell(id, i, 'label', e.target.value)} /></td>
+                              <td className="px-3 py-1.5">
+                                <button
+                                  onClick={() => setBulkExtraRowsMap(prev => ({ ...prev, [id]: (prev[id] ?? []).filter((_, j) => j !== i) }))}
+                                  className="text-zinc-700 hover:text-rose-400 transition-colors opacity-0 group-hover:opacity-100"
+                                >
+                                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -1403,7 +1434,7 @@ const App: React.FC = () => {
                     <p className="text-zinc-600 text-[10px] font-bold">엑셀에서 복사 후 붙여넣기 (열 순서: 은행 / 계좌번호 / 금액 / 이름 / 사업자명 환불)</p>
                     {bulkPasteText.trim() && (
                       <button
-                        onClick={() => { if (window.confirm('직접 입력한 내용을 모두 지울까요?')) setBulkPasteText(''); }}
+                        onClick={() => { if (window.confirm('직접 입력한 내용을 모두 지울까요?')) { setBulkPasteText(''); setBulkExtraRowsMap({}); } }}
                         className="flex-shrink-0 ml-2 px-2 py-0.5 text-[10px] font-bold text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-950/70 border border-rose-500/30 rounded-lg transition-all"
                       >
                         초기화
@@ -1413,7 +1444,11 @@ const App: React.FC = () => {
                   <textarea
                     rows={4}
                     value={bulkPasteText}
-                    onChange={e => setBulkPasteText(e.target.value)}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setBulkPasteText(v);
+                      setBulkExtraRowsMap(parseBulkDepositLines(v).grouped);
+                    }}
                     onPaste={e => {
                       const el = e.currentTarget;
                       setTimeout(() => {
@@ -1440,9 +1475,11 @@ const App: React.FC = () => {
               <div className="px-6 py-4 border-t border-zinc-800 flex items-center justify-between gap-2">
                 <button
                   onClick={() => {
-                    if (!bulkPasteText.trim()) { alert('직접 붙여넣은 내역이 없습니다. (발주서 자동 생성분은 초기화 대상이 아닙니다)'); return; }
+                    const hasExtra = !!bulkPasteText.trim() || Object.values(bulkExtraRowsMap).some((rows: DepositExtraRow[]) => (rows?.length ?? 0) > 0);
+                    if (!hasExtra) { alert('직접 붙여넣은 내역이 없습니다. (발주서 자동 생성분은 초기화 대상이 아닙니다)'); return; }
                     if (window.confirm('직접 붙여넣은 입금 내역을 모두 삭제할까요?\n발주서에서 자동 생성된 내역은 그대로 유지됩니다.')) {
                       setBulkPasteText('');
+                      setBulkExtraRowsMap({});
                       setBulkPasteSummary(null);
                     }
                   }}
