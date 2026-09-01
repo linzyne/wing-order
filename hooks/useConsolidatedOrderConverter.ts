@@ -10,6 +10,9 @@ declare var XLSX: any;
 // 모듈 수준 Gemini 캐시 — 동일 세션 내 재처리 시 동일 품목명 재질의 방지
 const geminiProductCache: Map<string, [string, ProductPricing] | null> = new Map();
 export function clearProductMatchCache() { geminiProductCache.clear(); }
+// 마지막으로 매칭 처리한 마스터 파일의 식별자. 파일이 바뀌면(등록상품명 교체 등) 캐시를 비운다 —
+// 안 비우면 이전 파일 때의 매칭 결과(특히 매칭 실패=null)가 재사용되어 무관한 발주서까지 오염된다.
+let lastProcessedFileKey = '';
 export function preSetProductMatchCache(cacheKey: string, value: [string, ProductPricing]): void { geminiProductCache.set(cacheKey, value); }
 
 export interface OrderItem {
@@ -1211,6 +1214,11 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
             let headers: any[] = [];
 
             if (file) {
+                const fileKey = `${file.name}::${file.size}::${(file as any).lastModified ?? ''}`;
+                if (fileKey !== lastProcessedFileKey) {
+                    geminiProductCache.clear();
+                    lastProcessedFileKey = fileKey;
+                }
                 const data = await file.arrayBuffer();
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];

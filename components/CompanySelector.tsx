@@ -735,6 +735,93 @@ function matchProductSync(
     return null;
 }
 
+/**
+ * 각 마스터 행이 어느 업체 발주서로 라우팅되는지 동기 시뮬레이션.
+ * useConsolidatedOrderConverter.processSingleCompanyFile 의 업체 라우팅 로직(1230~1273행)과 동일하게 맞춘다.
+ * 반환: rows[i] → 업체명 ('' = 어느 발주서에도 안 들어감)
+ */
+function simulateCompanyRouting(rows: any[][], cfg: import('../types').PricingConfig): string[] {
+    const norm = (s: string) => s.replace(/\s+/g, '').normalize('NFC');
+    const kwMap = new Map<string, string[]>();
+    Object.keys(cfg).forEach(name => kwMap.set(name, getKeywordsForCompany(name, cfg).map(norm)));
+    return rows.map(row => {
+        if (!row) return '';
+        const rawGroup = norm(String(row[10] || ''));
+        const groupVal = rawGroup || norm(String(row[11] || ''));
+        let best = '';
+        let bestPos = Infinity;
+        if (rawGroup) {
+            // K열이 있으면 등록상품명과 완전일치만 허용
+            for (const [name, kws] of kwMap.entries()) {
+                if (kws.some(k => rawGroup === k)) { best = name; break; }
+            }
+        } else {
+            for (const [name, kws] of kwMap.entries()) {
+                for (const k of kws) {
+                    const pos = groupVal.indexOf(k);
+                    if (pos !== -1 && pos < bestPos) { bestPos = pos; best = name; }
+                }
+            }
+        }
+        // K열이 비어있을 때만 전체 행 폴백
+        if (!best && !rawGroup) {
+            const fullRowText = norm(row.map((v: any) => String(v || '')).join(' '));
+            for (const [name, kws] of kwMap.entries()) {
+                for (const k of kws) {
+                    const pos = fullRowText.indexOf(k);
+                    if (pos !== -1 && pos < bestPos) { bestPos = pos; best = name; }
+                }
+            }
+        }
+        return best;
+    });
+}
+
+/**
+ * 등록상품명 교체 전/후 라우팅을 비교해, 교체로 인해 "발주서에서 빠지거나 의도치 않게 다른 업체로 옮겨가는" 행을 찾는다.
+ * beforeRows/afterRows 는 같은 순서·같은 길이여야 한다 (헤더 제외).
+ */
+function diffRoutingLoss(
+    beforeRows: any[][],
+    afterRows: any[][],
+    cfg: import('../types').PricingConfig,
+    replacedFromK: string,
+    optionColIdx: number,
+): string[] {
+    const before = simulateCompanyRouting(beforeRows, cfg);
+    const after = simulateCompanyRouting(afterRows, cfg);
+    const matchesProduct = (row: any[], company: string): boolean => {
+        if (!company) return false;
+        const products = (cfg[company]?.products) || {};
+        if (Object.keys(products).length === 0) return false;
+        const k = String(row[10] || '').trim();
+        const l = String(row[11] || '').trim();
+        let rawPN = `${k} ${l}`.trim();
+        if (optionColIdx !== -1 && row[optionColIdx]) rawPN += ' ' + String(row[optionColIdx]).trim();
+        return matchProductSync(rawPN, products, k) !== null;
+    };
+    const out: string[] = [];
+    for (let i = 0; i < before.length; i++) {
+        const row = beforeRows[i];
+        const rowAfter = afterRows[i];
+        if (!row) continue;
+        const kBefore = String(row[10] || '').trim();
+        const rname = String(row[26] || '').trim() || '이름없음';
+        const onum = String(row[2] || '').trim() || '주문번호없음';
+        const okBefore = !!before[i] && matchesProduct(row, before[i]);
+        const okAfter = !!after[i] && !!rowAfter && matchesProduct(rowAfter, after[i]);
+        if (!okBefore) continue; // 원래부터 발주서에 못 들어가던 행은 이 교체의 책임이 아님
+        if (!after[i]) {
+            out.push(`${rname} / ${onum} / K="${kBefore}"  → ${before[i]} 발주서에서 빠짐 (라우팅 실패)`);
+        } else if (!okAfter) {
+            out.push(`${rname} / ${onum} / K="${kBefore}"  → ${after[i]} 로 갔지만 품목 매칭 실패로 누락`);
+        } else if (before[i] !== after[i] && kBefore !== replacedFromK) {
+            out.push(`${rname} / ${onum} / K="${kBefore}"  → ${before[i]}→${after[i]} 로 이동 (교체 대상 아님)`);
+        }
+    }
+    return out;
+}
+
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
@@ -939,6 +1026,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [kReplaceProductMap, setKReplaceProductMap] = useState<Record<string, string>>({}); // a업체 displayName → b업체 displayName
     const [kReplaceHistory, setKReplaceHistory] = useState<{ from: string; to: string; productMap?: Record<string, string> }[]>([]);
     const [kReplaceRound, setKReplaceRound] = useState<number | null>(null); // null=1차수(마스터), n=n차 batch
+    // 첫 등록상품명 교체 직전의 1차 마스터 스냅샷 — "원본으로 되돌리기"용.
+    // 교체는 L열(상품명)을 파괴적으로 덮어쓰므로, 이 스냅샷 없이는 되돌릴 방법이 없다.
+    const [kReplaceUndoSnapshot, setKReplaceUndoSnapshot] = useState<{
+        file: File; data: any[][]; platformSources: (string | null)[]; platforms: { name: string; count: number }[];
+    } | null>(null);
 
     // rowPlatformSources + masterOrderData → 주문번호→플랫폼 Map 생성
     const orderPlatformMap = useMemo(() => {
@@ -2084,6 +2176,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setKReplaceToCompany('');
             setKReplaceProductMap({});
             setKReplaceHistory([]);
+            setKReplaceUndoSnapshot(null);
+            clearProductMatchCache();
 
             // 기존 수동 입금내역이 있으면 포함 여부 확인
             if (manualTransfers.length > 0) {
@@ -2111,6 +2205,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setKReplaceProductMap({});
         setKReplaceHistory([]);
         setKReplaceRound(null);
+        setKReplaceUndoSnapshot(null);
+        clearProductMatchCache();
         setBatchFiles({});
         setBatchExpectedCounts({});
         setBatchMasterRows({});
@@ -2180,8 +2276,35 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             let optionColIdx = headers0.findIndex((h: string) => h.includes('옵션정보'));
             if (optionColIdx === -1) optionColIdx = headers0.findIndex((h: string) => h.includes('옵션') && !h.includes('관리코드') && !h.includes('번호'));
 
-            const updated = [masterOrderData[0], ...applyRowReplacement(masterOrderData.slice(1), optionColIdx)];
-            const changedCount = updated.slice(1).filter((r, i) => String(r[10] || '') !== String(masterOrderData[i + 1]?.[10] || '')).length;
+            const beforeRows = masterOrderData.slice(1);
+            const afterRows = applyRowReplacement(beforeRows, optionColIdx);
+            const updated = [masterOrderData[0], ...afterRows];
+            const changedCount = afterRows.filter((r, i) => String(r[10] || '') !== String(beforeRows[i]?.[10] || '') || String(r[11] || '') !== String(beforeRows[i]?.[11] || '')).length;
+
+            // ── 안전장치: 교체로 발주서에서 빠지거나 의도치 않게 다른 업체로 옮겨가는 행 경고 ──
+            const losses = diffRoutingLoss(beforeRows, afterRows, pricingConfig as import('../types').PricingConfig, kReplaceFrom, optionColIdx);
+            if (losses.length > 0) {
+                const shown = losses.slice(0, 20).join('\n');
+                const more = losses.length > 20 ? `\n… 외 ${losses.length - 20}건` : '';
+                if (!confirm(`⚠️ 이 교체를 적용하면 아래 ${losses.length}건이 발주서에서 빠지거나 다른 업체로 옮겨집니다.\n(조정금·특수 행처럼 교체 대상이 아닌 행도 포함될 수 있습니다)\n\n${shown}${more}\n\n[확인] 그래도 교체  |  [취소] 중단`)) {
+                    return;
+                }
+            }
+
+            // 첫 교체 직전 원본 스냅샷 저장 (되돌리기용)
+            if (!kReplaceUndoSnapshot) {
+                setKReplaceUndoSnapshot({
+                    file: masterOrderFile,
+                    data: masterOrderData,
+                    platformSources: rowPlatformSources,
+                    platforms: uploadedPlatforms,
+                });
+            }
+
+            // 마스터가 바뀌므로 품목 매칭 캐시를 비운다 — 안 비우면 이전 교체 때의
+            // 잘못된/실패한 매칭 결과가 그대로 재사용되어 무관한 발주서까지 오염된다.
+            clearProductMatchCache();
+
             setMasterOrderData(updated);
             if (changedCount > 0) {
                 // 실제로 행이 변경된 경우에만 새 File 생성 (불필요한 1차수 재트리거 방지)
@@ -2208,6 +2331,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const targetSessions = (companySessions[kReplaceFromCompany] || [])
                 .filter(s => s.round === kReplaceRound && !!batchFiles[s.id]);
             if (targetSessions.length === 0) return;
+
+            // ── 안전장치: 교체로 발주서에서 빠지거나 의도치 않게 다른 업체로 옮겨가는 행 경고 ──
+            const batchLosses: string[] = [];
+            for (const session of targetSessions) {
+                const beforeRows = batchMasterRows[session.id] || [];
+                const afterRows = applyRowReplacement(beforeRows, optionColIdx);
+                batchLosses.push(...diffRoutingLoss(beforeRows, afterRows, pricingConfig as import('../types').PricingConfig, kReplaceFrom, optionColIdx));
+            }
+            if (batchLosses.length > 0) {
+                const shown = batchLosses.slice(0, 20).join('\n');
+                const more = batchLosses.length > 20 ? `\n… 외 ${batchLosses.length - 20}건` : '';
+                if (!confirm(`⚠️ 이 교체를 적용하면 아래 ${batchLosses.length}건이 발주서에서 빠지거나 다른 업체로 옮겨집니다.\n(조정금·특수 행처럼 교체 대상이 아닌 행도 포함될 수 있습니다)\n\n${shown}${more}\n\n[확인] 그래도 교체  |  [취소] 중단`)) {
+                    return;
+                }
+            }
+
+            // 마스터가 바뀌므로 품목 매칭 캐시를 비운다 (1차 경로와 동일한 이유)
+            clearProductMatchCache();
 
             const newCompanySessions = { ...companySessions };
             const addedBatchFiles: Record<string, File> = {};
@@ -2286,6 +2427,28 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setKReplaceTo('');
         setKReplaceToCompany('');
         setKReplaceProductMap({});
+    };
+
+    // 등록상품명 교체를 모두 취소하고 첫 교체 직전(업로드 직후)의 1차 마스터로 되돌린다.
+    // 교체는 L열(상품명)을 파괴적으로 덮어써서 "다시 원래대로 교체"로는 복구가 안 되므로,
+    // 스냅샷을 그대로 복원하는 것이 유일하게 안전한 되돌리기다.
+    const restoreOriginalMaster = () => {
+        if (!kReplaceUndoSnapshot) return;
+        if (!confirm('등록상품명 교체를 모두 취소하고 업로드 직후의 원본 1차 마스터로 되돌립니다.\n(이미 만든 N차 세션은 그대로 유지됩니다)\n\n계속할까요?')) return;
+        const snap = kReplaceUndoSnapshot;
+        clearProductMatchCache();
+        masterOrderFileRef.current = snap.file;
+        setMasterOrderFile(snap.file);
+        setMasterOrderData(snap.data);
+        setRowPlatformSources(snap.platformSources);
+        setUploadedPlatforms(snap.platforms);
+        setKReplaceHistory([]);
+        setKReplaceFrom('');
+        setKReplaceFromCompany('');
+        setKReplaceTo('');
+        setKReplaceToCompany('');
+        setKReplaceProductMap({});
+        setKReplaceUndoSnapshot(null);
     };
 
     const handleFakeMasterUpload = async (file: File) => {
@@ -5061,6 +5224,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 >
                                     교체 적용
                                 </button>
+                                {kReplaceUndoSnapshot && (
+                                    <button
+                                        onClick={restoreOriginalMaster}
+                                        className="w-full py-1.5 text-[11px] font-black rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 border border-zinc-600 hover:border-zinc-500 transition-all"
+                                    >
+                                        ↩ 원본 마스터로 되돌리기
+                                    </button>
+                                )}
                             </div>
                             {kReplaceHistory.length > 0 && (
                                 <div className="flex flex-col gap-1 mt-0.5">
