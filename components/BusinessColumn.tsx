@@ -99,8 +99,8 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
     <div className="flex gap-3 py-4 animate-fade-in" style={{ minHeight: '100%' }}>
       <div className="flex-1 min-w-0 bg-zinc-800 rounded-2xl p-2 shadow-xl border border-zinc-700/40 flex flex-col">
         {/* 스티키 헤더 */}
-        <header className="sticky top-2 z-20 bg-zinc-800/95 backdrop-blur rounded-xl px-3 py-2 mb-6 flex flex-col md:flex-row items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-2 z-20 bg-zinc-800/95 backdrop-blur rounded-xl px-3 py-2 mb-6 grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0 md:justify-self-start">
             {themeColor && themeColor !== '#09090b' && (
               <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: themeColor }} />
             )}
@@ -136,8 +136,14 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               );
             })()}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* 항상 떠있는 액션 버튼 */}
+          {/* 탭 네비게이션 — 헤더 정중앙 고정 (사업자/탭에 따라 위치 안 바뀜) */}
+          <nav className="flex p-1 glass rounded-2xl md:justify-self-center">
+            {tabBtn('converter', '발주서/송장', WrenchScrewdriverIcon)}
+            {tabBtn('pricing', '품목/업체', Cog6ToothIcon)}
+            {tabBtn('sales', '매출현황', ChartBarIcon)}
+          </nav>
+          {/* 액션 버튼 — 항상 오른쪽 끝에 고정 */}
+          <div className="flex items-center gap-2 flex-wrap md:flex-nowrap md:justify-self-end">
             {activeTab === 'converter' && (
               <>
                 <button onClick={() => actions.downloadDepositList?.()} className={btnClass}>
@@ -159,11 +165,6 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
                 </button>
               </>
             )}
-            <nav className="flex p-1 glass rounded-2xl">
-              {tabBtn('converter', '발주서/송장', WrenchScrewdriverIcon)}
-              {tabBtn('pricing', '품목/업체', Cog6ToothIcon)}
-              {tabBtn('sales', '매출현황', ChartBarIcon)}
-            </nav>
           </div>
         </header>
 
