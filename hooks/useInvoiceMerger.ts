@@ -433,17 +433,20 @@ export const useInvoiceMerger = () => {
                 return orderMatchIndices.map(idx => normalizeMatchValue(row[idx])).join('|');
             };
 
-            // 주문서에서 매칭 키 샘��� 추출 (자동 재탐색용)
+            // 주문서에서 매칭 키 추출: 그룹(품목 키워드) 필터 유무 두 버전
+            // - orderKeysAll: 전체 주문서 (자동 재탐색 + 그룹체크 폴백 판정용)
+            // - orderKeysGrouped: 이 품목 키워드에 해당하는 행만
             const targetKeywords = getKeywordsForCompany(companyName, pricingConfig);
-            const orderKeys = new Set<string>();
+            const orderKeysAll = new Set<string>();
+            const orderKeysGrouped = new Set<string>();
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
-                if (!skipGroupCheck) {
-                    if (!isRowMatchingCompany(row, targetKeywords)) continue;
-                }
                 const key = buildOrderMatchKey(row);
-                if (key) orderKeys.add(key);
+                if (!key) continue;
+                orderKeysAll.add(key);
+                if (skipGroupCheck || isRowMatchingCompany(row, targetKeywords)) orderKeysGrouped.add(key);
             }
+            const orderKeys = orderKeysAll;
 
             // 업체 파일(들) → invoiceMap 빌드 (여러 파일이면 합침)
             const invoiceMap = new Map<string, string[]>();
@@ -468,6 +471,22 @@ export const useInvoiceMerger = () => {
                 let debugHits = 0;
                 for (const k of orderKeys) { if (invoiceMap.has(k)) { debugHits++; if (debugHits >= 5) break; } }
                 console.log(`[송장] 디버그 - 키 교차 매칭: ${debugHits}건`);
+            }
+
+            // 그룹체크 폴백: 품목 키워드로 골라낸 행으로는 매칭 0건인데
+            // 송장파일 주문번호가 (그룹 무관) 주문서에 실제로 존재하면
+            // → 이 품목의 키워드 설정이 누락/불일치한 것으로 보고 그룹체크 없이 매칭.
+            // (송장파일은 이미 이 업체 전용이므로, 파일 주문번호가 주문서에 있으면 그 파일은 이 주문서 대응이 맞음.
+            //  다른 품목 세션에 잘못 뿌려진 파일은 파일 주문번호가 그 주문서에 없어 hitAll=0 → 폴백 안 함)
+            let effectiveSkipGroupCheck = skipGroupCheck;
+            if (!skipGroupCheck && invoiceMap.size > 0) {
+                let hitGrouped = 0, hitAll = 0;
+                for (const k of orderKeysGrouped) if (invoiceMap.has(k)) hitGrouped++;
+                for (const k of orderKeysAll) if (invoiceMap.has(k)) hitAll++;
+                if (hitGrouped === 0 && hitAll > 0) {
+                    effectiveSkipGroupCheck = true;
+                    console.log(`[송장] ⚠ 품목 키워드로 주문서 행 선별 실패(매칭 0건) → 송장파일 주문번호 ${hitAll}건이 주문서에 존재하므로 그룹체크 없이 재매칭`);
+                }
             }
 
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
@@ -537,7 +556,7 @@ export const useInvoiceMerger = () => {
             for (let i = headerIdx + 1; i < orderAoa.length; i++) {
                 const row = orderAoa[i]; if (!row) continue;
 
-                if (!skipGroupCheck) {
+                if (!effectiveSkipGroupCheck) {
                     if (!isRowMatchingCompany(row, targetKeywords)) continue;
                 }
 
@@ -604,7 +623,12 @@ export const useInvoiceMerger = () => {
                         uploadRows.push(upRow);
                     }
                 } else {
-                    failures.push({ orderNum, recipient: String(row[26] || '알수없음'), reason: '송장 미매칭' });
+                    // 그룹체크 폴백으로 전체 행을 도는 경우, 이 품목과 무관한 행까지 미매칭으로 잡히지 않도록
+                    // 키워드로 이 품목에 해당하는 행만 실패로 기록
+                    const belongsToCompany = !effectiveSkipGroupCheck || skipGroupCheck || isRowMatchingCompany(row, targetKeywords);
+                    if (belongsToCompany) {
+                        failures.push({ orderNum, recipient: String(row[26] || '알수없음'), reason: '송장 미매칭' });
+                    }
                 }
             }
 
