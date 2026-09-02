@@ -22,8 +22,10 @@ import {
   subscribeDepositLedger,
   subscribeCompanyDeposits,
   setCompanyDeposits,
+  subscribeSettlementMap,
   type DepositLedger,
   type CompanyDepositsDoc,
+  type SettlementMap,
   type DailyWorkspaceData,
   type FakeCourierSettings,
   DEFAULT_FAKE_COURIER_SETTINGS,
@@ -256,6 +258,13 @@ export const useCompanyDeposits = (businessId?: string) => {
   }, [businessId]);
 
   return { deposits, saveDeposits };
+};
+
+// ===== 쿠팡 정산완료 매핑 Hook (전역, 사업자 무관) =====
+export const useSettlementMap = () => {
+  const [map, setMap] = useState<SettlementMap>({});
+  useEffect(() => subscribeSettlementMap(setMap), []);
+  return map;
 };
 
 // ===== Shared Supplier Library Hook =====

@@ -12,6 +12,7 @@ import OrdererSearchPanel from './components/OrdererSearchPanel';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice } from './hooks/useFirestore';
+import { mergeSettlementMap } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
@@ -139,6 +140,60 @@ const App: React.FC = () => {
   }, []);
 
   const [showBulkDepositModal, setShowBulkDepositModal] = useState(false);
+  const [isUploadingSettlement, setIsUploadingSettlement] = useState(false);
+  const [settlementUploadStatus, setSettlementUploadStatus] = useState<string | null>(null);
+  const settlementFileRef = useRef<HTMLInputElement>(null);
+
+  // 쿠팡 정산완료 파일(Order Detail Report: A열 주문번호, R열 정산금액) 업로드 → 전역 정산금액 매핑 누적 저장
+  const handleSettlementUpload = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingSettlement(true);
+    setSettlementUploadStatus(null);
+    const digits = (v: any): string => {
+      if (v == null) return '';
+      let s = String(v).trim();
+      if (/e\+?\d+$/i.test(s)) { const n = Number(s); if (Number.isFinite(n)) s = n.toFixed(0); }
+      return s.replace(/\.\d+$/, '').replace(/[^0-9]/g, '');
+    };
+    try {
+      const arr = Array.from(files).filter(f => /\.xlsx?$/i.test(f.name));
+      if (arr.length === 0) { setSettlementUploadStatus('엑셀 파일(.xlsx)만 업로드할 수 있습니다.'); setIsUploadingSettlement(false); return; }
+      const sums: Record<string, number> = {};
+      let lineCount = 0;
+      for (const file of arr) {
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheetName = wb.SheetNames.find((n: string) => n.toLowerCase().includes('order detail')) || wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 }) as any[][];
+        if (rows.length < 2) continue;
+        const header = (rows[0] || []).map((h: any) => String(h ?? '').trim());
+        let ordIdx = header.findIndex((h: string) => h === '주문번호' || h.includes('주문번호'));
+        let amtIdx = header.findIndex((h: string) => h === '정산금액');
+        if (ordIdx === -1) ordIdx = 0;  // A열
+        if (amtIdx === -1) amtIdx = 17;  // R열
+        for (let i = 1; i < rows.length; i++) {
+          const ord = digits(rows[i]?.[ordIdx]);
+          if (!ord) continue;
+          const amt = Number(String(rows[i]?.[amtIdx] ?? '').replace(/[^0-9.-]/g, '')) || 0;
+          sums[ord] = (sums[ord] || 0) + amt;
+          lineCount++;
+        }
+      }
+      const orderCount = Object.keys(sums).length;
+      if (orderCount === 0) { setSettlementUploadStatus('주문번호·정산금액을 찾지 못했습니다. (A열=주문번호, R열=정산금액 확인)'); setIsUploadingSettlement(false); if (settlementFileRef.current) settlementFileRef.current.value = ''; return; }
+      const added = await Promise.race([
+        mergeSettlementMap(sums),
+        new Promise<number>(res => setTimeout(() => res(-1), 8000)),
+      ]);
+      setSettlementUploadStatus(added < 0
+        ? `주문 ${orderCount.toLocaleString()}건 반영됨 (서버 동기화는 백그라운드 진행 중)`
+        : `주문 ${orderCount.toLocaleString()}건 (${lineCount.toLocaleString()}줄 합산) · 새로 추가/변경 ${added.toLocaleString()}건`);
+    } catch (e) {
+      console.error('[정산완료 업로드]', e);
+      setSettlementUploadStatus('파일 처리 중 오류가 발생했습니다.');
+    }
+    setIsUploadingSettlement(false);
+    if (settlementFileRef.current) settlementFileRef.current.value = '';
+  }, []);
   const [bulkPasteText, setBulkPasteText] = useState(() => loadPersistedBulkDepositPaste());
   const [bulkBaseRowsMap, setBulkBaseRowsMap] = useState<Record<string, any[][]>>({});
   // 붙여넣기로 매칭된 "직접 입력" 행 — 텍스트에서 파싱해 seed하되, 셀 클릭으로 개별 편집 가능
@@ -1501,6 +1556,9 @@ const App: React.FC = () => {
                     {unmatched.map((l, i) => <p key={i} className="text-[11px] text-zinc-500 font-mono truncate">{l}</p>)}
                   </div>
                 )}
+                {settlementUploadStatus && (
+                  <p className="text-[11px] text-blue-400 font-bold">{settlementUploadStatus}</p>
+                )}
               </div>
               <div className="px-6 py-4 border-t border-zinc-800 flex items-center justify-between gap-2">
                 <button
@@ -1519,6 +1577,16 @@ const App: React.FC = () => {
                 </button>
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowBulkDepositModal(false)} className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all">취소</button>
+                  <input ref={settlementFileRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={e => handleSettlementUpload(e.target.files)} />
+                  <button
+                    onClick={() => settlementFileRef.current?.click()}
+                    disabled={isUploadingSettlement}
+                    className="flex items-center gap-2 px-5 py-2 text-xs font-black text-blue-300 bg-blue-900/30 hover:bg-blue-900/50 border border-blue-500/50 rounded-xl transition-all disabled:opacity-50"
+                    title="쿠팡 정산완료 파일(Order Detail Report) 업로드 — 발주내역에 정산금액·순이익 표시"
+                  >
+                    <ArrowUpTrayIcon className="w-3.5 h-3.5" />
+                    {isUploadingSettlement ? '읽는 중…' : '정산내역 업로드'}
+                  </button>
                   <button onClick={handleBulkWorkLog} className="flex items-center gap-2 px-5 py-2 text-xs font-black text-violet-300 bg-violet-900/30 hover:bg-violet-900/50 border border-violet-500/50 rounded-xl transition-all">
                     <ArrowDownTrayIcon className="w-3.5 h-3.5" />
                     업무일지다운

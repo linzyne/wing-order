@@ -611,6 +611,75 @@ export const clearDeliveryOrderMap = async (businessId?: string): Promise<void> 
   ]);
 };
 
+// ===== 쿠팡 정산완료 → 정산금액 매핑 (쿠팡 정산 대조 2단계) =====
+// 쿠팡 정산완료 파일(Order Detail Report: A열 주문번호, R열 정산금액)을 올려서
+// { [주문번호]: 정산금액 합계 } 표를 전역(사업자 무관)으로 누적 저장한다.
+// 주문번호는 쿠팡 전역 고유라 안군/조에/한나 구분 없이 각 사업자 발주내역이 자기 주문번호로 조회한다.
+// 한 파일에 같은 주문번호가 여러 줄(상품 + 배송료 등) → 파일 파싱 시 R열을 합산한 값을 넘긴다.
+// deliveryOrderMap과 동일하게 주문번호 뒷2자리로 샤드 100개 분산.
+export type SettlementMap = Record<string, number>;
+
+const getSettlementShardsCol = () =>
+  collection(db, 'settlementMaps', 'global', 'shards');
+
+const settlementShardId = (orderNo: string): string => {
+  const d = String(orderNo).replace(/[^0-9]/g, '');
+  return 's' + (d.length >= 2 ? d.slice(-2) : d.padStart(2, '0'));
+};
+
+const readSettlementShards = (snap: any): SettlementMap => {
+  const map: SettlementMap = {};
+  snap.forEach((d: any) => Object.assign(map, (d.data() as any).amounts || {}));
+  return map;
+};
+
+export const loadSettlementMap = async (): Promise<SettlementMap> => {
+  try {
+    return readSettlementShards(await getDocs(getSettlementShardsCol()));
+  } catch {
+    return {};
+  }
+};
+
+export const subscribeSettlementMap = (callback: (map: SettlementMap) => void): Unsubscribe => {
+  return onSnapshot(getSettlementShardsCol(), (snap) => {
+    callback(readSettlementShards(snap));
+  }, (error) => {
+    console.error('[Firestore] SettlementMap 구독 오류:', error);
+    callback({});
+  });
+};
+
+/** 주문번호→정산금액(합계) 병합 저장. 같은 주문번호 재업로드 시 최신 값으로 덮어쓴다. 반환: 추가/변경된 주문 수 */
+export const mergeSettlementMap = async (amounts: SettlementMap): Promise<number> => {
+  const existing = await loadSettlementMap();
+  const byShard: Record<string, SettlementMap> = {};
+  let delta = 0;
+  for (const [ord, amt] of Object.entries(amounts)) {
+    if (!ord || existing[ord] === amt) continue;
+    (byShard[settlementShardId(ord)] ||= {})[ord] = amt;
+    delta++;
+  }
+  if (delta === 0) return 0;
+  const col = getSettlementShardsCol();
+  const entries = Object.entries(byShard);
+  for (let i = 0; i < entries.length; i += 450) {
+    const batch = writeBatch(db);
+    for (const [sid, m] of entries.slice(i, i + 450)) batch.set(doc(col, sid), { amounts: m }, { merge: true });
+    await batch.commit();
+  }
+  return delta;
+};
+
+export const clearSettlementMap = async (): Promise<void> => {
+  const snap = await getDocs(getSettlementShardsCol());
+  for (let i = 0; i < snap.docs.length; i += 450) {
+    const batch = writeBatch(db);
+    snap.docs.slice(i, i + 450).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+};
+
 // ===== Quick Recipients (빠른 수령자 관리) =====
 
 export interface QuickRecipientData {
