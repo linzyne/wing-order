@@ -152,6 +152,8 @@ export function refineOrderRowFieldsByValue(
   if (badProduct) {
     const cand = pick(s => looksProduct(s));
     if (cand) out.productName = cand;
+    // 후보를 못 찾았는데 원래 값이 명백히 품목이 아니면(숫자·전화·주소) 비운다 — "21376" 같은 쓰레기 표시 방지
+    else if (!vIsBlankOrDash(out.productName)) out.productName = '';
   } else {
     used.add(cells.indexOf(vStr(out.productName)));
   }
@@ -207,12 +209,14 @@ export function refineOrderRowFieldsByValue(
 
 /** 발주내역 행 + 업체명으로 CS 접수 초안을 만든다 */
 export function buildCsDraft(company: string, row: any[], pricingConfig?: PricingConfig): CsDraft {
-  const fields = resolveOrderRowFields(company, row, pricingConfig);
-  const products = pricingConfig?.[company]?.products || {};
+  const config = pricingConfig?.[company];
+  // 발주양식 헤더 추측이 빗나가 이름/품목/주문번호 칸이 밀리는 업체(조에농원 연두 등)를 위해
+  // 셀 값 기반으로 보정한 필드를 초안에 쓴다 (매출현황 발주내역 표시와 동일한 보정)
+  const fields = refineOrderRowFieldsByValue(resolveOrderRowFields(company, row, pricingConfig), row, config, company);
+  const products = config?.products || {};
   const matched = Object.entries(products).find(
     ([, p]: [string, any]) => p.orderFormName === fields.productName || p.displayName === fields.productName
   );
-  const config = pricingConfig?.[company];
   return {
     company,
     orderNumber: fields.orderNumber,
@@ -394,6 +398,14 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
     }
     setSaving(true);
     setError(null);
+    // Firestore 쓰기가 네트워크 문제로 응답 없이 매달리면(LAN/오프라인 등) "저장 중..."이 영원히 돈다.
+    // 20초 넘으면 사용자에게 알리고 버튼을 풀어준다. 뒤늦게 완료돼도 모달은 닫지 않는다.
+    let timedOut = false;
+    const watchdog = setTimeout(() => {
+      timedOut = true;
+      setSaving(false);
+      setError('저장이 지연되고 있습니다. 네트워크 상태를 확인한 뒤, 잠시 후 새로고침해 반영 여부를 확인하고 필요하면 다시 시도하세요.');
+    }, 20000);
     try {
       const product = needsProductForDeduction
         ? (pricingConfig?.[draft.company]?.products?.[draft.productKey] as any)
@@ -494,12 +506,14 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
       }
 
+      if (timedOut) return; // 이미 지연 안내함 — 모달 닫지 않고, 저장은 백그라운드에서 계속
       onSaved();
       onClose();
     } catch (e: any) {
-      setError('저장 실패: ' + (e?.message || '알 수 없는 오류'));
+      if (!timedOut) setError('저장 실패: ' + (e?.message || '알 수 없는 오류'));
     } finally {
-      setSaving(false);
+      clearTimeout(watchdog);
+      if (!timedOut) setSaving(false);
     }
   };
 
