@@ -462,18 +462,26 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
 
         {showDownload && (
           <div className="mt-2 flex flex-col gap-3">
-            {/* 사업자별 전체합산 버튼 */}
+            {/* 사업자별 총구매수량 버튼 */}
             {downloadSnapshot.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pb-2 border-b border-zinc-800/60">
-                {downloadSnapshot.map(biz => (
-                  <button
-                    key={biz.businessId}
-                    onClick={() => uploadFns[biz.businessId]?.downloadAllCompanies?.()}
-                    className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-black rounded-lg bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 transition-colors border border-violet-700/40"
-                  >
-                    {biz.displayName} 전체합산
-                  </button>
-                ))}
+                {downloadSnapshot.map(biz => {
+                  const bizTotalCount = biz.companies.reduce(
+                    (s, c) => s + c.rounds.reduce((rs, r) => rs + (r.count ?? 0), 0),
+                    0
+                  );
+                  return (
+                    <button
+                      key={biz.businessId}
+                      onClick={() => uploadFns[biz.businessId]?.downloadAllCompanies?.()}
+                      className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-black rounded-lg bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 transition-colors border border-violet-700/40"
+                    >
+                      <span>{biz.displayName}</span>
+                      <span className="text-violet-400/70">총구매수량</span>
+                      <span className="tabular-nums text-violet-100">{bizTotalCount.toLocaleString()}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
             {downloadSnapshot.length === 0 ? (
