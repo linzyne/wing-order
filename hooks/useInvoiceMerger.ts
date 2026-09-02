@@ -632,6 +632,48 @@ export const useInvoiceMerger = () => {
                 }
             }
 
+            // ── 최종 구제 패스 ──
+            // 여기까지 한 건도 못 만들었는데 송장파일엔 (주문번호 → 송장번호) 쌍이 있으면,
+            // 주문서 매칭 여부와 무관하게 송장파일 내용만으로 업로드/기록 행을 생성한다.
+            // (주문서에서 해당 주문 행을 찾으면 그 행을 채워서, 못 찾으면 주문번호+송장번호만 담아서)
+            if (uploadCount === 0 && invoiceMap.size > 0) {
+                const orderRowByKey = new Map<string, any[]>();
+                for (let i = headerIdx + 1; i < orderAoa.length; i++) {
+                    const row = orderAoa[i]; if (!row) continue;
+                    const k = buildOrderMatchKey(row);
+                    if (k && !orderRowByKey.has(k)) orderRowByKey.set(k, row);
+                }
+                const courierName = getCourierName(companyName, pricingConfig);
+                for (const [key, invs] of invoiceMap) {
+                    if (!invs || invs.length === 0) continue;
+                    const orderRow = orderRowByKey.get(key);
+                    const makeRow = (inv: string): any[] => {
+                        let r: any[];
+                        if (orderRow) {
+                            if (useCustomInvoiceHeaders) {
+                                r = new Array(invoiceHeader.length).fill('');
+                                for (let oi = 0; oi < orderRow.length; oi++) {
+                                    const ni = headerMapping[oi];
+                                    if (ni !== undefined) r[ni] = orderRow[oi];
+                                }
+                            } else {
+                                r = [...orderRow];
+                            }
+                        } else {
+                            r = new Array(Math.max(invoiceHeader.length, targetInvIdx + 1, targetCourierIdx + 1, targetOrderIdx + 1)).fill('');
+                            if (targetOrderIdx !== -1) r[targetOrderIdx] = key;
+                        }
+                        if (targetInvIdx !== -1) r[targetInvIdx] = inv;
+                        if (targetCourierIdx !== -1) r[targetCourierIdx] = courierName;
+                        return r;
+                    };
+                    uploadCount++;
+                    uploadRows.push(makeRow(invs[0]));
+                    invs.forEach(inv => { mgmtCount++; mgmtRows.push(makeRow(inv)); });
+                }
+                console.log(`[송장] 구제 패스로 ${uploadCount}건 생성 (주문서 매칭 실패분 포함)`);
+            }
+
             // 플랫폼별 업로드 워크북 생성
             const platformUploadWorkbooks: Record<string, PlatformUploadResult> = {};
             const now = new Date();
