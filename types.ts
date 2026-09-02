@@ -88,9 +88,18 @@ export const VENDOR_INVOICE_FIELD_TYPES = [
 
 export type VendorInvoiceFieldKey = typeof VENDOR_INVOICE_FIELD_TYPES[number]['key'];
 
+/** 업체 예수금(예치금/선수금) 입금 내역 1건. amount는 충전(+) 또는 수동조정(±). */
+export interface CompanyDeposit {
+  id: string;
+  date: string;     // 입금일 YYYY-MM-DD (이 날짜부터 정산액이 차감됨)
+  amount: number;   // 입금액(원). 음수면 차감 조정
+  memo?: string;
+}
+
 export interface CompanyConfig {
   phone?: string;
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
+  deposits?: CompanyDeposit[]; // 예수금(예치금) 입금 내역 — 정산 총합계가 여기서 차감됨
   bankName?: string;
   accountNumber?: string;
   orderFormHeaders?: string[]; // 발주서 헤더

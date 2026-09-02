@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { PricingConfig, CompanyConfig, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
+import type { PricingConfig, CompanyConfig, CompanyDeposit, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
 import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES } from '../types';
 import { inferFieldFromHeader, inferVendorInvoiceField } from '../hooks/useConsolidatedOrderConverter';
 import {
@@ -747,7 +747,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
             finalName = `${name}_${idx}`;
         }
         const newConfig = JSON.parse(JSON.stringify(cur));
-        newConfig[finalName] = JSON.parse(JSON.stringify(supplierConfig));
+        const imported = JSON.parse(JSON.stringify(supplierConfig));
+        delete imported.deposits; // 예수금은 사업자별 재무기록 — 라이브러리로 옮기지 않음
+        newConfig[finalName] = imported;
         onConfigChange(newConfig);
         setExpandedCompanies(prev => ({ ...prev, [finalName]: true }));
         setShowSupplierPicker(false);
@@ -764,7 +766,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                 ? `'${companyName}'가 이미 라이브러리에 있어요. 최신 정보로 덮어쓸까요? 📤`
                 : `'${companyName}'를 라이브러리로 보낼까요? 다른 사업자에서도 불러와 쓸 수 있어요 📤`,
             onConfirm: () => {
-                onSendToLibrary(companyName, JSON.parse(JSON.stringify(cfg)));
+                const toSend = JSON.parse(JSON.stringify(cfg));
+                delete toSend.deposits; // 예수금은 사업자별 재무기록 — 라이브러리에 담지 않음
+                onSendToLibrary(companyName, toSend);
                 setDialog({ type: 'alert', message: `'${companyName}'를 라이브러리로 보냈어요! ✨`, onConfirm: () => setDialog(null) });
             },
             onCancel: () => setDialog(null),
@@ -843,6 +847,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
     const handleUpdateKeywords = (companyName: string, keywords: string[]) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].keywords = keywords.length > 0 ? keywords : undefined;
+        handleUpdate(newConfig);
+    };
+
+    const handleUpdateDeposits = (companyName: string, deposits: CompanyDeposit[]) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].deposits = deposits.length > 0 ? deposits : undefined;
         handleUpdate(newConfig);
     };
 
@@ -1158,6 +1168,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateAutoConsolidate={(enabled) => handleUpdateAutoConsolidate(companyName, enabled)}
                             onUpdateShippingSettlementSplit={(enabled) => handleUpdateShippingSettlementSplit(companyName, enabled)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
+                            onUpdateDeposits={(deposits) => handleUpdateDeposits(companyName, deposits)}
                             onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
                             onUpdateOrderFormFixedValue={(idx, value) => handleUpdateOrderFormFixedValue(companyName, idx, value)}
@@ -1214,6 +1225,73 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
     );
 };
 
+// 업체 예수금(예치금) 입금 내역 편집 — 여기 입력한 날짜부터 정산 총합계가 잔액에서 차감된다
+const DepositSection: React.FC<{ deposits: CompanyDeposit[]; onChange: (d: CompanyDeposit[]) => void }> = ({ deposits, onChange }) => {
+    const [open, setOpen] = useState(false);
+    const [draft, setDraft] = useState<{ date: string; amount: string; memo: string }>({
+        date: new Date().toLocaleDateString('en-CA'), amount: '', memo: '',
+    });
+    const sorted = [...deposits].sort((a, b) => a.date.localeCompare(b.date));
+    const total = deposits.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+
+    const addRow = () => {
+        const amount = parseInt(draft.amount, 10);
+        if (!draft.date || isNaN(amount) || amount === 0) return;
+        onChange([...deposits, { id: `dep-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, date: draft.date, amount, memo: draft.memo.trim() || undefined }]);
+        setDraft(d => ({ ...d, amount: '', memo: '' }));
+    };
+    const removeRow = (id: string) => onChange(deposits.filter(d => d.id !== id));
+    const patchRow = (id: string, patch: Partial<CompanyDeposit>) =>
+        onChange(deposits.map(d => d.id === id ? { ...d, ...patch } : d));
+
+    return (
+        <div className="bg-zinc-950 rounded-xl border border-zinc-800 shadow-inner overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-5 py-3 cursor-pointer hover:bg-zinc-900/40 transition-all" onClick={() => setOpen(o => !o)}>
+                <div className="flex items-center gap-3">
+                    <span className="text-lg">💰</span>
+                    <span className="text-[12px] font-black text-zinc-400 uppercase tracking-wide">예수금 (예치금)</span>
+                    <span className="text-[10px] text-zinc-600">입금일부터 정산 총합계가 잔액에서 차감</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    {deposits.length > 0 && <span className="text-[11px] font-black text-emerald-400 tabular-nums">총 {total.toLocaleString()}원 · {deposits.length}건</span>}
+                    <ChevronDownIcon className={`w-4 h-4 text-zinc-600 transition-transform ${open ? 'rotate-180' : ''}`} />
+                </div>
+            </div>
+            {open && (
+                <div className="px-5 pb-4 pt-1 space-y-2 animate-fade-in">
+                    {sorted.map(d => (
+                        <div key={d.id} className="flex items-center gap-2">
+                            <input type="date" value={d.date} onChange={e => patchRow(d.id, { date: e.target.value })}
+                                className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-[12px] font-bold text-zinc-300 focus:outline-none focus:border-zinc-600" />
+                            <input type="number" value={d.amount} onChange={e => patchRow(d.id, { amount: parseInt(e.target.value, 10) || 0 })}
+                                className="w-28 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-[12px] font-bold text-emerald-400 text-right tabular-nums focus:outline-none focus:border-zinc-600" />
+                            <span className="text-[11px] text-zinc-600">원</span>
+                            <input type="text" value={d.memo || ''} onChange={e => patchRow(d.id, { memo: e.target.value || undefined })} placeholder="메모"
+                                className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-[12px] font-bold text-zinc-400 focus:outline-none focus:border-zinc-600" />
+                            <button onClick={() => removeRow(d.id)} className="p-1 text-zinc-700 hover:text-rose-500 transition-colors shrink-0"><TrashIcon className="w-4 h-4" /></button>
+                        </div>
+                    ))}
+                    <div className="flex items-center gap-2 pt-2 border-t border-zinc-800/60">
+                        <input type="date" value={draft.date} onChange={e => setDraft(d => ({ ...d, date: e.target.value }))}
+                            className="bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[12px] font-bold text-zinc-300 focus:outline-none focus:border-rose-500/50" />
+                        <input type="number" value={draft.amount} onChange={e => setDraft(d => ({ ...d, amount: e.target.value }))} placeholder="입금액"
+                            onKeyDown={e => { if (e.key === 'Enter') addRow(); }}
+                            className="w-28 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[12px] font-bold text-emerald-400 text-right tabular-nums focus:outline-none focus:border-rose-500/50" />
+                        <span className="text-[11px] text-zinc-600">원</span>
+                        <input type="text" value={draft.memo} onChange={e => setDraft(d => ({ ...d, memo: e.target.value }))} placeholder="메모 (선택)"
+                            onKeyDown={e => { if (e.key === 'Enter') addRow(); }}
+                            className="flex-1 min-w-0 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[12px] font-bold text-zinc-400 focus:outline-none focus:border-rose-500/50" />
+                        <button onClick={addRow} className="p-1 text-emerald-500 hover:text-emerald-400 transition-colors shrink-0"><PlusCircleIcon className="w-5 h-5" /></button>
+                    </div>
+                    <p className="text-[10px] text-zinc-600 leading-relaxed">
+                        마이너스 금액을 넣으면 차감 조정이 됩니다. 잔액은 정산요약을 "기록"할 때마다 갱신되고, 매출현황 &gt; 업체별정산에서 날짜별로 확인·수정할 수 있습니다.
+                    </p>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const CompanyCard: React.FC<{
     companyName: string;
     companyConfig: CompanyConfig;
@@ -1230,6 +1308,7 @@ const CompanyCard: React.FC<{
     onUpdateAutoConsolidate: (enabled: boolean) => void;
     onUpdateShippingSettlementSplit: (enabled: boolean) => void;
     onUpdateKeywords: (keywords: string[]) => void;
+    onUpdateDeposits: (deposits: CompanyDeposit[]) => void;
     onUpdateOrderFormHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
     onUpdateOrderFormFixedValue: (idx: number, value: string) => void;
@@ -1370,6 +1449,7 @@ const CompanyCard: React.FC<{
                             className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                         />
                     </div>
+                    <DepositSection deposits={companyConfig.deposits || []} onChange={props.onUpdateDeposits} />
                     <div className="bg-zinc-950 rounded-xl border border-zinc-800 shadow-inner overflow-hidden">
                         <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-zinc-900/40 transition-all" onClick={() => setOrderFormOpen(o => !o)}>
                             <span className="text-lg">📋</span>

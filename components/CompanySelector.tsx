@@ -9,9 +9,10 @@ import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesReco
 import { getBusinessInfo, resolveSenderColumns } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
-import { useDailyWorkspace, useCourierTemplates } from '../hooks/useFirestore';
+import { useDailyWorkspace, useCourierTemplates, useDepositLedger } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
-import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
+import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
 import {
     DndContext,
     closestCenter,
@@ -57,7 +58,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositCompanies: () => string[] }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -887,6 +888,7 @@ function autoMapProducts(
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
+    const depositLedger = useDepositLedger(businessId);
     const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
 
     useEffect(() => {
@@ -1064,6 +1066,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const [masterOrderFile, setMasterOrderFile] = useState<File | null>(null);
     const masterOrderFileRef = useRef<File | null>(null); // React 재렌더 전에도 getNextRound가 최신값 읽도록 동기 추적
+    // 예수금(예치금): 업체별로 "오늘 정산 반영 직전"의 남은 잔액 계산 (정산요약 카드에 표시)
+    const depositRecordDate = resolveRecordDate(workDate, masterOrderFile);
+    const depositInfoByCompany = useMemo(() => {
+        const out: Record<string, ReturnType<typeof buildDepositInfo>> = {};
+        Object.keys(pricingConfig).forEach(company => {
+            const info = buildDepositInfo(pricingConfig[company]?.deposits, depositLedger, company, depositRecordDate);
+            if (info) out[company] = info;
+        });
+        return out;
+    }, [pricingConfig, depositLedger, depositRecordDate]);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [fakeMasterOrderFile, setFakeMasterOrderFile] = useState<File | null>(null);
     const [fakeMasterOrderData, setFakeMasterOrderData] = useState<any[][] | null>(null);
@@ -4252,6 +4264,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     getDepositBaseRowsFnRef.current = getDepositBaseRows;
     const downloadDepositListDirectFnRef = useRef<(baseRows: any[][], rows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void>(() => {});
     downloadDepositListDirectFnRef.current = downloadDepositListDirect;
+    // 예수금(예치금)으로 정산되는 업체 목록 — 일괄 입금목록에서 빨간색 경고 표시용 (이중 지급 방지)
+    const getDepositCompaniesFnRef = useRef<() => string[]>(() => []);
+    getDepositCompaniesFnRef.current = () => Object.keys(depositInfoByCompany);
     const onRegisterActionsRef = useRef(onRegisterActions);
     onRegisterActionsRef.current = onRegisterActions;
     useEffect(() => {
@@ -4261,6 +4276,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             downloadDepositListWithExtra: (rows) => depositListWithExtraFnRef.current(rows),
             getDepositBaseRows: () => getDepositBaseRowsFnRef.current(),
             downloadDepositListDirect: (baseRows, rows) => downloadDepositListDirectFnRef.current(baseRows, rows),
+            getDepositCompanies: () => getDepositCompaniesFnRef.current(),
         });
     // 마운트 시 1회만 실행 - onRegisterActions dep 변경 시 재실행하면 setActions 루프 발생
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4562,6 +4578,21 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setSaveStatus('saving');
         try {
             await upsertDailySales(dailySales, businessId);
+
+            // 예수금(예치금) 원장 갱신: 이 저장에 포함된 업체별로 그날 남은 잔액 스냅샷을 남긴다
+            // 잔액 = (직전 스냅샷 + 그 이후 입금분) − 오늘 정산 총합계
+            await Promise.all([...selectedCompanyNames].map(async (name) => {
+                const cfg = pricingConfig[name];
+                if (!hasDepositLedger(cfg?.deposits, depositLedger[name])) return;
+                const todayTotal = mergedRecords.filter(r => r.company === name).reduce((s, r) => s + r.totalPrice, 0);
+                // 이 업체가 이번 저장에서 실제 정산도 없고 원장에 기존 스냅샷도 없으면(순수 입금만 있는 상태) 스냅샷을 만들지 않는다
+                if (todayTotal === 0 && !recordedCompanyNamesThisSave.has(name) && depositLedger[name]?.[recordDate] === undefined && Object.keys(depositLedger[name] || {}).length === 0) return;
+                const before = balanceBeforeSettlement(cfg?.deposits, depositLedger[name], recordDate);
+                try {
+                    await setDepositLedgerBalance(name, recordDate, before - todayTotal, businessId);
+                } catch (e) { console.error('[예수금] 원장 갱신 실패:', name, e); }
+            }));
+
             setSaveStatus('success');
             // 방금 저장된 로컬 슬롯/반품 항목은 Firestore에 반영됐으므로 비워서
             // 다음 저장 때 다시 합쳐져 중복 저장되는 것을 방지
@@ -4599,6 +4630,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         try {
             const { deleteCompanyFromDailySales } = await import('../services/firestoreService');
             await deleteCompanyFromDailySales(recordDate, companyName, businessId);
+            // 예수금 원장에서도 그날 잔액 스냅샷 제거 (기록 취소 → 차감도 취소)
+            if (depositLedger[companyName]?.[recordDate] !== undefined) {
+                try { await removeDepositLedgerBalance(companyName, recordDate, businessId); } catch (e) { console.error('[예수금] 원장 삭제 실패:', e); }
+            }
             setRecordedCompanies((prev: Set<string>) => { const next = new Set(prev); next.delete(companyName); return next; });
             onSaved?.(recordDate);
         } catch (err) {
@@ -4802,12 +4837,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-zinc-900">
-                                                {depositBaseRows.map((r, i) => (
-                                                    <tr key={i} className="text-zinc-400 group">
+                                                {depositBaseRows.map((r, i) => {
+                                                    const isDeposit = !!depositInfoByCompany[String(r[3] ?? '').trim()]?.hasLedger;
+                                                    return (
+                                                    <tr key={i} className={`group ${isDeposit ? 'text-rose-400 bg-rose-950/20' : 'text-zinc-400'}`} title={isDeposit ? '예치금으로 정산되는 업체 — 계좌이체로 또 보내면 이중 지급입니다' : undefined}>
                                                         <td className="px-3 py-1.5">{r[0]}</td>
                                                         <td className="px-3 py-1.5 font-mono">{r[1]}</td>
-                                                        <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400">{Number(r[2]).toLocaleString()}</td>
-                                                        <td className="px-3 py-1.5 text-zinc-500">{r[3]}</td>
+                                                        <td className={`px-3 py-1.5 text-right tabular-nums ${isDeposit ? 'text-rose-400' : 'text-emerald-400'}`}>{Number(r[2]).toLocaleString()}</td>
+                                                        <td className={`px-3 py-1.5 ${isDeposit ? 'text-rose-400' : 'text-zinc-500'}`}>{r[3]}{isDeposit && <span className="ml-1.5 text-[9px] font-black px-1 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">예치금</span>}</td>
                                                         <td className="px-3 py-1.5">
                                                             <button
                                                                 onClick={() => setDepositBaseRows(prev => prev.filter((_, j) => j !== i))}
@@ -4817,7 +4854,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             </button>
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>
@@ -6642,6 +6680,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     isRecorded={recordedCompanies.has(company)}
                                                     onRecord={sIdx === 0 ? () => { if (recordedCompanies.has(company)) { handleDeleteCompanyFromSalesHistory(company); } else { handleSaveToSalesHistory(new Set([company])); } } : undefined}
                                                     workDate={workDate}
+                                                    depositInfo={depositInfoByCompany[company] || null}
                                                     workspace={workspace}
                                                     updateField={updateField}
                                                     updateSessionField={updateWorkspaceSessionField}

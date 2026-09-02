@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
-import { usePricingConfig } from '../hooks/useFirestore';
+import { usePricingConfig, useDepositLedger } from '../hooks/useFirestore';
 import CsEntryModal, { type CsDraft, resolveOrderRowFields, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
-import { CS_SAVED_EVENT } from '../services/firestoreService';
+import { CS_SAVED_EVENT, setDepositLedgerBalance } from '../services/firestoreService';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
 import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord, CsRecord, ExcludedOrder } from '../types';
 import { getBusinessInfo, getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
@@ -261,6 +261,27 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   const businessPrefix = businessId ? (getBusinessInfo(businessId)?.shortName || businessId) : '';
   const { salesHistory, load, loadMonth, refresh, refreshDate, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
+  const depositLedger = useDepositLedger(businessId);
+  // 인라인 수정 시 onSnapshot 반영 전까지 쓸 낙관적 오버라이드 { "업체 날짜": 잔액 }
+  const [depositEdits, setDepositEdits] = useState<Record<string, number>>({});
+  const [editingDepositKey, setEditingDepositKey] = useState<string | null>(null);
+  const [editingDepositValue, setEditingDepositValue] = useState<string>('');
+
+  const getDepositBalance = useCallback((company: string, date: string): number | undefined => {
+    const k = `${company} ${date}`;
+    if (depositEdits[k] !== undefined) return depositEdits[k];
+    return depositLedger[company]?.[date];
+  }, [depositEdits, depositLedger]);
+
+  const saveDepositBalance = useCallback(async (company: string, date: string, value: number) => {
+    const k = `${company} ${date}`;
+    setDepositEdits(prev => ({ ...prev, [k]: value }));
+    try {
+      await setDepositLedgerBalance(company, date, value, businessId);
+    } catch (e) {
+      console.error('[예수금] 잔액 수정 실패:', e);
+    }
+  }, [businessId]);
 
   // 탭 최초 활성화 시 현재 월 로드
   useEffect(() => {
@@ -1821,14 +1842,15 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     );
 
     const handleCopySettlement = () => {
-      const lines: string[] = ['날짜\t품목\t수량\t단가\t합계\t일별합계'];
+      const lines: string[] = ['날짜\t품목\t수량\t단가\t합계\t일별합계\t남은예치금'];
       daysForCompany.forEach(({ date, records }) => {
         const dayTotal = records.reduce((s, r) => s + r.totalPrice, 0);
+        const bal = getDepositBalance(activeCompany, date);
         records.forEach((r, i) => {
-          lines.push([i === 0 ? date : '', r.product, r.count, r.supplyPrice, r.totalPrice, i === 0 ? dayTotal : ''].join('\t'));
+          lines.push([i === 0 ? date : '', r.product, r.count, r.supplyPrice, r.totalPrice, i === 0 ? dayTotal : '', i === 0 && bal !== undefined ? bal : ''].join('\t'));
         });
       });
-      lines.push(['합계', '', periodCount, '', periodTotal, ''].join('\t'));
+      lines.push(['합계', '', periodCount, '', periodTotal, '', ''].join('\t'));
       navigator.clipboard.writeText(lines.join('\n'));
     };
 
@@ -1858,7 +1880,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-14">수량</th>
                 <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-24">단가</th>
                 <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-24">합계</th>
-                <th className="py-1.5 px-3 text-right font-semibold border-b border-zinc-700 w-24">일별합계</th>
+                <th className="py-1.5 px-3 text-right font-semibold border-b border-r border-zinc-700 w-24">일별합계</th>
+                <th className="py-1.5 px-3 text-right font-semibold border-b border-zinc-700 w-28">남은 예치금</th>
               </tr>
             </thead>
             <tbody>
@@ -1891,6 +1914,41 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         {dayTotal.toLocaleString()}
                       </td>
                     ) : null}
+                    {i === 0 ? (() => {
+                      const key = `${activeCompany} ${date}`;
+                      const bal = getDepositBalance(activeCompany, date);
+                      const isEditing = editingDepositKey === key;
+                      return (
+                        <td rowSpan={records.length} className="py-1.5 px-3 text-right align-middle tabular-nums">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              autoFocus
+                              value={editingDepositValue}
+                              onChange={e => setEditingDepositValue(e.target.value)}
+                              onBlur={() => {
+                                const v = parseInt(editingDepositValue, 10);
+                                if (!isNaN(v)) saveDepositBalance(activeCompany, date, v);
+                                setEditingDepositKey(null);
+                              }}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                                if (e.key === 'Escape') setEditingDepositKey(null);
+                              }}
+                              className="w-24 bg-zinc-800 border border-emerald-500/50 rounded px-2 py-0.5 text-right text-emerald-300 font-bold tabular-nums focus:outline-none"
+                            />
+                          ) : (
+                            <button
+                              onClick={() => { setEditingDepositKey(key); setEditingDepositValue(String(bal ?? '')); }}
+                              title="클릭하여 잔액 수정"
+                              className={`font-bold transition-colors hover:text-emerald-300 ${bal === undefined ? 'text-zinc-700' : bal < 0 ? 'text-rose-400' : 'text-emerald-400'}`}
+                            >
+                              {bal === undefined ? '—' : `${bal.toLocaleString()}원`}
+                            </button>
+                          )}
+                        </td>
+                      );
+                    })() : null}
                   </tr>
                 ));
               })}
@@ -1900,7 +1958,15 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 <td className="py-1.5 px-3 text-right text-zinc-200 font-bold border-r border-zinc-700 tabular-nums">{periodCount}</td>
                 <td className="py-1.5 px-3 border-r border-zinc-700" />
                 <td className="py-1.5 px-3 text-right text-white font-black tabular-nums border-r border-zinc-700">{periodTotal.toLocaleString()}</td>
-                <td className="py-1.5 px-3 text-right text-white font-black tabular-nums">{periodTotal.toLocaleString()}</td>
+                <td className="py-1.5 px-3 text-right text-white font-black tabular-nums border-r border-zinc-700">{periodTotal.toLocaleString()}</td>
+                {(() => {
+                  const latest = [...daysForCompany].reverse().map(d => getDepositBalance(activeCompany, d.date)).find(v => v !== undefined);
+                  return (
+                    <td className="py-1.5 px-3 text-right font-black tabular-nums">
+                      {latest === undefined ? '' : <span className={latest < 0 ? 'text-rose-400' : 'text-emerald-400'}>{latest.toLocaleString()}원</span>}
+                    </td>
+                  );
+                })()}
               </tr>
             </tbody>
           </table>

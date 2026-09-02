@@ -19,6 +19,8 @@ import {
   saveSharedSuppliers,
   subscribeUrgentNotice,
   saveUrgentNotice,
+  subscribeDepositLedger,
+  type DepositLedger,
   type DailyWorkspaceData,
   type FakeCourierSettings,
   DEFAULT_FAKE_COURIER_SETTINGS,
@@ -214,6 +216,19 @@ export const useDailyWorkspace = (businessId?: string) => {
   }, [businessId]);
 
   return { workspace, setWorkspace, updateField, updateSessionField, isReady };
+};
+
+// ===== 예수금(예치금) 원장 Hook =====
+export const useDepositLedger = (businessId?: string) => {
+  const [ledger, setLedger] = useState<DepositLedger>({});
+
+  useEffect(() => {
+    setLedger({});
+    const unsubscribe = subscribeDepositLedger(setLedger, businessId);
+    return unsubscribe;
+  }, [businessId]);
+
+  return ledger;
 };
 
 // ===== Shared Supplier Library Hook =====

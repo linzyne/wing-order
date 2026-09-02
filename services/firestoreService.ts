@@ -51,6 +51,9 @@ const getCourierTemplatesDocId = (): string => 'courierTemplates';
 const getTodosDocId = (businessId?: string): string =>
   (!businessId || businessId === '안군농원') ? 'todos' : `todos_${businessId}`;
 
+const getDepositLedgerDocId = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'default' : businessId;
+
 // ===== Pricing Config =====
 
 export const subscribePricingConfig = (
@@ -421,6 +424,53 @@ export const getDailyWorkspace = async (businessId?: string): Promise<DailyWorks
   const docRef = doc(db, getWorkspaceCollectionName(businessId), getTodayDocId());
   const snapshot = await getDoc(docRef);
   return snapshot.exists() ? snapshot.data() as DailyWorkspaceData : null;
+};
+
+// ===== 예수금(예치금) 원장 =====
+// 문서 1개(사업자별)에 { [업체명]: { [YYYY-MM-DD]: 그 날짜 기준 남은 예치금 } }.
+// 정산요약을 "기록"할 때마다 그날 잔액 스냅샷을 남기고, 발주 화면·업체별정산에서 이 문서만 읽는다.
+// (salesHistory 문서는 발주행 등으로 크기 때문에 잔액 조회용으로는 가벼운 이 문서를 쓴다)
+export type DepositLedger = Record<string, Record<string, number>>;
+
+const getDepositLedgerRef = (businessId?: string) =>
+  doc(db, 'depositLedgers', getDepositLedgerDocId(businessId));
+
+export const loadDepositLedger = async (businessId?: string): Promise<DepositLedger> => {
+  try {
+    const snap = await getDoc(getDepositLedgerRef(businessId));
+    return snap.exists() ? (snap.data() as DepositLedger) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const subscribeDepositLedger = (
+  callback: (ledger: DepositLedger) => void,
+  businessId?: string
+): Unsubscribe => {
+  return onSnapshot(getDepositLedgerRef(businessId), (snap) => {
+    callback(snap.exists() ? (snap.data() as DepositLedger) : {});
+  }, (error) => {
+    console.error('[Firestore] DepositLedger 구독 오류:', error);
+    callback({});
+  });
+};
+
+export const setDepositLedgerBalance = async (
+  company: string,
+  date: string,
+  balance: number,
+  businessId?: string
+): Promise<void> => {
+  await setDoc(getDepositLedgerRef(businessId), { [company]: { [date]: balance } }, { merge: true });
+};
+
+export const removeDepositLedgerBalance = async (
+  company: string,
+  date: string,
+  businessId?: string
+): Promise<void> => {
+  await setDoc(getDepositLedgerRef(businessId), { [company]: { [date]: deleteField() } }, { merge: true });
 };
 
 // ===== Quick Recipients (빠른 수령자 관리) =====

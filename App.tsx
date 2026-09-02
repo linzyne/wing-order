@@ -115,7 +115,7 @@ const App: React.FC = () => {
   const directCoupangUploadRef = useRef<((businessId: string, file: File) => Promise<void>) | null>(null);
   const resetFnsRef = useRef<Record<string, () => void>>({});
   type DepositExtraRow = { bankName: string; accountNumber: string; amount: string; label: string };
-  const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void }>>({});
+  const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void; getDepositCompanies?: () => string[] }>>({});
 
   const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; }) => {
     uploadFnsRef.current[businessId] = handlers;
@@ -126,7 +126,7 @@ const App: React.FC = () => {
   }, []);
 
 
-  const handleRegisterDownloadActions = useCallback((businessId: string, actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void }) => {
+  const handleRegisterDownloadActions = useCallback((businessId: string, actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void; getDepositCompanies?: () => string[] }) => {
     downloadActionsRef.current[businessId] = actions;
   }, []);
 
@@ -1368,6 +1368,7 @@ const App: React.FC = () => {
                   const biz = allBusinesses.find(b => b.id === id);
                   const baseRows = bulkBaseRowsMap[id] ?? [];
                   const extraRows = grouped[id] ?? [];
+                  const depositCompanies = new Set(downloadActionsRef.current[id]?.getDepositCompanies?.() ?? []);
                   const totalCount = baseRows.length + extraRows.length;
                   const totalAmount =
                     baseRows.reduce((s, r) => s + (Number(r[2]) || 0), 0) +
@@ -1391,12 +1392,19 @@ const App: React.FC = () => {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-900">
-                          {baseRows.map((r, i) => (
-                            <tr key={`base-${i}`} className="text-zinc-400 group">
+                          {baseRows.map((r, i) => {
+                            const isDeposit = depositCompanies.has(String(r[3] ?? '').trim());
+                            return (
+                            <tr key={`base-${i}`} className={`group ${isDeposit ? 'text-rose-400 bg-rose-950/20' : 'text-zinc-400'}`} title={isDeposit ? '예치금으로 정산되는 업체 — 계좌이체로 또 보내면 이중 지급입니다' : undefined}>
                               <td className="px-3 py-1.5"><input className={cellInput} value={r[0] ?? ''} onChange={e => updateBaseCell(id, i, 0, e.target.value)} /></td>
                               <td className="px-3 py-1.5 font-mono"><input className={cellInput} value={r[1] ?? ''} onChange={e => updateBaseCell(id, i, 1, e.target.value)} /></td>
-                              <td className="px-3 py-1.5 text-right tabular-nums text-emerald-400"><input className={`${cellInput} text-right`} inputMode="numeric" value={r[2] ?? ''} onChange={e => updateBaseCell(id, i, 2, e.target.value)} /></td>
-                              <td className="px-3 py-1.5 text-zinc-500"><input className={cellInput} value={r[3] ?? ''} onChange={e => updateBaseCell(id, i, 3, e.target.value)} /></td>
+                              <td className={`px-3 py-1.5 text-right tabular-nums ${isDeposit ? 'text-rose-400' : 'text-emerald-400'}`}><input className={`${cellInput} text-right`} inputMode="numeric" value={r[2] ?? ''} onChange={e => updateBaseCell(id, i, 2, e.target.value)} /></td>
+                              <td className={`px-3 py-1.5 ${isDeposit ? 'text-rose-400' : 'text-zinc-500'}`}>
+                                <div className="flex items-center gap-1.5">
+                                  <input className={cellInput} value={r[3] ?? ''} onChange={e => updateBaseCell(id, i, 3, e.target.value)} />
+                                  {isDeposit && <span className="shrink-0 text-[9px] font-black px-1 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">예치금</span>}
+                                </div>
+                              </td>
                               <td className="px-3 py-1.5">
                                 <button
                                   onClick={() => setBulkBaseRowsMap(prev => ({ ...prev, [id]: (prev[id] ?? []).filter((_, j) => j !== i) }))}
@@ -1406,7 +1414,8 @@ const App: React.FC = () => {
                                 </button>
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                           {extraRows.map((r, i) => (
                             <tr key={`extra-${i}`} className="text-zinc-500 bg-emerald-950/20 group">
                               <td className="px-3 py-1.5"><input className={cellInput} value={r.bankName} onChange={e => updateExtraCell(id, i, 'bankName', e.target.value)} /></td>
