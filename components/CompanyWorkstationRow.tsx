@@ -17,6 +17,32 @@ import type { SessionResultData, DailyWorkspaceData } from '../services/firestor
 
 declare var XLSX: any;
 
+/** navigator.clipboard 실패(비보안 컨텍스트 - LAN IP로 접속 등, 권한 거부 등) 시 execCommand로 폴백 */
+async function copyToClipboard(text: string): Promise<boolean> {
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {
+        // 폴백으로 이어짐
+    }
+    try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(textarea);
+        return ok;
+    } catch {
+        return false;
+    }
+}
+
 const platformAbbr = (p: string) => {
     const n = p.replace(/\s/g, '');
     if (n === '쿠팡') return 'C';
@@ -67,7 +93,7 @@ interface CompanyWorkstationRowProps {
     onSelectToggle?: (sessionId: string) => void;
     onVendorFileChange: (files: File[]) => void;
     onResultUpdate: (sessionId: string, totalPrice: number, excludedCount?: number, excludedDetails?: ExcludedOrder[]) => void;
-    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowBundleNumbers?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[], invoiceFailures?: { orderNum: string; recipient: string; reason: string }[]) => void;
+    onDataUpdate: (sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowBundleNumbers?: string[], rowRecipientNames?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[], invoiceFailures?: { orderNum: string; recipient: string; reason: string }[]) => void;
     onAddSession: () => void;
     onRemoveSession: () => void;
     onAddAdjustment: (companyName: string, amount: string) => void;
@@ -490,7 +516,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
 
     const [copiedCombinedId, setCopiedCombinedId] = useState<string | null>(null);
-    const handleCopyCombined = () => {
+    const handleCopyCombined = async () => {
         let finalText = combinedDepositText;
         if (allSessionAdjustments.length > 0) {
             const adjText = allSessionAdjustments.map(a => `${a.label}\t${a.amount.toLocaleString()}원`).join('\n');
@@ -500,9 +526,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 .replace('총 합계', `[추가/차감 내역]\n${adjText}\n\n총 합계`)
                 .replace(/(총 합계\s+)([\d,]+)(원)/, (_match, p1, _p2, p3) => `${p1}${(orderTotal + adjTotal).toLocaleString()}${p3}`);
         }
-        navigator.clipboard.writeText(injectDeposit(finalText));
-        setCopiedCombinedId(sessionId);
-        setTimeout(() => setCopiedCombinedId(null), 2000);
+        const textToCopy = injectDeposit(finalText);
+        const ok = await copyToClipboard(textToCopy);
+        if (ok) {
+            setCopiedCombinedId(sessionId);
+            setTimeout(() => setCopiedCombinedId(null), 2000);
+        } else {
+            alert(`클립보드 복사에 실패했습니다. 아래 내용을 직접 복사해주세요:\n\n${textToCopy}`);
+        }
     };
 
     const lastProcessedMasterRef = useRef<File | null>(null);
@@ -834,7 +865,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // 정산내역 텍스트를 역파싱해 itemSummary 도출 (공통 업로드 경로의 매칭 오류 방지)
         const parsedFromExcel = parseSummaryFromExcelText(effectiveExcel);
         const itemSummaryForUpdate = Object.keys(parsedFromExcel).length > 0 ? parsedFromExcel : effectiveSummary;
-        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, itemSummaryForUpdate, localResult.orderItems, localResult.preConsolidationByGroup, localResult.rowOrderNumbers, localResult.rowBundleNumbers, localResult.rowPricing, mergeResults?.companyStats?.[companyName]?.failures);
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, itemSummaryForUpdate, localResult.orderItems, localResult.preConsolidationByGroup, localResult.rowOrderNumbers, localResult.rowBundleNumbers, localResult.rowRecipientNames, localResult.rowPricing, mergeResults?.companyStats?.[companyName]?.failures);
     }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments, summaryOverride]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
@@ -870,6 +901,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 includedOrderNumbers: localResult.includedOrderNumbers || [],
                 rowOrderNumbers: localResult.rowOrderNumbers || [],
                 rowBundleNumbers: localResult.rowBundleNumbers || [],
+                rowRecipientNames: localResult.rowRecipientNames || [],
                 rowPricing: localResult.rowPricing || [],
                 unmatchedOrders: unmatchedList.length > 0 ? unmatchedList : [],
             };
@@ -916,7 +948,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             if (Object.keys(parsed).length > 0) return parsed;
             return syncedData.itemSummary;
         })();
-        onDataUpdate(sessionId, parseRows(syncedData.orderRows), syncedInvoiceRows, syncedUploadRows, syncedData.summaryExcel, syncedHeader.length > 0 ? syncedHeader : undefined, syncedData.registeredProductNames, effectiveItemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup, syncedData.rowOrderNumbers, syncedData.rowBundleNumbers, syncedData.rowPricing);
+        onDataUpdate(sessionId, parseRows(syncedData.orderRows), syncedInvoiceRows, syncedUploadRows, syncedData.summaryExcel, syncedHeader.length > 0 ? syncedHeader : undefined, syncedData.registeredProductNames, effectiveItemSummary, syncedData.orderItems, syncedData.preConsolidationByGroup, syncedData.rowOrderNumbers, syncedData.rowBundleNumbers, syncedData.rowRecipientNames, syncedData.rowPricing);
         if (syncedData.unmatchedOrders) setUnmatchedList(syncedData.unmatchedOrders);
     }, [workspace, localResult, sessionId]);
 
@@ -934,7 +966,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (!vendorFiles.length) vendorFilesKeyRef.current = '';
     }, [vendorFiles, localFile, masterFile, mergeStatus]);
 
-    const handleCopy = (id: string, baseText: string, type: 'kakao' | 'excel' = 'kakao') => {
+    const handleCopy = async (id: string, baseText: string, type: 'kakao' | 'excel' = 'kakao') => {
         let finalText = baseText;
         if (allSessionAdjustments.length > 0) {
             if (type === 'kakao') {
@@ -952,10 +984,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 // 엑셀용은 기본 텍스트 유지 (필요시 확장 가능)
             }
         }
-        
-        navigator.clipboard.writeText(injectDeposit(finalText));
-        if (type === 'kakao') { setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); }
-        else { setCopiedExcelId(id); setTimeout(() => setCopiedExcelId(null), 2000); }
+
+        const textToCopy = injectDeposit(finalText);
+        const ok = await copyToClipboard(textToCopy);
+        if (ok) {
+            if (type === 'kakao') { setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); }
+            else { setCopiedExcelId(id); setTimeout(() => setCopiedExcelId(null), 2000); }
+        } else {
+            alert(`클립보드 복사에 실패했습니다. 아래 내용을 직접 복사해주세요:\n\n${textToCopy}`);
+        }
     };
 
     const isProcessingRef = useRef(false);

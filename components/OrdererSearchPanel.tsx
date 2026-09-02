@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { DailySales, PricingConfig } from '../types';
 import { loadAllSalesHistory, loadPricingConfig } from '../services/firestoreService';
-import { resolveOrderRowFields } from './CsEntryModal';
+import { resolveOrderRowFields, normalizeForSearch } from './CsEntryModal';
 
 interface Props {
   businesses: { id: string; displayName: string }[];
@@ -23,7 +23,8 @@ interface OrderHit {
   fake: boolean;
 }
 
-const norm = (v: any) => String(v ?? '').toLowerCase().replace(/\s/g, '');
+// 한글 NFD/NFC 혼용까지 흡수해야 이름 검색이 헛돌지 않는다
+const norm = normalizeForSearch;
 
 /** 모든 사업자의 매출현황(발주내역)에서 이름/주문번호로 어느 사업자 주문인지 찾아준다 */
 const OrdererSearchPanel: React.FC<Props> = ({ businesses, active, onClose }) => {
@@ -49,9 +50,11 @@ const OrdererSearchPanel: React.FC<Props> = ({ businesses, active, onClose }) =>
             if (d.companyOrderRows) {
               Object.entries(d.companyOrderRows).forEach(([company, rows]) => {
                 const nums = d.companyOrderNumbers?.[company] || [];
+                const storedNames = d.companyRecipientNames?.[company] || [];
                 (rows as any[][]).forEach((row, i) => {
                   const f = resolveOrderRowFields(company, row, pricing || undefined);
-                  const rawName = f.recipientName || '';
+                  // 저장된 수취인 이름이 있으면 헤더 추측보다 우선 (발주양식에 이름 칸이 없어도 정확)
+                  const rawName = storedNames[i] || f.recipientName || '';
                   all.push({
                     businessId: biz.id,
                     businessName: biz.displayName,

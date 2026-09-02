@@ -59,6 +59,13 @@ export function parseRefundAccountPaste(text: string) {
   return { bankName, accountNumber, holder, amount };
 }
 
+/**
+ * 검색 비교용 정규화 — 한글 자모 분리(NFD, macOS 파일/붙여넣기)까지 NFC로 통일하고
+ * 공백을 없앤 뒤 소문자로. 검색어와 데이터 양쪽에 똑같이 적용해야 한다.
+ */
+export const normalizeForSearch = (v: any): string =>
+  (v == null ? '' : String(v)).normalize('NFC').toLowerCase().replace(/\s+/g, '');
+
 /** 발주내역 행에서 업체 헤더 구조를 참고해 주문번호/받는사람/품목명/수량/배송메시지 열을 찾아낸다 */
 export function resolveOrderRowFields(company: string, row: any[], pricingConfig?: PricingConfig) {
   const config = pricingConfig?.[company];

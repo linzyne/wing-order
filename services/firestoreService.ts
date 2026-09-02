@@ -236,6 +236,7 @@ export const deleteCompanyFromDailySales = async (
     companyInvoiceRows: Object.fromEntries(Object.entries(existing.companyInvoiceRows || {}).filter(([k]) => k !== companyName)),
     companyOrderNumbers: Object.fromEntries(Object.entries(existing.companyOrderNumbers || {}).filter(([k]) => k !== companyName)),
     companyBundleNumbers: Object.fromEntries(Object.entries(existing.companyBundleNumbers || {}).filter(([k]) => k !== companyName)),
+    companyRecipientNames: Object.fromEntries(Object.entries(existing.companyRecipientNames || {}).filter(([k]) => k !== companyName)),
     companyOrderPricing: Object.fromEntries(Object.entries(existing.companyOrderPricing || {}).filter(([k]) => k !== companyName)),
   };
   updated.totalAmount = (updated.records || []).reduce((s, r) => s + r.totalPrice, 0);
@@ -245,6 +246,7 @@ export const deleteCompanyFromDailySales = async (
   if (!Object.keys(updated.companyInvoiceRows).length) delete updated.companyInvoiceRows;
   if (!Object.keys(updated.companyOrderNumbers).length) delete updated.companyOrderNumbers;
   if (!Object.keys(updated.companyBundleNumbers || {}).length) delete updated.companyBundleNumbers;
+  if (!Object.keys(updated.companyRecipientNames || {}).length) delete updated.companyRecipientNames;
   if (!Object.keys(updated.companyOrderPricing).length) delete updated.companyOrderPricing;
   await upsertDailySales(updated, businessId);
 };
@@ -269,6 +271,7 @@ export interface SessionResultData {
   includedOrderNumbers?: string[];
   rowOrderNumbers?: string[]; // orderRows와 동일한 순서/길이의 원본 주문번호 목록
   rowBundleNumbers?: string[]; // orderRows와 동일한 순서/길이의 묶음배송번호 목록
+  rowRecipientNames?: string[]; // orderRows와 동일한 순서/길이의 수취인 이름 목록
   rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]; // orderRows와 동일한 순서/길이의 공급가/판매가/마진 목록
   unmatchedOrders?: { companyName: string; recipientName: string; productName: string; phone: string; orderNumber: string }[];
   timeLabel?: string; // 업로드 파일명에서 추출한 시간 라벨(예: "8시") — 공통 업로드 패널 회차 배지 표시용

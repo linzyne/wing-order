@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
-import { usePricingConfig, useDepositLedger } from '../hooks/useFirestore';
-import CsEntryModal, { type CsDraft, resolveOrderRowFields, refineOrderRowFieldsByValue, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
+import { usePricingConfig, useDepositLedger, useSettlementMap } from '../hooks/useFirestore';
+import CsEntryModal, { type CsDraft, resolveOrderRowFields, refineOrderRowFieldsByValue, normalizeForSearch, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
 import { CS_SAVED_EVENT, setDepositLedgerBalance, subscribeDeliveryOrderMap, mergeDeliveryOrderMap, clearDeliveryOrderMap, upsertDailySales, type DeliveryOrderMap } from '../services/firestoreService';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
 import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord, CsRecord, ExcludedOrder } from '../types';
@@ -271,6 +271,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   const { salesHistory, load, loadMonth, refresh, refreshDate, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
   const depositLedger = useDepositLedger(businessId);
+  const settlementMap = useSettlementMap(); // 쿠팡 정산완료 매핑 (전역)
   // 인라인 수정 시 onSnapshot 반영 전까지 쓸 낙관적 오버라이드 { "업체 날짜": 잔액 }
   const [depositEdits, setDepositEdits] = useState<Record<string, number>>({});
   const [editingDepositKey, setEditingDepositKey] = useState<string | null>(null);
@@ -397,6 +398,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       row: any[];
       orderNumber: string;
       bundleNumber?: string; // 저장된 묶음배송번호 (2026-09-02 이후 발주서)
+      storedRecipientName?: string; // 저장된 수취인 이름 (2026-09-03 이후 발주서) — 발주양식에 이름 칸이 없어도 보존됨
       fake?: boolean; // 가구매 명단 매칭으로 발주서에서 제외된 주문 (공급사 발주 X, 기록용)
       fields?: ReturnType<typeof resolveOrderRowFields>;
     };
@@ -409,7 +411,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
           // companyOrderNumbers[company]는 companyOrderRows[company]와 동일한 순서/길이의 원본 주문번호 목록
           const nums = d.companyOrderNumbers?.[company] || [];
           const bnums = d.companyBundleNumbers?.[company] || [];
-          (companyRows as any[][]).forEach((row, i) => data.push({ company, row, orderNumber: nums[i] || '', bundleNumber: bnums[i] || '' }));
+          const rnames = d.companyRecipientNames?.[company] || [];
+          (companyRows as any[][]).forEach((row, i) => data.push({ company, row, orderNumber: nums[i] || '', bundleNumber: bnums[i] || '', storedRecipientName: rnames[i] || '' }));
         });
       } else {
         data = (d.orderRows || []).map(row => ({ company: '', row, orderNumber: '' }));
@@ -450,17 +453,20 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
 
   // 발주 검색 필터링 (이름, 주문번호 등 행 내 아무 셀이나 일치하면 검색됨)
   const filteredOrderRows = useMemo(() => {
-    const q = orderSearch.trim().toLowerCase();
+    // 한글 NFD/NFC 혼용과 공백 차이로 이름 검색이 헛돌지 않도록 양쪽 다 정규화해서 비교
+    const q = normalizeForSearch(orderSearch);
     if (!q) return allOrderRows;
+    const hit = (v: any) => v != null && normalizeForSearch(v).includes(q);
     return allOrderRows
       .map(({ date, data }) => ({
         date,
-        data: data.filter(({ row, orderNumber, fields }) =>
-          (orderNumber && orderNumber.toLowerCase().includes(q)) ||
-          (orderNumber && (deliveryOrderMap[normNum(orderNumber)] || '').toLowerCase().includes(q)) ||
-          row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q)) ||
-          row.some((cell: any) => { const m = deliveryOrderMap[normNum(cell)]; return m && m.toLowerCase().includes(q); }) ||
-          (fields && Object.values(fields).some(v => v != null && String(v).toLowerCase().includes(q)))),
+        data: data.filter(({ row, orderNumber, storedRecipientName, fields }) =>
+          hit(orderNumber) ||
+          hit(storedRecipientName) ||
+          (orderNumber && hit(deliveryOrderMap[normNum(orderNumber)])) ||
+          row.some((cell: any) => hit(cell)) ||
+          row.some((cell: any) => hit(deliveryOrderMap[normNum(cell)])) ||
+          (fields && Object.values(fields).some(v => hit(v)))),
       }))
       .filter(({ data }) => data.length > 0);
   }, [allOrderRows, orderSearch, deliveryOrderMap]);
@@ -1004,10 +1010,12 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     if (allOrderRows.length > 0) {
       const orderSheetRows: any[][] = [['날짜', '구분', '업체', '주문번호', '수취인', '품목', '수량', '공급가', '마진', '판매가', '배송메시지', '우편번호', '주소', '연락처']];
       allOrderRows.forEach(({ date, data }) => {
-        data.forEach(({ company, row, orderNumber, fake, fields: fakeFields }) => {
-          const f = fakeFields ?? refineOrderRowFieldsByValue(
+        data.forEach(({ company, row, orderNumber, storedRecipientName, fake, fields: fakeFields }) => {
+          const resolved = fakeFields ?? refineOrderRowFieldsByValue(
             resolveOrderRowFields(company, row, pricingConfig), row, pricingConfig?.[company], company,
           );
+          // 저장된 수취인 이름이 있으면 헤더 추측보다 우선 (발주양식에 이름 칸이 없어도 정확)
+          const f = storedRecipientName ? { ...resolved, recipientName: storedRecipientName } : resolved;
           const p = findProductByName(pricingConfig?.[company], f.productName);
           const supply = !fake && typeof p?.supplyPrice === 'number' ? p.supplyPrice * f.qty : undefined;
           const selling = typeof p?.sellingPrice === 'number' ? p.sellingPrice * f.qty : undefined;
@@ -1241,6 +1249,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         <th className="pb-2 pr-3 whitespace-nowrap text-right">공급가</th>
                         <th className="pb-2 pr-3 whitespace-nowrap text-right">마진</th>
                         <th className="pb-2 pr-3 whitespace-nowrap text-right">판매가</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap text-right">정산금액</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap text-right">순이익</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">배송메시지</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">우편번호</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">주소</th>
@@ -1249,13 +1259,17 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-900/50">
-                      {data.map(({ company, row, orderNumber, bundleNumber, fake, fields: fakeFields }, i) => {
-                        const fields = fakeFields ?? refineOrderRowFieldsByValue(
+                      {(() => {
+                      const settleShownFor = new Set<string>(); // 같은 주문번호가 여러 행이면 첫 행에만 정산금액 표기 (합계 중복 방지)
+                      return data.map(({ company, row, orderNumber, bundleNumber, storedRecipientName, fake, fields: fakeFields }, i) => {
+                        const resolvedFields = fakeFields ?? refineOrderRowFieldsByValue(
                           resolveOrderRowFields(company, row, pricingConfig),
                           row,
                           pricingConfig?.[company],
                           company,
                         );
+                        // 저장된 수취인 이름이 있으면 헤더 추측보다 우선 (발주양식에 이름 칸이 없어도 정확)
+                        const fields = storedRecipientName ? { ...resolvedFields, recipientName: storedRecipientName } : resolvedFields;
                         // 모든 행에 묶음배송번호 + 주문번호를 함께 표시한다.
                         //  - 물리 행에서 파싱한 값(대개 묶음배송번호, 15자리) / companyOrderNumbers(원본 주문번호)
                         //  - 부족한 쪽은 배달완료 매핑표로 채운다
@@ -1292,6 +1306,20 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         const rowMargin = fake
                           ? fakePurchaseMargin(matchedProduct?.sellingPrice, fields.qty) // 가구매: 역마진
                           : (typeof matchedProduct?.margin === 'number' ? matchedProduct.margin * fields.qty : undefined); // 발주: 수량 × 개당마진
+                        // 쿠팡 정산완료 대조: 주문번호로 정산금액 조회. autoConsolidate 합산 주문은 콤마로 여러 개 → 각각 조회 후 합산.
+                        // 같은 주문번호가 여러 행이면 첫 행에만 표기(합계 중복 방지)
+                        const settleKeys = orderNumber
+                          ? String(orderNumber).split(/[,\s]+/).map(normNum).filter(Boolean)
+                          : (orderNo ? [orderNo] : []);
+                        let settledAmount: number | undefined;
+                        for (const k of settleKeys) { const v = settlementMap[k]; if (v != null) settledAmount = (settledAmount || 0) + v; }
+                        const settleDedupKey = settleKeys.join(',');
+                        const settleAlreadyShown = !!settleDedupKey && settleShownFor.has(settleDedupKey);
+                        if (settleDedupKey && settledAmount != null) settleShownFor.add(settleDedupKey);
+                        const showSettle = settledAmount != null && !settleAlreadyShown;
+                        // 순이익 = 정산금액 − 공급가 (정산금액은 쿠팡 수수료 뗀 실지급액)
+                        const netProfit = showSettle && typeof rowSupply === 'number' ? settledAmount - rowSupply : undefined;
+                        const hasSettlementMap = Object.keys(settlementMap).length > 0;
                         return (
                           <tr key={i} className={`text-xs ${fake ? 'bg-sky-500/[0.04]' : ''}`}>
                             <td className="py-1.5 pr-3 font-black whitespace-nowrap">
@@ -1327,6 +1355,27 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                                 : <span className="text-zinc-700">—</span>}
                             </td>
                             <td className="py-1.5 pr-3 whitespace-nowrap text-right">{money(rowSelling, 'text-zinc-300')}</td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap text-right">
+                              {showSettle ? (
+                                <span className="font-mono text-sky-300" title="쿠팡 정산완료 파일의 정산금액 (주문번호 합계)">
+                                  {settledAmount.toLocaleString()}원
+                                  <span className="ml-1.5 text-[9px] bg-sky-500/15 text-sky-300 px-1 py-0.5 rounded font-black border border-sky-500/25">정산완료</span>
+                                </span>
+                              ) : settleAlreadyShown ? (
+                                <span className="text-zinc-700 text-[10px]" title="같은 주문번호 상단 행에 정산금액 표시">↑ 합산</span>
+                              ) : fake ? (
+                                <span className="text-zinc-700">—</span>
+                              ) : hasSettlementMap ? (
+                                <span className="text-[10px] text-amber-500/80 font-bold" title="정산완료 파일에 이 주문번호가 없음">미정산</span>
+                              ) : (
+                                <span className="text-zinc-700">—</span>
+                              )}
+                            </td>
+                            <td className="py-1.5 pr-3 whitespace-nowrap text-right">
+                              {typeof netProfit === 'number'
+                                ? <span className={`font-mono ${netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{netProfit.toLocaleString()}원</span>
+                                : <span className="text-zinc-700">—</span>}
+                            </td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.deliveryMessage)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientZipcode)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientAddress)}</td>
@@ -1352,7 +1401,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                             </td>
                           </tr>
                         );
-                      })}
+                      });
+                      })()}
                     </tbody>
                   </table>
                 </div>
