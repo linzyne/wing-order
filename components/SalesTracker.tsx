@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
 import { usePricingConfig, useDepositLedger } from '../hooks/useFirestore';
 import CsEntryModal, { type CsDraft, resolveOrderRowFields, refineOrderRowFieldsByValue, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
-import { CS_SAVED_EVENT, setDepositLedgerBalance, subscribeDeliveryOrderMap, mergeDeliveryOrderMap, clearDeliveryOrderMap, type DeliveryOrderMap } from '../services/firestoreService';
+import { CS_SAVED_EVENT, setDepositLedgerBalance, subscribeDeliveryOrderMap, mergeDeliveryOrderMap, clearDeliveryOrderMap, upsertDailySales, type DeliveryOrderMap } from '../services/firestoreService';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
 import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord, CsRecord, ExcludedOrder } from '../types';
 import { getBusinessInfo, getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
@@ -863,6 +863,52 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     handleImportFiles(e.dataTransfer.files);
   };
 
+  // 배달완료 pairs({묶음배송번호→주문번호})로, 화면에 로드된 매출현황 레코드에 번호를 영구 저장(backfill).
+  // 전역 매핑표(deliveryOrderMap 샤드)는 새로고침으로 날아갈 수 있으므로, 발주내역 표시가 매핑표에
+  // 의존하지 않도록 각 날짜 문서의 companyBundleNumbers/companyOrderNumbers 자체를 채워 upsert한다.
+  const backfillDeliveryToRecords = async (pairs: DeliveryOrderMap): Promise<{ days: number; filled: number }> => {
+    const map: DeliveryOrderMap = { ...deliveryOrderMap, ...pairs }; // 묶음배송번호 → 주문번호
+    const changedDates: string[] = [];
+    let filled = 0;
+    for (const d of salesHistory) {
+      if (!d.companyOrderRows) continue;
+      const nextBundles: Record<string, string[]> = { ...(d.companyBundleNumbers || {}) };
+      const nextOrders: Record<string, string[]> = { ...(d.companyOrderNumbers || {}) };
+      let changed = false;
+      for (const [company, companyRows] of Object.entries(d.companyOrderRows)) {
+        const rowArr = companyRows as any[][];
+        const bArr = (nextBundles[company] || []).slice();
+        const oArr = (nextOrders[company] || []).slice();
+        while (bArr.length < rowArr.length) bArr.push('');
+        while (oArr.length < rowArr.length) oArr.push('');
+        for (let i = 0; i < rowArr.length; i++) {
+          // 이 행의 묶음배송번호: 이미 저장돼 있으면 그대로, 아니면 물리 행 셀에서 매핑표에 있는 값 탐색
+          let bundle = normNum(bArr[i]);
+          if (!bundle && Array.isArray(rowArr[i])) {
+            for (const c of rowArr[i]) { const n = normNum(c); if (n && map[n]) { bundle = n; break; } }
+          }
+          if (!bundle) continue;
+          const order = map[bundle];
+          const wasEmpty = !normNum(bArr[i]) && !normNum(oArr[i]);
+          if (bArr[i] !== bundle) { bArr[i] = bundle; changed = true; }
+          if (order && !normNum(oArr[i])) { oArr[i] = order; changed = true; }
+          if (wasEmpty && (normNum(bArr[i]) || normNum(oArr[i]))) filled++;
+        }
+        nextBundles[company] = bArr;
+        nextOrders[company] = oArr;
+      }
+      if (changed) {
+        changedDates.push(d.date);
+        await upsertDailySales(
+          { ...d, companyBundleNumbers: nextBundles, companyOrderNumbers: nextOrders, savedAt: new Date().toISOString() },
+          businessId,
+        );
+      }
+    }
+    for (const date of changedDates) await refreshDate(date);
+    return { days: changedDates.length, filled };
+  };
+
   // 쿠팡 배달완료 파일(Delivery 시트: B열 묶음배송번호, C열 주문번호) 업로드 → 매핑 누적 저장
   const handleDeliveryFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -900,15 +946,18 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
         return;
       }
       const uniq = new Set(Object.keys(pairs)).size;
-      // 저장은 로컬 캐시에 즉시 반영되고(화면 갱신), 서버 확인은 오프라인/대기열이 밀리면 오래 걸릴 수 있으므로
-      // 8초까지만 기다리고 UI를 풀어준다 (백그라운드에서 계속 동기화됨)
-      const added = await Promise.race([
-        mergeDeliveryOrderMap(pairs, businessId),
-        new Promise<number>(res => setTimeout(() => res(-1), 8000)),
-      ]);
-      setDeliveryUploadStatus(added < 0
-        ? `${uniq.toLocaleString()}건 반영됨 (서버 동기화는 백그라운드 진행 중)`
-        : `${uniq.toLocaleString()}건 읽음 · 새로 추가 ${added.toLocaleString()}건 (발주내역 주문번호 자동 반영)`);
+      // 1) 화면에 로드된 발주내역 레코드에 묶음배송번호/주문번호를 영구 저장 (전역 매핑표가 날아가도 유지)
+      let bf = { days: 0, filled: 0 };
+      try {
+        bf = await backfillDeliveryToRecords(pairs);
+      } catch (e) {
+        console.error('[배달완료 backfill]', e);
+      }
+      // 2) 전역 매핑표도 갱신 (검색·다른 화면·화면에 없는 기간용) — 실패해도 1)로 표시는 유지되므로 best-effort
+      mergeDeliveryOrderMap(pairs, businessId).catch(e => console.error('[배달완료 매핑 저장]', e));
+      setDeliveryUploadStatus(
+        `${uniq.toLocaleString()}건 읽음 · 발주내역 ${bf.days}일 ${bf.filled.toLocaleString()}건에 번호 저장`
+        + (bf.days === 0 ? ' — 해당 기간 발주내역을 화면에 펼쳐 놓고 다시 올려주세요' : ''));
     } catch (e) {
       console.error('[배달완료 업로드]', e);
       setDeliveryUploadStatus('파일 처리 중 오류가 발생했습니다.');

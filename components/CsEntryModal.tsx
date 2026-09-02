@@ -181,6 +181,20 @@ export function refineOrderRowFieldsByValue(
     out.recipientName = cand ?? (/^\d+$/.test(out.recipientName) || vIsZip(out.recipientName) ? '' : out.recipientName);
   }
 
+  // 주문번호/묶음배송번호: 헤더 추측이 빗나가 빈 칸이면(조에농원 연두 등), 행에서 순수 숫자 10자리+
+  // 셀을 찾아 채운다(쿠팡 묶음배송번호 13~15자리·주문번호 11~14자리). 우편번호(5)·전화번호 형태·
+  // 수량은 자릿수/형태로 걸러진다. 여러 개면 가장 긴 값(=묶음배송번호) 우선. 표시용 보정.
+  if (!/^\d{10,}$/.test(vStr(out.orderNumber).replace(/[^0-9]/g, '')) || vIsPhone(out.orderNumber)) {
+    let best = '';
+    for (let i = 0; i < cells.length; i++) {
+      if (used.has(i)) continue;
+      const s = cells[i];
+      if (!/^\d{10,}$/.test(s) || vIsPhone(s)) continue; // 셀 전체가 숫자 10자리 이상
+      if (s.length > best.length) best = s;
+    }
+    if (best) out.orderNumber = best;
+  }
+
   return out;
 }
 
