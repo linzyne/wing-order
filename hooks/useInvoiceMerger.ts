@@ -245,6 +245,28 @@ export const useInvoiceMerger = () => {
             }
         }
 
+        // 송장번호 열을 아직 못 정했으면 (fieldMap에 trackingNumber가 없거나 하드코딩 열이 -1) 공통 폴백:
+        // 헤더 키워드 → 데이터에서 10자리 이상 숫자 열 자동 감지
+        // (업체가 송장번호 헤더를 "비워둠" 등으로 보내면 inferVendorInvoiceField가 태깅하지 못해 여기로 옴)
+        if (vInvIdx === -1) {
+            const vHeaderIdx = findVendorHeaderIdx(vendorAoa);
+            const vHeaders = vendorAoa[vHeaderIdx] || [];
+            vInvIdx = findColIdx(vHeaders, ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice']);
+            if (vInvIdx === -1) {
+                for (let ri = vHeaderIdx + 1; ri < Math.min(vendorAoa.length, vHeaderIdx + 8); ri++) {
+                    const dataRow = vendorAoa[ri];
+                    if (!dataRow) continue;
+                    for (let ci = 0; ci < dataRow.length; ci++) {
+                        if (ci === vOrderIdx) continue;
+                        const cellVal = String(dataRow[ci] || '').replace(/\s/g, '');
+                        if (/^\d{10,}$/.test(cellVal)) { vInvIdx = ci; break; }
+                    }
+                    if (vInvIdx !== -1) break;
+                }
+            }
+            if (vInvIdx !== -1) console.log(`[송장] 업체: ${companyName}, 송장열 폴백 감지 → ${vInvIdx}`);
+        }
+
         const invoiceMap = buildMapFromColumns(vendorAoa, vOrderIdx, vInvIdx);
         console.log(`[송장] 업체: ${companyName}, 감지 열: 주문=${vOrderIdx}, 송장=${vInvIdx}, map크기=${invoiceMap.size}`);
 
