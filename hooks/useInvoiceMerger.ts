@@ -27,23 +27,33 @@ const normalizeOrderNum = (val: any): string => {
     return str.replace(/[^A-Z0-9]/gi, '').toUpperCase();
 };
 
+/** 헤더명 자체가 "비워둠/미사용/빈칸" 같은 자리표시자인지 */
+const isPlaceholderHeaderName = (name: string): boolean => {
+    const n = String(name || '').replace(/\s+/g, '').toLowerCase();
+    if (!n) return true;
+    return ['비워둠', '비워둠(2)', '미사용', '사용안함', '빈칸', '없음', '해당없음', 'n/a', 'na', 'none', '-'].some(p => n.includes(p));
+};
+
 /**
  * 매칭 기준으로 지정된 헤더명 중 실제로 쓸 수 있는 것만 남긴다.
- * - fieldMap에서 'empty'(비워둠)로 매핑된 열은 매칭에 쓰면 안 됨
- *   (예: "비워둠" 열에 택배사명 "우체국"이 들어있는 걸 매칭키로 잘못 체크한 경우)
- * - 주문번호 계열이 하나라도 남아있으면 'empty' 열은 조용히 무시하고 진행
+ * - fieldMap에서 'empty'(비워둠)로 매핑됐거나, 헤더명 자체가 "비워둠" 류인 열은 매칭에 쓰면 안 됨
+ *   (예: "비워둠" 열에 택배사명 "우체국"이 들어있는 걸 매칭키로 잘못 체크한 경우 → 전부 미매칭)
+ * - 최소 하나는 남겨야 함 (전부 걸러지면 원본 유지 → 아래에서 명확한 에러)
+ * - fieldMap이 없어도 헤더명만으로 걸러낼 수 있게 함 (한나푸드처럼 필드맵 미저장 케이스 대비)
  */
 const sanitizeMatchHeaders = (
     rawNames: string[],
     configHeaders: string[] | undefined,
     fieldMap: string[] | undefined,
 ): string[] => {
-    if (!configHeaders || !fieldMap || fieldMap.length === 0) return rawNames;
     const usable = rawNames.filter(name => {
-        const hi = configHeaders.indexOf(name);
-        return hi === -1 || fieldMap[hi] !== 'empty';
+        if (isPlaceholderHeaderName(name)) return false;
+        if (configHeaders && fieldMap && fieldMap.length > 0) {
+            const hi = configHeaders.indexOf(name);
+            if (hi !== -1 && fieldMap[hi] === 'empty') return false;
+        }
+        return true;
     });
-    // 전부 걸러졌으면 원본 유지(설정 의도를 존중해 아래에서 명확한 에러가 나도록)
     return usable.length > 0 ? usable : rawNames;
 };
 
