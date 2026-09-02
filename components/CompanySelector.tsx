@@ -330,6 +330,10 @@ const CourierTemplateManager: React.FC<{
         };
         reader.onload = (ev) => {
             try {
+                if (typeof XLSX === 'undefined' || !XLSX?.read) {
+                    alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하고 새로고침한 뒤 다시 시도해 주세요.');
+                    return;
+                }
                 const data = new Uint8Array(ev.target?.result as ArrayBuffer);
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
@@ -345,7 +349,9 @@ const CourierTemplateManager: React.FC<{
                     }
                 }
                 if (headerRow) {
-                    const headers = Array.from({ length: headerRow.length }, (_, i) => String(headerRow[i] ?? ''));
+                    // 서식만 넓게 잡힌 엑셀(수천 열)을 그대로 렌더하면 화면이 멈추므로 상한을 둔다
+                    const colCount = Math.min(headerRow.length, 200);
+                    const headers = Array.from({ length: colCount }, (_, i) => String(headerRow![i] ?? ''));
                     console.log('[택배양식] 헤더 설정:', headers.length, '열');
                     setNewHeaders(headers);
                     setNewMapping({});
@@ -366,8 +372,16 @@ const CourierTemplateManager: React.FC<{
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
+        reader.onerror = () => {
+            console.error('[운송장양식] FileReader 에러:', reader.error);
+            alert('파일을 읽을 수 없습니다.');
+        };
         reader.onload = (ev) => {
             try {
+                if (typeof XLSX === 'undefined' || !XLSX?.read) {
+                    alert('엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하고 새로고침한 뒤 다시 시도해 주세요.');
+                    return;
+                }
                 const data = new Uint8Array(ev.target?.result as ArrayBuffer);
                 const wb = XLSX.read(data, { type: 'array' });
                 const ws = wb.Sheets[wb.SheetNames[0]];
@@ -382,7 +396,8 @@ const CourierTemplateManager: React.FC<{
                     }
                 }
                 if (headerRow) {
-                    const headers = Array.from({ length: headerRow.length }, (_, i) => String(headerRow[i] ?? ''));
+                    const colCount = Math.min(headerRow.length, 200);
+                    const headers = Array.from({ length: colCount }, (_, i) => String(headerRow![i] ?? ''));
                     setNewReturnHeaders(headers);
                     // 자동 감지: 주문번호/운송장번호 열 찾기
                     const autoMapping: Record<string, number> = {};
