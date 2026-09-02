@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PricingConfig, CompanyConfig, CompanyDeposit, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
 import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES } from '../types';
 import { inferFieldFromHeader, inferVendorInvoiceField } from '../hooks/useConsolidatedOrderConverter';
+import { useCompanyDeposits } from '../hooks/useFirestore';
 import {
     TrashIcon, PlusCircleIcon, DocumentArrowUpIcon, BuildingStorefrontIcon,
     PhoneIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon,
@@ -695,7 +696,9 @@ interface PricingEditorProps {
     onSendToLibrary?: (companyName: string, companyConfig: CompanyConfig) => void;
 }
 
-const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, platformConfigs = {}, onPlatformConfigsChange, sharedSuppliers, isLibraryMode, onSendToLibrary }) => {
+const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, businessId, platformConfigs = {}, onPlatformConfigsChange, sharedSuppliers, isLibraryMode, onSendToLibrary }) => {
+    // 예수금(예치금) 입금내역 — pricingConfig와 분리된 전용 문서에 저장 (덮어쓰기 사고 방지)
+    const { deposits: companyDepositsMap, saveDeposits: saveCompanyDeposits } = useCompanyDeposits(businessId);
     const [dialog, setDialog] = useState<DialogType>(null);
     const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>(() => {
         return Object.keys(config).reduce((acc, key) => ({ ...acc, [key]: true }), {});
@@ -850,10 +853,9 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
         handleUpdate(newConfig);
     };
 
+    // 예수금 입금내역은 pricingConfig가 아니라 전용 문서(companyDeposits)에 저장한다
     const handleUpdateDeposits = (companyName: string, deposits: CompanyDeposit[]) => {
-        const newConfig = JSON.parse(JSON.stringify(configRef.current));
-        newConfig[companyName].deposits = deposits.length > 0 ? deposits : undefined;
-        handleUpdate(newConfig);
+        saveCompanyDeposits(companyName, deposits);
     };
 
     const handleUpdateOrderFormHeaders = (companyName: string, headers: string[], fieldMap?: string[]) => {
@@ -1168,6 +1170,8 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, p
                             onUpdateAutoConsolidate={(enabled) => handleUpdateAutoConsolidate(companyName, enabled)}
                             onUpdateShippingSettlementSplit={(enabled) => handleUpdateShippingSettlementSplit(companyName, enabled)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
+                            deposits={companyDepositsMap[companyName] ?? (companyConfig as CompanyConfig)?.deposits ?? []}
+                            showDeposits={!isLibraryMode}
                             onUpdateDeposits={(deposits) => handleUpdateDeposits(companyName, deposits)}
                             onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
@@ -1308,6 +1312,8 @@ const CompanyCard: React.FC<{
     onUpdateAutoConsolidate: (enabled: boolean) => void;
     onUpdateShippingSettlementSplit: (enabled: boolean) => void;
     onUpdateKeywords: (keywords: string[]) => void;
+    deposits: CompanyDeposit[];
+    showDeposits: boolean;
     onUpdateDeposits: (deposits: CompanyDeposit[]) => void;
     onUpdateOrderFormHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
@@ -1449,7 +1455,7 @@ const CompanyCard: React.FC<{
                             className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                         />
                     </div>
-                    <DepositSection deposits={companyConfig.deposits || []} onChange={props.onUpdateDeposits} />
+                    {props.showDeposits && <DepositSection deposits={props.deposits} onChange={props.onUpdateDeposits} />}
                     <div className="bg-zinc-950 rounded-xl border border-zinc-800 shadow-inner overflow-hidden">
                         <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-zinc-900/40 transition-all" onClick={() => setOrderFormOpen(o => !o)}>
                             <span className="text-lg">📋</span>

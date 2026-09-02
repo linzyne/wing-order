@@ -5,7 +5,7 @@ import {
   onSnapshot, Timestamp, deleteField,
   type Unsubscribe
 } from 'firebase/firestore';
-import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate } from '../types';
+import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate, CompanyDeposit } from '../types';
 
 // ===== Firestore 한도 초과 감지 =====
 
@@ -471,6 +471,49 @@ export const removeDepositLedgerBalance = async (
   businessId?: string
 ): Promise<void> => {
   await setDoc(getDepositLedgerRef(businessId), { [company]: { [date]: deleteField() } }, { merge: true });
+};
+
+// ===== 예수금(예치금) 입금내역 =====
+// pricingConfig(자주 덮어써지고 여러 화면이 동시에 쓰는 큰 문서)와 분리해서 전용 문서에 저장한다.
+// 문서 1개(사업자별)에 { [업체명]: CompanyDeposit[] }. setDoc merge라 다른 업체 내역을 건드리지 않는다.
+export type CompanyDepositsDoc = Record<string, CompanyDeposit[]>;
+
+const getCompanyDepositsRef = (businessId?: string) =>
+  doc(db, 'companyDeposits', getDepositLedgerDocId(businessId));
+
+export const loadCompanyDeposits = async (businessId?: string): Promise<CompanyDepositsDoc> => {
+  try {
+    const snap = await getDoc(getCompanyDepositsRef(businessId));
+    return snap.exists() ? (snap.data() as CompanyDepositsDoc) : {};
+  } catch {
+    return {};
+  }
+};
+
+export const subscribeCompanyDeposits = (
+  callback: (deposits: CompanyDepositsDoc) => void,
+  businessId?: string
+): Unsubscribe => {
+  return onSnapshot(getCompanyDepositsRef(businessId), (snap) => {
+    callback(snap.exists() ? (snap.data() as CompanyDepositsDoc) : {});
+  }, (error) => {
+    console.error('[Firestore] CompanyDeposits 구독 오류:', error);
+    callback({});
+  });
+};
+
+export const setCompanyDeposits = async (
+  company: string,
+  deposits: CompanyDeposit[],
+  businessId?: string
+): Promise<void> => {
+  // memo가 undefined면 Firestore 저장 전에 제거 (ignoreUndefinedProperties가 있어도 명시적으로)
+  const clean = deposits.map(d => {
+    const o: CompanyDeposit = { id: d.id, date: d.date, amount: Number(d.amount) || 0 };
+    if (d.memo && d.memo.trim()) o.memo = d.memo.trim();
+    return o;
+  });
+  await setDoc(getCompanyDepositsRef(businessId), { [company]: clean }, { merge: true });
 };
 
 // ===== Quick Recipients (빠른 수령자 관리) =====

@@ -9,7 +9,7 @@ import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesReco
 import { getBusinessInfo, resolveSenderColumns } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
-import { useDailyWorkspace, useCourierTemplates, useDepositLedger } from '../hooks/useFirestore';
+import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
@@ -889,6 +889,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
     const depositLedger = useDepositLedger(businessId);
+    const { deposits: companyDeposits } = useCompanyDeposits(businessId);
     const [sessionResults, setSessionResults] = useState<Record<string, SessionResultData> | null>(null);
 
     useEffect(() => {
@@ -1071,11 +1072,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const depositInfoByCompany = useMemo(() => {
         const out: Record<string, ReturnType<typeof buildDepositInfo>> = {};
         Object.keys(pricingConfig).forEach(company => {
-            const info = buildDepositInfo(pricingConfig[company]?.deposits, depositLedger, company, depositRecordDate);
+            const list = companyDeposits[company] ?? pricingConfig[company]?.deposits;
+            const info = buildDepositInfo(list, depositLedger, company, depositRecordDate);
             if (info) out[company] = info;
         });
         return out;
-    }, [pricingConfig, depositLedger, depositRecordDate]);
+    }, [pricingConfig, companyDeposits, depositLedger, depositRecordDate]);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
     const [fakeMasterOrderFile, setFakeMasterOrderFile] = useState<File | null>(null);
     const [fakeMasterOrderData, setFakeMasterOrderData] = useState<any[][] | null>(null);
@@ -4582,12 +4584,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             // 예수금(예치금) 원장 갱신: 이 저장에 포함된 업체별로 그날 남은 잔액 스냅샷을 남긴다
             // 잔액 = (직전 스냅샷 + 그 이후 입금분) − 오늘 정산 총합계
             await Promise.all([...selectedCompanyNames].map(async (name) => {
-                const cfg = pricingConfig[name];
-                if (!hasDepositLedger(cfg?.deposits, depositLedger[name])) return;
+                const depList = companyDeposits[name] ?? pricingConfig[name]?.deposits;
+                if (!hasDepositLedger(depList, depositLedger[name])) return;
                 const todayTotal = mergedRecords.filter(r => r.company === name).reduce((s, r) => s + r.totalPrice, 0);
                 // 이 업체가 이번 저장에서 실제 정산도 없고 원장에 기존 스냅샷도 없으면(순수 입금만 있는 상태) 스냅샷을 만들지 않는다
                 if (todayTotal === 0 && !recordedCompanyNamesThisSave.has(name) && depositLedger[name]?.[recordDate] === undefined && Object.keys(depositLedger[name] || {}).length === 0) return;
-                const before = balanceBeforeSettlement(cfg?.deposits, depositLedger[name], recordDate);
+                const before = balanceBeforeSettlement(depList, depositLedger[name], recordDate);
                 try {
                     await setDepositLedgerBalance(name, recordDate, before - todayTotal, businessId);
                 } catch (e) { console.error('[예수금] 원장 갱신 실패:', name, e); }

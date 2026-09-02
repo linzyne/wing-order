@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { FieldValue } from 'firebase/firestore';
-import type { PricingConfig, PlatformConfigs, TodoItem, CourierTemplate } from '../types';
+import type { PricingConfig, PlatformConfigs, TodoItem, CourierTemplate, CompanyDeposit } from '../types';
 import {
   subscribePricingConfig,
   loadPricingConfig,
@@ -20,7 +20,10 @@ import {
   subscribeUrgentNotice,
   saveUrgentNotice,
   subscribeDepositLedger,
+  subscribeCompanyDeposits,
+  setCompanyDeposits,
   type DepositLedger,
+  type CompanyDepositsDoc,
   type DailyWorkspaceData,
   type FakeCourierSettings,
   DEFAULT_FAKE_COURIER_SETTINGS,
@@ -229,6 +232,30 @@ export const useDepositLedger = (businessId?: string) => {
   }, [businessId]);
 
   return ledger;
+};
+
+// ===== 예수금(예치금) 입금내역 Hook =====
+// pricingConfig와 분리된 전용 문서(companyDeposits) 구독 + 업체별 저장
+export const useCompanyDeposits = (businessId?: string) => {
+  const [deposits, setDeposits] = useState<CompanyDepositsDoc>({});
+
+  useEffect(() => {
+    setDeposits({});
+    const unsubscribe = subscribeCompanyDeposits(setDeposits, businessId);
+    return unsubscribe;
+  }, [businessId]);
+
+  const saveDeposits = useCallback(async (company: string, list: CompanyDeposit[]) => {
+    setDeposits(prev => ({ ...prev, [company]: list })); // 낙관적 반영
+    try {
+      await setCompanyDeposits(company, list, businessId);
+    } catch (e) {
+      console.error('[예수금] 입금내역 저장 실패:', e);
+      alert('예수금 저장에 실패했습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.');
+    }
+  }, [businessId]);
+
+  return { deposits, saveDeposits };
 };
 
 // ===== Shared Supplier Library Hook =====
