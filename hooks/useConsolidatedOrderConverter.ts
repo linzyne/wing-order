@@ -34,6 +34,7 @@ export type ProcessedResult = {
     dailySummaries: { date: string, content: string }[];
     rows: any[][];
     rowOrderNumbers?: string[]; // rows와 동일한 순서/길이의 원본 주문번호 목록 (저장용)
+    rowBundleNumbers?: string[]; // rows와 동일한 순서/길이의 묶음배송번호 목록 (저장용)
     rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]; // rows와 동일한 순서/길이의 공급가/판매가/마진 목록 (저장용)
     registeredProductNames: Record<string, string>;
     orderItems: OrderItem[];
@@ -684,6 +685,8 @@ const generateWorkbookForCompany = async (
         let outputRows: any[][] = [];
         // outputRows 각 행(참조)이 어느 원본 주문번호에서 나왔는지 추적 (발주서 물리 행 자체는 건드리지 않음)
         const rowOrderNumberMap = new Map<any[], string>();
+        // outputRows 각 행(참조)의 묶음배송번호 추적 (저장용)
+        const rowBundleNumberMap = new Map<any[], string>();
         // outputRows 각 행(참조)의 공급가/판매가/마진 추적 (품목/업체 설정값, 저장용)
         const rowPricingMap = new Map<any[], { supplyPrice: number; sellingPrice: number; margin: number }>();
         const registeredProductNames: Record<string, string> = {};
@@ -846,6 +849,7 @@ const generateWorkbookForCompany = async (
                 await pushToOutputRows(companyName, outputRows, row, config, poRowQty, pricingConfig, senderName, senderPhone, senderAddress, poPerRowQty);
                 for (let i = rowsBeforePush; i < outputRows.length; i++) {
                     rowOrderNumberMap.set(outputRows[i], order.orderNumber);
+                    rowBundleNumberMap.set(outputRows[i], order.bundleNumber || '');
                     rowPricingMap.set(outputRows[i], { supplyPrice: config.supplyPrice || 0, sellingPrice: config.sellingPrice || 0, margin: config.margin || 0 });
                 }
                 orderItems.push({
@@ -898,6 +902,7 @@ const generateWorkbookForCompany = async (
             await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moPoRowQty, moPerRowQty);
             for (let i = moRowsBeforePush; i < outputRows.length; i++) {
                 rowOrderNumberMap.set(outputRows[i], '수동');
+                rowBundleNumberMap.set(outputRows[i], '');
                 rowPricingMap.set(outputRows[i], { supplyPrice: config.supplyPrice || 0, sellingPrice: config.sellingPrice || 0, margin: config.margin || 0 });
             }
         }
@@ -912,6 +917,7 @@ const generateWorkbookForCompany = async (
         }
         // rows(=outputRows)와 동일한 순서/길이로 정렬된 원본 주문번호 목록 (저장용, 발주서 물리 행에는 영향 없음)
         const rowOrderNumbers: string[] = outputRows.map(r => rowOrderNumberMap.get(r) || '');
+        const rowBundleNumbers: string[] = outputRows.map(r => rowBundleNumberMap.get(r) || '');
         // rows(=outputRows)와 동일한 순서/길이로 정렬된 공급가/판매가/마진 목록 (저장용, 발주서 물리 행에는 영향 없음)
         const rowPricing: { supplyPrice: number; sellingPrice: number; margin: number }[] = outputRows.map(r => rowPricingMap.get(r) || { supplyPrice: 0, sellingPrice: 0, margin: 0 });
 
@@ -928,7 +934,7 @@ const generateWorkbookForCompany = async (
         const depositSummary = stats.generateText(stats.total, summaryTitle, splitSections);
         const depositSummaryExcel = stats.generateExcelText(stats.total, dateTitle, splitSections);
         const dailySummaries = Object.keys(stats.daily).sort().map(date => ({ date, content: stats.generateText(stats.daily[date], date, splitSections) }));
-        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}[발주서_${companyName}].xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, rowOrderNumbers, rowPricing, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
+        return [companyName, { workbook: newWb, fileName: `${todayStr} ${bizShort ? bizShort + ' ' : ''}[발주서_${companyName}].xlsx`, summary, depositSummary, depositSummaryExcel, dailySummaries, rows: outputRows, rowOrderNumbers, rowBundleNumbers, rowPricing, registeredProductNames, orderItems, includedOrderNumbers, preConsolidationByGroup, manualOrderCounts: Object.keys(manualOrderCounts).length > 0 ? manualOrderCounts : undefined, ...(companyConfig.autoConsolidate ? { originalOrderCount, consolidationLog } : {}) }];
     } catch (error) {
         console.error("Error generating workbook:", error);
         return [companyName, null];

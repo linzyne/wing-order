@@ -2,7 +2,7 @@ import { db } from '../firebase';
 import {
   doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, orderBy, where, getDocs,
-  onSnapshot, Timestamp, deleteField,
+  onSnapshot, Timestamp, deleteField, writeBatch,
   type Unsubscribe
 } from 'firebase/firestore';
 import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate, CompanyDeposit } from '../types';
@@ -235,6 +235,7 @@ export const deleteCompanyFromDailySales = async (
     companyOrderRows: Object.fromEntries(Object.entries(existing.companyOrderRows || {}).filter(([k]) => k !== companyName)),
     companyInvoiceRows: Object.fromEntries(Object.entries(existing.companyInvoiceRows || {}).filter(([k]) => k !== companyName)),
     companyOrderNumbers: Object.fromEntries(Object.entries(existing.companyOrderNumbers || {}).filter(([k]) => k !== companyName)),
+    companyBundleNumbers: Object.fromEntries(Object.entries(existing.companyBundleNumbers || {}).filter(([k]) => k !== companyName)),
     companyOrderPricing: Object.fromEntries(Object.entries(existing.companyOrderPricing || {}).filter(([k]) => k !== companyName)),
   };
   updated.totalAmount = (updated.records || []).reduce((s, r) => s + r.totalPrice, 0);
@@ -243,6 +244,7 @@ export const deleteCompanyFromDailySales = async (
   if (!Object.keys(updated.companyOrderRows).length) delete updated.companyOrderRows;
   if (!Object.keys(updated.companyInvoiceRows).length) delete updated.companyInvoiceRows;
   if (!Object.keys(updated.companyOrderNumbers).length) delete updated.companyOrderNumbers;
+  if (!Object.keys(updated.companyBundleNumbers || {}).length) delete updated.companyBundleNumbers;
   if (!Object.keys(updated.companyOrderPricing).length) delete updated.companyOrderPricing;
   await upsertDailySales(updated, businessId);
 };
@@ -266,6 +268,7 @@ export interface SessionResultData {
   orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName?: string; orderNumber?: string; bundleNumber?: string }[];
   includedOrderNumbers?: string[];
   rowOrderNumbers?: string[]; // orderRows와 동일한 순서/길이의 원본 주문번호 목록
+  rowBundleNumbers?: string[]; // orderRows와 동일한 순서/길이의 묶음배송번호 목록
   rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]; // orderRows와 동일한 순서/길이의 공급가/판매가/마진 목록
   unmatchedOrders?: { companyName: string; recipientName: string; productName: string; phone: string; orderNumber: string }[];
   timeLabel?: string; // 업로드 파일명에서 추출한 시간 라벨(예: "8시") — 공통 업로드 패널 회차 배지 표시용
@@ -514,6 +517,98 @@ export const setCompanyDeposits = async (
     return o;
   });
   await setDoc(getCompanyDepositsRef(businessId), { [company]: clean }, { merge: true });
+};
+
+// ===== 배달완료 → 주문번호 매핑 (쿠팡 정산 대조 1단계) =====
+// 쿠팡 배달완료 파일(Delivery 시트: B열 묶음배송번호, C열 주문번호)을 올려서
+// { [묶음배송번호]: 주문번호 } 표를 사업자별로 누적 저장한다.
+// 매출현황 발주내역은 예전 기록에 묶음배송번호만 있어서, 이 표로 실제 주문번호를 채운다.
+//
+// 한 문서에 수천 개 map 키를 몰아넣으면 쓰기가 매우 느려지므로(묶음배송번호 뒷2자리로)
+// 샤드 문서 100개로 쪼갠다. 각 샤드 쓰기는 수십~수백 쌍이라 빠르고, setDoc merge로
+// nested map 키가 병합되어 재업로드 시 기존 쌍은 유지된다.
+export type DeliveryOrderMap = Record<string, string>;
+
+const getLegacyDeliveryMapRef = (businessId?: string) =>
+  doc(db, 'deliveryOrderMaps', getDepositLedgerDocId(businessId));
+
+const getDeliveryShardsCol = (businessId?: string) =>
+  collection(db, 'deliveryOrderMaps', getDepositLedgerDocId(businessId), 'shards');
+
+const deliveryShardId = (bundle: string): string => {
+  const d = String(bundle).replace(/[^0-9]/g, '');
+  return 's' + (d.length >= 2 ? d.slice(-2) : d.padStart(2, '0'));
+};
+
+const readDeliveryShards = (snap: any): DeliveryOrderMap => {
+  const map: DeliveryOrderMap = {};
+  snap.forEach((d: any) => Object.assign(map, (d.data() as any).pairs || {}));
+  return map;
+};
+
+export const loadDeliveryOrderMap = async (businessId?: string): Promise<DeliveryOrderMap> => {
+  try {
+    const [shardSnap, legacySnap] = await Promise.all([
+      getDocs(getDeliveryShardsCol(businessId)),
+      getDoc(getLegacyDeliveryMapRef(businessId)).catch(() => null),
+    ]);
+    const legacy = legacySnap && legacySnap.exists() ? ((legacySnap.data() as any).pairs || {}) : {};
+    return { ...legacy, ...readDeliveryShards(shardSnap) };
+  } catch {
+    return {};
+  }
+};
+
+export const subscribeDeliveryOrderMap = (
+  callback: (map: DeliveryOrderMap) => void,
+  businessId?: string
+): Unsubscribe => {
+  let legacy: DeliveryOrderMap = {};
+  getDoc(getLegacyDeliveryMapRef(businessId))
+    .then(s => { if (s.exists()) { legacy = (s.data() as any).pairs || {}; } })
+    .catch(() => {});
+  return onSnapshot(getDeliveryShardsCol(businessId), (snap) => {
+    callback({ ...legacy, ...readDeliveryShards(snap) });
+  }, (error) => {
+    console.error('[Firestore] DeliveryOrderMap 구독 오류:', error);
+    callback({});
+  });
+};
+
+/** 묶음배송번호→주문번호 쌍을 샤드별로 병합 저장. 반환: 이번에 새로 추가/변경된 쌍 수 */
+export const mergeDeliveryOrderMap = async (
+  pairs: DeliveryOrderMap,
+  businessId?: string
+): Promise<number> => {
+  const existing = await loadDeliveryOrderMap(businessId);
+  const byShard: Record<string, DeliveryOrderMap> = {};
+  let delta = 0;
+  for (const [bundle, order] of Object.entries(pairs)) {
+    if (!bundle || !order || existing[bundle] === order) continue;
+    const sid = deliveryShardId(bundle);
+    (byShard[sid] ||= {})[bundle] = order;
+    delta++;
+  }
+  if (delta === 0) return 0;
+  const col = getDeliveryShardsCol(businessId);
+  const entries = Object.entries(byShard);
+  // 샤드는 최대 100개(뒷2자리)라 한 배치(500 op)에 다 들어간다
+  for (let i = 0; i < entries.length; i += 450) {
+    const batch = writeBatch(db);
+    for (const [sid, m] of entries.slice(i, i + 450)) {
+      batch.set(doc(col, sid), { pairs: m }, { merge: true });
+    }
+    await batch.commit();
+  }
+  return delta;
+};
+
+export const clearDeliveryOrderMap = async (businessId?: string): Promise<void> => {
+  const snap = await getDocs(getDeliveryShardsCol(businessId));
+  await Promise.all([
+    ...snap.docs.map(d => deleteDoc(d.ref)),
+    deleteDoc(getLegacyDeliveryMapRef(businessId)).catch(() => {}),
+  ]);
 };
 
 // ===== Quick Recipients (빠른 수령자 관리) =====

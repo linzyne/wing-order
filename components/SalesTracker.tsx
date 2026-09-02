@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
 import { usePricingConfig, useDepositLedger } from '../hooks/useFirestore';
 import CsEntryModal, { type CsDraft, resolveOrderRowFields, refineOrderRowFieldsByValue, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
-import { CS_SAVED_EVENT, setDepositLedgerBalance } from '../services/firestoreService';
+import { CS_SAVED_EVENT, setDepositLedgerBalance, subscribeDeliveryOrderMap, mergeDeliveryOrderMap, clearDeliveryOrderMap, type DeliveryOrderMap } from '../services/firestoreService';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
 import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord, CsRecord, ExcludedOrder } from '../types';
 import { getBusinessInfo, getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
@@ -29,6 +29,15 @@ const fakePurchaseMargin = (sellingPrice: number | undefined, qty: number): numb
   if (typeof sellingPrice !== 'number' || sellingPrice <= 0) return undefined;
   const commission = Math.round(sellingPrice * qty * SALES_COMMISSION_RATE);
   return -(FAKE_PURCHASE_BASE_FEE + FAKE_PURCHASE_SHIPPING_FEE + commission);
+};
+
+/** 주문번호/묶음배송번호 등 숫자 식별자를 매칭용 문자열로 정규화 (지수표기 복원 + 숫자만) */
+const normNum = (v: any): string => {
+  if (v == null) return '';
+  let s = String(v).trim();
+  if (/e\+?\d+$/i.test(s)) { const n = Number(s); if (Number.isFinite(n)) s = n.toFixed(0); }
+  s = s.replace(/\.\d+$/, ''); // 엑셀이 숫자로 저장해 생긴 소수부 제거
+  return s.replace(/[^0-9]/g, '');
 };
 
 /** 업체 설정에서 발주서명 또는 표시명이 일치하는 품목을 찾는다 */
@@ -302,6 +311,14 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     window.addEventListener(CS_SAVED_EVENT, handler);
     return () => window.removeEventListener(CS_SAVED_EVENT, handler);
   }, [businessId, refreshDate]);
+
+  // 배달완료 → 주문번호 매핑 (쿠팡 정산 대조 1단계): 발주내역 예전 기록의 묶음배송번호로 실제 주문번호를 채운다
+  const [deliveryOrderMap, setDeliveryOrderMap] = useState<DeliveryOrderMap>({});
+  useEffect(() => subscribeDeliveryOrderMap(setDeliveryOrderMap, businessId), [businessId]);
+  const [deliveryUploadStatus, setDeliveryUploadStatus] = useState<string | null>(null);
+  const [isUploadingDelivery, setIsUploadingDelivery] = useState(false);
+  const deliveryFileRef = useRef<HTMLInputElement>(null);
+
   const [viewMode, setViewMode] = useState<ViewMode>('settlement');
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [importStatus, setImportStatus] = useState<string | null>(null);
@@ -379,6 +396,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       company: string;
       row: any[];
       orderNumber: string;
+      bundleNumber?: string; // 저장된 묶음배송번호 (2026-09-02 이후 발주서)
       fake?: boolean; // 가구매 명단 매칭으로 발주서에서 제외된 주문 (공급사 발주 X, 기록용)
       fields?: ReturnType<typeof resolveOrderRowFields>;
     };
@@ -390,7 +408,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
         Object.entries(d.companyOrderRows).forEach(([company, companyRows]) => {
           // companyOrderNumbers[company]는 companyOrderRows[company]와 동일한 순서/길이의 원본 주문번호 목록
           const nums = d.companyOrderNumbers?.[company] || [];
-          (companyRows as any[][]).forEach((row, i) => data.push({ company, row, orderNumber: nums[i] || '' }));
+          const bnums = d.companyBundleNumbers?.[company] || [];
+          (companyRows as any[][]).forEach((row, i) => data.push({ company, row, orderNumber: nums[i] || '', bundleNumber: bnums[i] || '' }));
         });
       } else {
         data = (d.orderRows || []).map(row => ({ company: '', row, orderNumber: '' }));
@@ -438,11 +457,13 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
         date,
         data: data.filter(({ row, orderNumber, fields }) =>
           (orderNumber && orderNumber.toLowerCase().includes(q)) ||
+          (orderNumber && (deliveryOrderMap[normNum(orderNumber)] || '').toLowerCase().includes(q)) ||
           row.some((cell: any) => cell != null && String(cell).toLowerCase().includes(q)) ||
+          row.some((cell: any) => { const m = deliveryOrderMap[normNum(cell)]; return m && m.toLowerCase().includes(q); }) ||
           (fields && Object.values(fields).some(v => v != null && String(v).toLowerCase().includes(q)))),
       }))
       .filter(({ data }) => data.length > 0);
-  }, [allOrderRows, orderSearch]);
+  }, [allOrderRows, orderSearch, deliveryOrderMap]);
 
   // 송장 검색 필터링
   const filteredInvoiceRows = useMemo(() => {
@@ -842,6 +863,70 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     handleImportFiles(e.dataTransfer.files);
   };
 
+  // 쿠팡 배달완료 파일(Delivery 시트: B열 묶음배송번호, C열 주문번호) 업로드 → 매핑 누적 저장
+  const handleDeliveryFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploadingDelivery(true);
+    setDeliveryUploadStatus(null);
+    try {
+      const arr = Array.from(files).filter(f => /\.xlsx?$/i.test(f.name));
+      if (arr.length === 0) {
+        setDeliveryUploadStatus('엑셀 파일(.xlsx)만 업로드할 수 있습니다.');
+        setIsUploadingDelivery(false);
+        return;
+      }
+      const pairs: DeliveryOrderMap = {};
+      let scanned = 0;
+      for (const file of arr) {
+        const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheetName = wb.SheetNames.find((n: string) => n.toLowerCase().includes('delivery')) || wb.SheetNames[0];
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1 }) as any[][];
+        if (rows.length < 2) continue;
+        const header = (rows[0] || []).map((h: any) => String(h ?? '').trim());
+        let bundleIdx = header.findIndex((h: string) => h.includes('묶음배송'));
+        let orderIdx = header.findIndex((h: string) => h === '주문번호' || (h.includes('주문번호') && !h.includes('분리')));
+        if (bundleIdx === -1) bundleIdx = 1; // B열
+        if (orderIdx === -1) orderIdx = 2;   // C열
+        for (let i = 1; i < rows.length; i++) {
+          const b = normNum(rows[i]?.[bundleIdx]);
+          const o = normNum(rows[i]?.[orderIdx]);
+          if (b && o) { pairs[b] = o; scanned++; }
+        }
+      }
+      if (scanned === 0) {
+        setDeliveryUploadStatus('묶음배송번호·주문번호를 찾지 못했습니다. (B열=묶음배송번호, C열=주문번호 확인)');
+        setIsUploadingDelivery(false);
+        if (deliveryFileRef.current) deliveryFileRef.current.value = '';
+        return;
+      }
+      const uniq = new Set(Object.keys(pairs)).size;
+      // 저장은 로컬 캐시에 즉시 반영되고(화면 갱신), 서버 확인은 오프라인/대기열이 밀리면 오래 걸릴 수 있으므로
+      // 8초까지만 기다리고 UI를 풀어준다 (백그라운드에서 계속 동기화됨)
+      const added = await Promise.race([
+        mergeDeliveryOrderMap(pairs, businessId),
+        new Promise<number>(res => setTimeout(() => res(-1), 8000)),
+      ]);
+      setDeliveryUploadStatus(added < 0
+        ? `${uniq.toLocaleString()}건 반영됨 (서버 동기화는 백그라운드 진행 중)`
+        : `${uniq.toLocaleString()}건 읽음 · 새로 추가 ${added.toLocaleString()}건 (발주내역 주문번호 자동 반영)`);
+    } catch (e) {
+      console.error('[배달완료 업로드]', e);
+      setDeliveryUploadStatus('파일 처리 중 오류가 발생했습니다.');
+    }
+    setIsUploadingDelivery(false);
+    if (deliveryFileRef.current) deliveryFileRef.current.value = '';
+  };
+
+  const handleClearDeliveryMap = async () => {
+    if (!window.confirm('저장된 배달완료 매핑을 모두 삭제할까요? (발주내역의 예전 기록은 다시 묶음배송번호로 표시됩니다)')) return;
+    try {
+      await clearDeliveryOrderMap(businessId);
+      setDeliveryUploadStatus('매핑을 초기화했습니다.');
+    } catch (e) {
+      console.error('[배달완료 매핑 초기화]', e);
+    }
+  };
+
   const handleExportExcel = () => {
     if (filteredHistory.length === 0) return;
     const wb = XLSX.utils.book_new();
@@ -1034,6 +1119,41 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
               검색결과: <span className="text-blue-400">{totalMatchRows}건</span> 일치
             </p>
           )}
+
+          {/* 배달완료 파일 업로드 → 예전 기록(묶음배송번호만 있음)에 실제 주문번호 채우기 */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => deliveryFileRef.current?.click()}
+              disabled={isUploadingDelivery}
+              className="px-3 py-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 text-[11px] font-black border border-blue-500/20 transition-colors disabled:opacity-50"
+            >
+              {isUploadingDelivery ? '읽는 중…' : '📦 배달완료 파일 업로드 (주문번호 채우기)'}
+            </button>
+            <input
+              ref={deliveryFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              multiple
+              className="hidden"
+              onChange={e => handleDeliveryFiles(e.target.files)}
+            />
+            {Object.keys(deliveryOrderMap).length > 0 && (
+              <>
+                <span className="text-[11px] text-zinc-500 font-bold">
+                  매핑 <span className="text-zinc-300">{Object.keys(deliveryOrderMap).length.toLocaleString()}건</span> 저장됨
+                </span>
+                <button
+                  onClick={handleClearDeliveryMap}
+                  className="text-[10px] text-zinc-600 hover:text-rose-400 font-bold transition-colors"
+                >
+                  초기화
+                </button>
+              </>
+            )}
+          </div>
+          {deliveryUploadStatus && (
+            <p className="text-[11px] text-blue-400 mt-1.5 font-bold">{deliveryUploadStatus}</p>
+          )}
         </div>
 
         {allOrderRows.length === 0 ? (
@@ -1065,7 +1185,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                     <thead>
                       <tr className="text-zinc-600 text-[10px] font-black uppercase tracking-widest border-b border-zinc-800">
                         <th className="pb-2 pr-3 whitespace-nowrap">업체</th>
-                        <th className="pb-2 pr-3 whitespace-nowrap">주문번호</th>
+                        <th className="pb-2 pr-3 whitespace-nowrap">묶음배송/주문번호</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">수취인</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">품목</th>
                         <th className="pb-2 pr-3 whitespace-nowrap">수량</th>
@@ -1080,14 +1200,34 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-900/50">
-                      {data.map(({ company, row, orderNumber, fake, fields: fakeFields }, i) => {
+                      {data.map(({ company, row, orderNumber, bundleNumber, fake, fields: fakeFields }, i) => {
                         const fields = fakeFields ?? refineOrderRowFieldsByValue(
                           resolveOrderRowFields(company, row, pricingConfig),
                           row,
                           pricingConfig?.[company],
                           company,
                         );
-                        const openCs = (orderNumber && openCsByOrderNumber.get(orderNumber))
+                        // 모든 행에 묶음배송번호 + 주문번호를 함께 표시한다.
+                        //  - 물리 행에서 파싱한 값(대개 묶음배송번호, 15자리) / companyOrderNumbers(원본 주문번호)
+                        //  - 부족한 쪽은 배달완료 매핑표로 채운다
+                        const hasDeliveryMap = Object.keys(deliveryOrderMap).length > 0;
+                        const rowParsed = normNum(fields.orderNumber);
+                        const storedOrder = normNum(orderNumber);
+                        const storedBundle = normNum(bundleNumber);
+                        // 저장된 묶음배송번호(2026-09-02 이후) 우선, 없으면 물리 행 파싱값(15자리)
+                        let bundleNo = storedBundle || (rowParsed.length >= 15 ? rowParsed : '');
+                        let orderNo = storedOrder || (rowParsed && rowParsed.length < 15 ? rowParsed : '');
+                        // 묶음배송번호를 아직 모르면 행 전체 셀에서 매핑표에 있는 값 탐색 (주문번호 열이 파싱 안 되는 업체)
+                        if (!bundleNo && !fake && Array.isArray(row)) {
+                          for (const c of row) { const n = normNum(c); if (n && deliveryOrderMap[n]) { bundleNo = n; break; } }
+                        }
+                        // 주문번호를 아직 모르면 묶음배송번호로 매핑표 조회
+                        let orderNoFromMap = false;
+                        if (!orderNo && bundleNo && deliveryOrderMap[bundleNo]) { orderNo = deliveryOrderMap[bundleNo]; orderNoFromMap = true; }
+                        // 배달완료 파일을 올린 뒤에도 주문번호를 못 채운 예전 기록에만 표시
+                        const orderNumberUnresolved = hasDeliveryMap && !fake && !orderNo && !!bundleNo;
+                        const openCs = (orderNo && openCsByOrderNumber.get(orderNo))
+                          || (orderNumber && openCsByOrderNumber.get(orderNumber))
                           || (fields.orderNumber ? openCsByOrderNumber.get(fields.orderNumber) : undefined);
                         const cell = (v: any) => (v != null && String(v).trim() !== '')
                           ? <span className="text-zinc-300 font-mono">{String(v)}</span>
@@ -1113,8 +1253,20 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                               )}
                               <span className="text-violet-400">{company || <span className="text-zinc-700">—</span>}</span>
                             </td>
-                            <td className="py-1.5 pr-3 whitespace-nowrap font-mono font-black text-emerald-400" title="원본 주문번호">
-                              {orderNumber || fields.orderNumber || <span className="text-zinc-700">—</span>}
+                            <td className="py-1.5 pr-3 whitespace-nowrap font-mono">
+                              <div className="font-black text-emerald-400" title="묶음배송번호">
+                                {bundleNo || <span className="text-zinc-700">—</span>}
+                                {orderNumberUnresolved && (
+                                  <span className="ml-2 text-[9px] bg-zinc-700/40 text-zinc-400 px-1.5 py-0.5 rounded font-black border border-zinc-600/40" title="배달완료 파일에 이 묶음배송번호가 없어 주문번호를 채우지 못함">
+                                    주문번호 미확인
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] font-bold mt-0.5">
+                                {orderNo
+                                  ? <span className="text-sky-400/90" title={orderNoFromMap ? '배달완료 파일에서 찾은 주문번호' : '주문번호'}>주문번호 {orderNo}</span>
+                                  : <span className="text-zinc-700">주문번호 —</span>}
+                              </div>
                             </td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.recipientName)}</td>
                             <td className="py-1.5 pr-3 whitespace-nowrap">{cell(fields.productName)}</td>

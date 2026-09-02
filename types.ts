@@ -362,6 +362,7 @@ export interface DailySales {
   companyOrderRows?: Record<string, any[][]>;   // 업체별 발주 행 (merge/삭제용)
   companyInvoiceRows?: Record<string, any[][]>; // 업체별 송장 행 (merge/삭제용)
   companyOrderNumbers?: Record<string, string[]>; // 업체별 companyOrderRows와 동일한 순서/길이의 원본 주문번호 목록
+  companyBundleNumbers?: Record<string, string[]>; // 업체별 companyOrderRows와 동일한 순서/길이의 묶음배송번호 목록
   companyOrderPricing?: Record<string, { supplyPrice: number; sellingPrice: number; margin: number }[]>; // 업체별 companyOrderRows와 동일한 순서/길이의 공급가/판매가/마진 목록
   depositRecords?: DepositRecord[];
   depositTotal?: number;
