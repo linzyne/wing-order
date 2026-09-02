@@ -3569,6 +3569,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             });
             mergedRows.push(...getExtraFakeCourierRows(mergedRows));
             if (!mergedRows.length) { alert('가구매 매칭된 송장 데이터가 없습니다.'); return; }
+            // 업체송장 세션이 하나도 없고 가구매 택배 행만 있는 경우 헤더가 비어 1행에 컬럼이 없는 파일이 됨 → 원본 주문서 헤더로 보강
+            if (!headerRow.length) {
+                const masterHeader = (fakeMasterOrderData ?? masterOrderData)?.[0];
+                if (masterHeader?.length) headerRow = masterHeader as any[];
+            }
             const wb = XLSX.utils.book_new();
             const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '업로드용');
@@ -3624,6 +3629,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         mergedRows.push(...getExtraFakeCourierRows(mergedRows));
         if (mergedRows.length === 0) return null;
+        // 업체송장 세션 없이 가구매 택배 행만 있는 경우 헤더가 비므로 원본 주문서 헤더로 보강
+        if (!headerRow.length) {
+            const masterHeader = (fakeMasterOrderData ?? masterOrderData)?.[0];
+            if (masterHeader?.length) headerRow = masterHeader as any[];
+        }
         const wb = XLSX.utils.book_new();
         const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), '업로드용');
