@@ -514,6 +514,17 @@ export const useInvoiceMerger = () => {
                 ? matchHeaderNames.map(hName => findColIdx(orderHeader, headerToKeywords[hName] || [hName]))
                 : [targetOrderIdx];
 
+            // 주문서 측 매칭 키 후보 열 (묶음배송번호 우선이지만 업체가 주문번호로 회신하는 경우도 있음 — 제이제이 등)
+            // → 아래에서 실제로 송장파일과 겹치는 열을 골라 targetOrderIdx를 교정한다.
+            const orderKeyCandidateIdxs: number[] = [];
+            if (!isHeaderBasedMatch) {
+                if (targetOrderIdx !== -1) orderKeyCandidateIdxs.push(targetOrderIdx);
+                for (const kws of [['묶음배송번호', '묶음배송'], ['주문번호', '주문정보', '오더번호', '접수번호'], ['고객주문번호']]) {
+                    const ci = findColIdx(orderHeader, kws);
+                    if (ci !== -1 && !orderKeyCandidateIdxs.includes(ci)) orderKeyCandidateIdxs.push(ci);
+                }
+            }
+
             /** 주문서 행에서 매칭 키를 생성 */
             const buildOrderMatchKey = (row: any[]): string => {
                 if (!isHeaderBasedMatch) return normalizeOrderNum(row[targetOrderIdx]);
@@ -526,14 +537,28 @@ export const useInvoiceMerger = () => {
             const targetKeywords = getKeywordsForCompany(companyName, pricingConfig);
             const orderKeysAll = new Set<string>();
             const orderKeysGrouped = new Set<string>();
-            for (let i = headerIdx + 1; i < orderAoa.length; i++) {
-                const row = orderAoa[i]; if (!row) continue;
-                const key = buildOrderMatchKey(row);
-                if (!key) continue;
-                orderKeysAll.add(key);
-                if (skipGroupCheck || isRowMatchingCompany(row, targetKeywords)) orderKeysGrouped.add(key);
+            const rebuildOrderKeys = () => {
+                orderKeysAll.clear(); orderKeysGrouped.clear();
+                for (let i = headerIdx + 1; i < orderAoa.length; i++) {
+                    const row = orderAoa[i]; if (!row) continue;
+                    const key = buildOrderMatchKey(row);
+                    if (!key) continue;
+                    orderKeysAll.add(key);
+                    if (skipGroupCheck || isRowMatchingCompany(row, targetKeywords)) orderKeysGrouped.add(key);
+                }
+            };
+            rebuildOrderKeys();
+            // 업체 파일 열 자동 재탐색용 키 집합은 후보 열 전체를 합쳐서 전달
+            // (업체가 묶음배송번호/주문번호 중 무엇으로 회신했는지 모르므로)
+            const orderKeys = new Set<string>(orderKeysAll);
+            for (const ci of orderKeyCandidateIdxs) {
+                if (ci === targetOrderIdx) continue;
+                for (let i = headerIdx + 1; i < orderAoa.length; i++) {
+                    const row = orderAoa[i]; if (!row) continue;
+                    const k = normalizeOrderNum(row[ci]);
+                    if (k) orderKeys.add(k);
+                }
             }
-            const orderKeys = orderKeysAll;
 
             // 업체 파일(들) → invoiceMap 빌드 (여러 파일이면 합침)
             const invoiceMap = new Map<string, string[]>();
@@ -558,6 +583,35 @@ export const useInvoiceMerger = () => {
                 let debugHits = 0;
                 for (const k of orderKeys) { if (invoiceMap.has(k)) { debugHits++; if (debugHits >= 5) break; } }
                 console.log(`[송장] 디버그 - 키 교차 매칭: ${debugHits}건`);
+            }
+
+            // ── 주문서 매칭 열 자동 교정 ──
+            // 매칭은 묶음배송번호(B열) 우선이지만, 업체가 주문번호(C열)로 회신하는 경우가 있다(제이제이 등).
+            // 현재 열로 교차 매칭 0건이면 다른 후보 열로 바꿔 실제로 겹치는 열을 쓴다.
+            // (서한푸드처럼 '주문번호' 헤더에 묶음배송번호가 들어오는 업체는 B열이 이미 맞아 교정 안 함)
+            if (!isHeaderBasedMatch && invoiceMap.size > 0 && orderKeyCandidateIdxs.length > 1) {
+                const hitsForCol = (colIdx: number): number => {
+                    const seen = new Set<string>();
+                    for (let i = headerIdx + 1; i < orderAoa.length; i++) {
+                        const row = orderAoa[i]; if (!row) continue;
+                        const k = normalizeOrderNum(row[colIdx]);
+                        if (k && !seen.has(k) && invoiceMap.has(k)) seen.add(k);
+                    }
+                    return seen.size;
+                };
+                if (hitsForCol(targetOrderIdx) === 0) {
+                    let bestIdx = -1, bestHits = 0;
+                    for (const ci of orderKeyCandidateIdxs) {
+                        if (ci === targetOrderIdx) continue;
+                        const h = hitsForCol(ci);
+                        if (h > bestHits) { bestHits = h; bestIdx = ci; }
+                    }
+                    if (bestIdx !== -1) {
+                        console.log(`[송장] ⚠ 주문서 매칭열 ${targetOrderIdx}(${orderHeader?.[targetOrderIdx]})로 0건 → 열 ${bestIdx}(${orderHeader?.[bestIdx]})로 교정 (${bestHits}건 매칭)`);
+                        targetOrderIdx = bestIdx;
+                        rebuildOrderKeys();
+                    }
+                }
             }
 
             // 그룹체크 폴백: 품목 키워드로 골라낸 행으로는 매칭 0건인데
@@ -720,9 +774,10 @@ export const useInvoiceMerger = () => {
             }
 
             // ── 최종 구제 패스 ──
-            // 여기까지 한 건도 못 만들었는데 송장파일엔 (주문번호 → 송장번호) 쌍이 있으면,
-            // 주문서 매칭 여부와 무관하게 송장파일 내용만으로 업로드/기록 행을 생성한다.
-            // (주문서에서 해당 주문 행을 찾으면 그 행을 채워서, 못 찾으면 주문번호+송장번호만 담아서)
+            // 여기까지 한 건도 못 만들었는데 송장파일의 주문번호가 "이번 주문서에 실제로 있으면",
+            // 품목 키워드/그룹 필터에 걸려 빠진 것으로 보고 그 행들만 구제한다.
+            // ⚠ 주문서에 없는 송장(업체가 누적 발송분 전체를 보내온 경우 등)은 절대 만들지 않는다.
+            //    (예: 발주 2건인데 업체 파일 214행 → 214건이 통째로 변환되던 버그)
             if (uploadCount === 0 && invoiceMap.size > 0) {
                 const orderRowByKey = new Map<string, any[]>();
                 for (let i = headerIdx + 1; i < orderAoa.length; i++) {
@@ -734,21 +789,17 @@ export const useInvoiceMerger = () => {
                 for (const [key, invs] of invoiceMap) {
                     if (!invs || invs.length === 0) continue;
                     const orderRow = orderRowByKey.get(key);
+                    if (!orderRow) continue; // 이번 주문서에 없는 주문번호는 구제 대상 아님
                     const makeRow = (inv: string): any[] => {
                         let r: any[];
-                        if (orderRow) {
-                            if (useCustomInvoiceHeaders) {
-                                r = new Array(invoiceHeader.length).fill('');
-                                for (let oi = 0; oi < orderRow.length; oi++) {
-                                    const ni = headerMapping[oi];
-                                    if (ni !== undefined) r[ni] = orderRow[oi];
-                                }
-                            } else {
-                                r = [...orderRow];
+                        if (useCustomInvoiceHeaders) {
+                            r = new Array(invoiceHeader.length).fill('');
+                            for (let oi = 0; oi < orderRow.length; oi++) {
+                                const ni = headerMapping[oi];
+                                if (ni !== undefined) r[ni] = orderRow[oi];
                             }
                         } else {
-                            r = new Array(Math.max(invoiceHeader.length, targetInvIdx + 1, targetCourierIdx + 1, targetOrderIdx + 1)).fill('');
-                            if (targetOrderIdx !== -1) r[targetOrderIdx] = key;
+                            r = [...orderRow];
                         }
                         if (targetInvIdx !== -1) r[targetInvIdx] = inv;
                         if (targetCourierIdx !== -1) r[targetCourierIdx] = courierName;
@@ -758,7 +809,9 @@ export const useInvoiceMerger = () => {
                     uploadRows.push(makeRow(invs[0]));
                     invs.forEach(inv => { mgmtCount++; mgmtRows.push(makeRow(inv)); });
                 }
-                console.log(`[송장] 구제 패스로 ${uploadCount}건 생성 (주문서 매칭 실패분 포함)`);
+                console.log(uploadCount > 0
+                    ? `[송장] 구제 패스로 ${uploadCount}건 생성 (품목 키워드 필터에서 빠졌던 주문)`
+                    : `[송장] 구제 패스 대상 없음 — 송장파일 주문번호(${invoiceMap.size}건)가 이번 주문서에 하나도 없음`);
             }
 
             // 플랫폼별 업로드 워크북 생성
