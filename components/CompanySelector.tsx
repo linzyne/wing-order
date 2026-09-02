@@ -3561,10 +3561,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
                     (allInvoiceFailures[s.id] || []).forEach(f => unmatchedOrders.push({ orderNum: f.orderNum, recipient: f.recipient }));
                 });
-                // 미매칭 건수는 발주수량-매칭건수 차이를 기준으로 함 (failures 목록은 이 세션에서 직접 송장을 처리했을 때만
-                // 채워지는 값이라, 다른 기기에서 처리했거나 새로고침 후에는 비어있어도 발주/매칭 건수 차이로는 항상 알 수 있음)
-                const unmatchedCount = Math.max(0, orderCount - matchedCount);
-                return { name, orderCount, matchedCount, unmatchedCount, unmatchedOrders };
+                // failures는 송장 매칭 시 "발주서 행" 단위로 쌓여서 같은 주문번호가 여러 번 들어올 수 있음 → 주문번호 기준 중복 제거
+                const dedupUnmatched = Array.from(
+                    new Map(unmatchedOrders.map((o, i) => [o.orderNum || `__${o.recipient}_${i}`, o])).values()
+                );
+                // 배지 건수: 발주-매칭 차이(추정)와 실제 미매칭 목록 길이 중 큰 값.
+                // (추정만 쓰면 자동합산/분할로 발주행 수가 달라져 목록보다 작게 나오는 문제가 있었음)
+                const unmatchedCount = Math.max(Math.max(0, orderCount - matchedCount), dedupUnmatched.length);
+                return { name, orderCount, matchedCount, unmatchedCount, unmatchedOrders: dedupUnmatched };
             })
             .filter(c => c.orderCount > 0);
     };
