@@ -9,6 +9,7 @@ import SharedMasterUpload, { type UploadResult } from './components/SharedMaster
 import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from './components/ConsolidatedInvoicePanel';
 import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
 import OrdererSearchPanel from './components/OrdererSearchPanel';
+import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice } from './hooks/useFirestore';
 import { useBusinessList } from './hooks/useBusinessList';
@@ -87,6 +88,7 @@ const App: React.FC = () => {
   const [showSupplierLibrary, setShowSupplierLibrary] = useState(false);
   const [showCs, setShowCs] = useState(false);
   const [showOrdererSearch, setShowOrdererSearch] = useState(false);
+  const [showRegCounter, setShowRegCounter] = useState(false);
   const [globalFakeOrderInput, setGlobalFakeOrderInput] = useState(() => loadPersistedFakeOrder());
   const [isEditingGlobalFake, setIsEditingGlobalFake] = useState(false);
   const [globalUnsentOrderInput, setGlobalUnsentOrderInput] = useState('');
@@ -558,7 +560,7 @@ const App: React.FC = () => {
 
   // 드롭다운 외부 클릭 감지 — overlay 대신 document mousedown으로 처리 (overlay는 스크롤을 막으므로)
   useEffect(() => {
-    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary && !showCs && !showUrgentNotice && !showOrdererSearch) return;
+    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary && !showCs && !showUrgentNotice && !showOrdererSearch && !showRegCounter) return;
     const handler = () => {
       setShowCoupang(false);
       setShowUpload(false);
@@ -568,10 +570,11 @@ const App: React.FC = () => {
       setShowCs(false);
       setShowUrgentNotice(false);
       setShowOrdererSearch(false);
+      setShowRegCounter(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary, showCs, showUrgentNotice, showOrdererSearch]);
+  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary, showCs, showUrgentNotice, showOrdererSearch, showRegCounter]);
 
   const handleDeleteBusiness = async (businessId: string) => {
     const label = allBusinesses.find(b => b.id === businessId)?.displayName;
@@ -812,6 +815,24 @@ const App: React.FC = () => {
               onClose={() => setShowOrdererSearch(false)}
             />
           </div>
+        </div>
+
+        {/* 등록상품명 수량 집계 — 윙 상품준비중 목록 복붙 → 등록상품명별 품목명·구매수량 */}
+        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
+          <button
+            onClick={() => { setShowRegCounter(v => !v); setShowOrdererSearch(false); setShowGlobalFake(false); setShowUrgentNotice(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); }}
+            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
+              showRegCounter
+                ? 'bg-zinc-700 text-white border-zinc-600'
+                : 'text-sky-400 border-sky-500/50 hover:border-sky-400 hover:bg-sky-900/30'
+            }`}
+          >
+            수량 집계
+          </button>
+          <RegisteredProductCounter
+            active={showRegCounter}
+            onClose={() => setShowRegCounter(false)}
+          />
         </div>
 
         {/* 전체 가구매 명단 */}
