@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getHeaderForCompany, inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
 import { CS_SAVED_EVENT, WORKSPACE_ADJUSTMENT_EVENT } from '../services/firestoreService';
-import type { CsRecord, DailySales, PricingConfig } from '../types';
+import type { CompanyConfig, CsRecord, DailySales, PricingConfig } from '../types';
 
 export interface CsDraft {
   company: string;
@@ -86,6 +86,102 @@ export function resolveOrderRowFields(company: string, row: any[], pricingConfig
     recipientAddress: recipientAddressIdx >= 0 ? String(row[recipientAddressIdx] ?? '').trim() : '',
     recipientZipcode: recipientZipcodeIdx >= 0 ? String(row[recipientZipcodeIdx] ?? '').trim() : '',
   };
+}
+
+// ── 값(셀 내용) 기반 열 판별 유틸 ─────────────────────────────────────────────
+// 발주서 저장 시점 헤더를 세션에 남기지 않아 resolveOrderRowFields가 헤더 구조를
+// "추측"하다 보면 수취인 칸에 우편번호·전화번호·주소가, 품목 칸에 전화번호가 밀려
+// 들어간다(안군농원·조에농원 등). 매출현황 발주내역 "표시용"으로만 셀 값을 보고
+// 수취인/품목/연락처/주소/우편번호를 재배치한다. 원본 데이터는 건드리지 않는다.
+const V_PHONE_RE = /^(0\d{1,3}|1\d{3})[-\s.]?\d{3,4}[-\s.]?\d{4}$/;
+const V_ZIP_RE = /^\d{5}$/;
+const V_ADDR_RE = /(특별시|광역시|특별자치|자치도|[가-힣]{1,6}도\s|[가-힣]{1,6}시\s|[가-힣]{1,6}군\s|[가-힣]{1,6}구\s|[가-힣]{1,6}읍|[가-힣]{1,6}면\s|[가-힣]{2,}로\s|[가-힣]{2,}로\d|[가-힣]{2,}길)/;
+const V_UNIT_RE = /(\d+\s*(kg|g|ml|l|개입|개|박스|팩|세트|마리|묶음|병|포|편|봉|판|kg들이|구|미))/i;
+
+const vStr = (x: any): string => (x == null ? '' : String(x)).trim();
+const vIsPhone = (x: any): boolean => V_PHONE_RE.test(vStr(x).replace(/\s/g, ''));
+const vIsZip = (x: any): boolean => V_ZIP_RE.test(vStr(x));
+const vIsAddr = (x: any): boolean => { const s = vStr(x); return s.length >= 8 && V_ADDR_RE.test(s + ' '); };
+const vIsName = (x: any): boolean => { const s = vStr(x); return s.length >= 2 && s.length <= 6 && /^[가-힣·()]+$/.test(s); };
+const vIsBlankOrDash = (x: any): boolean => { const s = vStr(x); return s === '' || s === '-' || s === '—'; };
+
+/**
+ * resolveOrderRowFields 결과를 행의 실제 셀 값을 보고 교정한다(표시용).
+ * 확신이 서는 후보가 있을 때만 덮어쓰고, 아니면 원래 값을 유지한다.
+ */
+export function refineOrderRowFieldsByValue(
+  fields: ReturnType<typeof resolveOrderRowFields>,
+  row: any[],
+  config?: CompanyConfig,
+  company?: string,
+): ReturnType<typeof resolveOrderRowFields> {
+  if (!Array.isArray(row) || row.length === 0) return fields;
+  const cells = row.map(vStr);
+  // 발송인(업체) 이름이 수취인으로 잘못 뽑히지 않도록 제외 목록 구성
+  const senderNames = new Set<string>();
+  if (company) senderNames.add(company.trim());
+  Object.values(config?.orderFormFixedValues || {}).forEach(v => { const s = vStr(v); if (vIsName(s)) senderNames.add(s); });
+  const productNames = new Set<string>();
+  Object.values(config?.products || {}).forEach((p: any) => {
+    if (p?.orderFormName) productNames.add(String(p.orderFormName).trim());
+    if (p?.displayName) productNames.add(String(p.displayName).trim());
+  });
+  const looksProduct = (s: string) => !!s && (productNames.has(s) || V_UNIT_RE.test(s));
+
+  const out = { ...fields };
+  const used = new Set<number>(); // 이미 특정 필드로 확정한 셀 인덱스
+
+  const pick = (test: (s: string, i: number) => boolean): string | undefined => {
+    for (let i = 0; i < cells.length; i++) {
+      if (used.has(i)) continue;
+      if (test(cells[i], i)) { used.add(i); return cells[i]; }
+    }
+    return undefined;
+  };
+
+  // 품목: 비어있거나 전화/주소/숫자만 들어있으면 재탐색
+  const badProduct = vIsBlankOrDash(out.productName) || vIsPhone(out.productName)
+    || vIsAddr(out.productName) || /^\d+$/.test(out.productName);
+  if (badProduct) {
+    const cand = pick(s => looksProduct(s));
+    if (cand) out.productName = cand;
+  } else {
+    used.add(cells.indexOf(vStr(out.productName)));
+  }
+
+  // 연락처: 비어있거나 전화번호 형태가 아니면 재탐색
+  if (vIsBlankOrDash(out.recipientPhone) || !vIsPhone(out.recipientPhone)) {
+    const cand = pick(s => vIsPhone(s));
+    if (cand) out.recipientPhone = cand.replace(/\s/g, '');
+  } else {
+    used.add(cells.indexOf(vStr(out.recipientPhone)));
+  }
+
+  // 우편번호: 비어있으면 5자리 숫자 셀 탐색
+  if (vIsBlankOrDash(out.recipientZipcode) || !vIsZip(out.recipientZipcode)) {
+    const cand = pick(s => vIsZip(s));
+    if (cand) out.recipientZipcode = cand;
+  }
+
+  // 주소: 비어있거나 주소 형태가 아니면 재탐색
+  const badAddr = vIsBlankOrDash(out.recipientAddress) || !vIsAddr(out.recipientAddress);
+  if (badAddr) {
+    // 수취인 칸에 주소가 통째로 들어온 경우 그것부터 활용
+    if (vIsAddr(out.recipientName)) out.recipientAddress = out.recipientName;
+    else { const cand = pick(s => vIsAddr(s)); if (cand) out.recipientAddress = cand; }
+  } else {
+    used.add(cells.indexOf(vStr(out.recipientAddress)));
+  }
+
+  // 수취인: 비어있거나 전화/주소/우편번호/숫자만이면 이름처럼 생긴 셀 탐색
+  const badName = vIsBlankOrDash(out.recipientName) || vIsPhone(out.recipientName)
+    || vIsAddr(out.recipientName) || vIsZip(out.recipientName) || /^\d+$/.test(out.recipientName);
+  if (badName) {
+    const cand = pick(s => vIsName(s) && !looksProduct(s) && !senderNames.has(s));
+    out.recipientName = cand ?? (/^\d+$/.test(out.recipientName) || vIsZip(out.recipientName) ? '' : out.recipientName);
+  }
+
+  return out;
 }
 
 /** 발주내역 행 + 업체명으로 CS 접수 초안을 만든다 */

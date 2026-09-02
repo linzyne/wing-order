@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { useSalesTracker, importMultipleWorkLogs } from '../hooks/useSalesTracker';
 import { usePricingConfig, useDepositLedger } from '../hooks/useFirestore';
-import CsEntryModal, { type CsDraft, resolveOrderRowFields, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
+import CsEntryModal, { type CsDraft, resolveOrderRowFields, refineOrderRowFieldsByValue, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord } from './CsEntryModal';
 import { CS_SAVED_EVENT, setDepositLedgerBalance } from '../services/firestoreService';
 import { TrashIcon, ArrowDownTrayIcon, ChevronDownIcon, ChevronUpIcon, UploadIcon } from './icons';
 import type { DepositRecord, MarginRecord, ExpenseRecord, SalesRecord, CompanyConfig, ReturnRecord, CsRecord, ExcludedOrder } from '../types';
@@ -871,7 +871,9 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       const orderSheetRows: any[][] = [['날짜', '구분', '업체', '주문번호', '수취인', '품목', '수량', '공급가', '마진', '판매가', '배송메시지', '우편번호', '주소', '연락처']];
       allOrderRows.forEach(({ date, data }) => {
         data.forEach(({ company, row, orderNumber, fake, fields: fakeFields }) => {
-          const f = fakeFields ?? resolveOrderRowFields(company, row, pricingConfig);
+          const f = fakeFields ?? refineOrderRowFieldsByValue(
+            resolveOrderRowFields(company, row, pricingConfig), row, pricingConfig?.[company], company,
+          );
           const p = findProductByName(pricingConfig?.[company], f.productName);
           const supply = !fake && typeof p?.supplyPrice === 'number' ? p.supplyPrice * f.qty : undefined;
           const selling = typeof p?.sellingPrice === 'number' ? p.sellingPrice * f.qty : undefined;
@@ -1079,7 +1081,12 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                     </thead>
                     <tbody className="divide-y divide-zinc-900/50">
                       {data.map(({ company, row, orderNumber, fake, fields: fakeFields }, i) => {
-                        const fields = fakeFields ?? resolveOrderRowFields(company, row, pricingConfig);
+                        const fields = fakeFields ?? refineOrderRowFieldsByValue(
+                          resolveOrderRowFields(company, row, pricingConfig),
+                          row,
+                          pricingConfig?.[company],
+                          company,
+                        );
                         const openCs = (orderNumber && openCsByOrderNumber.get(orderNumber))
                           || (fields.orderNumber ? openCsByOrderNumber.get(fields.orderNumber) : undefined);
                         const cell = (v: any) => (v != null && String(v).trim() !== '')
