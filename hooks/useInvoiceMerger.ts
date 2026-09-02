@@ -20,6 +20,34 @@ const isRowMatchingCompany = (row: any[], keywords: string[]): boolean => {
 };
 
 const normalizeValue = (val: any): string => val == null ? '' : String(val).replace(/\s+/g, '').trim().toUpperCase();
+
+/** 운송장번호처럼 보이는 값인지 — 숫자 위주 9자리 이상이고 날짜가 아님 */
+const isTrackingLikeValue = (val: any): boolean => {
+    if (val == null) return false;
+    const s = String(val).trim();
+    if (!s) return false;
+    if (/^\d{4}\s?[-.\/]\s?\d{1,2}\s?[-.\/]\s?\d{1,2}/.test(s)) return false; // 2026-07-03 ...
+    const digitsOnly = s.replace(/[^0-9]/g, '');
+    if (digitsOnly.length === 8 && /^20\d{6}$/.test(digitsOnly)) return false; // yyyymmdd
+    if (digitsOnly.length < 9) return false;
+    return digitsOnly.length / s.replace(/\s/g, '').length >= 0.8;
+};
+
+/** vendorAoa의 특정 열이 운송장번호 열로 적합한지 데이터 샘플로 검증 */
+const columnLooksLikeTracking = (vendorAoa: any[][], colIdx: number, headerRowIdx: number): boolean => {
+    if (colIdx < 0) return false;
+    let nonEmpty = 0, trackingLike = 0;
+    for (let ri = headerRowIdx + 1; ri < Math.min(vendorAoa.length, headerRowIdx + 25); ri++) {
+        const row = vendorAoa[ri];
+        if (!row) continue;
+        const v = row[colIdx];
+        if (v == null || String(v).trim() === '') continue;
+        nonEmpty++;
+        if (isTrackingLikeValue(v)) trackingLike++;
+    }
+    if (nonEmpty < 3) return true; // 표본 부족 시 판단 보류 (기존 동작 유지)
+    return trackingLike / nonEmpty >= 0.5;
+};
 const normalizeOrderNum = (val: any): string => {
     if (val == null) return '';
     let str = String(val).trim();
@@ -210,14 +238,34 @@ export const useInvoiceMerger = () => {
         if (isHeaderBasedMatch) {
             // --- 헤더명 기반 매칭 모드 ---
             // configHeaders에서 선택된 헤더명의 인덱스를 찾음
-            const vKeyIndices = matchHeaderNames.map(name => configHeaders.indexOf(name));
-
             const vHeaderIdx = findVendorHeaderIdx(vendorAoa);
             const vHeaders = vendorAoa[vHeaderIdx] || [];
+            const nfc = (s: any) => String(s || '').replace(/\s+/g, '').normalize('NFC');
+            // configHeaders 인덱스는 저장 당시 기준 — 실제 파일에서 같은 헤더명을 우선 사용(열 순서 변동 대응)
+            const vKeyIndices = matchHeaderNames.map(name => {
+                const inFile = vHeaders.findIndex((h: any) => nfc(h) === nfc(name));
+                return inFile !== -1 ? inFile : configHeaders.indexOf(name);
+            });
+            if (vInvIdx !== -1) {
+                const inFile = vHeaders.findIndex((h: any) => nfc(h) === nfc(configHeaders[vInvIdx]));
+                if (inFile !== -1) vInvIdx = inFile;
+            }
+            // 지정 송장열 값이 운송장번호 형식 아니면(날짜열 등) 무효화 → 아래 재탐색
+            if (vInvIdx !== -1 && !columnLooksLikeTracking(vendorAoa, vInvIdx, vHeaderIdx)) {
+                console.log(`[송장] ⚠ 업체: ${companyName}, 지정 송장열(${vInvIdx}) 값이 운송장번호 형식 아님 → 재탐색`);
+                vInvIdx = -1;
+            }
 
             if (vInvIdx === -1) vInvIdx = findFieldIdx(fieldMap, 'trackingNumber', vHeaders, {
                 trackingNumber: ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice'],
             });
+            if (vInvIdx !== -1) {
+                const hn = String(vHeaders[vInvIdx] || '').replace(/\s+/g, '').toLowerCase();
+                if (hn.includes('이전') || hn.includes('원운송') || hn.includes('일자') || hn.includes('일시') ||
+                    !columnLooksLikeTracking(vendorAoa, vInvIdx, vHeaderIdx)) {
+                    vInvIdx = -1;
+                }
+            }
             // 헤더에서 송장번호 못 찾으면 데이터에서 자동 감지
             if (vInvIdx === -1) {
                 for (let ri = vHeaderIdx + 1; ri < Math.min(vendorAoa.length, vHeaderIdx + 5); ri++) {
@@ -275,13 +323,52 @@ export const useInvoiceMerger = () => {
             }
         }
 
+        // fieldMap 인덱스는 저장 당시 헤더 기준 — 업체가 열 순서를 바꾸면 어긋난다(날짜열 오지정의 주된 원인).
+        // 실제 파일 헤더에서 같은 헤더명을 찾아 인덱스 재정렬 + 지정 송장열 값 검증.
+        {
+            const vHeaderIdx = findVendorHeaderIdx(vendorAoa);
+            const vHeaders = vendorAoa[vHeaderIdx] || [];
+            const norm = (s: any) => String(s || '').replace(/\s+/g, '').normalize('NFC');
+            const realign = (idx: number): number => {
+                if (idx < 0 || !configHeaders || !configHeaders[idx]) return idx;
+                const want = norm(configHeaders[idx]);
+                if (!want) return idx;
+                const found = vHeaders.findIndex((h: any) => norm(h) === want);
+                return found !== -1 ? found : idx;
+            };
+            if (fieldMap && fieldMap.length > 0) {
+                const rInv = realign(vInvIdx), rOrder = realign(vOrderIdx);
+                if (rInv !== vInvIdx) { console.log(`[송장] ${companyName} 송장열 재정렬 ${vInvIdx}→${rInv}`); vInvIdx = rInv; }
+                if (rOrder !== vOrderIdx) { console.log(`[송장] ${companyName} 주문열 재정렬 ${vOrderIdx}→${rOrder}`); vOrderIdx = rOrder; }
+            }
+            if (vInvIdx !== -1 && !columnLooksLikeTracking(vendorAoa, vInvIdx, vHeaderIdx)) {
+                console.log(`[송장] ⚠ 업체: ${companyName}, 지정 송장열(${vInvIdx}) 값이 운송장번호 형식 아님(날짜 등) → 재탐색`);
+                vInvIdx = -1;
+            }
+        }
+
         // 송장번호 열을 아직 못 정했으면 (fieldMap에 trackingNumber가 없거나 하드코딩 열이 -1) 공통 폴백:
         // 헤더 키워드 → 데이터에서 10자리 이상 숫자 열 자동 감지
         // (업체가 송장번호 헤더를 "비워둠" 등으로 보내면 inferVendorInvoiceField가 태깅하지 못해 여기로 옴)
         if (vInvIdx === -1) {
             const vHeaderIdx = findVendorHeaderIdx(vendorAoa);
             const vHeaders = vendorAoa[vHeaderIdx] || [];
-            vInvIdx = findColIdx(vHeaders, ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice']);
+            // 키워드 매칭 후보 중 '이전운송장'/'원운송장'/날짜열은 제외하고 값이 실제 운송장번호인 열 선택
+            const trackKw = ['송장', '운송장', '등기', '장번호', '배송번호', '화물추적', '트래킹', 'tracking', 'invoice'];
+            let kwFallback = -1;
+            for (let ci = 0; ci < vHeaders.length; ci++) {
+                if (ci === vOrderIdx) continue;
+                const hn = String(vHeaders[ci] || '').replace(/\s+/g, '').toLowerCase();
+                if (!trackKw.some(k => hn.includes(k))) continue;
+                if (hn.includes('이전') || hn.includes('원운송') || hn.includes('일자') || hn.includes('일시') || hn.includes('날짜')) continue;
+                if (kwFallback === -1) kwFallback = ci;
+                if (columnLooksLikeTracking(vendorAoa, ci, vHeaderIdx)) { vInvIdx = ci; break; }
+            }
+            if (vInvIdx === -1) vInvIdx = kwFallback;
+            if (vInvIdx === -1 || !columnLooksLikeTracking(vendorAoa, vInvIdx, vHeaderIdx)) {
+                vInvIdx = -1;
+            }
+            if (vInvIdx === -1) vInvIdx = findColIdx(vHeaders, trackKw);
             if (vInvIdx === -1) {
                 for (let ri = vHeaderIdx + 1; ri < Math.min(vendorAoa.length, vHeaderIdx + 8); ri++) {
                     const dataRow = vendorAoa[ri];

@@ -952,7 +952,9 @@ export function getHeaderForCompany(companyName: string, config: CompanyConfig):
 export function inferVendorInvoiceField(h: string): VendorInvoiceFieldKey {
     const lower = h.toLowerCase().replace(/\s+/g, '');
     if (lower.includes('주문번호') || lower.includes('관리번호') || lower.includes('오더번호') || lower.includes('오더넘버') || lower.includes('접수번호') || lower.includes('고객주문번호') || lower === 'id') return 'orderNumber';
-    if (lower.includes('송장') || lower.includes('운송장') || lower.includes('등기') || lower.includes('배송번호') || lower.includes('화물추적') || lower.includes('트래킹') || lower.includes('tracking') || lower.includes('invoice')) return 'trackingNumber';
+    // 날짜열('자료등록일' 등)과 '이전운송장번호'/'원운송장번호'는 송장번호 아님 → empty로 둠
+    const isDateOrPrevTracking = lower.includes('일자') || lower.includes('일시') || lower.includes('등록일') || lower.includes('출력일') || lower.includes('날짜') || lower.includes('이전운송장') || lower.includes('원운송장');
+    if (!isDateOrPrevTracking && (lower.includes('송장') || lower.includes('운송장') || lower.includes('등기') || lower.includes('배송번호') || lower.includes('화물추적') || lower.includes('트래킹') || lower.includes('tracking') || lower.includes('invoice'))) return 'trackingNumber';
     // 받는분 (전화/연락처 포함 시 제외 - '수령인연락처1' 등이 recipientName으로 잘못 분류되는 것 방지)
     if ((lower.includes('받는') && lower.includes('분') && !lower.includes('전화') && !lower.includes('연락') && !lower.includes('주소')) || ((lower.includes('수취인') || lower.includes('수령인') || lower.includes('고객명') || lower.includes('수신자')) && !lower.includes('연락') && !lower.includes('전화'))) return 'recipientName';
     if (lower.includes('전화') || lower.includes('연락처') || lower.includes('핸드폰') || lower.includes('휴대폰') || lower.includes('hp') || lower.includes('phone') || lower.includes('mobile')) return 'recipientPhone';
