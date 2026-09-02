@@ -27,6 +27,26 @@ const normalizeOrderNum = (val: any): string => {
     return str.replace(/[^A-Z0-9]/gi, '').toUpperCase();
 };
 
+/**
+ * 매칭 기준으로 지정된 헤더명 중 실제로 쓸 수 있는 것만 남긴다.
+ * - fieldMap에서 'empty'(비워둠)로 매핑된 열은 매칭에 쓰면 안 됨
+ *   (예: "비워둠" 열에 택배사명 "우체국"이 들어있는 걸 매칭키로 잘못 체크한 경우)
+ * - 주문번호 계열이 하나라도 남아있으면 'empty' 열은 조용히 무시하고 진행
+ */
+const sanitizeMatchHeaders = (
+    rawNames: string[],
+    configHeaders: string[] | undefined,
+    fieldMap: string[] | undefined,
+): string[] => {
+    if (!configHeaders || !fieldMap || fieldMap.length === 0) return rawNames;
+    const usable = rawNames.filter(name => {
+        const hi = configHeaders.indexOf(name);
+        return hi === -1 || fieldMap[hi] !== 'empty';
+    });
+    // 전부 걸러졌으면 원본 유지(설정 의도를 존중해 아래에서 명확한 에러가 나도록)
+    return usable.length > 0 ? usable : rawNames;
+};
+
 const findColIdx = (row: any[], keywords: string[]): number => {
     if (!row) return -1;
     return row.findIndex(cell => {
@@ -164,7 +184,7 @@ export const useInvoiceMerger = () => {
 
         // matchKey 형식: 원본 헤더명을 '|'로 구분 (예: "수령인|수령인연락처1")
         // 비어있으면 기존 주문번호 매칭 모드
-        const matchHeaderNames = matchKeyRaw.split('|').filter(Boolean);
+        const matchHeaderNames = sanitizeMatchHeaders(matchKeyRaw.split('|').filter(Boolean), configHeaders, fieldMap);
         // 주문번호 단일 매칭은 표준 경로 사용 (다른 업체와 동일한 normalizeOrderNum 적용)
         const isSingleOrderKey = matchHeaderNames.length === 1 && (() => {
             const l = matchHeaderNames[0].toLowerCase().replace(/\s+/g, '');
@@ -358,8 +378,12 @@ export const useInvoiceMerger = () => {
 
             // 매칭 키 설정 확인
             const companyMatchKeyRaw = pricingConfig?.[companyName]?.vendorInvoiceMatchKey || '';
-            const matchHeaderNames = companyMatchKeyRaw.split('|').filter(Boolean);
             const vendorConfigHeaders = pricingConfig?.[companyName]?.vendorInvoiceHeaders;
+            const matchHeaderNames = sanitizeMatchHeaders(
+                companyMatchKeyRaw.split('|').filter(Boolean),
+                vendorConfigHeaders,
+                pricingConfig?.[companyName]?.vendorInvoiceFieldMap,
+            );
             // 주문번호 단일 매칭은 표준 경로 사용 (buildInvoiceMap과 동일 조건)
             const isSingleOrderKey = matchHeaderNames.length === 1 && (() => {
                 const l = matchHeaderNames[0].toLowerCase().replace(/\s+/g, '');

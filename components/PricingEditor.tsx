@@ -23,6 +23,42 @@ const dedupeHeaders = (headers: string[]): string[] => {
     });
 };
 
+// 헤더 열 상한. 서식만 넓게 잡힌 엑셀(수천 열)을 그대로 렌더하면 화면이 멈춘다.
+const MAX_FORM_COLUMNS = 200;
+
+// 엑셀 ArrayBuffer에서 헤더 행을 안전하게 추출한다.
+// - XLSX 전역이 없으면(CDN 로드 실패) 명확한 에러를 던진다
+// - keywords 중 하나가 들어있는 첫 행을 헤더로, 없으면 가장 값이 많은 행을 헤더로
+// - 빈 열 제거 → 중복 접미사 → 열 개수 상한
+const extractHeaderRow = (data: Uint8Array, keywords: string[]): string[] => {
+    if (typeof XLSX === 'undefined' || !XLSX?.read) throw new Error('XLSX_NOT_LOADED');
+    const wb = XLSX.read(data, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+    if (!aoa.length) return [];
+    let headerRowIdx = -1;
+    for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
+        const rowStr = (aoa[ri] || []).join('');
+        if (keywords.some(k => rowStr.includes(k))) { headerRowIdx = ri; break; }
+    }
+    if (headerRowIdx === -1) {
+        let maxCols = 0;
+        for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
+            const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
+            if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
+        }
+        if (headerRowIdx === -1) headerRowIdx = 0;
+    }
+    const raw = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
+    return dedupeHeaders(raw.slice(0, MAX_FORM_COLUMNS));
+};
+
+// 양식 업로드 실패 시 사용자에게 보여줄 메시지
+const formUploadErrorMessage = (err: unknown, what: string): string =>
+    (err as Error)?.message === 'XLSX_NOT_LOADED'
+        ? '엑셀 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인하고 새로고침한 뒤 다시 시도해 주세요.'
+        : `${what} 파일을 읽지 못했습니다. 파일이 손상되지 않았는지 확인해 주세요.`;
+
 // undefined 값 제거 (Firestore는 undefined를 지원하지 않음)
 const stripUndefined = <T extends Record<string, any>>(obj: T): T => {
     return Object.fromEntries(
@@ -1482,37 +1518,18 @@ const CompanyCard: React.FC<{
                                         reader.onload = (ev) => {
                                             try {
                                                 const data = new Uint8Array(ev.target?.result as ArrayBuffer);
-                                                const wb = XLSX.read(data, { type: 'array' });
-                                                const ws = wb.Sheets[wb.SheetNames[0]];
-                                                const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                                                if (aoa.length > 0) {
-                                                    let headerRowIdx = -1;
-                                                    for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
-                                                        const rowStr = (aoa[ri] || []).join('');
-                                                        if (rowStr.includes('받는사람') || rowStr.includes('수취인') || rowStr.includes('수령인') ||
-                                                            rowStr.includes('품목') || rowStr.includes('상품') || rowStr.includes('주소') ||
-                                                            rowStr.includes('수량') || rowStr.includes('전화') || rowStr.includes('연락처') ||
-                                                            rowStr.includes('주문') || rowStr.includes('번호')) {
-                                                            headerRowIdx = ri;
-                                                            break;
-                                                        }
-                                                    }
-                                                    if (headerRowIdx === -1) {
-                                                        let maxCols = 0;
-                                                        for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
-                                                            const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
-                                                            if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
-                                                        }
-                                                        if (headerRowIdx === -1) headerRowIdx = 0;
-                                                    }
-                                                    const headers = (aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean);
-                                                    if (headers.length > 0) {
-                                                        const fieldMap = headers.map((h: string) => inferFieldFromHeader(h));
-                                                        props.onUpdateOrderFormHeaders(headers, fieldMap);
-                                                    }
+                                                const headers = extractHeaderRow(data, ['받는사람', '수취인', '수령인', '품목', '상품', '주소', '수량', '전화', '연락처', '주문', '번호']);
+                                                if (headers.length > 0) {
+                                                    props.onUpdateOrderFormHeaders(headers, headers.map(h => inferFieldFromHeader(h)));
+                                                } else {
+                                                    alert('엑셀에서 헤더 행을 찾지 못했습니다. 첫 행에 열 제목이 있는 파일인지 확인해 주세요.');
                                                 }
-                                            } catch (err) { console.error('[발주서양식 업로드 오류]', err); }
+                                            } catch (err) {
+                                                console.error('[발주서양식 업로드 오류]', err);
+                                                alert(formUploadErrorMessage(err, '발주서 양식'));
+                                            }
                                         };
+                                        reader.onerror = () => { console.error('[발주서양식] FileReader 오류', reader.error); alert('파일을 읽을 수 없습니다.'); };
                                         reader.readAsArrayBuffer(file);
                                         e.target.value = '';
                                     }} />
@@ -1622,32 +1639,18 @@ const CompanyCard: React.FC<{
                                         reader.onload = (ev) => {
                                             try {
                                                 const data = new Uint8Array(ev.target?.result as ArrayBuffer);
-                                                const wb = XLSX.read(data, { type: 'array' });
-                                                const ws = wb.Sheets[wb.SheetNames[0]];
-                                                const aoa: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                                                if (aoa.length > 0) {
-                                                    let headerRowIdx = -1;
-                                                    for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
-                                                        const rowStr = (aoa[ri] || []).join('');
-                                                        if (rowStr.includes('번호') || rowStr.includes('송장') || rowStr.includes('운송장') || rowStr.includes('접수') || rowStr.includes('주문')) {
-                                                            headerRowIdx = ri; break;
-                                                        }
-                                                    }
-                                                    if (headerRowIdx === -1) {
-                                                        let maxCols = 0;
-                                                        for (let ri = 0; ri < Math.min(aoa.length, 20); ri++) {
-                                                            const nonEmpty = (aoa[ri] || []).filter((c: any) => c != null && String(c).trim() !== '').length;
-                                                            if (nonEmpty > maxCols) { maxCols = nonEmpty; headerRowIdx = ri; }
-                                                        }
-                                                        if (headerRowIdx === -1) headerRowIdx = 0;
-                                                    }
-                                                    const headers = dedupeHeaders((aoa[headerRowIdx] || []).map((h: any) => String(h || '').trim()).filter(Boolean));
-                                                    if (headers.length > 0) {
-                                                        props.onUpdateVendorInvoiceHeaders(headers, headers.map((h: string) => inferVendorInvoiceField(h)));
-                                                    }
+                                                const headers = extractHeaderRow(data, ['번호', '송장', '운송장', '접수', '주문']);
+                                                if (headers.length > 0) {
+                                                    props.onUpdateVendorInvoiceHeaders(headers, headers.map(h => inferVendorInvoiceField(h)));
+                                                } else {
+                                                    alert('엑셀에서 헤더 행을 찾지 못했습니다. 첫 행에 열 제목이 있는 파일인지 확인해 주세요.');
                                                 }
-                                            } catch (err) { console.error('[송장양식 업로드 오류]', err); }
+                                            } catch (err) {
+                                                console.error('[송장양식 업로드 오류]', err);
+                                                alert(formUploadErrorMessage(err, '송장 양식'));
+                                            }
                                         };
+                                        reader.onerror = () => { console.error('[송장양식] FileReader 오류', reader.error); alert('파일을 읽을 수 없습니다.'); };
                                         reader.readAsArrayBuffer(file);
                                         e.target.value = '';
                                     }} />
@@ -1700,7 +1703,9 @@ const CompanyCard: React.FC<{
                                             const headers = companyConfig.vendorInvoiceHeaders!;
                                             const fieldMap = companyConfig.vendorInvoiceFieldMap || headers.map(h => inferVendorInvoiceField(h));
                                             // 이미 저장된 설정에 중복 헤더가 있어도 key 충돌로 화면이 날아가지 않도록 중복 제거
-                                            const candidateHeaders = [...new Set(headers.filter((_, i) => fieldMap[i] !== 'trackingNumber'))];
+                                            // 송장번호 열과 '비워둠'(empty)으로 매핑된 열은 매칭 기준 후보에서 제외
+                                            // ('비워둠' 열에 택배사명 등이 들어있어 매칭키로 잘못 체크하면 변환이 0건 남)
+                                            const candidateHeaders = [...new Set(headers.filter((_, i) => fieldMap[i] !== 'trackingNumber' && fieldMap[i] !== 'empty'))];
                                             if (candidateHeaders.length === 0) return null;
                                             const currentMatchHeaders = (companyConfig.vendorInvoiceMatchKey || '').split('|').filter(Boolean);
                                             return (
