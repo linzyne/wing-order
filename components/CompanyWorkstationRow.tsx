@@ -2,13 +2,14 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
-import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, pushManualToOutputRows, isParcelEntryName } from '../hooks/useConsolidatedOrderConverter';
+import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
     PlusCircleIcon, TrashIcon, EyeIcon
 } from './icons';
 import type { PricingConfig, ExcludedOrder, ManualOrder, UnmatchedOrder, PlatformConfigs, ProductPricing } from '../types';
+import type { CompanyDepositInfo } from '../services/depositUtils';
 import { DragHandleContext } from './DragHandleContext';
 import { getBusinessInfo } from '../types';
 import { deleteField } from 'firebase/firestore';
@@ -94,6 +95,7 @@ interface CompanyWorkstationRowProps {
     isRecorded?: boolean;
     onRecord?: () => void;
     workDate?: string;
+    depositInfo?: CompanyDepositInfo | null; // 예수금(예치금) — 이 업체 잔액 정보 (없으면 표시 안 함)
     workspace: DailyWorkspaceData | null;
     updateField: (field: string, value: any) => Promise<void>;
     updateSessionField: (dotPath: string, value: any) => Promise<void>;
@@ -129,6 +131,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     isClosed = false, onToggleClosed, isActive = true,
     onRecord,
     workDate,
+    depositInfo,
     workspace, updateField, updateSessionField, sessionResults, onSaveSessionResult, onDeleteSessionResult,
     pendingOrderLight = false, pendingInvoiceLight = false,
     onOrderDownloaded, onInvoiceDownloaded,
@@ -314,10 +317,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             itemEntries.forEach(([name, stat]) => { lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`); subtotal += stat.totalPrice; });
             lines.push(`품목 소계\t\t${subtotal.toLocaleString()}원`);
         }
-        lines.push('', '[택배]');
-        let parcelSubtotal = 0;
-        parcelEntries.forEach(([name, stat]) => { lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`); parcelSubtotal += stat.totalPrice; });
-        lines.push(`택배 소계\t\t${parcelSubtotal.toLocaleString()}원`);
+        const parcelLines = renderParcelKakaoLines(parcelEntries);
+        if (parcelLines.length > 0) lines.push('', '[택배]', ...parcelLines);
         return lines;
     };
 
@@ -344,7 +345,19 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             });
         };
         pushSection('[품목구매]', itemEntries);
-        pushSection('[택배]', parcelEntries);
+        // [택배]: 품목별 반복 대신 배송비 단가별 압축
+        const parcelGroups = groupParcelByRate(parcelEntries);
+        if (parcelGroups.length > 0) {
+            lines.push(`${rowIdx === 0 ? titleCol1 : rowIdx === 1 ? `총 ${totalCount}개` : ''}\t[택배]\t\t`);
+            rowIdx++;
+            const parcelRows = parcelGroups.length === 1
+                ? [`택배비\t${parcelGroups[0].count}건 × ${parcelGroups[0].rate.toLocaleString()}원\t${parcelGroups[0].totalPrice.toLocaleString()}`]
+                : parcelGroups.map(g => `택배비 ${g.rate.toLocaleString()}원\t${g.count}건\t${g.totalPrice.toLocaleString()}`);
+            parcelRows.forEach(r => {
+                lines.push(`${rowIdx === 0 ? titleCol1 : rowIdx === 1 ? `총 ${totalCount}개` : ''}\t${r}`);
+                rowIdx++;
+            });
+        }
         return lines;
     };
 
@@ -357,6 +370,18 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         for (const line of excelText.split('\n')) {
             const parts = line.split('\t');
             const displayName = parts[1]?.trim();
+            // 압축된 택배비 라인 복원: "택배비\tN건 × 단가원\t금액" 또는 "택배비 단가원\tN건\t금액"
+            if (displayName?.startsWith('택배비')) {
+                const amount = parseInt(parts[3]?.replace(/,/g, '') || '0') || 0;
+                if (!amount) continue;
+                const qtyCol = parts[2]?.trim() || '';
+                const cntMatch = qtyCol.match(/^([\d,]+)\s*건/);
+                const pCount = cntMatch ? parseInt(cntMatch[1].replace(/,/g, '')) : 0;
+                const rateMatch = displayName.match(/([\d,]+)\s*원/) || qtyCol.match(/×\s*([\d,]+)\s*원/);
+                const rate = rateMatch ? parseInt(rateMatch[1].replace(/,/g, '')) : (pCount ? Math.round(amount / pCount) : amount);
+                result[`택배비 ${rate}원 (택배)`] = { count: pCount, totalPrice: amount };
+                continue;
+            }
             const countMatch = parts[2]?.trim().match(/^(\d+)개$/);
             if (!displayName || !countMatch) continue;
             const count = parseInt(countMatch[1]);
@@ -475,7 +500,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 .replace('총 합계', `[추가/차감 내역]\n${adjText}\n\n총 합계`)
                 .replace(/(총 합계\s+)([\d,]+)(원)/, (_match, p1, _p2, p3) => `${p1}${(orderTotal + adjTotal).toLocaleString()}${p3}`);
         }
-        navigator.clipboard.writeText(finalText);
+        navigator.clipboard.writeText(injectDeposit(finalText));
         setCopiedCombinedId(sessionId);
         setTimeout(() => setCopiedCombinedId(null), 2000);
     };
@@ -543,6 +568,25 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         ? [...previousSessionIds.flatMap(id => workspace?.sessionAdjustments?.[id] || []), ...sessionAdjustments]
         : sessionAdjustments;
 
+    // ===== 예수금(예치금) 남은 잔액 =====
+    // 마지막 차수 카드에서만 표시 (그날 그 업체 정산 총합계 = 이 카드의 총 합계와 일치).
+    // 이미 오늘 "기록"했으면 원장에 확정된 잔액을, 아니면 (직전 잔액 − 현재 총 합계)를 미리보기로 보여준다.
+    const depositRemaining: number | null = (() => {
+        if (!depositInfo?.hasLedger || !isLastSession) return null;
+        if (depositInfo.recordedToday) return depositInfo.recordedBalance;
+        const base = isCumulativeView
+            ? Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0)
+            : Object.values((summaryOverride || localResult?.summary || syncedData?.itemSummary || {}) as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
+        const adj = allSessionAdjustments.reduce((a, b) => a + b.amount, 0);
+        return depositInfo.balanceBeforeToday - (base + adj);
+    })();
+    const injectDeposit = (text: string): string => {
+        if (depositRemaining === null || !text) return text;
+        const line = `남은 예치금\t\t${depositRemaining.toLocaleString()}원`;
+        if (/총 합계\s+[\d,-]+\s*원/.test(text)) return text.replace(/(총 합계\s+[\d,-]+\s*원)/, `$1\n${line}`);
+        return `${text}\n${line}`;
+    };
+
     // override 적용된 최종 정산 텍스트 (카톡용/엑셀용)
     const effectiveDisplayText = (() => {
         if (cumulativeDepositText !== null) return cumulativeDepositText;
@@ -586,12 +630,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 .replace('총 합계', `[추가/차감 내역]\n${adjRows}\n\n총 합계`)
                 .replace(/(총 합계\s+)([\d,]+)(원)/, (_m, p1, _p2, p3) => `${p1}${(baseTotal + adjTotal).toLocaleString()}${p3}`);
         }
-        onEffectiveTextChangeRef.current?.(kakaoText, effectiveDisplayExcelText);
+        onEffectiveTextChangeRef.current?.(injectDeposit(kakaoText), injectDeposit(effectiveDisplayExcelText));
     // isLastSession을 deps에 넣어야 한다: 다른 차수가 삭제/이동되어 이 세션이 "마지막 차수"로
     // 바뀌어도 effectiveDisplayText 문자열 자체는 그대로일 수 있어(=deps 미변경) effect가
     // 재실행되지 않고, 통합주문서업로드 캐시(companyLastSettlementRef)가 사라진 옛 차수의
     // 정산요약을 계속 들고 있는 버그가 있었다.
-    }, [effectiveDisplayText, effectiveDisplayExcelText, allSessionAdjustments, isLastSession]);
+    }, [effectiveDisplayText, effectiveDisplayExcelText, allSessionAdjustments, isLastSession, depositRemaining]);
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig, businessId);
@@ -908,7 +952,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             }
         }
         
-        navigator.clipboard.writeText(finalText);
+        navigator.clipboard.writeText(injectDeposit(finalText));
         if (type === 'kakao') { setCopiedId(id); setTimeout(() => setCopiedId(null), 2000); }
         else { setCopiedExcelId(id); setTimeout(() => setCopiedExcelId(null), 2000); }
     };
@@ -1420,7 +1464,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     text = text.replace('총 합계', `[추가/차감 내역]\n${adjRows}\n\n총 합계`)
                                                                .replace(/(총 합계\s+)([\d,]+)(원)/, (_match, p1, _p2, p3) => `${p1}${(orderTotal + adjTotal).toLocaleString()}${p3}`);
                                                 }
-                                                return text;
+                                                return injectDeposit(text);
                                             })()}</pre>
                                         </div>
                                     </div>
@@ -2032,7 +2076,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                                return `${p1}${(baseTotal + adjTotal).toLocaleString()}${p3}`;
                                                            });
                                             }
-                                            return text;
+                                            return injectDeposit(text);
                                         })()}
                                     </pre>
                                 )}

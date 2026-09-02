@@ -128,15 +128,10 @@ class StatsManager {
             lines.push(`품목 소계\t\t${subtotal.toLocaleString()}원`);
             grandTotal += subtotal;
         }
-        if (parcelEntries.length > 0) {
-            lines.push('', '[택배]');
-            let subtotal = 0;
-            parcelEntries.forEach(([name, stat]) => {
-                lines.push(`${name}\t${stat.count}개\t${stat.totalPrice.toLocaleString()}원`);
-                subtotal += stat.totalPrice;
-            });
-            lines.push(`택배 소계\t\t${subtotal.toLocaleString()}원`);
-            grandTotal += subtotal;
+        const parcelLines = renderParcelKakaoLines(parcelEntries);
+        if (parcelLines.length > 0) {
+            lines.push('', '[택배]', ...parcelLines);
+            grandTotal += parcelEntries.reduce((a, [, s]) => a + s.totalPrice, 0);
         }
         lines.push('', `총 합계\t\t${grandTotal.toLocaleString()}원`, `(입금자 ${this.senderName})`);
         return lines.join('\n');
@@ -175,7 +170,19 @@ class StatsManager {
             });
         };
         pushSection('[품목구매]', itemEntries);
-        pushSection('[택배]', parcelEntries);
+        // [택배]: 품목별 반복 대신 배송비 단가별 압축
+        const parcelGroups = groupParcelByRate(parcelEntries);
+        if (parcelGroups.length > 0) {
+            lines.push(`${rowIdx === 0 ? title : rowIdx === 1 ? `총 ${totalCount}개` : ''}\t[택배]\t\t`);
+            rowIdx++;
+            const parcelRows = parcelGroups.length === 1
+                ? [`택배비\t${parcelGroups[0].count}건 × ${parcelGroups[0].rate.toLocaleString()}원\t${parcelGroups[0].totalPrice.toLocaleString()}`]
+                : parcelGroups.map(g => `택배비 ${g.rate.toLocaleString()}원\t${g.count}건\t${g.totalPrice.toLocaleString()}`);
+            parcelRows.forEach(r => {
+                lines.push(`${rowIdx === 0 ? title : rowIdx === 1 ? `총 ${totalCount}개` : ''}\t${r}`);
+                rowIdx++;
+            });
+        }
         if (lines.length > 0) lines[lines.length - 1] += `\t${grandTotal.toLocaleString()}`;
         return lines.join('\n');
     }
@@ -196,6 +203,41 @@ function splitParcelEntries(data: Record<string, { count: number, totalPrice: nu
 export const PARCEL_SUFFIX = ' (택배)';
 export function isParcelEntryName(name: string): boolean {
     return name.endsWith(PARCEL_SUFFIX);
+}
+
+/** [택배] 섹션을 품목별 반복 대신 배송비 단가별로 묶어 압축.
+ *  단가(= 합계/건수 반올림)가 같은 항목끼리 합산해 단가 오름차순으로 반환. */
+export function groupParcelByRate(
+    parcelEntries: [string, { count: number, totalPrice: number }][]
+): { rate: number; count: number; totalPrice: number }[] {
+    const byRate = new Map<number, { count: number; totalPrice: number }>();
+    for (const [, stat] of parcelEntries) {
+        if (stat.count <= 0) continue;
+        const rate = Math.round(stat.totalPrice / stat.count);
+        const g = byRate.get(rate) || { count: 0, totalPrice: 0 };
+        g.count += stat.count;
+        g.totalPrice += stat.totalPrice;
+        byRate.set(rate, g);
+    }
+    return [...byRate.entries()]
+        .map(([rate, g]) => ({ rate, count: g.count, totalPrice: g.totalPrice }))
+        .sort((a, b) => a.rate - b.rate);
+}
+
+/** [택배] 섹션 본문 라인(카카오톡 텍스트용, 헤더 '[택배]' 제외). 단가 균일이면 1줄, 여러 단가면 단가별 줄 + 택배 소계. */
+export function renderParcelKakaoLines(
+    parcelEntries: [string, { count: number, totalPrice: number }][]
+): string[] {
+    const groups = groupParcelByRate(parcelEntries);
+    if (groups.length === 0) return [];
+    if (groups.length === 1) {
+        const g = groups[0];
+        return [`택배비\t${g.count.toLocaleString()}건 × ${g.rate.toLocaleString()}원\t${g.totalPrice.toLocaleString()}원`];
+    }
+    const lines = groups.map(g => `택배비 ${g.rate.toLocaleString()}원\t${g.count.toLocaleString()}건\t${g.totalPrice.toLocaleString()}원`);
+    const subtotal = groups.reduce((a, g) => a + g.totalPrice, 0);
+    lines.push(`택배 소계\t\t${subtotal.toLocaleString()}원`);
+    return lines;
 }
 
 const findHeaderRowIndex = (aoa: any[][]): number => {
