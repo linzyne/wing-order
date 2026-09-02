@@ -1129,7 +1129,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const summaryKey = productKey || mo.productName;
 
         const newRows: any[][] = [];
-        await pushManualToOutputRows(companyName, newRows, mo, config, pricingConfig, undefined, undefined, undefined, poRowQty, perRowQty);
+        await pushManualToOutputRows(companyName, newRows, mo, config, pricingConfig, undefined, undefined, undefined, poRowQty, perRowQty, businessId);
 
         setLocalResult(prev => {
             if (prev) {

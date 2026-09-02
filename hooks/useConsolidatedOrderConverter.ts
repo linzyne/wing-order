@@ -732,7 +732,7 @@ const generateWorkbookForCompany = async (
                 const row = json[i];
                 if (!row) continue;
                 const orderNumber = String(row[sourceOrderNumberIdx] || '').trim();
-                const recipientName = stripDigits(String(row[recipientNameCol] || '').trim());
+                const recipientName = cleanRecipientName(String(row[recipientNameCol] || '').trim(), businessId);
                 const productName = String(row[productColIdx] || '').trim();
                 const phone = String(row[recipientPhoneCol] || '').trim();
 
@@ -846,7 +846,7 @@ const generateWorkbookForCompany = async (
                     registeredProductNames[config.displayName] = order.groupColValue;
                 }
                 const rowsBeforePush = outputRows.length;
-                await pushToOutputRows(companyName, outputRows, row, config, poRowQty, pricingConfig, senderName, senderPhone, senderAddress, poPerRowQty);
+                await pushToOutputRows(companyName, outputRows, row, config, poRowQty, pricingConfig, senderName, senderPhone, senderAddress, poPerRowQty, businessId);
                 for (let i = rowsBeforePush; i < outputRows.length; i++) {
                     rowOrderNumberMap.set(outputRows[i], order.orderNumber);
                     rowBundleNumberMap.set(outputRows[i], order.bundleNumber || '');
@@ -899,7 +899,7 @@ const generateWorkbookForCompany = async (
                 }
             }
             const moRowsBeforePush = outputRows.length;
-            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moPoRowQty, moPerRowQty);
+            await pushManualToOutputRows(companyName, outputRows, mo, config, pricingConfig, senderName, senderPhone, senderAddress, moPoRowQty, moPerRowQty, businessId);
             for (let i = moRowsBeforePush; i < outputRows.length; i++) {
                 rowOrderNumberMap.set(outputRows[i], '수동');
                 rowBundleNumberMap.set(outputRows[i], '');
@@ -990,10 +990,20 @@ export function inferFieldFromHeader(h: string): OrderFormFieldKey {
 
 function stripDigits(name: string): string { return name.replace(/\d/g, ''); }
 
+/**
+ * 수취인 이름 정리. 기본은 숫자 제거(윙이 동명이인에 "홍길동1" 등 붙이는 경우 대비)지만,
+ * 조에농원은 이름에 숫자가 들어가도 그대로 둔다.
+ */
+function cleanRecipientName(name: string, businessId?: string): string {
+    const s = String(name || '');
+    if (businessId === '조에') return s;
+    return stripDigits(s);
+}
+
 /** 일반 주문: 필드 키 → 값 변환 */
-function resolveFieldValue(field: OrderFormFieldKey, row: any[], orderName: string, senderName: string, senderPhone: string, senderAddress: string): any {
+function resolveFieldValue(field: OrderFormFieldKey, row: any[], orderName: string, senderName: string, senderPhone: string, senderAddress: string, businessId?: string): any {
     switch (field) {
-        case 'recipientName':    return stripDigits(String(row[26] || ''));
+        case 'recipientName':    return cleanRecipientName(String(row[26] || ''), businessId);
         case 'recipientPhone':   return String(row[27] || '');
         case 'recipientZipcode': return String(row[28] || '');
         case 'recipientAddress': return String(row[29] || '');
@@ -1009,9 +1019,9 @@ function resolveFieldValue(field: OrderFormFieldKey, row: any[], orderName: stri
 }
 
 /** 수동 주문: 필드 키 → 값 변환 */
-function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orderName: string, senderName: string, senderPhone: string, senderAddress: string): any {
+function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orderName: string, senderName: string, senderPhone: string, senderAddress: string, businessId?: string): any {
     switch (field) {
-        case 'recipientName':    return stripDigits(mo.recipientName);
+        case 'recipientName':    return cleanRecipientName(mo.recipientName, businessId);
         case 'recipientPhone':   return mo.phone;
         case 'recipientZipcode': return '';
         case 'recipientAddress': return mo.address;
@@ -1026,9 +1036,9 @@ function resolveManualFieldValue(field: OrderFormFieldKey, mo: ManualOrder, orde
     }
 }
 
-async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', perRowQty: number = 1) {
+async function pushToOutputRows(companyName: string, outputRows: any[][], row: any[], config: ProductPricing, qty: number, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', perRowQty: number = 1, businessId?: string) {
     const orderName = config.orderFormName || config.displayName;
-    const rName = stripDigits(String(row[26] || ''));
+    const rName = cleanRecipientName(String(row[26] || ''), businessId);
     // 고랭지김치는 A/B타입 로직이 있어 customHeaders 체크보다 먼저 처리
     if (companyName === '고랭지김치') {
         for (let j = 0; j < qty; j++) {
@@ -1075,7 +1085,7 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
                     return;
                 }
                 const field = (fieldMap?.[idx] || inferFieldFromHeader(h)) as OrderFormFieldKey;
-                or[idx] = resolveFieldValue(field, row, orderName, senderName, senderPhone, senderAddress);
+                or[idx] = resolveFieldValue(field, row, orderName, senderName, senderPhone, senderAddress, businessId);
                 if (field === 'qty') or[idx] = perRowQty;
             });
             outputRows.push(or);
@@ -1139,10 +1149,10 @@ async function pushToOutputRows(companyName: string, outputRows: any[][], row: a
     }
 }
 
-export async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', overrideQty?: number, perRowQty: number = 1) {
+export async function pushManualToOutputRows(companyName: string, outputRows: any[][], mo: ManualOrder, config: ProductPricing, pricingConfig: PricingConfig, senderName: string = '안군농원', senderPhone: string = '01042626343', senderAddress: string = '제주도', overrideQty?: number, perRowQty: number = 1, businessId?: string) {
     const orderName = config.orderFormName || config.displayName;
     const rowQty = overrideQty ?? mo.qty;
-    const rName = stripDigits(mo.recipientName);
+    const rName = cleanRecipientName(mo.recipientName, businessId);
     // 고랭지김치는 A/B타입 로직이 있어 customHeaders 체크보다 먼저 처리
     if (companyName === '고랭지김치') {
         for (let j = 0; j < rowQty; j++) {
@@ -1185,7 +1195,7 @@ export async function pushManualToOutputRows(companyName: string, outputRows: an
                     return;
                 }
                 const field = (fieldMap?.[idx] || inferFieldFromHeader(h)) as OrderFormFieldKey;
-                or[idx] = resolveManualFieldValue(field, mo, orderName, senderName, senderPhone, senderAddress);
+                or[idx] = resolveManualFieldValue(field, mo, orderName, senderName, senderPhone, senderAddress, businessId);
                 if (field === 'qty') or[idx] = perRowQty;
             });
             outputRows.push(or);
