@@ -112,6 +112,13 @@ const vIsAddr = (x: any): boolean => { const s = vStr(x); return s.length >= 8 &
 const vIsName = (x: any): boolean => { const s = vStr(x); return s.length >= 2 && s.length <= 6 && /^[가-힣·()]+$/.test(s); };
 const vIsBlankOrDash = (x: any): boolean => { const s = vStr(x); return s === '' || s === '-' || s === '—'; };
 
+/** 이름 자리에 주소/전화/우편/숫자가 밀려 들어온 값은 라벨·표시에서 버린다(빈 문자열). */
+export const sanitizeRecipientName = (x: any): string => {
+  const s = vStr(x);
+  if (!s || vIsPhone(s) || vIsAddr(s) || vIsZip(s) || /^\d+$/.test(s)) return '';
+  return s;
+};
+
 /**
  * resolveOrderRowFields 결과를 행의 실제 셀 값을 보고 교정한다(표시용).
  * 확신이 서는 후보가 있을 때만 덮어쓰고, 아니면 원래 값을 유지한다.
@@ -187,7 +194,13 @@ export function refineOrderRowFieldsByValue(
     || vIsAddr(out.recipientName) || vIsZip(out.recipientName) || /^\d+$/.test(out.recipientName);
   if (badName) {
     const cand = pick(s => vIsName(s) && !looksProduct(s) && !senderNames.has(s));
-    out.recipientName = cand ?? (/^\d+$/.test(out.recipientName) || vIsZip(out.recipientName) ? '' : out.recipientName);
+    // 이름 후보를 못 찾았으면, 원래 값이 명백히 이름이 아닐 때(숫자·우편·전화·주소)는 비운다.
+    // 이름 자리에 주소/전화가 그대로 남으면 CS 초안·정산요약 추가/차감 라벨에 주소가 찍힌다.
+    out.recipientName = cand ?? (
+      /^\d+$/.test(out.recipientName) || vIsZip(out.recipientName)
+        || vIsPhone(out.recipientName) || vIsAddr(out.recipientName)
+        ? '' : out.recipientName
+    );
   }
 
   // 주문번호/묶음배송번호: 헤더 추측이 빗나가 빈 칸이면(조에농원 연두 등), 행에서 순수 숫자 10자리+
@@ -244,7 +257,8 @@ export function buildCsDraftFromRecord(record: CsRecord): CsDraft {
   return {
     company: record.company,
     orderNumber: record.orderNumber,
-    recipientName: record.recipientName,
+    // 예전에 이름 자리에 주소/전화가 밀려 저장된 기록은 빈 칸으로 열어 실제 이름을 다시 넣게 한다
+    recipientName: sanitizeRecipientName(record.recipientName),
     productName: record.productName || '',
     qty: 1,
     productKey: record.productKey || '',
@@ -485,7 +499,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
 
       const isVendorRefundDeduction = !asPending && isVendorRefund;
       if (isVendorRefundDeduction && supplyPrice > 0) {
-        const deductionLabel = [draft.recipientName, draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불';
+        const deductionLabel = [sanitizeRecipientName(draft.recipientName), draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불';
         await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice, deductionLabel, false);
         window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
       } else if (wasRefundDeduction) {
@@ -495,7 +509,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
 
       if (!asPending && isAccountRefund) {
         await setManualTransferForRefund(businessId, `cs-refund-${id}`, {
-          label: `${draft.recipientName || '고객'} CS환불`,
+          label: `${sanitizeRecipientName(draft.recipientName) || '고객'} CS환불`,
           bankName: draft.refundBankName.trim(),
           accountNumber: draft.refundAccountNumber.trim(),
           amount: parseInt(draft.refundAmount, 10) || 0,
@@ -640,7 +654,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
               {draft.productKey && (() => {
                 const p = pricingConfig?.[draft.company]?.products?.[draft.productKey] as any;
                 if (!p) return null;
-                const label = [draft.recipientName, draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불';
+                const label = [sanitizeRecipientName(draft.recipientName), draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불';
                 return (
                   <p className="text-[11px] text-zinc-500 font-bold">
                     공급가 {(p.supplyPrice || 0).toLocaleString()}원이 {draft.company} 정산요약 추가/차감에 "{label}"로 입력됩니다

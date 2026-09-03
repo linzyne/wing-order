@@ -32,6 +32,7 @@ interface MasterUploadHandlers {
   getInvoiceState?: () => { name: string; uploadCount: number }[];
   downloadInvoice?: (companyName: string) => void;
   getLastSettlementSummaries?: () => { companyName: string; kakaoText: string; excelText: string }[];
+  getTotalMargin?: () => number;
 }
 
 interface Business { id: string; displayName: string; }
@@ -463,13 +464,18 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
         {showDownload && (
           <div className="mt-2 flex flex-col gap-3">
             {/* 사업자별 총구매수량 버튼 */}
-            {downloadSnapshot.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pb-2 border-b border-zinc-800/60">
+            {downloadSnapshot.length > 0 && (() => {
+              let grandMargin = 0;
+              return (
+              <div className="flex flex-col gap-1.5 pb-2 border-b border-zinc-800/60">
+                <div className="flex flex-wrap gap-1.5">
                 {downloadSnapshot.map(biz => {
                   const bizTotalCount = biz.companies.reduce(
                     (s, c) => s + c.rounds.reduce((rs, r) => rs + (r.count ?? 0), 0),
                     0
                   );
+                  const bizMargin = uploadFns[biz.businessId]?.getTotalMargin?.() ?? 0;
+                  grandMargin += bizMargin;
                   return (
                     <button
                       key={biz.businessId}
@@ -479,11 +485,26 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                       <span>{biz.displayName}</span>
                       <span className="text-violet-400/70">총구매수량</span>
                       <span className="tabular-nums text-violet-100">{bizTotalCount.toLocaleString()}</span>
+                      {bizMargin !== 0 && (
+                        <span className={`tabular-nums ${bizMargin > 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+                          마진 {bizMargin > 0 ? '+' : ''}{bizMargin.toLocaleString()}
+                        </span>
+                      )}
                     </button>
                   );
                 })}
+                </div>
+                {grandMargin !== 0 && (
+                  <div className="flex items-center gap-1.5 text-[11px] font-black">
+                    <span className="text-zinc-500">전체 마진</span>
+                    <span className={`tabular-nums ${grandMargin > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {grandMargin > 0 ? '+' : ''}{grandMargin.toLocaleString()}원
+                    </span>
+                  </div>
+                )}
               </div>
-            )}
+              );
+            })()}
             {downloadSnapshot.length === 0 ? (
               <p className="text-[10px] text-zinc-600 text-center py-2">발주 데이터가 없습니다</p>
             ) : (() => {

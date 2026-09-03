@@ -271,7 +271,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   const { salesHistory, load, loadMonth, refresh, refreshDate, remove } = useSalesTracker(businessId);
   const { config: pricingConfig } = usePricingConfig(businessId);
   const depositLedger = useDepositLedger(businessId);
-  const settlementMap = useSettlementMap(); // 쿠팡 정산완료 매핑 (전역)
+  const settlementMap = useSettlementMap(!!isActive); // 쿠팡 정산완료 매핑 (전역) — 매출현황 탭 볼 때만 구독
   // 인라인 수정 시 onSnapshot 반영 전까지 쓸 낙관적 오버라이드 { "업체 날짜": 잔액 }
   const [depositEdits, setDepositEdits] = useState<Record<string, number>>({});
   const [editingDepositKey, setEditingDepositKey] = useState<string | null>(null);
@@ -315,7 +315,10 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
 
   // 배달완료 → 주문번호 매핑 (쿠팡 정산 대조 1단계): 발주내역 예전 기록의 묶음배송번호로 실제 주문번호를 채운다
   const [deliveryOrderMap, setDeliveryOrderMap] = useState<DeliveryOrderMap>({});
-  useEffect(() => subscribeDeliveryOrderMap(setDeliveryOrderMap, businessId), [businessId]);
+  useEffect(() => {
+    if (!isActive) return; // 매출현황 탭 볼 때만 구독 (사업자마다 SalesTracker가 항상 마운트됨)
+    return subscribeDeliveryOrderMap(setDeliveryOrderMap, businessId);
+  }, [isActive, businessId]);
   const [deliveryUploadStatus, setDeliveryUploadStatus] = useState<string | null>(null);
   const [isUploadingDelivery, setIsUploadingDelivery] = useState(false);
   const deliveryFileRef = useRef<HTMLInputElement>(null);

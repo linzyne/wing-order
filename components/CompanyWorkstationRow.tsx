@@ -135,6 +135,7 @@ interface CompanyWorkstationRowProps {
     mergedDownloaded?: boolean;
     onWarningUpdate?: (sessionId: string, hasWarning: boolean) => void;
     onEffectiveTextChange?: (kakaoText: string, excelText: string) => void;
+    onMarginChange?: (margin: number) => void;
     registerAppendRow?: (fn: (mo: ManualOrder) => Promise<{ amount: number; label: string }>) => void;
     registerAddAdjustment?: (fn: (amount: number, label: string, csRecordId?: string) => void) => void;
 }
@@ -164,6 +165,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     mergedDownloaded = false,
     onWarningUpdate,
     onEffectiveTextChange,
+    onMarginChange,
     registerAppendRow,
     registerAddAdjustment,
 }) => {
@@ -667,6 +669,29 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     // 재실행되지 않고, 통합주문서업로드 캐시(companyLastSettlementRef)가 사라진 옛 차수의
     // 정산요약을 계속 들고 있는 버그가 있었다.
     }, [effectiveDisplayText, effectiveDisplayExcelText, allSessionAdjustments, isLastSession, depositRemaining]);
+
+    // 이 업체의 총 마진 — '원본 품목 검증' 패널의 '총 마진'과 동일 공식.
+    // 통합주문서업로드에서 전체 마진을 합산 표기하기 위해 마지막 차수에서 위로 보고한다.
+    const companyMarginTotal = (() => {
+        const summary = isCumulativeView
+            ? combinedSummary
+            : (summaryOverride || localResult?.summary || syncedData?.itemSummary || {});
+        let sum = 0;
+        for (const key of Object.keys(summary).filter(k => !isParcelEntryName(k))) {
+            const expectedCount = (summary as Record<string, { count: number }>)[key]?.count || 0;
+            const productConfig = pricingConfig[companyName]?.products?.[key];
+            const unitMargin = (productConfig as any)?.margin || 0;
+            const manualCount = localResult?.manualOrderCounts?.[key] || 0;
+            sum += unitMargin * (expectedCount - manualCount);
+        }
+        return sum;
+    })();
+    const onMarginChangeRef = useRef(onMarginChange);
+    onMarginChangeRef.current = onMarginChange;
+    useEffect(() => {
+        if (!isLastSession) return;
+        onMarginChangeRef.current?.(companyMarginTotal);
+    }, [companyMarginTotal, isLastSession]);
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig, businessId);

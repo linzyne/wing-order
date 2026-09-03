@@ -10,12 +10,95 @@ import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo
 // ===== Firestore 한도 초과 감지 =====
 
 const isQuotaError = (e: any): boolean => {
-  const msg = String(e?.code || e?.message || '');
-  return msg.includes('quota-exceeded') || msg.includes('RESOURCE_EXHAUSTED');
+  // 실제 Firestore 할당량 초과 에러는 code=resource-exhausted / message="Quota exceeded."
+  // (기존 'RESOURCE_EXHAUSTED' 대문자 매칭은 절대 안 걸렸음)
+  const s = `${e?.code ?? ''} ${e?.message ?? ''}`.toLowerCase();
+  return s.includes('resource-exhausted') || s.includes('resource_exhausted')
+    || s.includes('quota-exceeded') || s.includes('quota exceeded');
 };
 
 export const notifyQuotaExceeded = () =>
   window.dispatchEvent(new CustomEvent('firestore-quota-exceeded'));
+
+// 할당량 초과가 감지되면 일정 시간 동안 "쿨다운" — 구독 재연결/재시도를 멈춰
+// 이미 바닥난 할당량을 재시도로 계속 갉아먹는 악순환(할당량이 리셋돼도 다시 바로 소진)을 끊는다.
+const QUOTA_COOLDOWN_MS = 90 * 1000;
+let quotaCooldownUntil = 0;
+export const isQuotaCooldown = (): boolean => Date.now() < quotaCooldownUntil;
+export const quotaCooldownRemainingMs = (): number => Math.max(0, quotaCooldownUntil - Date.now());
+const enterQuotaCooldown = (): void => {
+  quotaCooldownUntil = Date.now() + QUOTA_COOLDOWN_MS;
+  notifyQuotaExceeded();
+};
+// Firestore 요청이 한 번이라도 성공하면 쿨다운 해제 — Blaze 전환 등으로 할당량이 풀렸는데
+// 다른 구독이 백오프 대기 중이라 앱이 몇 분간 계속 비어 보이는 걸 방지한다.
+const clearQuotaCooldown = (): void => { quotaCooldownUntil = 0; };
+
+// ===== 공유 컬렉션 구독 (샤드 컬렉션용) =====
+// 같은 컬렉션을 여러 컴포넌트가 각자 onSnapshot으로 구독하면(예: 사업자별로 항상 마운트되는
+// SalesTracker가 전역 정산맵을 N번 구독) 리스너 수와 초기 읽기가 N배가 된다.
+// key(사업자ID 등)별로 리스너 1개만 열고 fan-out, 마지막 해제 후에도 30초 linger(탭 전환 대비).
+type SharedSubEntry<T> = {
+  listeners: Set<(v: T) => void>;
+  unsub: Unsubscribe | null;
+  last: T;
+  closeTimer: ReturnType<typeof setTimeout> | null;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+};
+const makeSharedCollectionSub = <T>(
+  getCol: (key: string) => any,
+  read: (snap: any) => T,
+  empty: () => T,
+  label: string,
+) => {
+  const entries = new Map<string, SharedSubEntry<T>>();
+  return (callback: (v: T) => void, key = ''): Unsubscribe => {
+    let entry = entries.get(key);
+    if (!entry) {
+      entry = { listeners: new Set(), unsub: null, last: empty(), closeTimer: null, retryTimer: null };
+      entries.set(key, entry);
+    }
+    const e = entry;
+    if (e.closeTimer) { clearTimeout(e.closeTimer); e.closeTimer = null; }
+    e.listeners.add(callback);
+    callback(e.last); // 새 구독자에게 마지막 값 즉시 전달
+
+    const open = () => {
+      if (e.unsub || e.listeners.size === 0) return;
+      if (isQuotaCooldown()) { scheduleRetry(); return; }
+      e.unsub = onSnapshot(getCol(key), (snap: any) => {
+        clearQuotaCooldown();
+        e.last = read(snap);
+        e.listeners.forEach(l => l(e.last));
+      }, (error: any) => {
+        console.error(`[Firestore] ${label} 공유 구독 오류:`, error);
+        if (isQuotaError(error)) enterQuotaCooldown();
+        e.unsub = null; // onSnapshot은 에러 후 죽으므로 참조 정리
+        e.listeners.forEach(l => l(e.last)); // 마지막 정상값 유지 (깜빡임 방지)
+        scheduleRetry();
+      });
+    };
+    const scheduleRetry = () => {
+      if (e.retryTimer) return;
+      const wait = isQuotaCooldown() ? Math.max(quotaCooldownRemainingMs() + 1000, 30000) : 60000;
+      e.retryTimer = setTimeout(() => { e.retryTimer = null; open(); }, wait);
+    };
+
+    open();
+
+    return () => {
+      e.listeners.delete(callback);
+      if (e.listeners.size === 0 && !e.closeTimer) {
+        e.closeTimer = setTimeout(() => {
+          e.unsub?.();
+          e.unsub = null;
+          if (e.retryTimer) { clearTimeout(e.retryTimer); e.retryTimer = null; }
+          e.closeTimer = null;
+        }, 30000);
+      }
+    };
+  };
+};
 
 // ===== CS 접수/정산 반영 알림 (통합CS현황 등 매출현황과 별개로 마운트된 화면에서 저장했을 때
 // 같은 사업자의 SalesTracker/워크스테이션이 이미 열려 있어도 자동 갱신되도록 알림) =====
@@ -64,10 +147,13 @@ export const subscribePricingConfig = (
   let active = true;
   let currentUnsub: Unsubscribe;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryDelay = 2000; // 지수 백오프 (2s → 4 → 8 … 최대 60s). 성공 시 리셋.
 
   const subscribe = () => {
     currentUnsub = onSnapshot(docRef, (snapshot) => {
       if (!active) return;
+      retryDelay = 2000;
+      clearQuotaCooldown();
       if (snapshot.exists()) {
         callback(snapshot.data().data as PricingConfig, true);
       } else {
@@ -77,10 +163,16 @@ export const subscribePricingConfig = (
       if (!active) return;
       console.error('[Firestore] PricingConfig 구독 오류:', error);
       callback(null, false);
-      // 구독이 종료됐으므로 2초 후 재구독 (failed-precondition 등 일시적 오류 복구)
+      if (isQuotaError(error)) enterQuotaCooldown();
+      // 구독이 종료됐으므로 재구독. 할당량 쿨다운 중이면 쿨다운이 끝날 때까지 기다린다
+      // (2초마다 재시도하면 리셋된 할당량도 즉시 다시 소진됨). 그 외엔 지수 백오프.
+      const wait = isQuotaCooldown()
+        ? Math.max(quotaCooldownRemainingMs() + 1000, 30000)
+        : retryDelay;
+      retryDelay = Math.min(retryDelay * 2, 60000);
       retryTimer = setTimeout(() => {
         if (active) subscribe();
-      }, 2000);
+      }, wait);
     });
   };
 
@@ -102,7 +194,7 @@ export const loadPricingConfig = async (
     if (snapshot.exists()) return { config: snapshot.data().data as PricingConfig, exists: true };
     return { config: null, exists: false };
   } catch (e) {
-    if (isQuotaError(e)) notifyQuotaExceeded();
+    if (isQuotaError(e)) enterQuotaCooldown();
     return { config: null, exists: false };
   }
 };
@@ -120,13 +212,30 @@ export const savePricingConfigToFirestore = async (
 
 // ===== Sales History =====
 
-export const loadAllSalesHistory = async (businessId?: string): Promise<DailySales[]> => {
-  const q = query(
-    collection(db, getSalesCollectionName(businessId)),
-    orderBy('date', 'desc')
-  );
-  const snapshot = await getDocs(q);
-  return snapshot.docs.map(d => deserializeDailySales({ ...d.data() }));
+// loadAllSalesHistory는 사업자별 매출 문서 전체(수십~수백 건)를 매번 읽는다.
+// 통합CS현황 / 주문서업로드 대기CS / 주문자검색 패널이 마운트·이벤트마다 사업자별로 호출해
+// Firestore 읽기가 폭증하던 것을 짧은 TTL 인메모리 캐시로 억제한다.
+// 쓰기(upsert/delete)가 나가면 해당 사업자 캐시를 즉시 무효화하므로 최신성은 유지된다.
+const SALES_HISTORY_TTL_MS = 90 * 1000;
+const salesHistoryCache = new Map<string, { at: number; promise: Promise<DailySales[]> }>();
+const invalidateSalesHistoryCache = (businessId?: string): void => {
+  salesHistoryCache.delete(getSalesCollectionName(businessId));
+};
+
+export const loadAllSalesHistory = async (businessId?: string, opts?: { fresh?: boolean }): Promise<DailySales[]> => {
+  const key = getSalesCollectionName(businessId);
+  const cached = salesHistoryCache.get(key);
+  if (!opts?.fresh && cached && Date.now() - cached.at < SALES_HISTORY_TTL_MS) {
+    return cached.promise;
+  }
+  const promise = (async () => {
+    const q = query(collection(db, key), orderBy('date', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => deserializeDailySales({ ...d.data() }));
+  })();
+  salesHistoryCache.set(key, { at: Date.now(), promise });
+  promise.catch(() => salesHistoryCache.delete(key)); // 실패한 약속은 캐시에 남기지 않음
+  return promise;
 };
 
 const deserializeDailySales = (data: any): DailySales => {
@@ -195,6 +304,7 @@ export const upsertDailySales = async (
     if (serialized[key] === undefined) delete serialized[key];
   });
   await setDoc(docRef, serialized);
+  invalidateSalesHistoryCache(businessId);
 };
 
 export const appendInvoiceRows = async (
@@ -216,6 +326,7 @@ export const deleteDailySalesFromFirestore = async (
 ): Promise<void> => {
   const docRef = doc(db, getSalesCollectionName(businessId), date);
   await deleteDoc(docRef);
+  invalidateSalesHistoryCache(businessId);
 };
 
 // 특정 날짜 기록에서 한 업체의 데이터만 제거 (매출/마진/입금/발주·송장), 다른 업체는 유지
@@ -328,7 +439,7 @@ export const loadSessionResults = async (businessId?: string): Promise<Record<st
     entriesSnap.forEach(d => { result[d.id] = d.data() as SessionResultData; });
     return Object.keys(result).length > 0 ? result : null;
   } catch (e) {
-    if (isQuotaError(e)) notifyQuotaExceeded();
+    if (isQuotaError(e)) enterQuotaCooldown();
     return null;
   }
 };
@@ -423,7 +534,19 @@ export const updateDailyWorkspaceSessionField = async (
   businessId?: string
 ): Promise<void> => {
   const docRef = doc(db, getWorkspaceCollectionName(businessId), getTodayDocId());
-  await updateDoc(docRef, { [dotPath]: value, updatedAt: Timestamp.now() });
+  try {
+    await updateDoc(docRef, { [dotPath]: value, updatedAt: Timestamp.now() });
+  } catch (e: any) {
+    // 오늘 발주 화면을 아직 안 열어 워크스페이스 문서가 없으면 updateDoc이 "No document to update"로
+    // 실패한다(통합CS현황에서 대기 CS를 바로 확정하며 정산요약 추가/차감을 쓸 때 등).
+    // 이 경우 dot-path를 중첩 객체로 펴서 setDoc(merge)로 문서를 만든다.
+    const notFound = e?.code === 'not-found' || String(e?.message || '').includes('No document to update');
+    if (!notFound) throw e;
+    const keys = dotPath.split('.');
+    let nested: any = value;
+    for (let i = keys.length - 1; i >= 0; i--) nested = { [keys[i]]: nested };
+    await setDoc(docRef, { ...nested, updatedAt: Timestamp.now() }, { merge: true });
+  }
 };
 
 export const getDailyWorkspace = async (businessId?: string): Promise<DailyWorkspaceData | null> => {
@@ -562,20 +685,29 @@ export const loadDeliveryOrderMap = async (businessId?: string): Promise<Deliver
   }
 };
 
+const _subscribeDeliveryShards = makeSharedCollectionSub<DeliveryOrderMap>(
+  (key) => getDeliveryShardsCol(key || undefined),
+  readDeliveryShards,
+  () => ({}),
+  'DeliveryOrderMap',
+);
+const _deliveryLegacyCache = new Map<string, DeliveryOrderMap>();
+
 export const subscribeDeliveryOrderMap = (
   callback: (map: DeliveryOrderMap) => void,
   businessId?: string
 ): Unsubscribe => {
-  let legacy: DeliveryOrderMap = {};
-  getDoc(getLegacyDeliveryMapRef(businessId))
-    .then(s => { if (s.exists()) { legacy = (s.data() as any).pairs || {}; } })
-    .catch(() => {});
-  return onSnapshot(getDeliveryShardsCol(businessId), (snap) => {
-    callback({ ...legacy, ...readDeliveryShards(snap) });
-  }, (error) => {
-    console.error('[Firestore] DeliveryOrderMap 구독 오류:', error);
-    callback({});
-  });
+  const key = businessId || '';
+  if (!_deliveryLegacyCache.has(key)) {
+    _deliveryLegacyCache.set(key, {}); // 중복 fetch 방지 플래그 겸용
+    getDoc(getLegacyDeliveryMapRef(businessId))
+      .then(s => { if (s.exists()) _deliveryLegacyCache.set(key, (s.data() as any).pairs || {}); })
+      .catch(() => {});
+  }
+  return _subscribeDeliveryShards((shards) => {
+    const legacy = _deliveryLegacyCache.get(key) || {};
+    callback({ ...legacy, ...shards });
+  }, key);
 };
 
 /** 묶음배송번호→주문번호 쌍을 샤드별로 병합 저장. 반환: 이번에 새로 추가/변경된 쌍 수 */
@@ -644,14 +776,12 @@ export const loadSettlementMap = async (): Promise<SettlementMap> => {
   }
 };
 
-export const subscribeSettlementMap = (callback: (map: SettlementMap) => void): Unsubscribe => {
-  return onSnapshot(getSettlementShardsCol(), (snap) => {
-    callback(readSettlementShards(snap));
-  }, (error) => {
-    console.error('[Firestore] SettlementMap 구독 오류:', error);
-    callback({});
-  });
-};
+export const subscribeSettlementMap = makeSharedCollectionSub<SettlementMap>(
+  () => getSettlementShardsCol(),
+  readSettlementShards,
+  () => ({}),
+  'SettlementMap',
+);
 
 /** 주문번호→정산금액(합계) 병합 저장. 같은 주문번호 재업로드 시 최신 값으로 덮어쓴다. 반환: 추가/변경된 주문 수 */
 export const mergeSettlementMap = async (amounts: SettlementMap): Promise<number> => {
@@ -697,7 +827,7 @@ export const loadQuickRecipients = async (businessId?: string): Promise<QuickRec
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data().recipients || []) : [];
   } catch (e) {
-    if (isQuotaError(e)) notifyQuotaExceeded();
+    if (isQuotaError(e)) enterQuotaCooldown();
     return [];
   }
 };
@@ -728,7 +858,7 @@ export const loadManualOrders = async (businessId?: string): Promise<any[]> => {
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data().orders || []) : [];
   } catch (e) {
-    if (isQuotaError(e)) notifyQuotaExceeded();
+    if (isQuotaError(e)) enterQuotaCooldown();
     return [];
   }
 };
@@ -843,7 +973,7 @@ export const loadPlatformConfigs = async (
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data().data as PlatformConfigs) : null;
   } catch (e) {
-    if (isQuotaError(e)) notifyQuotaExceeded();
+    if (isQuotaError(e)) enterQuotaCooldown();
     return null;
   }
 };
@@ -941,7 +1071,7 @@ export const loadDynamicBusinesses = async (): Promise<DynamicBusinessEntry[]> =
     const snapshot = await Promise.race([getDoc(docRef), timeout]);
     return snapshot.exists() ? ((snapshot.data().businesses || []) as DynamicBusinessEntry[]) : [];
   } catch (e) {
-    if (isQuotaError(e)) notifyQuotaExceeded();
+    if (isQuotaError(e)) enterQuotaCooldown();
     console.warn('[Firestore] loadDynamicBusinesses 실패/타임아웃, 시딩 없이 종료');
     throw e; // 빈 배열 반환 대신 throw → 시딩 코드가 Firestore를 덮어쓰는 것을 방지
   }
@@ -990,7 +1120,7 @@ export const loadTodos = async (businessId?: string): Promise<TodoItem[] | null>
     const snapshot = await getDoc(docRef);
     return snapshot.exists() ? (snapshot.data().todos as TodoItem[]) : null;
   } catch (e) {
-    if (isQuotaError(e)) notifyQuotaExceeded();
+    if (isQuotaError(e)) enterQuotaCooldown();
     return null;
   }
 };

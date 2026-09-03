@@ -261,9 +261,14 @@ export const useCompanyDeposits = (businessId?: string) => {
 };
 
 // ===== 쿠팡 정산완료 매핑 Hook (전역, 사업자 무관) =====
-export const useSettlementMap = () => {
+// enabled=false면 구독하지 않는다 — 매출현황 탭이 안 보일 때는 전역 샤드 컬렉션을
+// 굳이 구독할 필요가 없어(사업자마다 SalesTracker가 항상 마운트됨) Firestore 읽기를 아낀다.
+export const useSettlementMap = (enabled = true) => {
   const [map, setMap] = useState<SettlementMap>({});
-  useEffect(() => subscribeSettlementMap(setMap), []);
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribeSettlementMap(setMap);
+  }, [enabled]);
   return map;
 };
 
