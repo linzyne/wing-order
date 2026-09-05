@@ -251,7 +251,7 @@ const App: React.FC = () => {
   // id/displayName만 필요한 하위 패널에 매 렌더마다 새 배열을 넘기면 그걸 의존성으로 쓰는
   // useCallback/useEffect가 계속 재실행되므로(예: 통합송장변환 패널의 배지 새로고침) 메모이즈
   const businessIdNamePairs = useMemo(
-    () => allBusinesses.map(b => ({ id: b.id, displayName: b.displayName })),
+    () => allBusinesses.map(b => ({ id: b.id, displayName: b.displayName, themeColor: b.themeColor })),
     [allBusinesses]
   );
 

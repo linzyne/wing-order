@@ -6,7 +6,13 @@ import type { CsRecord, PricingConfig, ManualOrder } from '../types';
 import { getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
 import { CS_SAVED_EVENT } from '../services/firestoreService';
 
-interface Business { id: string; displayName: string; }
+interface Business { id: string; displayName: string; themeColor?: string; }
+
+/** 사업자 설정의 테마색을 그대로 글자색으로 쓴다. 미설정/기본(검정)이면 보라색 폴백 */
+function businessTextColor(themeColor?: string): string {
+  if (!themeColor || themeColor === '#09090b') return '#a78bfa';
+  return themeColor;
+}
 
 interface OpenCsItem extends CsRecord {
   date: string;
@@ -407,6 +413,12 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
 
   const selectedBusinessName = businesses.find(b => b.id === selectedBusinessId)?.displayName || '';
 
+  const businessColorById = useMemo(() => {
+    const map: Record<string, string> = {};
+    businesses.forEach(b => { map[b.id] = businessTextColor(b.themeColor); });
+    return map;
+  }, [businesses]);
+
   return (
     <div className="p-4" onMouseDown={e => e.stopPropagation()}>
       <div className="flex items-center justify-between mb-3 px-2">
@@ -430,9 +442,9 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
                       {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}
                     </div>
                     <div className="text-xs font-black truncate mt-0.5">
-                      <span className="text-violet-400">{item.businessName || '사업자없음'}</span>
+                      <span style={{ color: businessColorById[item.businessId] || '#a78bfa' }}>{item.businessName || '사업자없음'}</span>
                       <span className="text-zinc-600">(</span>
-                      <span className="text-amber-400">{item.company || '공급사없음'}</span>
+                      <span className="text-zinc-300">{item.company || '공급사없음'}</span>
                       <span className="text-zinc-600">)</span>
                       <span className="text-zinc-500 font-bold"> · {item.customerMethod} · {item.reason}</span>
                     </div>
@@ -574,9 +586,9 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
               >
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-black">
-                    <span className="text-violet-400">{item.businessName || '사업자없음'}</span>
+                    <span style={{ color: businessColorById[item.businessId] || '#a78bfa' }}>{item.businessName || '사업자없음'}</span>
                     <span className="text-zinc-600">(</span>
-                    <span className="text-amber-400">{item.company || '공급사없음'}</span>
+                    <span className="text-zinc-300">{item.company || '공급사없음'}</span>
                     <span className="text-zinc-600">)</span>
                   </span>
                   <span className="text-[10px] text-zinc-600 font-bold">{item.date}</span>
