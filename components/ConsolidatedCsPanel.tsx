@@ -426,11 +426,15 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
               return (
                 <div key={key} className="rounded-lg px-3 py-2 flex items-center justify-between gap-2 border bg-sky-500/5 border-sky-500/20">
                   <div className="min-w-0">
-                    <div className="font-bold text-xs truncate text-white">
+                    <div className="font-black text-sm truncate text-white">
                       {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}
                     </div>
-                    <div className="text-zinc-500 text-[10px] font-bold truncate">
-                      {item.businessName} · {item.company} · {item.customerMethod} · {item.reason}
+                    <div className="text-xs font-black truncate mt-0.5">
+                      <span className="text-violet-400">{item.businessName || '사업자없음'}</span>
+                      <span className="text-zinc-600">(</span>
+                      <span className="text-amber-400">{item.company || '공급사없음'}</span>
+                      <span className="text-zinc-600">)</span>
+                      <span className="text-zinc-500 font-bold"> · {item.customerMethod} · {item.reason}</span>
                     </div>
                   </div>
                   <div className="shrink-0 flex items-center gap-1">
@@ -569,11 +573,16 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
                 className="bg-zinc-800/60 border border-zinc-700/50 rounded-xl p-3 cursor-pointer hover:bg-zinc-800 hover:border-zinc-700 transition-colors"
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-black text-violet-400">{item.businessName}</span>
+                  <span className="text-xs font-black">
+                    <span className="text-violet-400">{item.businessName || '사업자없음'}</span>
+                    <span className="text-zinc-600">(</span>
+                    <span className="text-amber-400">{item.company || '공급사없음'}</span>
+                    <span className="text-zinc-600">)</span>
+                  </span>
                   <span className="text-[10px] text-zinc-600 font-bold">{item.date}</span>
                 </div>
                 <div className="text-white font-black text-sm">
-                  <span className="text-amber-400">[{item.company || '업체없음'}]</span> {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}
+                  {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}
                 </div>
                 <div className="text-zinc-500 text-xs font-bold mt-0.5">{item.reason}</div>
                 <div className="text-xs font-black mt-0.5">
