@@ -19,6 +19,9 @@ import {
   saveSharedSuppliers,
   subscribeUrgentNotice,
   saveUrgentNotice,
+  subscribeCompanyMemos,
+  saveCompanyMemo,
+  deleteCompanyMemo,
   subscribeDepositLedger,
   subscribeCompanyDeposits,
   setCompanyDeposits,
@@ -316,6 +319,50 @@ export const useUrgentNotice = () => {
   }, []);
 
   return { notice, updateNotice };
+};
+
+// ===== Company Memos Hook (업체별 메모 한 줄) =====
+// 메모는 사용자가 직접 지우기 전까지 절대 사라지면 안 되므로,
+// - 저장은 업체 단위 merge (다른 업체/다른 컴퓨터의 메모를 덮어쓰지 않음)
+// - 원격 스냅샷이 들어와도 아직 저장 대기 중인 로컬 편집분은 유지
+// - 삭제는 removeMemo(명시적 호출)로만 발생
+export const useCompanyMemos = () => {
+  const [memos, setMemos] = useState<Record<string, string>>({});
+  const pendingRef = useRef<Record<string, string>>({});
+  const timersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    const unsubscribe = subscribeCompanyMemos((remote) => {
+      // 저장 대기 중인 로컬 편집분이 원격 값으로 되돌아가지 않도록 덮어쓴다
+      setMemos({ ...remote, ...pendingRef.current });
+    });
+    return () => {
+      unsubscribe();
+      Object.keys(timersRef.current).forEach(k => clearTimeout(timersRef.current[k]));
+    };
+  }, []);
+
+  const updateMemo = useCallback((companyName: string, text: string) => {
+    setMemos(prev => ({ ...prev, [companyName]: text }));
+    pendingRef.current[companyName] = text;
+    if (timersRef.current[companyName]) clearTimeout(timersRef.current[companyName]);
+    timersRef.current[companyName] = setTimeout(() => {
+      saveCompanyMemo(companyName, text)
+        .then(() => {
+          if (pendingRef.current[companyName] === text) delete pendingRef.current[companyName];
+        })
+        .catch((e) => console.error('[CompanyMemos] 저장 실패:', e));
+    }, 600);
+  }, []);
+
+  const removeMemo = useCallback((companyName: string) => {
+    if (timersRef.current[companyName]) clearTimeout(timersRef.current[companyName]);
+    delete pendingRef.current[companyName];
+    setMemos(prev => { const n = { ...prev }; delete n[companyName]; return n; });
+    deleteCompanyMemo(companyName).catch((e) => console.error('[CompanyMemos] 삭제 실패:', e));
+  }, []);
+
+  return { memos, updateMemo, removeMemo };
 };
 
 // ===== Todos Hook =====

@@ -11,7 +11,7 @@ import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
 import OrdererSearchPanel from './components/OrdererSearchPanel';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon } from './components/icons';
-import { useSharedSuppliers, useCourierTemplates, useUrgentNotice } from './hooks/useFirestore';
+import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
 import { mergeSettlementMap } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
@@ -97,6 +97,8 @@ const App: React.FC = () => {
   const [matchedFakeNums, setMatchedFakeNums] = useState<Record<string, string[]>>({});
   const [showUrgentNotice, setShowUrgentNotice] = useState(false);
   const { notice: globalUrgentNotice, updateNotice: setGlobalUrgentNotice } = useUrgentNotice();
+  // 업체별 메모 한 줄 (config/companyMemos) — 직접 지우기 전까지 유지
+  const { memos: companyMemos, updateMemo: updateCompanyMemo, removeMemo: removeCompanyMemo } = useCompanyMemos();
   const globalFakeOrderInputRef = useRef('');
   useEffect(() => { globalFakeOrderInputRef.current = globalFakeOrderInput; }, [globalFakeOrderInput]);
   useEffect(() => {
@@ -1220,6 +1222,9 @@ const App: React.FC = () => {
                 warningBusinessIds={new Set(Object.keys(businessWarnings).filter(id => businessWarnings[id]))}
                 warningCompanyIds={new Set(Object.entries(businessWarningCompanies).flatMap(([bizId, companies]) => (companies as string[]).map(c => `${bizId}_${c}`)))}
                 urgentNotice={globalUrgentNotice}
+                companyMemos={companyMemos}
+                onCompanyMemoChange={updateCompanyMemo}
+                onCompanyMemoDelete={removeCompanyMemo}
               />
             </div>
           )}

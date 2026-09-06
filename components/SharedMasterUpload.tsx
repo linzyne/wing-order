@@ -54,6 +54,10 @@ interface Props {
   warningBusinessIds?: Set<string>;
   warningCompanyIds?: Set<string>;
   urgentNotice?: string;
+  /** 업체별 메모 한 줄 (업체명 → 메모). 사용자가 지우기 전까지 유지된다. */
+  companyMemos?: Record<string, string>;
+  onCompanyMemoChange?: (companyName: string, text: string) => void;
+  onCompanyMemoDelete?: (companyName: string) => void;
 }
 
 function detectBusiness(filename: string, businesses: Business[]): Business | null {
@@ -82,7 +86,7 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
 // 계산 로직(matchedCount)은 그대로 두었으니, 원인 파악 후 이 값만 true로 되돌리면 다시 켜진다.
 const SHOW_MATCH_BADGE = false;
 
-const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, warningCompanyIds, urgentNotice }) => {
+const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, warningCompanyIds, urgentNotice, companyMemos = {}, onCompanyMemoChange, onCompanyMemoDelete }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
@@ -516,11 +520,16 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   if (!seen.has(company.name)) { seen.add(company.name); companyOrder.push(company.name); }
                 }
               }
+              // 발주 데이터가 없어진 업체라도 메모가 남아 있으면 계속 보여준다 —
+              // 그래야 메모가 화면에서 사라져 지울 수 없게 되는 일이 없다.
+              Object.keys(companyMemos).forEach(name => {
+                if (!seen.has(name)) { seen.add(name); companyOrder.push(name); }
+              });
               return companyOrder.map(companyName => {
                 const bizEntries = downloadSnapshot
                   .map(biz => ({ biz, company: biz.companies.find(c => c.name === companyName) }))
                   .filter((e): e is { biz: typeof downloadSnapshot[0]; company: NonNullable<typeof e.company> } => !!e.company);
-                if (bizEntries.length === 0) return null;
+                if (bizEntries.length === 0 && !(companyMemos[companyName] ?? '')) return null;
 
                 const companyHasWarning = bizEntries.some(({ biz }) => warningCompanyIds?.has(`${biz.businessId}_${companyName}`) ?? false);
 
@@ -568,6 +577,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                       {companyHasWarning && (
                         <span title="워크스테이션에 경고가 있습니다" className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-black border border-amber-500/40">⚠ 경고</span>
                       )}
+                      {bizEntries.length > 0 && (<>
                       <button
                         onClick={() => setSettlementCompany(companyName)}
                         className="shrink-0 px-2 py-0.5 rounded text-[11px] font-black tracking-tight border transition-all bg-transparent text-rose-500 border-rose-700/50 hover:text-rose-300 hover:border-rose-500"
@@ -596,7 +606,27 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                       >
                         기록
                       </button>
-                      <div className="flex-1 h-px bg-zinc-700" />
+                      </>)}
+                      {/* 업체 메모 한 줄 — 발주 초기화/차수 변경과 무관하게 남고, ✕로 지울 때만 삭제된다 */}
+                      <input
+                        type="text"
+                        value={companyMemos[companyName] ?? ''}
+                        onChange={(e) => onCompanyMemoChange?.(companyName, e.target.value)}
+                        placeholder="메모"
+                        title={companyMemos[companyName] || '이 업체 메모 (지울 때까지 유지)'}
+                        className={`flex-1 min-w-0 bg-transparent border-b px-1 py-0.5 text-[11px] font-bold focus:outline-none transition-colors ${
+                          (companyMemos[companyName] ?? '').trim()
+                            ? 'text-amber-300 border-amber-700/50 focus:border-amber-400'
+                            : 'text-zinc-300 border-zinc-700/60 placeholder:text-zinc-600 focus:border-zinc-500'
+                        }`}
+                      />
+                      {(companyMemos[companyName] ?? '') !== '' && (
+                        <button
+                          onClick={() => { if (window.confirm(`${companyName} 메모를 삭제할까요?`)) onCompanyMemoDelete?.(companyName); }}
+                          title="메모 삭제"
+                          className="shrink-0 text-zinc-600 hover:text-red-400 transition-colors text-[11px] leading-none px-0.5"
+                        >✕</button>
+                      )}
                     </div>
                     <div className="flex flex-col gap-1.5">
                       {bizEntries.map(({ biz, company }) => {

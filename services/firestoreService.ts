@@ -1114,6 +1114,33 @@ export const saveUrgentNotice = async (text: string): Promise<void> => {
   await setDoc(docRef, { text, updatedAt: Timestamp.now() });
 };
 
+// ===== Company Memos (업체별 메모 한 줄) =====
+// 업체별로 한 줄 메모를 남겨두는 기능. 발주 차수/초기화/날짜 변경과 무관하게 계속 남아 있어야
+// 하므로 세션이 아니라 config 문서(config/companyMemos)에 업체명 기준으로 저장한다.
+// 삭제는 사용자가 명시적으로 지울 때만 일어난다(빈 문자열 저장이 아니라 키 자체를 제거).
+
+export const subscribeCompanyMemos = (
+  callback: (memos: Record<string, string>) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', 'companyMemos');
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? ((snapshot.data().memos as Record<string, string>) || {}) : {});
+  }, (error) => {
+    console.error('[Firestore] CompanyMemos 구독 오류:', error);
+  });
+};
+
+// 한 업체의 메모만 갱신 — 다른 컴퓨터가 동시에 수정한 다른 업체 메모를 덮어쓰지 않도록 merge 저장
+export const saveCompanyMemo = async (companyName: string, text: string): Promise<void> => {
+  const docRef = doc(db, 'config', 'companyMemos');
+  await setDoc(docRef, { memos: { [companyName]: text }, updatedAt: Timestamp.now() }, { merge: true });
+};
+
+export const deleteCompanyMemo = async (companyName: string): Promise<void> => {
+  const docRef = doc(db, 'config', 'companyMemos');
+  await setDoc(docRef, { memos: { [companyName]: deleteField() }, updatedAt: Timestamp.now() }, { merge: true });
+};
+
 export const loadTodos = async (businessId?: string): Promise<TodoItem[] | null> => {
   try {
     const docRef = doc(db, 'config', getTodosDocId(businessId));
