@@ -686,21 +686,23 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                               const matched = r.matchedCount ?? 0;
                               const unmatched = Math.max(0, (r.count ?? 0) - matched);
                               return (
-                                <div key={r.round} className="flex flex-col items-center gap-0.5">
-                                  <button
-                                    onClick={() => { uploadFns[biz.businessId]?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(`${biz.businessId}_${companyName}_${r.round}`)); }}
-                                    className={`px-2.5 py-0.5 leading-tight text-[11px] font-black rounded-lg transition-colors border flex flex-col items-center ${downloadedButtons.has(`${biz.businessId}_${companyName}_${r.round}`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : roundColors(r.round).bg}`}
-                                  >
-                                    <span>{r.round}차{r.count > 0 ? ` ${r.count}` : ''}</span>
-                                    {r.timeLabel && (
-                                      <span className="text-[9px] font-normal opacity-70">{r.timeLabel}</span>
+                                <div key={r.round} className="flex items-center gap-0.5">
+                                  <div className="flex flex-col items-center gap-0.5">
+                                    <button
+                                      onClick={() => { uploadFns[biz.businessId]?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(`${biz.businessId}_${companyName}_${r.round}`)); }}
+                                      className={`px-2.5 py-0.5 leading-tight text-[11px] font-black rounded-lg transition-colors border flex flex-col items-center ${downloadedButtons.has(`${biz.businessId}_${companyName}_${r.round}`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : roundColors(r.round).bg}`}
+                                    >
+                                      <span>{r.round}차{r.count > 0 ? ` ${r.count}` : ''}</span>
+                                      {r.timeLabel && (
+                                        <span className="text-[9px] font-normal opacity-70">{r.timeLabel}</span>
+                                      )}
+                                    </button>
+                                    {SHOW_MATCH_BADGE && r.matchedCount !== undefined && r.count > 0 && (
+                                      <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${unmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
+                                        {unmatched > 0 ? `미변환 ${unmatched}` : '매칭완료'}
+                                      </span>
                                     )}
-                                  </button>
-                                  {SHOW_MATCH_BADGE && r.matchedCount !== undefined && r.count > 0 && (
-                                    <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${unmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                                      {unmatched > 0 ? `미변환 ${unmatched}` : '매칭완료'}
-                                    </span>
-                                  )}
+                                  </div>
                                   {uploadFns[biz.businessId]?.emailCompanyRound && (() => {
                                     const rkey = `${biz.businessId}_${companyName}_${r.round}_mail`;
                                     const sending = emailingButtons.has(rkey);
@@ -709,7 +711,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                         onClick={() => sendOrderMail(rkey, () => uploadFns[biz.businessId]?.emailCompanyRound?.(companyName, r.round))}
                                         disabled={sending}
                                         title={`${r.round}차 발주서 메일 전송`}
-                                        className={`px-1.5 text-[10px] rounded-md border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(rkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-teal-400/80 border-teal-700/70 hover:bg-teal-700/20'}`}
+                                        className={`shrink-0 px-1.5 py-0.5 text-[10px] leading-none rounded-md border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(rkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-teal-400/80 border-teal-700/70 hover:bg-teal-700/20'}`}
                                       >
                                         {sending ? '…' : '✉'}
                                       </button>
