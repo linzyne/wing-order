@@ -386,6 +386,8 @@ export interface SessionResultData {
   rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]; // orderRows와 동일한 순서/길이의 공급가/판매가/마진 목록
   unmatchedOrders?: { companyName: string; recipientName: string; productName: string; phone: string; orderNumber: string }[];
   timeLabel?: string; // 업로드 파일명에서 추출한 시간 라벨(예: "8시") — 공통 업로드 패널 회차 배지 표시용
+  // CS 재배송으로 덧붙인 행 기록(csRecordId별). 중첩 배열이라 JSON 문자열로 저장한다.
+  reshipEntries?: string;
 }
 
 export interface DailyWorkspaceData {

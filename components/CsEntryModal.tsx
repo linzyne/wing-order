@@ -311,6 +311,13 @@ async function setSettlementAdjustment(
   const withoutOld = existingAdj.filter((a: any) => a.id !== id);
   const nextAdj = remove ? withoutOld : [...withoutOld, { id, amount, label }];
   await updateDailyWorkspaceSessionField(`sessionAdjustments.${sessionId}`, nextAdj, businessId);
+  // 열려 있는 발주 화면(CompanyWorkstationRow)은 한 번이라도 로컬로 추가/차감을 편집하면 workspace
+  // 구독을 더 이상 반영하지 않는다. 그래서 여기서 쓴 값이 화면에 안 나타나고, 그 행의 다음 로컬 편집이
+  // 오래된 배열로 이 쓰기를 덮어써 버린다(확정→되돌리기→재확정 시 정산요약이 안 돌아오던 원인).
+  // 결과 배열을 이벤트로 함께 실어 보내 해당 세션 행이 추가 읽기 없이 강제로 맞추게 한다.
+  window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, {
+    detail: { businessId, sessionId, adjustments: nextAdj },
+  }));
 }
 
 /** 계좌환불 내역을 그 사업자의 수동 입금 목록에 id 기준으로 반영(수정 시 갱신)하거나 제거한다 */
@@ -346,11 +353,11 @@ export async function deleteCsRecord(businessId: string | undefined, date: strin
 
   const wasRefundDeduction = hasSettlementDeduction(record);
   const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
-  if (wasRefundDeduction || wasAccountRefund) {
-    if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
-    if (wasAccountRefund) await setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null);
-    window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
-  }
+  if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
+  if (wasAccountRefund) await setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null);
+  // 재배송 발주서생성으로 붙었던 공급가차감도 함께 제거 (기록이 사라졌는데 차감만 남는 것 방지)
+  await setSettlementAdjustment(businessId, record.company, `cs-reship-${record.id}`, 0, '', true);
+  if (wasAccountRefund) window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
 }
 
 /** 확정된 CS를 다시 대기 상태로 되돌리고, 확정 시점에 반영됐던 반품기록/정산조정/수동입금 내역도 함께 취소한다 */
@@ -361,7 +368,9 @@ export async function revertCsRecordToPending(businessId: string | undefined, da
 
   const returnRecords = (existing.returnRecords || []).filter(r => r.csRecordId !== record.id);
   const returnTotal = returnRecords.reduce((s, r) => s + r.totalMargin, 0);
-  const csRecords = (existing.csRecords || []).map(r => (r.id === record.id ? { ...r, pending: true } : r));
+  // 발주서 초기화로 되돌릴 때(revertReshipCsRecordsForReset)와 같은 상태로 맞춘다.
+  // poAdded를 남겨두면 다시 확정했을 때 "발주서생성됨"으로 굳어 재생성 버튼을 누를 수 없다.
+  const csRecords = (existing.csRecords || []).map(r => (r.id === record.id ? { ...r, pending: true, poAdded: false } : r));
 
   await upsertDailySales({
     ...existing,
@@ -373,11 +382,12 @@ export async function revertCsRecordToPending(businessId: string | undefined, da
 
   const wasRefundDeduction = hasSettlementDeduction(record);
   const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
-  if (wasRefundDeduction || wasAccountRefund) {
-    if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
-    if (wasAccountRefund) await setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null);
-    window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
-  }
+  if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
+  if (wasAccountRefund) await setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null);
+  // 재배송 발주서생성으로 붙었던 공급가차감(cs-reship-*)도 함께 걷어낸다.
+  // 남겨두면 되돌린 뒤에도 차감만 정산요약에 계속 남고, 다시 확정해 발주서를 재생성하면 두 번 차감된다.
+  await setSettlementAdjustment(businessId, record.company, `cs-reship-${record.id}`, 0, '', true);
+  if (wasAccountRefund) window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
 }
 
 interface Props {
@@ -408,6 +418,12 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
     const isAccountRefund = draft.customerMethod === '환불' && draft.refundMethod === '계좌환불';
     if (isAccountRefund && (!draft.refundBankName.trim() || !draft.refundAccountNumber.trim() || !(parseInt(draft.refundAmount, 10) > 0))) {
       setError('계좌환불 처리를 위해 은행/계좌번호/환불금액을 입력해주세요.');
+      return;
+    }
+    // 품목의 공급가를 못 읽으면 정산요약 차감만 조용히 빠져 "확정했는데 아무 반영이 없다"가 된다.
+    // 절반만 반영되지 않도록 저장 전에 막는다.
+    if (!asPending && isVendorRefund && !((pricingConfig?.[draft.company]?.products?.[draft.productKey] as any)?.supplyPrice > 0)) {
+      setError('선택한 품목의 공급가를 불러오지 못해 정산요약 차감을 반영할 수 없습니다. 품목을 다시 선택해주세요.');
       return;
     }
     setSaving(true);
@@ -461,6 +477,8 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         createdAt: editing ? editing.record.createdAt : now.toISOString(),
         orderRowSnapshot: draft.row.length > 0 ? draft.row : editing?.record.orderRowSnapshot,
         orderRowHeaders: draft.headers.length > 0 ? draft.headers : editing?.record.orderRowHeaders,
+        // 발주서생성 여부는 수정/재확정으로 잃어버리면 안 된다. 대기로 되돌릴 때만 false로 풀린다.
+        poAdded: editing ? editing.record.poAdded : undefined,
         pending: asPending,
       };
 

@@ -44,6 +44,9 @@ export type ProcessedResult = {
     consolidationLog?: ConsolidationLogEntry[]; // 합산 변환 내역
     preConsolidationByGroup?: Record<string, number>; // 합산 전 groupName별 수량 (누락 비교용)
     manualOrderCounts?: Record<string, number>; // 수동발주 수량 (productKey별) — 마진 계산에서 제외용
+    // CS 재배송으로 덧붙인 행을 csRecordId별로 기억해 둔다. 되돌리기 때 이 기록으로
+    // 해당 행과 집계분만 정확히 걷어낸다 (이름 매칭 같은 역추적 없이).
+    reshipEntries?: Record<string, { rows: any[][]; summaryKey: string; count: number; totalPrice: number }>;
 };
 
 export interface ConsolidationLogEntry {

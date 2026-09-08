@@ -98,6 +98,7 @@ export interface CompanyDeposit {
 
 export interface CompanyConfig {
   phone?: string;
+  email?: string;        // 발주서 전송용 수신 이메일 (여러 개면 콤마로 구분)
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
   deposits?: CompanyDeposit[]; // 예수금(예치금) 입금 내역 — 정산 총합계가 여기서 차감됨
   bankName?: string;

@@ -21,6 +21,8 @@ interface MasterUploadHandlers {
   getOrderState?: () => { name: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
+  emailCompanyMerged?: (companyName: string) => void;
+  emailCompanyRound?: (companyName: string, round: number) => void;
   downloadAllCompanies?: () => void;
   getCompanyClosed?: (companyName: string) => boolean;
   getCompanyRecorded?: (companyName: string) => boolean;
@@ -95,6 +97,18 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const [companyClosedMap, setCompanyClosedMap] = useState<Record<string, boolean>>({});
   const [companyRecordedMap, setCompanyRecordedMap] = useState<Record<string, boolean>>({});
   const [downloadedButtons, setDownloadedButtons] = useState<Set<string>>(new Set());
+  const [emailedButtons, setEmailedButtons] = useState<Set<string>>(new Set());
+  const [emailingButtons, setEmailingButtons] = useState<Set<string>>(new Set());
+  const sendOrderMail = useCallback(async (key: string, fn?: () => void | Promise<void>) => {
+    if (!fn || emailingButtons.has(key)) return;
+    setEmailingButtons(prev => new Set(prev).add(key));
+    try {
+      await fn();
+      setEmailedButtons(prev => new Set(prev).add(key));
+    } finally {
+      setEmailingButtons(prev => { const n = new Set(prev); n.delete(key); return n; });
+    }
+  }, [emailingButtons]);
   const [settlementCompany, setSettlementCompany] = useState<string | null>(null);
   const [copiedSettlement, setCopiedSettlement] = useState<string | null>(null);
   const [globalWorkDate, setGlobalWorkDate] = useState<string>(() => new Date().toLocaleDateString('en-CA'));
@@ -654,6 +668,20 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                 </span>
                               )}
                             </div>
+                            {uploadFns[biz.businessId]?.emailCompanyMerged && totalCount > 0 && (() => {
+                              const mkey = `${biz.businessId}_${companyName}_merged`;
+                              const sending = emailingButtons.has(mkey);
+                              return (
+                                <button
+                                  onClick={() => sendOrderMail(mkey, () => uploadFns[biz.businessId]?.emailCompanyMerged?.(companyName))}
+                                  disabled={sending}
+                                  title="합산 발주서 메일 전송"
+                                  className={`px-1.5 py-0.5 text-[11px] rounded-lg border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(mkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-teal-400 border-teal-700 hover:bg-teal-700/20'}`}
+                                >
+                                  {sending ? '…' : '✉'}
+                                </button>
+                              );
+                            })()}
                             {company.rounds.filter(r => r.hasData).map(r => {
                               const matched = r.matchedCount ?? 0;
                               const unmatched = Math.max(0, (r.count ?? 0) - matched);
@@ -673,6 +701,20 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                       {unmatched > 0 ? `미변환 ${unmatched}` : '매칭완료'}
                                     </span>
                                   )}
+                                  {uploadFns[biz.businessId]?.emailCompanyRound && (() => {
+                                    const rkey = `${biz.businessId}_${companyName}_${r.round}_mail`;
+                                    const sending = emailingButtons.has(rkey);
+                                    return (
+                                      <button
+                                        onClick={() => sendOrderMail(rkey, () => uploadFns[biz.businessId]?.emailCompanyRound?.(companyName, r.round))}
+                                        disabled={sending}
+                                        title={`${r.round}차 발주서 메일 전송`}
+                                        className={`px-1.5 text-[10px] rounded-md border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(rkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-teal-400/80 border-teal-700/70 hover:bg-teal-700/20'}`}
+                                      >
+                                        {sending ? '…' : '✉'}
+                                      </button>
+                                    );
+                                  })()}
                                 </div>
                               );
                             })}

@@ -24,6 +24,8 @@ interface Props {
   businesses: Business[];
   onClose: () => void;
   onCreatePurchaseOrder: (businessId: string, company: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>;
+  /** 대기로 되돌릴 때 그 CS로 발주서에 덧붙였던 재배송 행을 제거 (기록이 있는 세션이 있을 때만 true) */
+  onRemovePurchaseOrder?: (businessId: string, company: string, csRecordId: string) => boolean;
 }
 
 /** 발주내역 행에서 업체 헤더 구조를 참고해 전화번호/주소 열을 찾아낸다 (resolveOrderRowFields의 phone/address 버전) */
@@ -159,7 +161,7 @@ const OrderDetailModal: React.FC<{ item: OpenCsItem; onClose: () => void }> = ({
   );
 };
 
-const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePurchaseOrder }) => {
+const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePurchaseOrder, onRemovePurchaseOrder }) => {
   const [items, setItems] = useState<OpenCsItem[]>([]);
   const [pendingItems, setPendingItems] = useState<OpenCsItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -381,13 +383,19 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
   };
 
   const handleRevertToPending = async (item: OpenCsItem) => {
-    if (!window.confirm(`${item.recipientName || '이름없음'} · ${item.orderNumber || '주문번호없음'} 건을 접수대기 상태로 되돌리시겠습니까?\n확정 시 반영된 반품기록/정산조정/계좌이체 내역이 있다면 함께 취소됩니다.`)) return;
+    if (!window.confirm(`${item.recipientName || '이름없음'} · ${item.orderNumber || '주문번호없음'} 건을 접수대기 상태로 되돌리시겠습니까?\n확정 시 반영된 발주서 재배송 행/반품기록/정산조정/계좌이체 내역이 함께 취소됩니다.`)) return;
     const key = `${item.businessId}-${item.id}`;
     setRevertingKey(key);
     try {
+      // 발주서에 덧붙였던 재배송 행 먼저 제거. 이 CS로 추가했다는 기록이 남은 세션만 반응한다.
+      // (기록이 없는 예전 건, 또는 해당 사업자 발주 화면이 안 열린 경우에는 지워지지 않으므로 그때만 안내한다)
+      const poRemoved = item.poAdded ? (onRemovePurchaseOrder?.(item.businessId, item.company, item.id) ?? false) : true;
       await revertCsRecordToPending(item.businessId, item.date, item);
       setItems(prev => prev.filter(i => !(i.id === item.id && i.businessId === item.businessId)));
-      setPendingItems(prev => [...prev, { ...item, pending: true }].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+      setPendingItems(prev => [...prev, { ...item, pending: true, poAdded: false }].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+      if (!poRemoved) {
+        alert('공급가차감과 "발주서생성됨" 표시는 풀었지만, 발주서에 추가된 재배송 행은 자동으로 지우지 못했습니다.\n해당 사업자의 발주 화면을 열어둔 상태에서 되돌리거나, 발주서에서 그 행을 직접 지운 뒤 다시 확정해주세요.');
+      }
     } finally {
       setRevertingKey(null);
     }
@@ -398,6 +406,8 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     const key = `${item.businessId}-${item.id}`;
     setDeletingKey(key);
     try {
+      // 되돌리기와 동일하게, 이 CS로 발주서에 덧붙였던 재배송 행도 함께 걷어낸다
+      if (item.poAdded) onRemovePurchaseOrder?.(item.businessId, item.company, item.id);
       await deleteCsRecord(item.businessId, item.date, item);
       setItems(prev => prev.filter(i => !(i.id === item.id && i.businessId === item.businessId)));
     } finally {

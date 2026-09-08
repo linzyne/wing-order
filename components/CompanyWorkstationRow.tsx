@@ -14,8 +14,24 @@ import { DragHandleContext } from './DragHandleContext';
 import { getBusinessInfo } from '../types';
 import { deleteField } from 'firebase/firestore';
 import type { SessionResultData, DailyWorkspaceData } from '../services/firestoreService';
+import { WORKSPACE_ADJUSTMENT_EVENT } from '../services/firestoreService';
 
 declare var XLSX: any;
+
+/**
+ * rows에서 targets에 해당하는 행을 값이 완전히 같은 것만 골라 하나씩 제거한다.
+ * 하나라도 못 찾으면 null을 돌려 호출부가 아무것도 건드리지 않게 한다 (부분 삭제 방지).
+ */
+function removeRowsByValue(rows: any[][], targets: any[][]): any[][] | null {
+    const remaining = targets.map(t => JSON.stringify(t));
+    const kept: any[][] = [];
+    for (const row of rows) {
+        const i = remaining.indexOf(JSON.stringify(row));
+        if (i >= 0) { remaining.splice(i, 1); continue; }
+        kept.push(row);
+    }
+    return remaining.length === 0 ? kept : null;
+}
 
 /** navigator.clipboard 실패(비보안 컨텍스트 - LAN IP로 접속 등, 권한 거부 등) 시 execCommand로 폴백 */
 async function copyToClipboard(text: string): Promise<boolean> {
@@ -138,6 +154,8 @@ interface CompanyWorkstationRowProps {
     onMarginChange?: (margin: number) => void;
     registerAppendRow?: (fn: (mo: ManualOrder) => Promise<{ amount: number; label: string }>) => void;
     registerAddAdjustment?: (fn: (amount: number, label: string, csRecordId?: string) => void) => void;
+    /** CS 되돌리기 시 그 CS로 덧붙인 재배송 행을 이 세션에서 제거 (기록이 있을 때만 true) */
+    registerRemoveReshipRow?: (fn: (csRecordId: string) => boolean) => void;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -168,6 +186,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     onMarginChange,
     registerAppendRow,
     registerAddAdjustment,
+    registerRemoveReshipRow,
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -741,6 +760,26 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
     }, [pricingConfig, companyName, isFirstSession]);
 
+    // 통합CS접수에서 확정/되돌리기/삭제로 이 세션의 추가/차감(cs-adj-*, cs-reship-*)이 바뀌었을 때.
+    // 위 workspace 동기화는 hasLocalAdjEditRef가 서면 더 이상 외부 값을 반영하지 않기 때문에,
+    // 그대로 두면 (1) 화면에 안 나타나고 (2) 이 행의 다음 로컬 편집이 오래된 배열로 그 쓰기를 덮어쓴다.
+    // CS 쪽에서 쓴 결과 배열을 이벤트로 직접 받아, 추가 읽기 없이 이 세션 값만 강제로 맞춘다.
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail || {};
+            if (detail.sessionId !== sessionId) return;
+            if ((detail.businessId || undefined) !== (businessId || undefined)) return;
+            const next = Array.isArray(detail.adjustments) ? detail.adjustments : null;
+            if (!next) return;
+            const nextStr = JSON.stringify(next);
+            if (nextStr === lastFirestoreAdjRef.current) return;
+            lastFirestoreAdjRef.current = nextStr; // 저장 effect가 그대로 되쓰지 않도록 먼저 갱신
+            setSessionAdjustments(next);
+        };
+        window.addEventListener(WORKSPACE_ADJUSTMENT_EVENT, handler);
+        return () => window.removeEventListener(WORKSPACE_ADJUSTMENT_EVENT, handler);
+    }, [sessionId, businessId]);
+
     // workflow 변경 → Firestore에 저장
     const isInitialWorkflowLoad = useRef(true);
     useEffect(() => {
@@ -929,6 +968,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 rowRecipientNames: localResult.rowRecipientNames || [],
                 rowPricing: localResult.rowPricing || [],
                 unmatchedOrders: unmatchedList.length > 0 ? unmatchedList : [],
+                reshipEntries: JSON.stringify(localResult.reshipEntries || {}),
             };
             const resultStr = JSON.stringify(resultData);
             if (resultStr === lastSavedResultRef.current) return;
@@ -1193,6 +1233,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         const newRows: any[][] = [];
         await pushManualToOutputRows(companyName, newRows, mo, config, pricingConfig, undefined, undefined, undefined, poRowQty, perRowQty, businessId);
 
+        const reshipTotalPrice = mo.qty * config.supplyPrice + shipping;
+        // 되돌리기 때 이 행들만 정확히 걷어낼 수 있도록 csRecordId별로 남겨둔다 (없으면 기록만 생략).
+        const reshipEntry = mo.csRecordId
+            ? { [mo.csRecordId]: { rows: newRows, summaryKey, count: mo.qty, totalPrice: reshipTotalPrice } }
+            : {};
+
         setLocalResult(prev => {
             if (prev) {
                 const summary = { ...prev.summary };
@@ -1207,6 +1253,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     summary,
                     depositSummary: buildDepositTextFromSummary(summary, prev.depositSummary),
                     depositSummaryExcel: buildDepositExcelFromSummary(summary, prev.depositSummaryExcel),
+                    reshipEntries: { ...(prev.reshipEntries || {}), ...reshipEntry },
                 };
             }
             // 아직 이 세션에 처리된 발주 파일이 없는 경우 (예: 오늘 1차수가 비어있음) — 최소한의 결과를 새로 만든다.
@@ -1228,6 +1275,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 registeredProductNames: {},
                 orderItems: [],
                 includedOrderNumbers: [],
+                reshipEntries: reshipEntry,
             } as ProcessedResult;
         });
         hasCompletedLocalProcessingRef.current = true;
@@ -1240,6 +1288,90 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     useEffect(() => {
         registerAppendRow?.((mo: ManualOrder) => appendReshipRowRef.current(mo));
     // 마운트 시 1회만 등록 - registerAppendRow는 부모 렌더마다 새로 생성되므로 deps에 넣으면 안 됨
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    /**
+     * CS를 대기로 되돌릴 때, 그 CS로 덧붙였던 재배송 행/집계를 이 세션에서 정확히 걷어낸다.
+     * 기록(reshipEntries)에 있는 건만 지운다 — 이름·품목 역추적으로 짐작해서 지우는 일은 없다.
+     * 이 세션에 그 기록이 없으면 아무것도 건드리지 않고 false를 돌려준다.
+     */
+    const removeReshipRowFn = (csRecordId: string): boolean => {
+        // (A) 이 기기에서 처리한 결과가 살아있는 경우 — localResult에서 제거하면 저장 effect가 반영한다
+        const localEntry = localResult?.reshipEntries?.[csRecordId];
+        if (localResult && localEntry) {
+            const remaining = new Set(localEntry.rows);
+            const rows = localResult.rows.filter(r => {
+                if (!remaining.has(r)) return true;
+                remaining.delete(r); // 같은 참조는 한 번만 제거
+                return false;
+            });
+            // 참조가 안 맞으면(직렬화 후 복원 등) 값으로 한 번 더 시도
+            const rowsFinal = rows.length === localResult.rows.length - localEntry.rows.length
+                ? rows
+                : removeRowsByValue(localResult.rows, localEntry.rows);
+            if (rowsFinal === null) return false;
+            const summary = { ...localResult.summary };
+            const cur = summary[localEntry.summaryKey];
+            if (cur) {
+                const nextCount = cur.count - localEntry.count;
+                const nextPrice = cur.totalPrice - localEntry.totalPrice;
+                if (nextCount > 0) summary[localEntry.summaryKey] = { count: nextCount, totalPrice: nextPrice };
+                else delete summary[localEntry.summaryKey];
+            }
+            const nextEntries = { ...(localResult.reshipEntries || {}) };
+            delete nextEntries[csRecordId];
+            setLocalResult({
+                ...localResult,
+                rows: rowsFinal,
+                summary,
+                depositSummary: buildDepositTextFromSummary(summary, localResult.depositSummary),
+                depositSummaryExcel: buildDepositExcelFromSummary(summary, localResult.depositSummaryExcel),
+                reshipEntries: nextEntries,
+            });
+            return true;
+        }
+
+        // (B) 새로고침 후처럼 localResult가 없고 Firestore 동기화 결과만 있는 경우.
+        //     localResult를 새로 만들면 그 세션의 발주 데이터가 통째로 날아가므로(기존 append 경로의
+        //     빈 결과 생성 분기) 건드리지 않고, 저장된 세션 결과만 정확히 고쳐 쓴다.
+        const synced = sessionResults?.[sessionId];
+        if (!synced) return false;
+        let syncedEntries: Record<string, { rows: any[][]; summaryKey: string; count: number; totalPrice: number }> = {};
+        try { syncedEntries = synced.reshipEntries ? JSON.parse(synced.reshipEntries) : {}; } catch { return false; }
+        const entry = syncedEntries[csRecordId];
+        if (!entry) return false;
+        const syncedRows: any[][] = typeof synced.orderRows === 'string' ? JSON.parse(synced.orderRows as any) : (synced.orderRows || []);
+        const rowsFinal = removeRowsByValue(syncedRows, entry.rows);
+        if (rowsFinal === null) return false;
+        const itemSummary = { ...(synced.itemSummary || {}) };
+        const cur = itemSummary[entry.summaryKey];
+        if (cur) {
+            const nextCount = cur.count - entry.count;
+            const nextPrice = cur.totalPrice - entry.totalPrice;
+            if (nextCount > 0) itemSummary[entry.summaryKey] = { count: nextCount, totalPrice: nextPrice };
+            else delete itemSummary[entry.summaryKey];
+        }
+        const nextEntries = { ...syncedEntries };
+        delete nextEntries[csRecordId];
+        const nextDepositExcel = buildDepositExcelFromSummary(itemSummary as any, synced.depositSummaryExcel || synced.summaryExcel || '');
+        onSaveSessionResult(sessionId, {
+            ...synced,
+            orderRows: JSON.stringify(rowsFinal) as any,
+            itemSummary: itemSummary as any,
+            depositSummary: buildDepositTextFromSummary(itemSummary as any, synced.depositSummary || ''),
+            depositSummaryExcel: nextDepositExcel,
+            summaryExcel: nextDepositExcel,
+            // 발주 합계에서 빠지는 금액과 함께 취소되는 cs-reship 차감액이 서로 상쇄되므로 totalPrice는 그대로 둔다
+            orderCount: Math.max(0, (synced.orderCount || 0) - entry.count),
+            reshipEntries: JSON.stringify(nextEntries),
+        });
+        return true;
+    };
+    const removeReshipRowRef = useRef(removeReshipRowFn);
+    removeReshipRowRef.current = removeReshipRowFn;
+    useEffect(() => {
+        registerRemoveReshipRow?.((csRecordId: string) => removeReshipRowRef.current(csRecordId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 

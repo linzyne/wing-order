@@ -847,6 +847,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
         handleUpdate(newConfig);
     };
 
+    const handleUpdateEmail = (companyName: string, email: string) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].email = email.trim();
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateBank = (companyName: string, bank: string) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].bankName = bank;
@@ -1199,6 +1205,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
                             onSendToLibrary={onSendToLibrary ? () => handleSendToLibrary(companyName) : undefined}
                             onUpdateCompanyName={(newName) => handleUpdateCompanyName(companyName, newName)}
                             onUpdatePhone={(phone) => handleUpdatePhone(companyName, phone)}
+                            onUpdateEmail={(email) => handleUpdateEmail(companyName, email)}
                             onUpdateBank={(bank) => handleUpdateBank(companyName, bank)}
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
@@ -1341,6 +1348,7 @@ const CompanyCard: React.FC<{
     onSendToLibrary?: () => void;
     onUpdateCompanyName: (newName: string) => void;
     onUpdatePhone: (phone: string) => void;
+    onUpdateEmail: (email: string) => void;
     onUpdateBank: (bank: string) => void;
     onUpdateAccount: (account: string) => void;
     onUpdateCourier: (courier: string) => void;
@@ -1399,13 +1407,22 @@ const CompanyCard: React.FC<{
             </div>
             {isExpanded && (
                 <div className="px-6 pb-4 pt-0 space-y-2 animate-fade-in bg-gradient-to-b from-transparent to-rose-950/5">
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                         <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">
                             <PhoneIcon className="w-4 h-4 text-zinc-600 shrink-0" />
                             <EditableField
                                 value={companyConfig.phone || ''}
                                 onSave={props.onUpdatePhone}
                                 placeholder="연락처"
+                                className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
+                            />
+                        </div>
+                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">
+                            <span className="text-sm shrink-0">✉️</span>
+                            <EditableField
+                                value={companyConfig.email || ''}
+                                onSave={props.onUpdateEmail}
+                                placeholder="발주서 메일주소"
                                 className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                             />
                         </div>
