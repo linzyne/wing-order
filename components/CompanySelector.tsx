@@ -11,7 +11,7 @@ import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, 
 import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
-import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
 import { sendOrderEmail } from '../services/emailService';
 import {
@@ -956,6 +956,47 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             setWorkstationsReady(true);
         }
     }, [isReady, updateField]);
+
+    // 새로고침 시 정산요약의 추가/차감 정리.
+    // 2차 이상 세션 id에는 타임스탬프가 박혀 있어(`업체-batch-2-1757...`) 새로고침 후 같은 id의 행이
+    // 다시 만들어지지 않는다. 그대로 두면 "1차에 붙은 건 남고 2차에 붙은 건 화면에서 사라지는"
+    // 들쭉날쭉한 상태가 되고, 사라진 항목은 기록(매출 저장)에서도 조용히 빠진다. 그래서 규칙을 정리한다.
+    //  - CS접수가 만든 것(cs-adj-*, cs-reship-*): 항상 지움. CS 기록은 그대로 남아 있어 되돌리기→재확정으로 복구된다.
+    //  - 손으로 넣은 것(adj-*): 그 업체를 오늘 아직 기록하지 않았으면 남기고, 이미 기록했으면 지움.
+    //    기록할 때 추가/차감 금액도 매출기록에 함께 저장되므로(handleSaveToSalesHistory), 기록 후에는 역할이 끝난 값이다.
+    const adjClearedRef = useRef(false);
+    useEffect(() => {
+        if (!isReady || adjClearedRef.current || !isPricingConfigLoaded) return;
+        const all = workspace?.sessionAdjustments;
+        if (!all || Object.keys(all).length === 0) return;
+        adjClearedRef.current = true;
+        const isCsMade = (a: any) => typeof a?.id === 'string' && (a.id.startsWith('cs-adj-') || a.id.startsWith('cs-reship-'));
+        // 세션 id는 항상 `업체명-...` 꼴이라 접두어로 주인을 찾는다(업체명에 '-'가 있을 수 있어 긴 이름부터).
+        const names = Object.keys(pricingConfig).sort((a, b) => b.length - a.length);
+        (async () => {
+            const recorded = new Set<string>();
+            try {
+                const { loadDailySales } = await import('../services/firestoreService');
+                const existing = await loadDailySales(new Date().toLocaleDateString('en-CA'), businessId);
+                (existing?.records || []).forEach(r => { if (r.company) recorded.add(r.company); });
+            } catch { /* 조회 실패 시엔 손으로 넣은 값을 남기는 쪽(보수적)으로 동작 */ }
+            for (const [sid, list] of Object.entries(all)) {
+                if (!Array.isArray(list) || list.length === 0) continue;
+                const company = names.find(n => sid === n || sid.startsWith(`${n}-`));
+                // 업체명을 못 알아내면(업체명 변경 등) 손으로 넣은 값은 함부로 지우지 않는다
+                const dropManual = company ? recorded.has(company) : false;
+                const kept = dropManual ? [] : list.filter(a => !isCsMade(a));
+                if (kept.length === list.length) continue;
+                updateWorkspaceSessionField(`sessionAdjustments.${sid}`, kept.length > 0 ? kept : deleteField());
+                // 발주행(CompanyWorkstationRow)은 자식이라 이 정리보다 먼저 workspace 값을 읽어간다.
+                // 키를 지우면 그쪽 동기화 조건(키 존재)이 깨져 화면에만 옛 항목이 남으므로, 결과 배열을
+                // 이벤트로 실어 보내 해당 세션 행이 강제로 맞추게 한다.
+                window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, {
+                    detail: { businessId, sessionId: sid, adjustments: kept },
+                }));
+            }
+        })();
+    }, [isReady, workspace, updateWorkspaceSessionField, businessId, pricingConfig, isPricingConfigLoaded]);
 
     const [companySessions, setCompanySessions] = useState<Record<string, SessionData[]>>(() => {
         const initial: Record<string, SessionData[]> = {};
