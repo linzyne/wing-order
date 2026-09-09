@@ -145,11 +145,11 @@ const App: React.FC = () => {
   const [isUploadingSettlement, setIsUploadingSettlement] = useState(false);
   const [settlementUploadStatus, setSettlementUploadStatus] = useState<string | null>(null);
   const settlementFileRef = useRef<HTMLInputElement>(null);
-  // 마지막 정산내역 업로드 (되돌리기용). 모달 열 때 불러온다.
-  const [lastSettlementUpload, setLastSettlementUpload] = useState<SettlementUploadRecord | null>(null);
-  const [isUndoingSettlement, setIsUndoingSettlement] = useState(false);
+  // 정산내역 업로드 기록 (최근 5회, 최신순) — 파일 목록 + ✕로 그 업로드분만 삭제
+  const [settlementUploads, setSettlementUploads] = useState<SettlementUploadRecord[]>([]);
+  const [undoingSettlementId, setUndoingSettlementId] = useState<string | null>(null);
   const refreshLastSettlementUpload = useCallback(async () => {
-    setLastSettlementUpload((await loadSettlementUploads())[0] ?? null);
+    setSettlementUploads(await loadSettlementUploads());
   }, []);
 
   // 쿠팡 정산완료 파일(Order Detail Report: A열 주문번호, R열 정산금액) 업로드 → 전역 정산금액 매핑 누적 저장
@@ -207,25 +207,28 @@ const App: React.FC = () => {
     if (settlementFileRef.current) settlementFileRef.current.value = '';
   }, [refreshLastSettlementUpload]);
 
-  // 마지막 정산내역 업로드 되돌리기 — 그 업로드로 바뀐 주문만 이전 값으로 복원(원래 없던 건 삭제)
-  const handleSettlementUndo = useCallback(async () => {
-    const rec = lastSettlementUpload;
-    if (!rec || isUndoingSettlement) return;
+  // 정산내역 업로드 1건 삭제 — 그 업로드로 바뀐 주문만 이전 상태로 복원(원래 없던 건 삭제).
+  // 최신 업로드가 아니어도 안전하다 (같은 주문을 나중 업로드가 또 건드렸으면 그쪽 값을 유지)
+  const handleSettlementUndo = useCallback(async (rec: SettlementUploadRecord) => {
+    if (undoingSettlementId) return;
     const when = new Date(rec.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     const files = rec.fileNames?.length ? `\n파일: ${rec.fileNames.join(', ')}` : '';
-    if (!window.confirm(`${when}에 올린 정산내역 ${rec.orderCount.toLocaleString()}건을 되돌립니다.${files}\n\n그 업로드로 바뀐 주문만 이전 상태로 돌아갑니다. 계속할까요?`)) return;
-    setIsUndoingSettlement(true);
+    if (!window.confirm(`${when}에 올린 정산내역 ${rec.orderCount.toLocaleString()}건을 삭제합니다.${files}\n\n그 업로드로 바뀐 주문만 이전 상태로 돌아갑니다. 계속할까요?`)) return;
+    setUndoingSettlementId(rec.id);
     setSettlementUploadStatus(null);
     try {
-      const n = await undoSettlementUpload(rec.id);
-      setSettlementUploadStatus(`되돌리기 완료 — 주문 ${n.toLocaleString()}건을 이전 상태로 복원했습니다.`);
+      const { restored, rechained } = await undoSettlementUpload(rec.id);
+      setSettlementUploadStatus(
+        `삭제 완료 — 주문 ${restored.toLocaleString()}건을 이전 상태로 복원했습니다.`
+        + (rechained > 0 ? ` (${rechained.toLocaleString()}건은 이후 업로드에서 다시 올라와 그 값을 유지)` : ''),
+      );
       await refreshLastSettlementUpload();
     } catch (e) {
-      console.error('[정산완료 되돌리기]', e);
-      setSettlementUploadStatus('되돌리기 중 오류가 발생했습니다.');
+      console.error('[정산완료 삭제]', e);
+      setSettlementUploadStatus('삭제 중 오류가 발생했습니다.');
     }
-    setIsUndoingSettlement(false);
-  }, [lastSettlementUpload, isUndoingSettlement, refreshLastSettlementUpload]);
+    setUndoingSettlementId(null);
+  }, [undoingSettlementId, refreshLastSettlementUpload]);
   const [bulkPasteText, setBulkPasteText] = useState(() => loadPersistedBulkDepositPaste());
   const [bulkBaseRowsMap, setBulkBaseRowsMap] = useState<Record<string, any[][]>>({});
   // 붙여넣기로 매칭된 "직접 입력" 행 — 텍스트에서 파싱해 seed하되, 셀 클릭으로 개별 편집 가능
@@ -1594,6 +1597,33 @@ const App: React.FC = () => {
                     {unmatched.map((l, i) => <p key={i} className="text-[11px] text-zinc-500 font-mono truncate">{l}</p>)}
                   </div>
                 )}
+                {settlementUploads.length > 0 && (
+                  <div className="bg-zinc-950 rounded-xl border border-zinc-800 px-4 py-2.5">
+                    <p className="text-[11px] font-black text-zinc-500 mb-1.5">정산내역 업로드 기록</p>
+                    <div className="space-y-1">
+                      {settlementUploads.map(rec => (
+                        <div key={rec.id} className="flex items-center gap-2 bg-zinc-900/60 rounded-lg px-2.5 py-1">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[10px] text-zinc-300 font-bold truncate">
+                              {rec.fileNames?.length ? rec.fileNames.join(', ') : '정산완료 파일'}
+                            </div>
+                            <div className="text-[9px] text-zinc-500">
+                              {new Date(rec.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              {' · '}
+                              <span className="text-emerald-500">{rec.orderCount.toLocaleString()}건</span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleSettlementUndo(rec)}
+                            disabled={!!undoingSettlementId}
+                            className="shrink-0 text-zinc-600 hover:text-red-400 transition-colors text-[10px] leading-none px-0.5 disabled:opacity-40"
+                            title="이 업로드 삭제 — 이 파일로 바뀐 주문만 이전 상태로 되돌립니다"
+                          >{undoingSettlementId === rec.id ? '…' : '✕'}</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {settlementUploadStatus && (
                   <p className="text-[11px] text-blue-400 font-bold">{settlementUploadStatus}</p>
                 )}
@@ -1616,19 +1646,6 @@ const App: React.FC = () => {
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowBulkDepositModal(false)} className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all">취소</button>
                   <input ref={settlementFileRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={e => handleSettlementUpload(e.target.files)} />
-                  {lastSettlementUpload && (
-                    <button
-                      onClick={handleSettlementUndo}
-                      disabled={isUndoingSettlement || isUploadingSettlement}
-                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-black text-amber-300 bg-amber-900/20 hover:bg-amber-900/40 border border-amber-500/40 rounded-xl transition-all disabled:opacity-50"
-                      title={`마지막 정산내역 업로드 되돌리기 — ${new Date(lastSettlementUpload.at).toLocaleString('ko-KR')} · ${lastSettlementUpload.orderCount.toLocaleString()}건${lastSettlementUpload.fileNames?.length ? ` (${lastSettlementUpload.fileNames.join(', ')})` : ''}`}
-                    >
-                      <ArrowPathIcon className="w-3.5 h-3.5" />
-                      {isUndoingSettlement
-                        ? '되돌리는 중…'
-                        : `되돌리기 ${lastSettlementUpload.orderCount.toLocaleString()}건`}
-                    </button>
-                  )}
                   <button
                     onClick={() => settlementFileRef.current?.click()}
                     disabled={isUploadingSettlement}

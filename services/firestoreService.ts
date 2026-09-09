@@ -854,17 +854,37 @@ const pruneSettlementUploads = async (): Promise<void> => {
   }
 };
 
-/** 업로드 1회분 되돌리기. 그 업로드로 바뀐 주문만 이전 값으로 복원(원래 없던 건 삭제). 반환: 복원한 주문 수 */
-export const undoSettlementUpload = async (uploadId: string): Promise<number> => {
+/** 업로드 1회분 삭제(되돌리기). 그 업로드로 바뀐 주문만 이전 값으로 복원(원래 없던 건 삭제).
+ *  최신 업로드가 아니어도 안전하다 — 같은 주문을 나중 업로드가 또 건드렸다면 지금 값은
+ *  그 나중 업로드 것이므로 건드리지 않고, 대신 그 업로드의 "이전 값"을 이번에 지우는 쪽 값으로
+ *  이어붙여서(prev 체인 보정) 나중에 그걸 되돌려도 값이 어긋나지 않게 한다.
+ *  반환: { restored: 실제 되돌린 주문 수, rechained: 나중 업로드로 넘긴 주문 수 } */
+export const undoSettlementUpload = async (uploadId: string): Promise<{ restored: number; rechained: number }> => {
   const snapshot = await getDoc(doc(getSettlementUploadsCol(), uploadId));
-  if (!snapshot.exists()) return 0;
-  const prev = ((snapshot.data() as any).prev || {}) as Record<string, number | null>;
+  if (!snapshot.exists()) return { restored: 0, rechained: 0 };
+  const target = { id: uploadId, ...(snapshot.data() as any) } as SettlementUploadRecord;
+  const prev = (target.prev || {}) as Record<string, number | null>;
+  // 이 업로드보다 나중에 올라온 기록들 (오래된 것부터)
+  const later = (await loadSettlementUploads())
+    .filter(r => r.id !== uploadId && (r.at || 0) > (target.at || 0))
+    .sort((a, b) => (a.at || 0) - (b.at || 0));
+
   const byShard: Record<string, Record<string, any>> = {};
-  let n = 0;
+  const rechain: Record<string, Record<string, number | null>> = {};
+  let restored = 0;
+  let rechained = 0;
   for (const [ord, value] of Object.entries(prev)) {
-    (byShard[settlementShardId(ord)] ||= {})[ord] = value == null ? deleteField() : value;
-    n++;
+    const owner = later.find(r => r.prev && Object.prototype.hasOwnProperty.call(r.prev, ord));
+    if (owner) {
+      // 지금 값의 주인은 나중 업로드 → 값은 그대로 두고 그쪽 prev만 이번 이전 값으로 교체
+      (rechain[owner.id] ||= {})[ord] = value;
+      rechained++;
+    } else {
+      (byShard[settlementShardId(ord)] ||= {})[ord] = value == null ? deleteField() : value;
+      restored++;
+    }
   }
+
   const col = getSettlementShardsCol();
   const entries = Object.entries(byShard);
   for (let i = 0; i < entries.length; i += 450) {
@@ -872,8 +892,12 @@ export const undoSettlementUpload = async (uploadId: string): Promise<number> =>
     for (const [sid, m] of entries.slice(i, i + 450)) batch.set(doc(col, sid), { amounts: m }, { merge: true });
     await batch.commit();
   }
+  for (const [id, patch] of Object.entries(rechain)) {
+    const owner = later.find(r => r.id === id)!;
+    await setDoc(doc(getSettlementUploadsCol(), id), { prev: { ...owner.prev, ...patch } }, { merge: true });
+  }
   await deleteDoc(doc(getSettlementUploadsCol(), uploadId));
-  return n;
+  return { restored, rechained };
 };
 
 export const clearSettlementMap = async (): Promise<void> => {
