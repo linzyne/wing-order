@@ -164,7 +164,15 @@ const App: React.FC = () => {
       return s.replace(/\.\d+$/, '').replace(/[^0-9]/g, '');
     };
     try {
-      const arr = Array.from(files).filter(f => /\.xlsx?$/i.test(f.name));
+      // 같은 파일을 두 번 고르면(이름+크기 동일) 한 번만 읽는다
+      const seenFiles = new Set<string>();
+      const arr = Array.from(files).filter(f => {
+        if (!/\.xlsx?$/i.test(f.name)) return false;
+        const key = `${f.name}:${f.size}`;
+        if (seenFiles.has(key)) return false;
+        seenFiles.add(key);
+        return true;
+      });
       if (arr.length === 0) { setSettlementUploadStatus('엑셀 파일(.xlsx)만 업로드할 수 있습니다.'); setIsUploadingSettlement(false); return; }
       const sums: Record<string, number> = {};
       let lineCount = 0;
@@ -178,13 +186,17 @@ const App: React.FC = () => {
         let amtIdx = header.findIndex((h: string) => h === '정산금액');
         if (ordIdx === -1) ordIdx = 0;  // A열
         if (amtIdx === -1) amtIdx = 17;  // R열
+        // 한 파일 안에서 같은 주문번호가 여러 줄(상품 + 기본배송료 + 추가배송료)이면 합산.
+        // 단, 파일끼리는 합산하지 않고 덮어쓴다 — 같은 파일/기간을 두 번 올렸을 때 금액이 배로 뛰지 않도록.
+        const fileSums: Record<string, number> = {};
         for (let i = 1; i < rows.length; i++) {
           const ord = digits(rows[i]?.[ordIdx]);
           if (!ord) continue;
           const amt = Number(String(rows[i]?.[amtIdx] ?? '').replace(/[^0-9.-]/g, '')) || 0;
-          sums[ord] = (sums[ord] || 0) + amt;
+          fileSums[ord] = (fileSums[ord] || 0) + amt;
           lineCount++;
         }
+        Object.assign(sums, fileSums);
       }
       const orderCount = Object.keys(sums).length;
       if (orderCount === 0) { setSettlementUploadStatus('주문번호·정산금액을 찾지 못했습니다. (A열=주문번호, R열=정산금액 확인)'); setIsUploadingSettlement(false); if (settlementFileRef.current) settlementFileRef.current.value = ''; return; }
