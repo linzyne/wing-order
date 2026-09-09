@@ -40,6 +40,32 @@ const normNum = (v: any): string => {
   return s.replace(/[^0-9]/g, '');
 };
 
+/** 한 발주 행의 묶음배송번호/주문번호를 확정한다.
+ *  저장값(2026-09-02 이후 발주서) 우선 → 물리 행 파싱값 → 배달완료 매핑표 조회 순.
+ *  발주내역 표와 날짜별 정산 요약이 같은 결과를 쓰도록 공용으로 뺐다. */
+const resolveOrderIds = (
+  item: { row?: any[]; orderNumber?: string; bundleNumber?: string; fake?: boolean },
+  rowParsed: string,
+  deliveryOrderMap: Record<string, string>,
+): { bundleNo: string; orderNo: string; orderNoFromMap: boolean } => {
+  let bundleNo = normNum(item.bundleNumber) || (rowParsed.length >= 15 ? rowParsed : '');
+  let orderNo = normNum(item.orderNumber) || (rowParsed && rowParsed.length < 15 ? rowParsed : '');
+  // 묶음배송번호를 아직 모르면 행 전체 셀에서 매핑표에 있는 값 탐색 (주문번호 열이 파싱 안 되는 업체)
+  if (!bundleNo && !item.fake && Array.isArray(item.row)) {
+    for (const c of item.row) { const n = normNum(c); if (n && deliveryOrderMap[n]) { bundleNo = n; break; } }
+  }
+  // 주문번호를 아직 모르면 묶음배송번호로 매핑표 조회
+  let orderNoFromMap = false;
+  if (!orderNo && bundleNo && deliveryOrderMap[bundleNo]) { orderNo = deliveryOrderMap[bundleNo]; orderNoFromMap = true; }
+  return { bundleNo, orderNo, orderNoFromMap };
+};
+
+/** 정산완료 대조용 주문번호 키. 저장된 원본 주문번호 우선(autoConsolidate 합산주문은 콤마 다중) */
+const settleKeysOf = (orderNumber: string | undefined, resolvedOrderNo: string): string[] =>
+  orderNumber
+    ? String(orderNumber).split(/[,\s]+/).map(normNum).filter(Boolean)
+    : (resolvedOrderNo ? [resolvedOrderNo] : []);
+
 /** 업체 설정에서 발주서명 또는 표시명이 일치하는 품목을 찾는다 */
 const findProductByName = (config: CompanyConfig | undefined, productName: string): any =>
   Object.values(config?.products || {}).find(
@@ -473,6 +499,43 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       }))
       .filter(({ data }) => data.length > 0);
   }, [allOrderRows, orderSearch, deliveryOrderMap]);
+
+  // 날짜별 정산 대조 요약 (총건수 / 정산완료 / 미정산) — 발주내역 날짜 헤더에 표기.
+  // 표 안의 정산금액 칸과 같은 규칙: 가구매 제외, 같은 주문번호 여러 행은 1건으로 합산.
+  const settlementSummaryByDate = useMemo(() => {
+    const out: Record<string, { total: number; settled: number; unsettled: number }> = {};
+    if (Object.keys(settlementMap).length === 0) return out;
+    filteredOrderRows.forEach(({ date, data }) => {
+      const counted = new Set<string>();
+      let settled = 0;
+      let unsettled = 0;
+      data.forEach(item => {
+        if (item.fake) return; // 가구매는 쿠팡 정산 대상이 아님
+        // 저장된 원본 주문번호가 있으면 행 필드 해석 없이 바로 조회 (예전 기록만 무거운 경로)
+        let keys: string[];
+        if (item.orderNumber) {
+          keys = settleKeysOf(item.orderNumber, '');
+        } else {
+          const f = item.fields ?? refineOrderRowFieldsByValue(
+            resolveOrderRowFields(item.company, item.row, pricingConfig), item.row, pricingConfig?.[item.company], item.company,
+          );
+          keys = settleKeysOf('', resolveOrderIds(item, normNum(f.orderNumber), deliveryOrderMap).orderNo);
+        }
+        let amount: number | undefined;
+        for (const k of keys) { const v = settlementMap[k]; if (v != null) amount = (amount || 0) + v; }
+        const dedupKey = keys.join(',');
+        if (amount != null) {
+          if (dedupKey && counted.has(dedupKey)) return; // 표에서 "↑ 합산"으로 표기되는 행
+          if (dedupKey) counted.add(dedupKey);
+          settled++;
+        } else {
+          unsettled++;
+        }
+      });
+      out[date] = { total: settled + unsettled, settled, unsettled };
+    });
+    return out;
+  }, [filteredOrderRows, settlementMap, deliveryOrderMap, pricingConfig]);
 
   // 송장 검색 필터링
   const filteredInvoiceRows = useMemo(() => {
@@ -1236,6 +1299,19 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                   <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-full font-black border border-blue-500/20">
                     {data.length}행
                   </span>
+                  {settlementSummaryByDate[date] && settlementSummaryByDate[date].total > 0 && (
+                    <span
+                      className="text-[10px] bg-zinc-800/60 px-2.5 py-1 rounded-full font-black border border-zinc-700/60"
+                      title="정산완료 대조 — 총건수 / 정산완료 / 미정산 (가구매 제외, 같은 주문번호는 1건)"
+                    >
+                      <span className="text-zinc-500">정산완료 </span>
+                      <span className="text-zinc-300">{settlementSummaryByDate[date].total}</span>
+                      <span className="text-zinc-600 mx-0.5">/</span>
+                      <span className="text-emerald-400">{settlementSummaryByDate[date].settled}</span>
+                      <span className="text-zinc-600 mx-0.5">/</span>
+                      <span className="text-rose-400">{settlementSummaryByDate[date].unsettled}</span>
+                    </span>
+                  )}
                 </div>
                 {(expandedDates.has(`order-${date}`) || isSearching) ? <ChevronUpIcon className="w-4 h-4 text-zinc-600" /> : <ChevronDownIcon className="w-4 h-4 text-zinc-600" />}
               </button>
@@ -1278,18 +1354,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         //  - 부족한 쪽은 배달완료 매핑표로 채운다
                         const hasDeliveryMap = Object.keys(deliveryOrderMap).length > 0;
                         const rowParsed = normNum(fields.orderNumber);
-                        const storedOrder = normNum(orderNumber);
-                        const storedBundle = normNum(bundleNumber);
-                        // 저장된 묶음배송번호(2026-09-02 이후) 우선, 없으면 물리 행 파싱값(15자리)
-                        let bundleNo = storedBundle || (rowParsed.length >= 15 ? rowParsed : '');
-                        let orderNo = storedOrder || (rowParsed && rowParsed.length < 15 ? rowParsed : '');
-                        // 묶음배송번호를 아직 모르면 행 전체 셀에서 매핑표에 있는 값 탐색 (주문번호 열이 파싱 안 되는 업체)
-                        if (!bundleNo && !fake && Array.isArray(row)) {
-                          for (const c of row) { const n = normNum(c); if (n && deliveryOrderMap[n]) { bundleNo = n; break; } }
-                        }
-                        // 주문번호를 아직 모르면 묶음배송번호로 매핑표 조회
-                        let orderNoFromMap = false;
-                        if (!orderNo && bundleNo && deliveryOrderMap[bundleNo]) { orderNo = deliveryOrderMap[bundleNo]; orderNoFromMap = true; }
+                        const { bundleNo, orderNo, orderNoFromMap } = resolveOrderIds({ row, orderNumber, bundleNumber, fake }, rowParsed, deliveryOrderMap);
                         // 배달완료 파일을 올린 뒤에도 주문번호를 못 채운 예전 기록에만 표시
                         const orderNumberUnresolved = hasDeliveryMap && !fake && !orderNo && !!bundleNo;
                         const openCs = (orderNo && openCsByOrderNumber.get(orderNo))
@@ -1311,9 +1376,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                           : (typeof matchedProduct?.margin === 'number' ? matchedProduct.margin * fields.qty : undefined); // 발주: 수량 × 개당마진
                         // 쿠팡 정산완료 대조: 주문번호로 정산금액 조회. autoConsolidate 합산 주문은 콤마로 여러 개 → 각각 조회 후 합산.
                         // 같은 주문번호가 여러 행이면 첫 행에만 표기(합계 중복 방지)
-                        const settleKeys = orderNumber
-                          ? String(orderNumber).split(/[,\s]+/).map(normNum).filter(Boolean)
-                          : (orderNo ? [orderNo] : []);
+                        const settleKeys = settleKeysOf(orderNumber, orderNo);
                         let settledAmount: number | undefined;
                         for (const k of settleKeys) { const v = settlementMap[k]; if (v != null) settledAmount = (settledAmount || 0) + v; }
                         const settleDedupKey = settleKeys.join(',');
