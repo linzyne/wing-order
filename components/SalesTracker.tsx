@@ -564,6 +564,22 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     return out;
   }, [filteredOrderRows, settlementMap, deliveryOrderMap, pricingConfig]);
 
+  // 발주내역 목록 맨 위에 띄우는 기간 합계 (날짜별 요약을 그대로 더한다)
+  const orderPeriodTotals = useMemo(() => {
+    let rows = 0, total = 0, settled = 0, unsettled = 0, net = 0;
+    let netKnown = false;
+    filteredOrderRows.forEach(({ date, data }) => {
+      rows += data.length;
+      const sum = settlementSummaryByDate[date];
+      if (!sum) return;
+      total += sum.total;
+      settled += sum.settled;
+      unsettled += sum.unsettled;
+      if (typeof sum.netProfit === 'number') { net += sum.netProfit; netKnown = true; }
+    });
+    return { rows, total, settled, unsettled, netProfit: netKnown ? net : undefined };
+  }, [filteredOrderRows, settlementSummaryByDate]);
+
   // 송장 검색 필터링
   const filteredInvoiceRows = useMemo(() => {
     const q = invoiceSearch.trim().toLowerCase();
@@ -1310,6 +1326,42 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
             <p className="text-[11px] text-blue-400 mt-1.5 font-bold">{deliveryUploadStatus}</p>
           )}
         </div>
+
+        {filteredOrderRows.length > 0 && (
+          <div className="px-6 py-3 border-b border-zinc-800 bg-zinc-950/50 flex flex-wrap items-center gap-x-7 gap-y-2">
+            <span className="text-[11px] font-black text-zinc-600 uppercase tracking-widest">{periodLabel} 합계</span>
+            {orderPeriodTotals.total > 0 ? (
+              <>
+                <span className="text-sm font-black" title="정산 대상 주문 수 (가구매 제외, 같은 주문번호는 1건)">
+                  <span className="text-zinc-500 text-xs mr-1.5">주문건수</span>
+                  <span className="text-white">{orderPeriodTotals.total.toLocaleString()}건</span>
+                </span>
+                <span className="text-sm font-black" title="정산완료 파일에서 금액을 찾은 주문">
+                  <span className="text-zinc-500 text-xs mr-1.5">정산완료</span>
+                  <span className="text-emerald-400">{orderPeriodTotals.settled.toLocaleString()}건</span>
+                </span>
+                <span className="text-sm font-black" title="정산완료 파일에 아직 없는 주문">
+                  <span className="text-zinc-500 text-xs mr-1.5">미정산</span>
+                  <span className="text-rose-400">{orderPeriodTotals.unsettled.toLocaleString()}건</span>
+                </span>
+                {typeof orderPeriodTotals.netProfit === 'number' && (
+                  <span className="text-sm font-black" title="정산완료된 주문의 정산금액 합계 − 공급가 합계">
+                    <span className="text-zinc-500 text-xs mr-1.5">순이익</span>
+                    <span className={orderPeriodTotals.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                      {orderPeriodTotals.netProfit.toLocaleString()}원
+                    </span>
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="text-sm font-black">
+                <span className="text-zinc-500 text-xs mr-1.5">발주</span>
+                <span className="text-white">{orderPeriodTotals.rows.toLocaleString()}행</span>
+                <span className="text-zinc-600 text-[11px] ml-3 font-bold">정산내역을 업로드하면 정산완료/미정산/순이익이 함께 표시됩니다</span>
+              </span>
+            )}
+          </div>
+        )}
 
         {allOrderRows.length === 0 ? (
           <div className="p-12 text-center">
