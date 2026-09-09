@@ -60,6 +60,24 @@ const resolveOrderIds = (
   return { bundleNo, orderNo, orderNoFromMap };
 };
 
+const EMPTY_PRICING_CONFIG = {};
+/** 행 필드 해석(업체별 헤더 추측 + 값 기반 보정)은 비싸서, 검색어를 칠 때마다 날짜별 정산 요약을
+ *  다시 계산해도 같은 행은 한 번만 해석하도록 캐시한다. (품목 설정이 바뀌면 자동으로 새 캐시) */
+const orderRowFieldsCache = new WeakMap<object, WeakMap<object, ReturnType<typeof resolveOrderRowFields>>>();
+const resolveOrderRowFieldsCached = (item: any, pricingConfig: any): ReturnType<typeof resolveOrderRowFields> => {
+  if (item.fields) return item.fields;
+  const cfg: object = pricingConfig || EMPTY_PRICING_CONFIG;
+  let per = orderRowFieldsCache.get(cfg);
+  if (!per) { per = new WeakMap(); orderRowFieldsCache.set(cfg, per); }
+  const hit = per.get(item);
+  if (hit) return hit;
+  const f = refineOrderRowFieldsByValue(
+    resolveOrderRowFields(item.company, item.row, pricingConfig), item.row, pricingConfig?.[item.company], item.company,
+  );
+  per.set(item, f);
+  return f;
+};
+
 /** 정산완료 대조용 주문번호 키. 저장된 원본 주문번호 우선(autoConsolidate 합산주문은 콤마 다중) */
 const settleKeysOf = (orderNumber: string | undefined, resolvedOrderNo: string): string[] =>
   orderNumber
@@ -500,39 +518,48 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       .filter(({ data }) => data.length > 0);
   }, [allOrderRows, orderSearch, deliveryOrderMap]);
 
-  // 날짜별 정산 대조 요약 (총건수 / 정산완료 / 미정산) — 발주내역 날짜 헤더에 표기.
-  // 표 안의 정산금액 칸과 같은 규칙: 가구매 제외, 같은 주문번호 여러 행은 1건으로 합산.
+  // 날짜별 정산 대조 요약 (총건수 / 정산완료 / 미정산 / 순이익) — 발주내역 날짜 헤더에 표기.
+  // 표 안의 정산금액 칸과 같은 규칙: 가구매 제외, 같은 주문번호는 1건.
+  // 정산금액은 주문 전체 기준이므로 순이익도 그 주문에 속한 모든 행의 공급가를 더해서 뺀다.
   const settlementSummaryByDate = useMemo(() => {
-    const out: Record<string, { total: number; settled: number; unsettled: number }> = {};
+    type DateSettlement = { total: number; settled: number; unsettled: number; netProfit?: number; supplyByKey: Record<string, number> };
+    const out: Record<string, DateSettlement> = {};
     if (Object.keys(settlementMap).length === 0) return out;
     filteredOrderRows.forEach(({ date, data }) => {
-      const counted = new Set<string>();
+      const seen = new Set<string>();
+      const amountByKey: Record<string, number> = {};
+      const supplyByKey: Record<string, number> = {};
       let settled = 0;
       let unsettled = 0;
       data.forEach(item => {
         if (item.fake) return; // 가구매는 쿠팡 정산 대상이 아님
         // 저장된 원본 주문번호가 있으면 행 필드 해석 없이 바로 조회 (예전 기록만 무거운 경로)
-        let keys: string[];
-        if (item.orderNumber) {
-          keys = settleKeysOf(item.orderNumber, '');
-        } else {
-          const f = item.fields ?? refineOrderRowFieldsByValue(
-            resolveOrderRowFields(item.company, item.row, pricingConfig), item.row, pricingConfig?.[item.company], item.company,
-          );
-          keys = settleKeysOf('', resolveOrderIds(item, normNum(f.orderNumber), deliveryOrderMap).orderNo);
-        }
+        const f = item.orderNumber ? null : resolveOrderRowFieldsCached(item, pricingConfig);
+        const keys = item.orderNumber
+          ? settleKeysOf(item.orderNumber, '')
+          : settleKeysOf('', resolveOrderIds(item, normNum(f!.orderNumber), deliveryOrderMap).orderNo);
+        const key = keys.join(',');
         let amount: number | undefined;
         for (const k of keys) { const v = settlementMap[k]; if (v != null) amount = (amount || 0) + v; }
-        const dedupKey = keys.join(',');
-        if (amount != null) {
-          if (dedupKey && counted.has(dedupKey)) return; // 표에서 "↑ 합산"으로 표기되는 행
-          if (dedupKey) counted.add(dedupKey);
-          settled++;
-        } else {
-          unsettled++;
+        // 공급가는 같은 주문의 모든 행을 더한다 (한 주문에 품목이 여러 개면 행이 나뉘어 있음)
+        if (key) {
+          const fields = f ?? resolveOrderRowFieldsCached(item, pricingConfig);
+          const p = findProductByName(pricingConfig?.[item.company], fields.productName);
+          if (typeof p?.supplyPrice === 'number') supplyByKey[key] = (supplyByKey[key] || 0) + p.supplyPrice * fields.qty;
+          if (seen.has(key)) return; // 표에서 "↑ 합산"으로 표기되는 행
+          seen.add(key);
         }
+        if (amount != null) { settled++; if (key) amountByKey[key] = amount; }
+        else unsettled++;
       });
-      out[date] = { total: settled + unsettled, settled, unsettled };
+      // 순이익 = Σ정산금액 − Σ공급가 (공급가를 못 찾은 주문은 빼고 계산)
+      let net = 0;
+      let netKnown = false;
+      Object.entries(amountByKey).forEach(([key, amt]) => {
+        const sup = supplyByKey[key];
+        if (typeof sup === 'number') { net += amt - sup; netKnown = true; }
+      });
+      out[date] = { total: settled + unsettled, settled, unsettled, netProfit: netKnown ? net : undefined, supplyByKey };
     });
     return out;
   }, [filteredOrderRows, settlementMap, deliveryOrderMap, pricingConfig]);
@@ -1273,6 +1300,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 </button>
               </>
             )}
+            {Object.keys(settlementMap).length > 0 && (
+              <span className="text-[11px] text-zinc-500 font-bold" title="일괄 입금목록 모달의 '정산내역 업로드'로 저장된 쿠팡 정산완료 주문 수">
+                정산 <span className="text-emerald-400">{Object.keys(settlementMap).length.toLocaleString()}건</span> 저장됨
+              </span>
+            )}
           </div>
           {deliveryUploadStatus && (
             <p className="text-[11px] text-blue-400 mt-1.5 font-bold">{deliveryUploadStatus}</p>
@@ -1302,7 +1334,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                   {settlementSummaryByDate[date] && settlementSummaryByDate[date].total > 0 && (
                     <span
                       className="text-[10px] bg-zinc-800/60 px-2.5 py-1 rounded-full font-black border border-zinc-700/60"
-                      title="정산완료 대조 — 총건수 / 정산완료 / 미정산 (가구매 제외, 같은 주문번호는 1건)"
+                      title="정산완료 대조 — 총건수 / 정산완료 / 미정산 (가구매 제외, 같은 주문번호는 1건). 순이익 = 정산금액 − 공급가"
                     >
                       <span className="text-zinc-500">정산완료 </span>
                       <span className="text-zinc-300">{settlementSummaryByDate[date].total}</span>
@@ -1310,6 +1342,15 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                       <span className="text-emerald-400">{settlementSummaryByDate[date].settled}</span>
                       <span className="text-zinc-600 mx-0.5">/</span>
                       <span className="text-rose-400">{settlementSummaryByDate[date].unsettled}</span>
+                      {typeof settlementSummaryByDate[date].netProfit === 'number' && (
+                        <>
+                          <span className="text-zinc-700 mx-1.5">·</span>
+                          <span className="text-zinc-500">순이익 </span>
+                          <span className={settlementSummaryByDate[date].netProfit! >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                            {settlementSummaryByDate[date].netProfit!.toLocaleString()}원
+                          </span>
+                        </>
+                      )}
                     </span>
                   )}
                 </div>
@@ -1383,8 +1424,11 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         const settleAlreadyShown = !!settleDedupKey && settleShownFor.has(settleDedupKey);
                         if (settleDedupKey && settledAmount != null) settleShownFor.add(settleDedupKey);
                         const showSettle = settledAmount != null && !settleAlreadyShown;
-                        // 순이익 = 정산금액 − 공급가 (정산금액은 쿠팡 수수료 뗀 실지급액)
-                        const netProfit = showSettle && typeof rowSupply === 'number' ? settledAmount - rowSupply : undefined;
+                        // 순이익 = 정산금액 − 공급가 (정산금액은 쿠팡 수수료 뗀 실지급액).
+                        // 정산금액이 주문 전체 기준이라, 한 주문이 여러 행이면 그 행들의 공급가를 다 더해서 뺀다.
+                        const orderSupply = settleDedupKey ? settlementSummaryByDate[date]?.supplyByKey[settleDedupKey] : undefined;
+                        const netSupply = typeof orderSupply === 'number' ? orderSupply : rowSupply;
+                        const netProfit = showSettle && typeof netSupply === 'number' ? settledAmount - netSupply : undefined;
                         const hasSettlementMap = Object.keys(settlementMap).length > 0;
                         return (
                           <tr key={i} className={`text-xs ${fake ? 'bg-sky-500/[0.04]' : ''}`}>
