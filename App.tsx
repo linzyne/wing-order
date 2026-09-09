@@ -12,7 +12,7 @@ import OrdererSearchPanel from './components/OrdererSearchPanel';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
-import { mergeSettlementMap } from './services/firestoreService';
+import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
@@ -145,6 +145,12 @@ const App: React.FC = () => {
   const [isUploadingSettlement, setIsUploadingSettlement] = useState(false);
   const [settlementUploadStatus, setSettlementUploadStatus] = useState<string | null>(null);
   const settlementFileRef = useRef<HTMLInputElement>(null);
+  // 마지막 정산내역 업로드 (되돌리기용). 모달 열 때 불러온다.
+  const [lastSettlementUpload, setLastSettlementUpload] = useState<SettlementUploadRecord | null>(null);
+  const [isUndoingSettlement, setIsUndoingSettlement] = useState(false);
+  const refreshLastSettlementUpload = useCallback(async () => {
+    setLastSettlementUpload((await loadSettlementUploads())[0] ?? null);
+  }, []);
 
   // 쿠팡 정산완료 파일(Order Detail Report: A열 주문번호, R열 정산금액) 업로드 → 전역 정산금액 매핑 누적 저장
   const handleSettlementUpload = useCallback(async (files: FileList | null) => {
@@ -182,20 +188,44 @@ const App: React.FC = () => {
       }
       const orderCount = Object.keys(sums).length;
       if (orderCount === 0) { setSettlementUploadStatus('주문번호·정산금액을 찾지 못했습니다. (A열=주문번호, R열=정산금액 확인)'); setIsUploadingSettlement(false); if (settlementFileRef.current) settlementFileRef.current.value = ''; return; }
-      const added = await Promise.race([
-        mergeSettlementMap(sums),
-        new Promise<number>(res => setTimeout(() => res(-1), 8000)),
+      const merge = mergeSettlementMap(sums, arr.map(f => f.name));
+      merge.then(refreshLastSettlementUpload).catch(() => {});
+      const result = await Promise.race([
+        merge,
+        new Promise<{ changed: number } | null>(res => setTimeout(() => res(null), 8000)),
       ]);
-      setSettlementUploadStatus(added < 0
+      setSettlementUploadStatus(!result
         ? `주문 ${orderCount.toLocaleString()}건 반영됨 (서버 동기화는 백그라운드 진행 중)`
-        : `주문 ${orderCount.toLocaleString()}건 (${lineCount.toLocaleString()}줄 합산) · 새로 추가/변경 ${added.toLocaleString()}건`);
+        : result.changed === 0
+          ? `주문 ${orderCount.toLocaleString()}건 — 이미 반영된 내용이라 바뀐 게 없습니다 (중복 업로드)`
+          : `주문 ${orderCount.toLocaleString()}건 (${lineCount.toLocaleString()}줄 합산) · 새로 추가/변경 ${result.changed.toLocaleString()}건`);
     } catch (e) {
       console.error('[정산완료 업로드]', e);
       setSettlementUploadStatus('파일 처리 중 오류가 발생했습니다.');
     }
     setIsUploadingSettlement(false);
     if (settlementFileRef.current) settlementFileRef.current.value = '';
-  }, []);
+  }, [refreshLastSettlementUpload]);
+
+  // 마지막 정산내역 업로드 되돌리기 — 그 업로드로 바뀐 주문만 이전 값으로 복원(원래 없던 건 삭제)
+  const handleSettlementUndo = useCallback(async () => {
+    const rec = lastSettlementUpload;
+    if (!rec || isUndoingSettlement) return;
+    const when = new Date(rec.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const files = rec.fileNames?.length ? `\n파일: ${rec.fileNames.join(', ')}` : '';
+    if (!window.confirm(`${when}에 올린 정산내역 ${rec.orderCount.toLocaleString()}건을 되돌립니다.${files}\n\n그 업로드로 바뀐 주문만 이전 상태로 돌아갑니다. 계속할까요?`)) return;
+    setIsUndoingSettlement(true);
+    setSettlementUploadStatus(null);
+    try {
+      const n = await undoSettlementUpload(rec.id);
+      setSettlementUploadStatus(`되돌리기 완료 — 주문 ${n.toLocaleString()}건을 이전 상태로 복원했습니다.`);
+      await refreshLastSettlementUpload();
+    } catch (e) {
+      console.error('[정산완료 되돌리기]', e);
+      setSettlementUploadStatus('되돌리기 중 오류가 발생했습니다.');
+    }
+    setIsUndoingSettlement(false);
+  }, [lastSettlementUpload, isUndoingSettlement, refreshLastSettlementUpload]);
   const [bulkPasteText, setBulkPasteText] = useState(() => loadPersistedBulkDepositPaste());
   const [bulkBaseRowsMap, setBulkBaseRowsMap] = useState<Record<string, any[][]>>({});
   // 붙여넣기로 매칭된 "직접 입력" 행 — 텍스트에서 파싱해 seed하되, 셀 클릭으로 개별 편집 가능
@@ -203,8 +233,10 @@ const App: React.FC = () => {
   const [bulkPasteSummary, setBulkPasteSummary] = useState<{ counts: { name: string; count: number }[]; unmatched: number; total: number } | null>(null);
 
   useEffect(() => {
-    if (!showBulkDepositModal) setBulkPasteSummary(null);
-  }, [showBulkDepositModal]);
+    if (!showBulkDepositModal) { setBulkPasteSummary(null); return; }
+    setSettlementUploadStatus(null);
+    refreshLastSettlementUpload();
+  }, [showBulkDepositModal, refreshLastSettlementUpload]);
 
   // 일괄 입금목록 직접 입력 내용을 localStorage에 유지 ("초기화" 누르기 전까지)
   useEffect(() => {
@@ -1584,6 +1616,19 @@ const App: React.FC = () => {
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setShowBulkDepositModal(false)} className="px-4 py-2 text-xs font-bold text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded-xl transition-all">취소</button>
                   <input ref={settlementFileRef} type="file" accept=".xlsx,.xls" multiple className="hidden" onChange={e => handleSettlementUpload(e.target.files)} />
+                  {lastSettlementUpload && (
+                    <button
+                      onClick={handleSettlementUndo}
+                      disabled={isUndoingSettlement || isUploadingSettlement}
+                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-black text-amber-300 bg-amber-900/20 hover:bg-amber-900/40 border border-amber-500/40 rounded-xl transition-all disabled:opacity-50"
+                      title={`마지막 정산내역 업로드 되돌리기 — ${new Date(lastSettlementUpload.at).toLocaleString('ko-KR')} · ${lastSettlementUpload.orderCount.toLocaleString()}건${lastSettlementUpload.fileNames?.length ? ` (${lastSettlementUpload.fileNames.join(', ')})` : ''}`}
+                    >
+                      <ArrowPathIcon className="w-3.5 h-3.5" />
+                      {isUndoingSettlement
+                        ? '되돌리는 중…'
+                        : `되돌리기 ${lastSettlementUpload.orderCount.toLocaleString()}건`}
+                    </button>
+                  )}
                   <button
                     onClick={() => settlementFileRef.current?.click()}
                     disabled={isUploadingSettlement}

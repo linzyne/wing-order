@@ -785,17 +785,37 @@ export const subscribeSettlementMap = makeSharedCollectionSub<SettlementMap>(
   'SettlementMap',
 );
 
-/** 주문번호→정산금액(합계) 병합 저장. 같은 주문번호 재업로드 시 최신 값으로 덮어쓴다. 반환: 추가/변경된 주문 수 */
-export const mergeSettlementMap = async (amounts: SettlementMap): Promise<number> => {
+// 업로드 1회분의 되돌리기 정보. 이 업로드로 실제 바뀐 주문의 "이전 값"만 담는다.
+// (원래 없던 주문은 null → 되돌릴 때 그 키를 지운다)
+const getSettlementUploadsCol = () =>
+  collection(db, 'settlementMaps', 'global', 'uploads');
+const SETTLEMENT_UPLOAD_KEEP = 5; // 최근 5회분만 보관
+
+export interface SettlementUploadRecord {
+  id: string;
+  at: number;
+  fileNames: string[];
+  orderCount: number;
+  prev: Record<string, number | null>;
+}
+
+/** 주문번호→정산금액(합계) 병합 저장. 같은 주문번호 재업로드 시 최신 값으로 덮어쓴다.
+ *  되돌리기용으로 바뀐 주문의 이전 값을 uploads 문서에 함께 남긴다. */
+export const mergeSettlementMap = async (
+  amounts: SettlementMap,
+  fileNames: string[] = [],
+): Promise<{ changed: number; uploadId: string | null }> => {
   const existing = await loadSettlementMap();
   const byShard: Record<string, SettlementMap> = {};
+  const prev: Record<string, number | null> = {};
   let delta = 0;
   for (const [ord, amt] of Object.entries(amounts)) {
     if (!ord || existing[ord] === amt) continue;
     (byShard[settlementShardId(ord)] ||= {})[ord] = amt;
+    prev[ord] = existing[ord] ?? null;
     delta++;
   }
-  if (delta === 0) return 0;
+  if (delta === 0) return { changed: 0, uploadId: null };
   const col = getSettlementShardsCol();
   const entries = Object.entries(byShard);
   for (let i = 0; i < entries.length; i += 450) {
@@ -803,7 +823,57 @@ export const mergeSettlementMap = async (amounts: SettlementMap): Promise<number
     for (const [sid, m] of entries.slice(i, i + 450)) batch.set(doc(col, sid), { amounts: m }, { merge: true });
     await batch.commit();
   }
-  return delta;
+  const uploadId = String(Date.now());
+  try {
+    await setDoc(doc(getSettlementUploadsCol(), uploadId), { at: Date.now(), fileNames, orderCount: delta, prev });
+    await pruneSettlementUploads();
+  } catch (e) {
+    // 되돌리기 기록 실패해도 정산 반영 자체는 성공 — 업로드를 실패로 만들지 않는다
+    console.error('[정산완료] 되돌리기 기록 저장 실패:', e);
+    return { changed: delta, uploadId: null };
+  }
+  return { changed: delta, uploadId };
+};
+
+/** 최근 업로드 기록 목록 (최신순) */
+export const loadSettlementUploads = async (): Promise<SettlementUploadRecord[]> => {
+  try {
+    const snap = await getDocs(getSettlementUploadsCol());
+    return snap.docs
+      .map(d => ({ id: d.id, ...(d.data() as any) }) as SettlementUploadRecord)
+      .sort((a, b) => (b.at || 0) - (a.at || 0));
+  } catch {
+    return [];
+  }
+};
+
+const pruneSettlementUploads = async (): Promise<void> => {
+  const list = await loadSettlementUploads();
+  for (const rec of list.slice(SETTLEMENT_UPLOAD_KEEP)) {
+    await deleteDoc(doc(getSettlementUploadsCol(), rec.id));
+  }
+};
+
+/** 업로드 1회분 되돌리기. 그 업로드로 바뀐 주문만 이전 값으로 복원(원래 없던 건 삭제). 반환: 복원한 주문 수 */
+export const undoSettlementUpload = async (uploadId: string): Promise<number> => {
+  const snapshot = await getDoc(doc(getSettlementUploadsCol(), uploadId));
+  if (!snapshot.exists()) return 0;
+  const prev = ((snapshot.data() as any).prev || {}) as Record<string, number | null>;
+  const byShard: Record<string, Record<string, any>> = {};
+  let n = 0;
+  for (const [ord, value] of Object.entries(prev)) {
+    (byShard[settlementShardId(ord)] ||= {})[ord] = value == null ? deleteField() : value;
+    n++;
+  }
+  const col = getSettlementShardsCol();
+  const entries = Object.entries(byShard);
+  for (let i = 0; i < entries.length; i += 450) {
+    const batch = writeBatch(db);
+    for (const [sid, m] of entries.slice(i, i + 450)) batch.set(doc(col, sid), { amounts: m }, { merge: true });
+    await batch.commit();
+  }
+  await deleteDoc(doc(getSettlementUploadsCol(), uploadId));
+  return n;
 };
 
 export const clearSettlementMap = async (): Promise<void> => {
@@ -811,6 +881,13 @@ export const clearSettlementMap = async (): Promise<void> => {
   for (let i = 0; i < snap.docs.length; i += 450) {
     const batch = writeBatch(db);
     snap.docs.slice(i, i + 450).forEach(d => batch.delete(d.ref));
+    await batch.commit();
+  }
+  // 전부 지웠으면 되돌릴 대상도 없다
+  const ups = await getDocs(getSettlementUploadsCol());
+  for (let i = 0; i < ups.docs.length; i += 450) {
+    const batch = writeBatch(db);
+    ups.docs.slice(i, i + 450).forEach(d => batch.delete(d.ref));
     await batch.commit();
   }
 };
