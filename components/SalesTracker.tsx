@@ -1328,12 +1328,12 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
               >
                 <div className="flex items-center gap-4">
                   <span className="text-white font-black text-sm">{formatDate(date)}</span>
-                  <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-full font-black border border-blue-500/20">
+                  <span className="text-sm bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full font-black border border-blue-500/20">
                     {data.length}행
                   </span>
                   {settlementSummaryByDate[date] && settlementSummaryByDate[date].total > 0 && (
                     <span
-                      className="text-[10px] bg-zinc-800/60 px-2.5 py-1 rounded-full font-black border border-zinc-700/60"
+                      className="text-sm bg-zinc-800/60 px-3 py-1 rounded-full font-black border border-zinc-700/60"
                       title="정산완료 대조 — 총건수 / 정산완료 / 미정산 (가구매 제외, 같은 주문번호는 1건). 순이익 = 정산금액 − 공급가"
                     >
                       <span className="text-zinc-500">정산완료 </span>
