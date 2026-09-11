@@ -4,6 +4,7 @@ import type { PricingConfig, CompanyConfig, CompanyDeposit, ProductPricing, Plat
 import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES } from '../types';
 import { inferFieldFromHeader, inferVendorInvoiceField } from '../hooks/useConsolidatedOrderConverter';
 import { useCompanyDeposits } from '../hooks/useFirestore';
+import { DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY } from '../services/emailService';
 import {
     TrashIcon, PlusCircleIcon, DocumentArrowUpIcon, BuildingStorefrontIcon,
     PhoneIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon,
@@ -158,6 +159,72 @@ type DialogType =
     | { type: 'prompt'; message: string; placeholder?: string; onConfirm: (value: string) => void; onCancel: () => void }
     | { type: 'productEditor'; message: string; companyName: string; productKey: string; product: ProductPricing; onConfirm: (originalProductKey: string, newProduct: ProductPricing) => void; onCancel: () => void }
     | null;
+
+const EditableTextArea: React.FC<{
+    value: string;
+    onSave: (value: string) => void;
+    placeholder?: string;
+    rows?: number;
+}> = ({ value, onSave, placeholder, rows = 6 }) => {
+    const [currentValue, setCurrentValue] = useState(value);
+    useEffect(() => { setCurrentValue(value); }, [value]);
+    return (
+        <textarea
+            value={currentValue}
+            rows={rows}
+            onChange={(e) => setCurrentValue(e.target.value)}
+            onBlur={() => { if (currentValue !== value) onSave(currentValue); }}
+            placeholder={placeholder}
+            className="w-full bg-transparent text-sm font-medium text-zinc-300 placeholder-zinc-700 focus:outline-none resize-y leading-relaxed"
+        />
+    );
+};
+
+// 발주서 메일 제목/본문 설정. 평소엔 접어두고 필요할 때만 편다.
+const MailTemplateSection: React.FC<{
+    subject: string;
+    body: string;
+    onUpdateSubject: (v: string) => void;
+    onUpdateBody: (v: string) => void;
+}> = ({ subject, body, onUpdateSubject, onUpdateBody }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const hasCustom = !!(subject.trim() || body.trim());
+    return (
+        <div className="bg-zinc-950 rounded-xl border border-zinc-800 shadow-inner overflow-hidden">
+            <button
+                type="button"
+                onClick={() => setIsOpen(v => !v)}
+                className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-zinc-900/50 transition-colors"
+            >
+                <span className="text-sm shrink-0">📝</span>
+                <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">발주서 메일 제목 · 본문</span>
+                <span className={`text-[10px] font-bold ${hasCustom ? 'text-teal-500' : 'text-zinc-700'}`}>
+                    {hasCustom ? '직접 작성함' : '기본 문구 사용 중'}
+                </span>
+                <ChevronDownIcon className={`w-4 h-4 ml-auto shrink-0 text-zinc-700 transition-transform duration-300 ${isOpen ? 'rotate-180' : 'rotate-0'}`} />
+            </button>
+            {isOpen && (
+                <div className="px-4 pb-3 pt-0 space-y-2 animate-fade-in">
+                    <p className="text-[10px] text-zinc-700">
+                        비워두면 기본 문구로 발송 · 치환: {'{업체}'} {'{사업자}'} {'{날짜}'} {'{차수}'} {'{건수}'}
+                    </p>
+                    <input
+                        type="text"
+                        defaultValue={subject}
+                        onBlur={(e) => { if (e.target.value !== subject) onUpdateSubject(e.target.value); }}
+                        placeholder={DEFAULT_ORDER_MAIL_SUBJECT}
+                        className="w-full bg-zinc-900/60 rounded-lg px-3 py-2 text-sm font-bold text-zinc-300 placeholder-zinc-700 focus:outline-none border border-zinc-800"
+                    />
+                    <EditableTextArea
+                        value={body}
+                        onSave={onUpdateBody}
+                        placeholder={DEFAULT_ORDER_MAIL_BODY}
+                    />
+                </div>
+            )}
+        </div>
+    );
+};
 
 const EditableField: React.FC<{
     value: string;
@@ -853,6 +920,18 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
         handleUpdate(newConfig);
     };
 
+    const handleUpdateEmailSubject = (companyName: string, subject: string) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].emailSubject = subject;
+        handleUpdate(newConfig);
+    };
+
+    const handleUpdateEmailBody = (companyName: string, body: string) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].emailBody = body;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateBank = (companyName: string, bank: string) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].bankName = bank;
@@ -1206,6 +1285,8 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
                             onUpdateCompanyName={(newName) => handleUpdateCompanyName(companyName, newName)}
                             onUpdatePhone={(phone) => handleUpdatePhone(companyName, phone)}
                             onUpdateEmail={(email) => handleUpdateEmail(companyName, email)}
+                            onUpdateEmailSubject={(subject) => handleUpdateEmailSubject(companyName, subject)}
+                            onUpdateEmailBody={(body) => handleUpdateEmailBody(companyName, body)}
                             onUpdateBank={(bank) => handleUpdateBank(companyName, bank)}
                             onUpdateAccount={(account) => handleUpdateAccount(companyName, account)}
                             onUpdateCourier={(courier) => handleUpdateCourier(companyName, courier)}
@@ -1349,6 +1430,8 @@ const CompanyCard: React.FC<{
     onUpdateCompanyName: (newName: string) => void;
     onUpdatePhone: (phone: string) => void;
     onUpdateEmail: (email: string) => void;
+    onUpdateEmailSubject: (subject: string) => void;
+    onUpdateEmailBody: (body: string) => void;
     onUpdateBank: (bank: string) => void;
     onUpdateAccount: (account: string) => void;
     onUpdateCourier: (courier: string) => void;
@@ -1454,6 +1537,12 @@ const CompanyCard: React.FC<{
                             />
                         </div>
                     </div>
+                    <MailTemplateSection
+                        subject={companyConfig.emailSubject || ''}
+                        body={companyConfig.emailBody || ''}
+                        onUpdateSubject={props.onUpdateEmailSubject}
+                        onUpdateBody={props.onUpdateEmailBody}
+                    />
                     <div className="flex items-center gap-4 bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">
                         <span className="text-lg">📦</span>
                         <EditableField

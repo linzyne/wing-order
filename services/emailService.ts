@@ -45,3 +45,25 @@ export async function sendOrderEmail(params: SendOrderEmailParams): Promise<{ ac
   }
   return { accepted: data.accepted || [] };
 }
+
+/** 발주서 메일 기본 제목/본문. 업체 설정(emailSubject/emailBody)이 비어있을 때 사용된다. */
+export const DEFAULT_ORDER_MAIL_SUBJECT = '[발주서] {사업자} {업체} {차수} ({날짜})';
+export const DEFAULT_ORDER_MAIL_BODY =
+  '안녕하세요, {사업자} 입니다.\n\n{날짜} {업체} {차수} 발주서를 첨부드립니다.\n총 {건수}건입니다.\n\n확인 부탁드립니다. 감사합니다.';
+
+export interface OrderMailVars {
+  업체: string;
+  사업자: string;
+  날짜: string;
+  차수: string;
+  건수: string | number;
+}
+
+/** {업체} {사업자} {날짜} {차수} {건수} 치환. 연속 공백은 하나로 줄인다. */
+export function renderMailTemplate(template: string, vars: OrderMailVars): string {
+  return template
+    .replace(/\{(업체|사업자|날짜|차수|건수)\}/g, (_m, k: keyof OrderMailVars) => String(vars[k] ?? '').trim())
+    .split('\n')
+    .map(line => line.replace(/[ \t]{2,}/g, ' ').replace(/[ \t]+$/g, ''))
+    .join('\n');
+}

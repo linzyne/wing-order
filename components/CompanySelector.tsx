@@ -13,7 +13,7 @@ import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDep
 import { deleteField } from 'firebase/firestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
-import { sendOrderEmail } from '../services/emailService';
+import { sendOrderEmail, renderMailTemplate, DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY } from '../services/emailService';
 import {
     DndContext,
     closestCenter,
@@ -3050,9 +3050,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const built = buildOrderXlsxBase64(companyName, rows, label);
         if (!built) { alert('발주서 양식 설정을 찾을 수 없습니다.'); return; }
         const dateStr = new Date().toLocaleDateString('en-CA');
-        const prefix = businessPrefix ? businessPrefix + ' ' : '';
-        const subject = `[발주서] ${prefix}${companyName} ${subjectLabel} (${dateStr})`;
-        const text = `안녕하세요, ${businessPrefix || ''} 입니다.\n\n${dateStr} ${companyName} ${subjectLabel} 발주서를 첨부드립니다.\n총 ${rows.length}건입니다.\n\n확인 부탁드립니다. 감사합니다.`;
+        const vars = { 업체: companyName, 사업자: businessPrefix || '', 날짜: dateStr, 차수: subjectLabel, 건수: rows.length };
+        const cfg = pricingConfig[companyName];
+        const subject = renderMailTemplate((cfg?.emailSubject || '').trim() || DEFAULT_ORDER_MAIL_SUBJECT, vars);
+        const text = renderMailTemplate((cfg?.emailBody || '').trim() || DEFAULT_ORDER_MAIL_BODY, vars);
         emailInFlightRef.current.add(key);
         try {
             const { accepted } = await sendOrderEmail({ to, subject, text, filename: built.filename, contentBase64: built.base64 });
