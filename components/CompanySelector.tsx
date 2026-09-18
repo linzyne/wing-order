@@ -3050,7 +3050,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const built = buildOrderXlsxBase64(companyName, rows, label);
         if (!built) { alert('발주서 양식 설정을 찾을 수 없습니다.'); return; }
         const dateStr = new Date().toLocaleDateString('en-CA');
-        const vars = { 업체: companyName, 사업자: businessPrefix || '', 날짜: dateStr, 차수: subjectLabel, 건수: rows.length };
+        // 정산요약은 마지막 차수 카드가 올려준 그날 그 업체 누적 텍스트(추가/차감·예치금 반영 후)를 그대로 쓴다.
+        // 차수별 메일이어도 첨부만 그 차수분이고 요약은 그날 합계 — 실제로 입금받는 금액이 그쪽이라서다.
+        const 정산요약 = (companyLastSettlementRef.current[companyName]?.kakaoText || '').trim();
+        const vars = { 업체: companyName, 사업자: businessPrefix || '', 날짜: dateStr, 차수: subjectLabel, 건수: rows.length, 정산요약 };
         const cfg = pricingConfig[companyName];
         const subject = renderMailTemplate((cfg?.emailSubject || '').trim() || DEFAULT_ORDER_MAIL_SUBJECT, vars);
         const text = renderMailTemplate((cfg?.emailBody || '').trim() || DEFAULT_ORDER_MAIL_BODY, vars);

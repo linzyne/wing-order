@@ -206,7 +206,10 @@ const MailTemplateSection: React.FC<{
             {isOpen && (
                 <div className="px-4 pb-3 pt-0 space-y-2 animate-fade-in">
                     <p className="text-[10px] text-zinc-700">
-                        비워두면 기본 문구로 발송 · 치환: {'{업체}'} {'{사업자}'} {'{날짜}'} {'{차수}'} {'{건수}'}
+                        비워두면 기본 문구로 발송 · 치환: {'{업체}'} {'{사업자}'} {'{날짜}'} {'{차수}'} {'{건수}'} {'{정산요약}'}
+                    </p>
+                    <p className="text-[10px] text-zinc-700">
+                        {'{정산요약}'} 은 그날 그 업체 정산요약(카톡 복사용 텍스트)이 통째로 들어갑니다. 요약이 없으면 그 줄은 사라집니다.
                     </p>
                     <input
                         type="text"
