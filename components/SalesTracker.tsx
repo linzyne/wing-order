@@ -1799,26 +1799,32 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
           </button>
         </div>
 
-        {/* 날짜별 카드 그리드 */}
-        <div className="p-4 grid grid-cols-3 xl:grid-cols-4 gap-3">
+        {/* 날짜별 카드 그리드 — 카드를 넓혀 상품명이 잘리지 않게, 색·굵기는 최소로 */}
+        <div className="p-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
           {allDates.map(date => {
             const dayMap = dateProductData.get(date)!;
             const dayTotal = Array.from(dayMap.values()).reduce((s, v) => s + v.margin, 0);
             const rows = Array.from(dayMap.entries()).sort(([a], [b]) => a.localeCompare(b, 'ko'));
             return (
-              <div key={date} className="bg-zinc-900/60 rounded-xl border border-zinc-800 overflow-hidden">
-                {/* 카드 헤더 */}
-                <div className="px-3 py-2 flex items-center justify-between border-b border-zinc-800">
-                  <span className="text-zinc-200 font-black text-xs">{fmtDate(date)}</span>
-                  <span className="text-emerald-400 font-black text-xs tabular-nums">{dayTotal.toLocaleString()}원</span>
+              <div key={date} className="bg-zinc-900/40 rounded-xl border border-zinc-800/70 overflow-hidden">
+                {/* 카드 헤더 — 날짜는 차분하게, 강조색은 그날 합계 하나만 */}
+                <div className="px-3.5 py-2.5 flex items-baseline justify-between gap-2 border-b border-zinc-800/50">
+                  <span className="text-zinc-300 font-semibold text-[12.5px]">{fmtDate(date)}</span>
+                  <span className="text-emerald-400/90 font-semibold text-[13px] tabular-nums">
+                    {dayTotal.toLocaleString()}<span className="text-emerald-500/50 text-[11px] ml-0.5">원</span>
+                  </span>
                 </div>
-                {/* 등록상품명별 마진 */}
-                <div className="divide-y divide-zinc-800/50">
+                {/* 등록상품명별 마진 — 3열 고정 폭으로 숫자 세로 정렬 */}
+                <div className="p-1.5">
                   {rows.map(([registeredName, { margin, count }]) => (
-                    <div key={registeredName} className="px-3 py-1.5 flex items-center justify-between gap-1.5">
-                      <span className="text-violet-400 font-bold text-[11px] truncate min-w-0">{registeredName}</span>
-                      <span className="text-zinc-500 font-bold text-[11px] tabular-nums whitespace-nowrap">×{count}</span>
-                      <span className="text-emerald-400 font-bold text-[11px] tabular-nums whitespace-nowrap">{margin.toLocaleString()}</span>
+                    <div
+                      key={registeredName}
+                      title={registeredName}
+                      className="grid grid-cols-[minmax(0,1fr)_2.5rem_4.5rem] items-center gap-1 px-2 py-[5px] rounded-md hover:bg-zinc-800/40 transition-colors"
+                    >
+                      <span className="text-zinc-300 text-[12px] truncate">{registeredName}</span>
+                      <span className="text-zinc-600 text-[11px] tabular-nums text-right">×{count}</span>
+                      <span className="text-zinc-200 text-[12px] tabular-nums text-right">{margin.toLocaleString()}</span>
                     </div>
                   ))}
                 </div>
