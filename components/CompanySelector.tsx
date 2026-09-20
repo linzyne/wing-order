@@ -965,11 +965,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     //  - 손으로 넣은 것(adj-*): 그 업체를 오늘 아직 기록하지 않았으면 남기고, 이미 기록했으면 지움.
     //    기록할 때 추가/차감 금액도 매출기록에 함께 저장되므로(handleSaveToSalesHistory), 기록 후에는 역할이 끝난 값이다.
     const adjClearedRef = useRef(false);
+    const workspaceAdjRef = useRef(workspace?.sessionAdjustments);
+    workspaceAdjRef.current = workspace?.sessionAdjustments;
     useEffect(() => {
         if (!isReady || adjClearedRef.current || !isPricingConfigLoaded) return;
+        // 정리 대상은 "로드 직후 이미 문서에 남아 있던 값"뿐이다. 비어 있다고 그냥 return하면
+        // 이 effect가 무장한 채로 남아, 나중에 CS접수가 새로 만든 cs-adj-*/cs-reship-*가
+        // workspace에 반영되는 순간 그것을 잔재로 오인해 지워버린다(재배송 발주서생성 직후
+        // 공급가차감이 사라지던 원인). 그래서 한 번 도달하면 비어 있어도 영구히 잠근다.
+        adjClearedRef.current = true;
         const all = workspace?.sessionAdjustments;
         if (!all || Object.keys(all).length === 0) return;
-        adjClearedRef.current = true;
         const isCsMade = (a: any) => typeof a?.id === 'string' && (a.id.startsWith('cs-adj-') || a.id.startsWith('cs-reship-'));
         // 세션 id는 항상 `업체명-...` 꼴이라 접두어로 주인을 찾는다(업체명에 '-'가 있을 수 있어 긴 이름부터).
         const names = Object.keys(pricingConfig).sort((a, b) => b.length - a.length);
@@ -980,12 +986,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const existing = await loadDailySales(new Date().toLocaleDateString('en-CA'), businessId);
                 (existing?.records || []).forEach(r => { if (r.company) recorded.add(r.company); });
             } catch { /* 조회 실패 시엔 손으로 넣은 값을 남기는 쪽(보수적)으로 동작 */ }
-            for (const [sid, list] of Object.entries(all)) {
-                if (!Array.isArray(list) || list.length === 0) continue;
+            for (const [sid, snapshot] of Object.entries(all)) {
+                if (!Array.isArray(snapshot) || snapshot.length === 0) continue;
+                // 위 await 동안 이 세션에 새 항목이 붙었을 수 있으므로, 지울 때는 최신 배열을 기준으로 한다
+                const latest = workspaceAdjRef.current?.[sid];
+                const list = Array.isArray(latest) ? latest : snapshot;
+                const snapshotIds = new Set(snapshot.map((a: any) => a?.id));
                 const company = names.find(n => sid === n || sid.startsWith(`${n}-`));
                 // 업체명을 못 알아내면(업체명 변경 등) 손으로 넣은 값은 함부로 지우지 않는다
                 const dropManual = company ? recorded.has(company) : false;
-                const kept = dropManual ? [] : list.filter(a => !isCsMade(a));
+                // 로드 시점에 있던 항목만 정리 대상 — 그 사이 새로 추가된 것은 무조건 남긴다
+                const isStale = (a: any) => snapshotIds.has(a?.id);
+                const kept = list.filter(a => !isStale(a) || (!isCsMade(a) && !dropManual));
                 if (kept.length === list.length) continue;
                 updateWorkspaceSessionField(`sessionAdjustments.${sid}`, kept.length > 0 ? kept : deleteField());
                 // 발주행(CompanyWorkstationRow)은 자식이라 이 정리보다 먼저 workspace 값을 읽어간다.
