@@ -811,7 +811,7 @@ const App: React.FC = () => {
           relative: 아래 드롭다운 패널 전부가 이 헤더를 기준으로 "오른쪽 아래 같은 자리"에서 열린다. */}
       <div className="flex-shrink-0 relative z-50 bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-800/40 px-4 py-2 flex items-center gap-2">
 
-        {/* 로고 + 워크스테이션 제어 (글자 대신 아이콘 + 툴팁) */}
+        {/* 로고 + 워크스테이션 제어 — 아이콘만 두면 눈에 안 띄어 놓치므로 라벨을 같이 둔다 */}
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <ChartBarIcon className="w-5 h-5 text-zinc-400" />
           <span className="text-sm font-black text-white mr-0.5">윙</span>
@@ -822,10 +822,11 @@ const App: React.FC = () => {
               resetFnsRef.current[currentBusiness.id]?.();
               setUploadResults(prev => prev.filter(r => r.businessId !== currentBusiness.id));
             }}
-            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:scale-95 transition-all duration-150"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 active:bg-zinc-800 active:scale-95 transition-all duration-150"
             title="새로고침 — 지금 보고 있는 사업자의 워크스테이션만 새로 불러옵니다"
           >
-            <ArrowPathIcon className="w-3.5 h-3.5 text-zinc-300" />
+            <ArrowPathIcon className="w-3.5 h-3.5 text-white" />
+            <span className="text-[10px] font-black text-white">새로고침</span>
           </button>
           <button
             onClick={() => {
@@ -833,10 +834,11 @@ const App: React.FC = () => {
               allBusinesses.forEach(b => resetFnsRef.current[b.id]?.());
               setUploadResults([]);
             }}
-            className="p-1.5 rounded-lg bg-zinc-900 hover:bg-rose-900/60 active:scale-95 transition-all duration-150"
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800 hover:bg-rose-900/60 active:bg-rose-900 active:scale-95 transition-all duration-150"
             title="초기화 — 모든 사업자의 워크스테이션을 비웁니다"
           >
-            <TrashIcon className="w-3.5 h-3.5 text-zinc-500" />
+            <TrashIcon className="w-3.5 h-3.5 text-zinc-300" />
+            <span className="text-[10px] font-black text-zinc-300">초기화</span>
           </button>
         </div>
 
