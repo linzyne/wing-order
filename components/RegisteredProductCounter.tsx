@@ -129,7 +129,7 @@ const RegisteredProductCounter: React.FC<Props> = ({ active, onClose }) => {
   };
 
   return (
-    <div className={`absolute right-0 top-full mt-2 z-50 w-[600px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${active ? '' : 'hidden'}`}>
+    <div className={`absolute right-4 top-full mt-2 z-50 w-[600px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${active ? '' : 'hidden'}`}>
       <div className="p-4">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">등록상품명 수량 집계</h3>

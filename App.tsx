@@ -10,7 +10,7 @@ import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from '
 import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
 import OrdererSearchPanel from './components/OrdererSearchPanel';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
-import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon } from './components/icons';
+import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon, EllipsisHorizontalIcon, DocumentArrowUpIcon, UserGroupIcon, PhoneIcon, BanknotesIcon, ClipboardDocumentListIcon, MegaphoneIcon, MagnifyingGlassIcon, CalculatorIcon, BuildingStorefrontIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
 import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
@@ -90,6 +90,7 @@ const App: React.FC = () => {
   const [showCs, setShowCs] = useState(false);
   const [showOrdererSearch, setShowOrdererSearch] = useState(false);
   const [showRegCounter, setShowRegCounter] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [globalFakeOrderInput, setGlobalFakeOrderInput] = useState(() => loadPersistedFakeOrder());
   const [isEditingGlobalFake, setIsEditingGlobalFake] = useState(false);
   const [globalUnsentOrderInput, setGlobalUnsentOrderInput] = useState('');
@@ -662,23 +663,40 @@ const App: React.FC = () => {
     return () => container.removeEventListener('scroll', handleScroll);
   }, [businessListLoading]);
 
+  // 상단 메뉴의 드롭다운 패널들 — 버튼 위치와 상관없이 헤더 오른쪽 아래 한 자리에서 열리므로,
+  // 반드시 한 번에 하나만 열려야 한다 (setter를 한곳에 모아 토글/전체닫기를 공통 처리).
+  const panelSetters = useMemo(() => ({
+    upload: setShowUpload,
+    invoice: setShowInvoice,
+    fake: setShowGlobalFake,
+    cs: setShowCs,
+    orderer: setShowOrdererSearch,
+    regCounter: setShowRegCounter,
+    coupang: setShowCoupang,
+    notice: setShowUrgentNotice,
+    library: setShowSupplierLibrary,
+  }), []);
+  type PanelKey = keyof typeof panelSetters;
+
+  const closeAllPanels = useCallback(() => {
+    (Object.keys(panelSetters) as PanelKey[]).forEach(k => panelSetters[k](false));
+    setShowMoreMenu(false);
+  }, [panelSetters]);
+
+  // 메뉴 항목 클릭: 누른 패널만 토글하고 나머지는 모두 닫는다 ("더보기"도 함께 닫힘)
+  const togglePanel = useCallback((key: PanelKey) => {
+    (Object.keys(panelSetters) as PanelKey[]).forEach(k => {
+      panelSetters[k](k === key ? (v: boolean) => !v : false);
+    });
+    setShowMoreMenu(false);
+  }, [panelSetters]);
+
   // 드롭다운 외부 클릭 감지 — overlay 대신 document mousedown으로 처리 (overlay는 스크롤을 막으므로)
   useEffect(() => {
-    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary && !showCs && !showUrgentNotice && !showOrdererSearch && !showRegCounter) return;
-    const handler = () => {
-      setShowCoupang(false);
-      setShowUpload(false);
-      setShowInvoice(false);
-      setShowGlobalFake(false);
-      setShowSupplierLibrary(false);
-      setShowCs(false);
-      setShowUrgentNotice(false);
-      setShowOrdererSearch(false);
-      setShowRegCounter(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary, showCs, showUrgentNotice, showOrdererSearch, showRegCounter]);
+    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary && !showCs && !showUrgentNotice && !showOrdererSearch && !showRegCounter && !showMoreMenu) return;
+    document.addEventListener('mousedown', closeAllPanels);
+    return () => document.removeEventListener('mousedown', closeAllPanels);
+  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary, showCs, showUrgentNotice, showOrdererSearch, showRegCounter, showMoreMenu, closeAllPanels]);
 
   const handleDeleteBusiness = async (businessId: string) => {
     const label = allBusinesses.find(b => b.id === businessId)?.displayName;
@@ -789,11 +807,14 @@ const App: React.FC = () => {
     // h-screen + overflow-hidden 으로 전체를 뷰포트에 가두고, 스크롤 컨텍스트를 패널별로 분리
     <div className="h-screen overflow-hidden flex flex-col bg-zinc-950">
 
-      {/* 상단 네비게이션 — 고정 (sticky 불필요, flex-shrink-0으로 공간 확보) */}
-      <div className="flex-shrink-0 z-50 bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-800/40 px-4 py-2 flex items-center gap-2 flex-wrap">
-        <div className="flex items-center gap-2 mr-2">
+      {/* 상단 네비게이션 — 항상 한 줄 (줄바꿈 금지).
+          relative: 아래 드롭다운 패널 전부가 이 헤더를 기준으로 "오른쪽 아래 같은 자리"에서 열린다. */}
+      <div className="flex-shrink-0 relative z-50 bg-zinc-950/90 backdrop-blur-xl border-b border-zinc-800/40 px-4 py-2 flex items-center gap-2">
+
+        {/* 로고 + 워크스테이션 제어 (글자 대신 아이콘 + 툴팁) */}
+        <div className="flex items-center gap-1.5 flex-shrink-0">
           <ChartBarIcon className="w-5 h-5 text-zinc-400" />
-          <span className="text-sm font-black text-white">윙</span>
+          <span className="text-sm font-black text-white mr-0.5">윙</span>
           <button
             onClick={() => {
               const currentBusiness = allBusinesses[activePanelIndex];
@@ -801,11 +822,10 @@ const App: React.FC = () => {
               resetFnsRef.current[currentBusiness.id]?.();
               setUploadResults(prev => prev.filter(r => r.businessId !== currentBusiness.id));
             }}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-700 hover:bg-zinc-600 active:bg-zinc-800 active:scale-95 transition-all duration-150"
-            title="현재 사업자 워크스테이션 새로고침"
+            className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 active:scale-95 transition-all duration-150"
+            title="새로고침 — 지금 보고 있는 사업자의 워크스테이션만 새로 불러옵니다"
           >
-            <ArrowPathIcon className="w-3.5 h-3.5 text-white" />
-            <span className="text-[10px] font-black text-white">새로고침</span>
+            <ArrowPathIcon className="w-3.5 h-3.5 text-zinc-300" />
           </button>
           <button
             onClick={() => {
@@ -813,137 +833,74 @@ const App: React.FC = () => {
               allBusinesses.forEach(b => resetFnsRef.current[b.id]?.());
               setUploadResults([]);
             }}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800 hover:bg-rose-900/60 active:bg-rose-900 active:scale-95 transition-all duration-150"
-            title="모든 사업자 워크스테이션 초기화"
+            className="p-1.5 rounded-lg bg-zinc-900 hover:bg-rose-900/60 active:scale-95 transition-all duration-150"
+            title="초기화 — 모든 사업자의 워크스테이션을 비웁니다"
           >
-            <TrashIcon className="w-3.5 h-3.5 text-zinc-400" />
-            <span className="text-[10px] font-black text-zinc-400">초기화</span>
+            <TrashIcon className="w-3.5 h-3.5 text-zinc-500" />
           </button>
         </div>
 
-        {/* 사업자 네비 칩 */}
-        {allBusinesses.map((b, i) => (
-          <div key={b.id} className="flex items-center gap-1">
-            <button
-              onClick={() => scrollToPanel(i)}
-              className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 ${
-                activePanelIndex === i
-                  ? 'text-white'
-                  : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
-              }`}
-              style={activePanelIndex === i ? { backgroundColor: b.buttonColor } : undefined}
-            >
-              {b.displayName}
-            </button>
-            {!['안군농원', '조에'].includes(b.id) && (
+        <div className="w-px h-5 bg-zinc-800 flex-shrink-0" />
+
+        {/* 사업자 네비 칩 — 많아지면 줄바꿈 대신 가로 스크롤 */}
+        <div className="flex items-center gap-1 min-w-0 overflow-x-auto custom-scrollbar">
+          {allBusinesses.map((b, i) => (
+            <div key={b.id} className="flex items-center gap-1 flex-shrink-0">
               <button
-                onClick={() => handleDeleteBusiness(b.id)}
-                className="w-5 h-5 flex items-center justify-center bg-zinc-800 hover:bg-red-500 rounded-full text-zinc-400 hover:text-white transition-colors text-[10px] font-black"
-                title="사업자 삭제"
+                onClick={() => scrollToPanel(i)}
+                className={`px-3 py-1 rounded-full text-[11px] font-black whitespace-nowrap transition-all duration-200 ${
+                  activePanelIndex === i
+                    ? 'text-white'
+                    : 'text-zinc-400 hover:text-white hover:bg-zinc-800'
+                }`}
+                style={activePanelIndex === i ? { backgroundColor: b.buttonColor } : undefined}
               >
-                ×
+                {b.displayName}
               </button>
-            )}
-          </div>
-        ))}
-
-        <div className="flex-1" />
-
-        {/* 일괄 입금목록 */}
-        <button
-          onClick={openBulkDepositModal}
-          className="px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border text-emerald-400 border-emerald-500/50 hover:bg-emerald-900/30 hover:border-emerald-400 active:scale-95"
-        >
-          일괄 입금목록
-        </button>
-
-        {/* 일괄 업무일지 */}
-        <button
-          onClick={handleBulkWorkLog}
-          className="px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border text-violet-400 border-violet-500/50 hover:bg-violet-900/30 hover:border-violet-400 active:scale-95"
-        >
-          일괄 업무일지
-        </button>
-
-        {/* 긴급공지: 내용이 있으면 발주서 생성(마스터/N차 업로드) 시마다 팝업으로 리마인드 */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => { setShowUrgentNotice(v => !v); setShowGlobalFake(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); setShowOrdererSearch(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showUrgentNotice
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : globalUrgentNotice.trim()
-                ? 'text-amber-400 border-amber-500/50 hover:border-amber-400 hover:bg-amber-900/30'
-                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
-            }`}
-          >
-            긴급공지{globalUrgentNotice.trim() ? ' ●' : ''}
-          </button>
-          {showUrgentNotice && (
-            <div className="absolute right-0 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">긴급공지</h3>
-                  {globalUrgentNotice.trim() && (
-                    <button onClick={() => setGlobalUrgentNotice('')} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
-                  )}
-                </div>
-                <p className="text-zinc-600 text-[10px] mb-2 font-mono">내용을 적어두면, 마스터/N차 주문서를 업로드해 발주서를 생성할 때마다 팝업으로 안내됩니다 (예: 주소 변경 건).</p>
-                <textarea
-                  value={globalUrgentNotice}
-                  onChange={(e) => setGlobalUrgentNotice(e.target.value)}
-                  placeholder={'예: 712805816516609 홍길동 주소가 경북 구미시로 변경됨 — 미리보기에서 수동으로 고칠 것'}
-                  className="w-full h-[160px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-amber-500/50 resize-none custom-scrollbar"
-                />
-              </div>
+              {!['안군농원', '조에'].includes(b.id) && (
+                <button
+                  onClick={() => handleDeleteBusiness(b.id)}
+                  className="w-5 h-5 flex items-center justify-center bg-zinc-800 hover:bg-red-500 rounded-full text-zinc-400 hover:text-white transition-colors text-[10px] font-black"
+                  title="사업자 삭제"
+                >
+                  ×
+                </button>
+              )}
             </div>
-          )}
-        </div>
-
-        {/* 주문자 검색 (전체 사업자 발주내역에서 이름으로 조회) */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
+          ))}
           <button
-            onClick={() => { setShowOrdererSearch(v => !v); setShowGlobalFake(false); setShowUrgentNotice(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showOrdererSearch
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
-            }`}
+            onClick={() => setShowAddModal(true)}
+            className="flex-shrink-0 text-zinc-600 hover:text-zinc-400 transition-colors ml-0.5"
+            title="사업자 추가"
           >
-            주문자 검색
+            <PlusCircleIcon className="w-4 h-4" />
           </button>
-          <div className={`absolute right-0 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showOrdererSearch ? '' : 'hidden'}`}>
-            <OrdererSearchPanel
-              businesses={businessIdNamePairs}
-              active={showOrdererSearch}
-              onClose={() => setShowOrdererSearch(false)}
-            />
-          </div>
         </div>
 
-        {/* 등록상품명 수량 집계 — 윙 상품준비중 목록 복붙 → 등록상품명별 품목명·구매수량 */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="flex-1 min-w-[12px]" />
+
+        {/* 자주 쓰는 도구는 바깥에, 가끔 쓰는 건 "더보기"로. 글자만으로 헷갈리지 않게 전부 아이콘 + 라벨.
+            onMouseDown 차단: 버튼 누름이 document 핸들러(전체 닫기)까지 가면 토글로 닫히지 않는다. */}
+        <div className="flex items-center gap-1 flex-shrink-0" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowRegCounter(v => !v); setShowOrdererSearch(false); setShowGlobalFake(false); setShowUrgentNotice(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showRegCounter
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : 'text-sky-400 border-sky-500/50 hover:border-sky-400 hover:bg-sky-900/30'
-            }`}
+            onClick={() => togglePanel('upload')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showUpload ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
           >
-            수량 집계
+            <DocumentArrowUpIcon className="w-3.5 h-3.5" />
+            <span>주문서 업로드</span>
           </button>
-          <RegisteredProductCounter
-            active={showRegCounter}
-            onClose={() => setShowRegCounter(false)}
-          />
-        </div>
 
-        {/* 전체 가구매 명단 */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
           <button
-            onClick={() => { setShowGlobalFake(v => !v); setShowUrgentNotice(false); setShowCoupang(false); setShowUpload(false); setShowInvoice(false); setShowSupplierLibrary(false); setShowCs(false); setShowOrdererSearch(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
+            onClick={() => togglePanel('invoice')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showInvoice ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
+          >
+            <TruckIcon className="w-3.5 h-3.5" />
+            <span>통합송장변환</span>
+          </button>
+
+          <button
+            onClick={() => togglePanel('fake')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${
               showGlobalFake
                 ? 'bg-zinc-700 text-white border-zinc-600'
                 : globalFakeOrderInput.trim()
@@ -951,440 +908,494 @@ const App: React.FC = () => {
                 : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
             }`}
           >
-            가구매 명단{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}
+            <UserGroupIcon className="w-3.5 h-3.5" />
+            <span>가구매 명단{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}</span>
           </button>
-          {showGlobalFake && (
-            <div className="absolute right-0 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">가구매 명단</h3>
-                  <div className="flex items-center gap-2">
-                    {globalFakeOrderInput.trim() && !isEditingGlobalFake && (
-                      <button onClick={() => setIsEditingGlobalFake(true)} className="text-[10px] text-zinc-500 hover:text-white font-black transition-colors">편집</button>
+
+          <button
+            onClick={() => togglePanel('cs')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showCs ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
+          >
+            <PhoneIcon className="w-3.5 h-3.5" />
+            <span>통합CS현황</span>
+          </button>
+
+          <button
+            onClick={() => { closeAllPanels(); openBulkDepositModal(); }}
+            className="px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-emerald-400 border-emerald-500/50 hover:bg-emerald-900/30 hover:border-emerald-400"
+          >
+            <BanknotesIcon className="w-3.5 h-3.5" />
+            <span>일괄 입금목록</span>
+          </button>
+
+          <button
+            onClick={() => { closeAllPanels(); handleBulkWorkLog(); }}
+            className="px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-violet-400 border-violet-500/50 hover:bg-violet-900/30 hover:border-violet-400"
+          >
+            <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
+            <span>일괄 업무일지</span>
+          </button>
+
+          {/* 긴급공지: 내용이 있으면 발주서 생성 때마다 팝업으로 리마인드되므로 상태가 한눈에 보여야 한다 */}
+          <button
+            onClick={() => togglePanel('notice')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${
+              showUrgentNotice
+                ? 'bg-zinc-700 text-white border-zinc-600'
+                : globalUrgentNotice.trim()
+                ? 'text-amber-400 border-amber-500/50 hover:border-amber-400 hover:bg-amber-900/30'
+                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
+            }`}
+          >
+            <MegaphoneIcon className="w-3.5 h-3.5" />
+            <span>긴급공지</span>
+            {globalUrgentNotice.trim() && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+          </button>
+
+          <div className="w-px h-5 bg-zinc-800 mx-0.5" />
+
+          {/* 더보기 — 가끔 쓰는 메뉴는 여기에 모아둠 */}
+          <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => { const next = !showMoreMenu; closeAllPanels(); setShowMoreMenu(next); }}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showMoreMenu ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
+              title="주문자 검색 · 수량 집계 · 쿠팡 주문 · 업체 라이브러리"
+            >
+              <EllipsisHorizontalIcon className="w-4 h-4" />
+              <span>더보기</span>
+            </button>
+            {showMoreMenu && (
+              <div className="absolute right-0 top-full mt-2 z-50 w-[190px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl p-1.5">
+                <p className="px-2.5 pt-1 pb-1 text-[8px] font-black uppercase tracking-widest text-zinc-600">조회</p>
+                <button onClick={() => togglePanel('orderer')} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+                  <MagnifyingGlassIcon className="w-3.5 h-3.5" />
+                  <span>주문자 검색</span>
+                </button>
+                <button onClick={() => togglePanel('regCounter')} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+                  <CalculatorIcon className="w-3.5 h-3.5" />
+                  <span>수량 집계</span>
+                </button>
+
+                <p className="px-2.5 pt-2 pb-1 text-[8px] font-black uppercase tracking-widest text-zinc-600">작업</p>
+                <button onClick={() => togglePanel('coupang')} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+                  <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                  <span>쿠팡 주문</span>
+                </button>
+
+                <p className="px-2.5 pt-2 pb-1 text-[8px] font-black uppercase tracking-widest text-zinc-600">설정</p>
+                <button onClick={() => togglePanel('library')} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+                  <BuildingStorefrontIcon className="w-3.5 h-3.5" />
+                  <span>업체 라이브러리</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── 드롭다운 패널 모음 ──
+            버튼 위치와 상관없이 전부 헤더 오른쪽 아래 같은 자리에서 열린다 (한 번에 하나만). */}
+        <div className="contents" onMouseDown={(e) => e.stopPropagation()}>
+        {/* 주문서 업로드 */}
+        {showUpload && (
+          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
+            <SharedMasterUpload
+              businesses={businessIdNamePairs}
+              uploadFns={uploadFnsRef.current}
+              onClose={() => setShowUpload(false)}
+              results={uploadResults}
+              onResultsChange={setUploadResults}
+              warningBusinessIds={new Set(Object.keys(businessWarnings).filter(id => businessWarnings[id]))}
+              warningCompanyIds={new Set(Object.entries(businessWarningCompanies).flatMap(([bizId, companies]) => (companies as string[]).map(c => `${bizId}_${c}`)))}
+              urgentNotice={globalUrgentNotice}
+              companyMemos={companyMemos}
+              onCompanyMemoChange={updateCompanyMemo}
+              onCompanyMemoDelete={removeCompanyMemo}
+            />
+          </div>
+        )}
+
+        {/* 통합 송장 변환 */}
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showInvoice ? '' : 'hidden'}`}>
+          <ConsolidatedInvoicePanel
+            businesses={businessIdNamePairs}
+            uploadFns={uploadFnsRef.current}
+            onClose={() => setShowInvoice(false)}
+            results={invoiceResults}
+            onResultsChange={setInvoiceResults}
+            onReset={handleResetInvoicePanel}
+            couriers={courierItemsForPanel}
+            hasFakeOrders={globalFakeOrderInput.trim().length > 0}
+            onCourierFilesAdd={handleCourierFilesAddForPanel}
+            onCourierFileRemove={handleCourierFileRemoveForPanel}
+            onCourierResultDownload={handleGlobalCourierResultDownload}
+            onCourierDirectCoupangUpload={handleCourierDirectCoupangUpload}
+            onDirectCoupangUpload={async (businessId) => {
+              const file = uploadFnsRef.current[businessId]?.getInvoiceWorkbookFile?.();
+              if (!file) throw new Error('송장 데이터가 없습니다. 먼저 송장 파일을 업로드해주세요.');
+              if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
+              await directCoupangUploadRef.current(businessId, file);
+            }}
+          />
+        </div>
+
+        {/* 전체 가구매 명단 */}
+        {showGlobalFake && (
+          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">가구매 명단</h3>
+                <div className="flex items-center gap-2">
+                  {globalFakeOrderInput.trim() && !isEditingGlobalFake && (
+                    <button onClick={() => setIsEditingGlobalFake(true)} className="text-[10px] text-zinc-500 hover:text-white font-black transition-colors">편집</button>
+                  )}
+                  {globalFakeOrderInput.trim() && (
+                    <button onClick={() => { setGlobalFakeOrderInput(''); setMatchedFakeNums({}); }} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
+                  )}
+                </div>
+              </div>
+              <p className="text-zinc-600 text-[10px] mb-2 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
+
+              {/* 편집 모드 또는 비어있을 때: textarea */}
+              {(isEditingGlobalFake || !globalFakeOrderInput.trim()) ? (
+                <textarea
+                  autoFocus={isEditingGlobalFake}
+                  value={globalFakeOrderInput}
+                  onChange={(e) => setGlobalFakeOrderInput(e.target.value)}
+                  onBlur={() => setIsEditingGlobalFake(false)}
+                  placeholder={'안군농원_홍길동_11100198137997\n조에_김철수_11100198138001'}
+                  className="w-full h-[200px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50 resize-none custom-scrollbar"
+                />
+              ) : (
+                /* 보기 모드: 줄별 컬러 표시 */
+                <div
+                  onClick={() => setIsEditingGlobalFake(true)}
+                  className="cursor-text w-full h-[200px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 overflow-y-auto custom-scrollbar"
+                >
+                  {globalFakeOrderInput.split('\n').map((line, i) => {
+                    const parsed = parseGlobalFakeLine(line, allBusinesses);
+                    const isMatched = parsed?.orderNum ? (isOrderMatchedForBusiness(parsed.businessId, parsed.orderNum) || isSpecialMatchOrderNum(parsed.orderNum)) : false;
+                    const isValid = !!parsed?.businessId;
+                    const isEmpty = !line.trim();
+                    return (
+                      <div
+                        key={i}
+                        className={`text-[10px] font-mono leading-[1.6] ${
+                          isEmpty ? '' :
+                          isMatched ? 'text-emerald-400' :
+                          isValid ? 'text-zinc-400' :
+                          'text-rose-400'
+                        }`}
+                      >
+                        {line || ' '}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {globalFakeOrderInput.trim() && (() => {
+                const unmatchedLines = globalFakeUnmatchedLines;
+                const total = globalFakeLineStats.total;
+                const matchedCount = globalFakeLineStats.matched;
+                const unmatchedCount = unmatchedLines.length;
+                return (
+                  <div className="mt-2 space-y-1.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] text-zinc-500 font-black">
+                        총 {total}명
+                      </span>
+                      {matchedCount > 0 && (
+                        <span className="text-[10px] text-emerald-400 font-black">매칭 {matchedCount}</span>
+                      )}
+                      {unmatchedCount > 0 && (
+                        <span className="text-[10px] text-rose-400 font-black">미매칭 {unmatchedCount}</span>
+                      )}
+                    </div>
+                    {allBusinesses
+                      .filter(b => perBusinessFakeStats[b.id])
+                      .map(b => {
+                        const s = perBusinessFakeStats[b.id];
+                        const missing = s.total - s.matched;
+                        return (
+                          <div key={b.id} className="flex items-center gap-1.5 flex-wrap pl-1 border-l-2 border-zinc-800">
+                            <span className="text-[9px] text-zinc-500 font-black">{b.displayName}</span>
+                            <span className="text-[9px] text-zinc-700 font-black">{s.total}명</span>
+                            {s.matched > 0 && (
+                              <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {s.matched}</span>
+                            )}
+                            {missing > 0 && (
+                              <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {missing}</span>
+                            )}
+                          </div>
+                        );
+                      })
+                    }
+                    {unmatchedLines.length > 0 && (
+                      <div className="mt-1 bg-rose-950/30 border border-rose-500/20 rounded-xl px-3 py-2 space-y-0.5">
+                        <p className="text-[9px] text-rose-400 font-black uppercase tracking-widest mb-1">미매칭 명단</p>
+                        {unmatchedLines.map((line, i) => (
+                          <div key={i} className="text-[10px] font-mono text-rose-300">{line}</div>
+                        ))}
+                      </div>
                     )}
-                    {globalFakeOrderInput.trim() && (
-                      <button onClick={() => { setGlobalFakeOrderInput(''); setMatchedFakeNums({}); }} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
+                  </div>
+                );
+              })()}
+
+              {/* 오늘 사용한 택배대행 */}
+              {courierTemplates.length > 0 && (
+                <div className={`mt-4 p-3 rounded-xl border ${fakeCourierSettings.activeTemplateId ? 'bg-cyan-950/30 border-cyan-500/40' : 'bg-zinc-900/50 border-zinc-800'}`}>
+                  <label className="text-[9px] text-cyan-400 font-black uppercase tracking-widest mb-1 block">오늘 사용한 택배대행</label>
+                  <select
+                    value={fakeCourierSettings.activeTemplateId || ''}
+                    onChange={(e) => saveFakeCourierSettings({ ...fakeCourierSettings, activeTemplateId: e.target.value || undefined })}
+                    className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50"
+                  >
+                    <option value="">기본값 (가구매 택배 설정)</option>
+                    {courierTemplates.map((t: CourierTemplate) => (
+                      <option key={t.id} value={t.id}>{t.name}{t.label ? ` (${t.label})` : ''} — {t.unitPrice.toLocaleString()}원/건</option>
+                    ))}
+                  </select>
+                  <p className="text-[9px] text-zinc-500 mt-1.5">
+                    입금목록 택배대행 줄: <span className="text-cyan-300 font-bold">{resolvedFakeCourier.name}</span>
+                    {' · '}<span className="text-emerald-400 font-bold">{resolvedFakeCourier.unitPrice.toLocaleString()}원/건</span>
+                    {' · '}{resolvedFakeCourier.bankName} {resolvedFakeCourier.accountNumber}
+                  </p>
+                </div>
+              )}
+
+              {/* 미발송 명단 */}
+              <div className="mt-4 border-t border-zinc-800 pt-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-amber-400 font-black text-[11px] uppercase tracking-widest">미발송 명단</h3>
+                  <div className="flex items-center gap-2">
+                    {globalUnsentOrderInput.trim() && !isEditingGlobalUnsent && (
+                      <button onClick={() => setIsEditingGlobalUnsent(true)} className="text-[10px] text-zinc-500 hover:text-white font-black transition-colors">편집</button>
+                    )}
+                    {globalUnsentOrderInput.trim() && (
+                      <button onClick={() => setGlobalUnsentOrderInput('')} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
                     )}
                   </div>
                 </div>
                 <p className="text-zinc-600 text-[10px] mb-2 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
 
-                {/* 편집 모드 또는 비어있을 때: textarea */}
-                {(isEditingGlobalFake || !globalFakeOrderInput.trim()) ? (
+                {(isEditingGlobalUnsent || !globalUnsentOrderInput.trim()) ? (
                   <textarea
-                    autoFocus={isEditingGlobalFake}
-                    value={globalFakeOrderInput}
-                    onChange={(e) => setGlobalFakeOrderInput(e.target.value)}
-                    onBlur={() => setIsEditingGlobalFake(false)}
+                    autoFocus={isEditingGlobalUnsent}
+                    value={globalUnsentOrderInput}
+                    onChange={(e) => setGlobalUnsentOrderInput(e.target.value)}
+                    onBlur={() => setIsEditingGlobalUnsent(false)}
                     placeholder={'안군농원_홍길동_11100198137997\n조에_김철수_11100198138001'}
-                    className="w-full h-[200px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-violet-500/50 resize-none custom-scrollbar"
+                    className="w-full h-[80px] bg-zinc-950 border border-amber-900/30 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-amber-500/50 resize-none custom-scrollbar"
                   />
                 ) : (
-                  /* 보기 모드: 줄별 컬러 표시 */
                   <div
-                    onClick={() => setIsEditingGlobalFake(true)}
-                    className="cursor-text w-full h-[200px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 overflow-y-auto custom-scrollbar"
+                    onClick={() => setIsEditingGlobalUnsent(true)}
+                    className="cursor-text w-full h-[80px] bg-zinc-950 border border-amber-900/30 rounded-xl px-3 py-2 overflow-y-auto custom-scrollbar"
                   >
-                    {globalFakeOrderInput.split('\n').map((line, i) => {
+                    {globalUnsentOrderInput.split('\n').map((line, i) => {
                       const parsed = parseGlobalFakeLine(line, allBusinesses);
-                      const isMatched = parsed?.orderNum ? (isOrderMatchedForBusiness(parsed.businessId, parsed.orderNum) || isSpecialMatchOrderNum(parsed.orderNum)) : false;
                       const isValid = !!parsed?.businessId;
                       const isEmpty = !line.trim();
                       return (
                         <div
                           key={i}
                           className={`text-[10px] font-mono leading-[1.6] ${
-                            isEmpty ? '' :
-                            isMatched ? 'text-emerald-400' :
-                            isValid ? 'text-zinc-400' :
-                            'text-rose-400'
+                            isEmpty ? '' : isValid ? 'text-amber-400/80' : 'text-zinc-600'
                           }`}
                         >
-                          {line || ' '}
+                          {line || ' '}
                         </div>
                       );
                     })}
                   </div>
                 )}
 
-                {globalFakeOrderInput.trim() && (() => {
-                  const unmatchedLines = globalFakeUnmatchedLines;
-                  const total = globalFakeLineStats.total;
-                  const matchedCount = globalFakeLineStats.matched;
-                  const unmatchedCount = unmatchedLines.length;
-                  return (
-                    <div className="mt-2 space-y-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] text-zinc-500 font-black">
-                          총 {total}명
-                        </span>
-                        {matchedCount > 0 && (
-                          <span className="text-[10px] text-emerald-400 font-black">매칭 {matchedCount}</span>
-                        )}
-                        {unmatchedCount > 0 && (
-                          <span className="text-[10px] text-rose-400 font-black">미매칭 {unmatchedCount}</span>
-                        )}
-                      </div>
-                      {allBusinesses
-                        .filter(b => perBusinessFakeStats[b.id])
-                        .map(b => {
-                          const s = perBusinessFakeStats[b.id];
-                          const missing = s.total - s.matched;
-                          return (
-                            <div key={b.id} className="flex items-center gap-1.5 flex-wrap pl-1 border-l-2 border-zinc-800">
-                              <span className="text-[9px] text-zinc-500 font-black">{b.displayName}</span>
-                              <span className="text-[9px] text-zinc-700 font-black">{s.total}명</span>
-                              {s.matched > 0 && (
-                                <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {s.matched}</span>
-                              )}
-                              {missing > 0 && (
-                                <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {missing}</span>
-                              )}
-                            </div>
-                          );
-                        })
-                      }
-                      {unmatchedLines.length > 0 && (
-                        <div className="mt-1 bg-rose-950/30 border border-rose-500/20 rounded-xl px-3 py-2 space-y-0.5">
-                          <p className="text-[9px] text-rose-400 font-black uppercase tracking-widest mb-1">미매칭 명단</p>
-                          {unmatchedLines.map((line, i) => (
-                            <div key={i} className="text-[10px] font-mono text-rose-300">{line}</div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-
-                {/* 오늘 사용한 택배대행 */}
-                {courierTemplates.length > 0 && (
-                  <div className={`mt-4 p-3 rounded-xl border ${fakeCourierSettings.activeTemplateId ? 'bg-cyan-950/30 border-cyan-500/40' : 'bg-zinc-900/50 border-zinc-800'}`}>
-                    <label className="text-[9px] text-cyan-400 font-black uppercase tracking-widest mb-1 block">오늘 사용한 택배대행</label>
-                    <select
-                      value={fakeCourierSettings.activeTemplateId || ''}
-                      onChange={(e) => saveFakeCourierSettings({ ...fakeCourierSettings, activeTemplateId: e.target.value || undefined })}
-                      className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-2 py-1.5 text-[11px] text-zinc-200 focus:outline-none focus:border-cyan-500/50"
-                    >
-                      <option value="">기본값 (가구매 택배 설정)</option>
-                      {courierTemplates.map((t: CourierTemplate) => (
-                        <option key={t.id} value={t.id}>{t.name}{t.label ? ` (${t.label})` : ''} — {t.unitPrice.toLocaleString()}원/건</option>
-                      ))}
-                    </select>
-                    <p className="text-[9px] text-zinc-500 mt-1.5">
-                      입금목록 택배대행 줄: <span className="text-cyan-300 font-bold">{resolvedFakeCourier.name}</span>
-                      {' · '}<span className="text-emerald-400 font-bold">{resolvedFakeCourier.unitPrice.toLocaleString()}원/건</span>
-                      {' · '}{resolvedFakeCourier.bankName} {resolvedFakeCourier.accountNumber}
-                    </p>
-                  </div>
-                )}
-
-                {/* 미발송 명단 */}
-                <div className="mt-4 border-t border-zinc-800 pt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-amber-400 font-black text-[11px] uppercase tracking-widest">미발송 명단</h3>
-                    <div className="flex items-center gap-2">
-                      {globalUnsentOrderInput.trim() && !isEditingGlobalUnsent && (
-                        <button onClick={() => setIsEditingGlobalUnsent(true)} className="text-[10px] text-zinc-500 hover:text-white font-black transition-colors">편집</button>
-                      )}
-                      {globalUnsentOrderInput.trim() && (
-                        <button onClick={() => setGlobalUnsentOrderInput('')} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
-                      )}
-                    </div>
-                  </div>
-                  <p className="text-zinc-600 text-[10px] mb-2 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
-
-                  {(isEditingGlobalUnsent || !globalUnsentOrderInput.trim()) ? (
-                    <textarea
-                      autoFocus={isEditingGlobalUnsent}
-                      value={globalUnsentOrderInput}
-                      onChange={(e) => setGlobalUnsentOrderInput(e.target.value)}
-                      onBlur={() => setIsEditingGlobalUnsent(false)}
-                      placeholder={'안군농원_홍길동_11100198137997\n조에_김철수_11100198138001'}
-                      className="w-full h-[80px] bg-zinc-950 border border-amber-900/30 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-amber-500/50 resize-none custom-scrollbar"
-                    />
-                  ) : (
-                    <div
-                      onClick={() => setIsEditingGlobalUnsent(true)}
-                      className="cursor-text w-full h-[80px] bg-zinc-950 border border-amber-900/30 rounded-xl px-3 py-2 overflow-y-auto custom-scrollbar"
-                    >
-                      {globalUnsentOrderInput.split('\n').map((line, i) => {
-                        const parsed = parseGlobalFakeLine(line, allBusinesses);
-                        const isValid = !!parsed?.businessId;
-                        const isEmpty = !line.trim();
-                        return (
-                          <div
-                            key={i}
-                            className={`text-[10px] font-mono leading-[1.6] ${
-                              isEmpty ? '' : isValid ? 'text-amber-400/80' : 'text-zinc-600'
-                            }`}
-                          >
-                            {line || ' '}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {globalUnsentOrderInput.trim() && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <span className="text-[10px] text-zinc-500 font-black">
-                        총 {globalUnsentOrderInput.trim().split('\n').filter(Boolean).length}명
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* 공통 택배 예약 / 송장 입력 */}
-                {courierTemplates.length > 0 && globalFakeOrderInput.trim() && (
-                  <div className="mt-4 border-t border-zinc-800 pt-4">
-                    <h3 className="text-violet-400 font-black text-[11px] uppercase tracking-widest mb-3">택배</h3>
-                    <div className="space-y-2">
-                      {courierTemplates.map((tmpl: CourierTemplate) => {
-                        const files = globalCourierFiles[tmpl.id] || [];
-                        const result = globalCourierResults[tmpl.id];
-                        const matched = globalCourierMatchedRows[tmpl.id];
-                        const fullName = tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name;
-                        const isOffice = fullName.includes('사무실');
-                        const isAgent = fullName.includes('대행');
-                        const cs = isOffice
-                          ? { border: 'border-pink-500/30', bg: 'bg-amber-950/30', text: 'text-pink-400', hoverBg: 'hover:bg-amber-900/40', hoverBorder: 'hover:border-pink-500/50', activeBg: 'bg-amber-950/30 border-pink-500/30 text-pink-400', inactiveBorder: 'hover:border-pink-500/40 hover:text-pink-400' }
-                          : isAgent
-                          ? { border: 'border-cyan-500/30', bg: 'bg-cyan-950/30', text: 'text-cyan-400', hoverBg: 'hover:bg-cyan-900/40', hoverBorder: 'hover:border-cyan-500/50', activeBg: 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400', inactiveBorder: 'hover:border-cyan-500/40 hover:text-cyan-400' }
-                          : { border: 'border-indigo-500/30', bg: 'bg-indigo-950/30', text: 'text-indigo-400', hoverBg: 'hover:bg-indigo-900/40', hoverBorder: 'hover:border-indigo-500/50', activeBg: 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400', inactiveBorder: 'hover:border-indigo-500/40 hover:text-indigo-400' };
-                        const totalFake = globalFakeOrderInput.trim().split('\n').filter(Boolean).length;
-                        return (
-                          <div key={tmpl.id} className={`space-y-1.5 p-2 rounded-xl border ${cs.border} bg-zinc-950/40`}>
-                            <button
-                              onClick={() => handleGlobalCourierDownload(tmpl)}
-                              className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md ${cs.bg} ${cs.border} ${cs.text} ${cs.hoverBg} ${cs.hoverBorder}`}
-                            >
-                              <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                              <span className="flex items-center gap-1">
-                                {isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}
-                                {fullName} ({totalFake}건)
-                              </span>
-                            </button>
-                            {/* 사업자별 분할 다운로드 */}
-                            {allBusinesses.length > 1 && (
-                              <div className="flex gap-1">
-                                {allBusinesses.map(b => {
-                                  const count = perBusinessFakeInput[b.id]?.split('\n').filter(Boolean).length ?? 0;
-                                  if (count === 0) return null;
-                                  return (
-                                    <button
-                                      key={b.id}
-                                      onClick={() => handleGlobalCourierDownloadForBusiness(tmpl, b.id)}
-                                      className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[8px] font-black border transition-all bg-zinc-900/60 ${cs.border} ${cs.text} hover:opacity-80`}
-                                    >
-                                      <ArrowDownTrayIcon className="w-2.5 h-2.5 shrink-0" />
-                                      {b.displayName} ({count}건)
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {/* 업로드된 파일 목록 */}
-                            {files.length > 0 && (
-                              <div className="flex flex-col gap-1">
-                                {files.map((f, idx) => (
-                                  <div key={idx} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${cs.border} bg-zinc-900/60`}>
-                                    <span className={`text-[9px] font-black truncate flex-1 ${cs.text}`}>{f.name}</span>
-                                    <button
-                                      onClick={() => handleGlobalCourierFileRemove(tmpl, idx)}
-                                      className="shrink-0 text-zinc-600 hover:text-rose-400 transition-colors text-[10px] leading-none px-0.5"
-                                    >✕</button>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                            {/* 파일 추가 버튼 */}
-                            <label className={`flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md ${files.length > 0 ? `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}` : `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}`}`}>
-                              <ArrowUpTrayIcon className="w-3.5 h-3.5 shrink-0" />
-                              <span>{files.length > 0 ? '파일 추가' : <span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} 운송장 업로드</span>}</span>
-                              <input
-                                type="file"
-                                className="sr-only"
-                                accept=".xlsx,.xls"
-                                multiple
-                                onChange={(e) => {
-                                  const fs = Array.from(e.target.files || []);
-                                  if (fs.length > 0) handleGlobalCourierFilesAdd(tmpl, fs);
-                                  e.currentTarget.value = '';
-                                }}
-                              />
-                            </label>
-                            {result && (
-                              <div className="bg-zinc-950/80 p-2 rounded-xl border border-zinc-800 space-y-1.5">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {result.matched}건</span>
-                                  <span className="text-zinc-500 text-[8px] font-black">/ 가구매 {result.total}건</span>
-                                  {result.notFound.length > 0 && <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {result.notFound.length}건</span>}
-                                </div>
-                                {result.notFound.length > 0 && (
-                                  <div className="flex flex-wrap gap-1">
-                                    {result.notFound.map((num: string) => (
-                                      <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded text-[8px] font-mono">{num}</span>
-                                    ))}
-                                  </div>
-                                )}
-                                {matched && (
-                                  <button onClick={() => handleGlobalCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
-                                    <ArrowDownTrayIcon className="w-3.5 h-3.5" />
-                                    운송장완료 다운로드 ({result.matched}건)
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+                {globalUnsentOrderInput.trim() && (
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-[10px] text-zinc-500 font-black">
+                      총 {globalUnsentOrderInput.trim().split('\n').filter(Boolean).length}명
+                    </span>
                   </div>
                 )}
               </div>
+
+              {/* 공통 택배 예약 / 송장 입력 */}
+              {courierTemplates.length > 0 && globalFakeOrderInput.trim() && (
+                <div className="mt-4 border-t border-zinc-800 pt-4">
+                  <h3 className="text-violet-400 font-black text-[11px] uppercase tracking-widest mb-3">택배</h3>
+                  <div className="space-y-2">
+                    {courierTemplates.map((tmpl: CourierTemplate) => {
+                      const files = globalCourierFiles[tmpl.id] || [];
+                      const result = globalCourierResults[tmpl.id];
+                      const matched = globalCourierMatchedRows[tmpl.id];
+                      const fullName = tmpl.label ? `${tmpl.name} (${tmpl.label})` : tmpl.name;
+                      const isOffice = fullName.includes('사무실');
+                      const isAgent = fullName.includes('대행');
+                      const cs = isOffice
+                        ? { border: 'border-pink-500/30', bg: 'bg-amber-950/30', text: 'text-pink-400', hoverBg: 'hover:bg-amber-900/40', hoverBorder: 'hover:border-pink-500/50', activeBg: 'bg-amber-950/30 border-pink-500/30 text-pink-400', inactiveBorder: 'hover:border-pink-500/40 hover:text-pink-400' }
+                        : isAgent
+                        ? { border: 'border-cyan-500/30', bg: 'bg-cyan-950/30', text: 'text-cyan-400', hoverBg: 'hover:bg-cyan-900/40', hoverBorder: 'hover:border-cyan-500/50', activeBg: 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400', inactiveBorder: 'hover:border-cyan-500/40 hover:text-cyan-400' }
+                        : { border: 'border-indigo-500/30', bg: 'bg-indigo-950/30', text: 'text-indigo-400', hoverBg: 'hover:bg-indigo-900/40', hoverBorder: 'hover:border-indigo-500/50', activeBg: 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400', inactiveBorder: 'hover:border-indigo-500/40 hover:text-indigo-400' };
+                      const totalFake = globalFakeOrderInput.trim().split('\n').filter(Boolean).length;
+                      return (
+                        <div key={tmpl.id} className={`space-y-1.5 p-2 rounded-xl border ${cs.border} bg-zinc-950/40`}>
+                          <button
+                            onClick={() => handleGlobalCourierDownload(tmpl)}
+                            className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md ${cs.bg} ${cs.border} ${cs.text} ${cs.hoverBg} ${cs.hoverBorder}`}
+                          >
+                            <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                            <span className="flex items-center gap-1">
+                              {isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}
+                              {fullName} ({totalFake}건)
+                            </span>
+                          </button>
+                          {/* 사업자별 분할 다운로드 */}
+                          {allBusinesses.length > 1 && (
+                            <div className="flex gap-1">
+                              {allBusinesses.map(b => {
+                                const count = perBusinessFakeInput[b.id]?.split('\n').filter(Boolean).length ?? 0;
+                                if (count === 0) return null;
+                                return (
+                                  <button
+                                    key={b.id}
+                                    onClick={() => handleGlobalCourierDownloadForBusiness(tmpl, b.id)}
+                                    className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[8px] font-black border transition-all bg-zinc-900/60 ${cs.border} ${cs.text} hover:opacity-80`}
+                                  >
+                                    <ArrowDownTrayIcon className="w-2.5 h-2.5 shrink-0" />
+                                    {b.displayName} ({count}건)
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {/* 업로드된 파일 목록 */}
+                          {files.length > 0 && (
+                            <div className="flex flex-col gap-1">
+                              {files.map((f, idx) => (
+                                <div key={idx} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg border ${cs.border} bg-zinc-900/60`}>
+                                  <span className={`text-[9px] font-black truncate flex-1 ${cs.text}`}>{f.name}</span>
+                                  <button
+                                    onClick={() => handleGlobalCourierFileRemove(tmpl, idx)}
+                                    className="shrink-0 text-zinc-600 hover:text-rose-400 transition-colors text-[10px] leading-none px-0.5"
+                                  >✕</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {/* 파일 추가 버튼 */}
+                          <label className={`flex items-center justify-center gap-1.5 cursor-pointer px-3 py-2 rounded-xl text-[9px] font-black border transition-all shadow-md ${files.length > 0 ? `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}` : `bg-zinc-900/50 border-zinc-700 text-zinc-500 ${cs.inactiveBorder}`}`}>
+                            <ArrowUpTrayIcon className="w-3.5 h-3.5 shrink-0" />
+                            <span>{files.length > 0 ? '파일 추가' : <span className="flex items-center gap-1">{isOffice ? <HomeIcon className="w-3 h-3" /> : isAgent ? <TruckIcon className="w-3 h-3" /> : null}{fullName} 운송장 업로드</span>}</span>
+                            <input
+                              type="file"
+                              className="sr-only"
+                              accept=".xlsx,.xls"
+                              multiple
+                              onChange={(e) => {
+                                const fs = Array.from(e.target.files || []);
+                                if (fs.length > 0) handleGlobalCourierFilesAdd(tmpl, fs);
+                                e.currentTarget.value = '';
+                              }}
+                            />
+                          </label>
+                          {result && (
+                            <div className="bg-zinc-950/80 p-2 rounded-xl border border-zinc-800 space-y-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="bg-emerald-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">매칭 {result.matched}건</span>
+                                <span className="text-zinc-500 text-[8px] font-black">/ 가구매 {result.total}건</span>
+                                {result.notFound.length > 0 && <span className="bg-rose-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">미매칭 {result.notFound.length}건</span>}
+                              </div>
+                              {result.notFound.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {result.notFound.map((num: string) => (
+                                    <span key={num} className="bg-rose-950/40 text-rose-400 border border-rose-500/20 px-1 py-0.5 rounded text-[8px] font-mono">{num}</span>
+                                  ))}
+                                </div>
+                              )}
+                              {matched && (
+                                <button onClick={() => handleGlobalCourierResultDownload(tmpl.id)} className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[9px] font-black transition-colors shadow-lg">
+                                  <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                                  운송장완료 다운로드 ({result.matched}건)
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
-        </div>
-
-        {/* 공통 주문서 업로드 */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => { setShowUpload(v => !v); setShowCoupang(false); setShowInvoice(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowUrgentNotice(false); setShowOrdererSearch(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showUpload
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
-            }`}
-          >
-            주문서 업로드
-          </button>
-          {showUpload && (
-            <div className="absolute right-0 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
-              <SharedMasterUpload
-                businesses={businessIdNamePairs}
-                uploadFns={uploadFnsRef.current}
-                onClose={() => setShowUpload(false)}
-                results={uploadResults}
-                onResultsChange={setUploadResults}
-                warningBusinessIds={new Set(Object.keys(businessWarnings).filter(id => businessWarnings[id]))}
-                warningCompanyIds={new Set(Object.entries(businessWarningCompanies).flatMap(([bizId, companies]) => (companies as string[]).map(c => `${bizId}_${c}`)))}
-                urgentNotice={globalUrgentNotice}
-                companyMemos={companyMemos}
-                onCompanyMemoChange={updateCompanyMemo}
-                onCompanyMemoDelete={removeCompanyMemo}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* 통합 송장 변환 */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => { setShowInvoice(v => !v); setShowCoupang(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowUrgentNotice(false); setShowOrdererSearch(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showInvoice
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
-            }`}
-          >
-            통합송장변환
-          </button>
-          <div className={`absolute right-0 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showInvoice ? '' : 'hidden'}`}>
-            <ConsolidatedInvoicePanel
-              businesses={businessIdNamePairs}
-              uploadFns={uploadFnsRef.current}
-              onClose={() => setShowInvoice(false)}
-              results={invoiceResults}
-              onResultsChange={setInvoiceResults}
-              onReset={handleResetInvoicePanel}
-              couriers={courierItemsForPanel}
-              hasFakeOrders={globalFakeOrderInput.trim().length > 0}
-              onCourierFilesAdd={handleCourierFilesAddForPanel}
-              onCourierFileRemove={handleCourierFileRemoveForPanel}
-              onCourierResultDownload={handleGlobalCourierResultDownload}
-              onCourierDirectCoupangUpload={handleCourierDirectCoupangUpload}
-              onDirectCoupangUpload={async (businessId) => {
-                const file = uploadFnsRef.current[businessId]?.getInvoiceWorkbookFile?.();
-                if (!file) throw new Error('송장 데이터가 없습니다. 먼저 송장 파일을 업로드해주세요.');
-                if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
-                await directCoupangUploadRef.current(businessId, file);
-              }}
-            />
           </div>
-        </div>
-
-        {/* 쿠팡 다운로드 토글 */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => { setShowCoupang(v => !v); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowCs(false); setShowUrgentNotice(false); setShowOrdererSearch(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showCoupang
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
-            }`}
-          >
-            쿠팡 주문
-          </button>
-          <div className={`absolute right-0 top-full mt-2 z-50 w-[480px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCoupang ? '' : 'hidden'}`}>
-            <CoupangDownloader
-              businesses={businessIdNamePairs}
-              onRegisterDirectUpload={(fn) => { directCoupangUploadRef.current = fn; }}
-            />
-          </div>
-        </div>
-
-        {/* 공급업체 라이브러리 (전체 사업자 공유) */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => { setShowSupplierLibrary(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowCs(false); setShowUrgentNotice(false); setShowOrdererSearch(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showSupplierLibrary
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
-            }`}
-          >
-            업체 라이브러리
-          </button>
-          <div className={`absolute right-0 top-full mt-2 z-50 w-[480px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showSupplierLibrary ? '' : 'hidden'}`}>
-            <PricingEditor
-              config={sharedSuppliers.config}
-              onConfigChange={sharedSuppliers.saveConfig}
-              isLibraryMode
-            />
-          </div>
-        </div>
+        )}
 
         {/* 통합 CS 현황 (전체 사업자, 접수중인 건만) */}
-        <div className="relative" onMouseDown={(e) => e.stopPropagation()}>
-          <button
-            onClick={() => { setShowCs(v => !v); setShowCoupang(false); setShowInvoice(false); setShowUpload(false); setShowGlobalFake(false); setShowSupplierLibrary(false); setShowUrgentNotice(false); setShowOrdererSearch(false); }}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border ${
-              showCs
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
-            }`}
-          >
-            통합CS현황
-          </button>
-          <div className={`absolute right-0 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCs ? '' : 'hidden'}`}>
-            {showCs && (
-              <ConsolidatedCsPanel
-                businesses={businessIdNamePairs}
-                onClose={() => setShowCs(false)}
-                onCreatePurchaseOrder={async (businessId, company, mo) => (await uploadFnsRef.current[businessId]?.addReshipOrder?.(company, mo)) ?? false}
-                onRemovePurchaseOrder={(businessId, company, csRecordId) => uploadFnsRef.current[businessId]?.removeReshipOrder?.(company, csRecordId) ?? false}
-              />
-            )}
-          </div>
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCs ? '' : 'hidden'}`}>
+          {showCs && (
+            <ConsolidatedCsPanel
+              businesses={businessIdNamePairs}
+              onClose={() => setShowCs(false)}
+              onCreatePurchaseOrder={async (businessId, company, mo) => (await uploadFnsRef.current[businessId]?.addReshipOrder?.(company, mo)) ?? false}
+              onRemovePurchaseOrder={(businessId, company, csRecordId) => uploadFnsRef.current[businessId]?.removeReshipOrder?.(company, csRecordId) ?? false}
+            />
+          )}
         </div>
 
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="text-zinc-600 hover:text-zinc-400 transition-colors"
-          title="사업자 추가"
-        >
-          <PlusCircleIcon className="w-4 h-4" />
-        </button>
+        {/* 주문자 검색 (전체 사업자 발주내역에서 이름으로 조회) */}
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showOrdererSearch ? '' : 'hidden'}`}>
+          <OrdererSearchPanel
+            businesses={businessIdNamePairs}
+            active={showOrdererSearch}
+            onClose={() => setShowOrdererSearch(false)}
+          />
+        </div>
+
+        {/* 등록상품명 수량 집계 */}
+        <RegisteredProductCounter
+          active={showRegCounter}
+          onClose={() => setShowRegCounter(false)}
+        />
+
+        {/* 쿠팡 주문 */}
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[480px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCoupang ? '' : 'hidden'}`}>
+          <CoupangDownloader
+            businesses={businessIdNamePairs}
+            onRegisterDirectUpload={(fn) => { directCoupangUploadRef.current = fn; }}
+          />
+        </div>
+
+        {/* 긴급공지 */}
+        {showUrgentNotice && (
+          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">긴급공지</h3>
+                {globalUrgentNotice.trim() && (
+                  <button onClick={() => setGlobalUrgentNotice('')} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
+                )}
+              </div>
+              <p className="text-zinc-600 text-[10px] mb-2 font-mono">내용을 적어두면, 마스터/N차 주문서를 업로드해 발주서를 생성할 때마다 팝업으로 안내됩니다 (예: 주소 변경 건).</p>
+              <textarea
+                value={globalUrgentNotice}
+                onChange={(e) => setGlobalUrgentNotice(e.target.value)}
+                placeholder={'예: 712805816516609 홍길동 주소가 경북 구미시로 변경됨 — 미리보기에서 수동으로 고칠 것'}
+                className="w-full h-[160px] bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-[10px] font-mono text-zinc-300 focus:outline-none focus:border-amber-500/50 resize-none custom-scrollbar"
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 공급업체 라이브러리 (전체 사업자 공유) */}
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[480px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showSupplierLibrary ? '' : 'hidden'}`}>
+          <PricingEditor
+            config={sharedSuppliers.config}
+            onConfigChange={sharedSuppliers.saveConfig}
+            isLibraryMode
+          />
+        </div>
+        </div>
       </div>
 
       {/* 가로 스크롤 패널 — flex-1로 나머지 높이 채움 */}
