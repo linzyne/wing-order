@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
-import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines } from '../hooks/useConsolidatedOrderConverter';
+import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
@@ -1391,7 +1391,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (localResult) {
             // 미리보기에서 수정한 내용을 반영해 워크북을 새로 생성 (원본 워크북은 수정 전 상태로 고정되어 있음)
             const headers = getHeaderForCompany(companyName, pricingConfig[companyName] || {} as any);
-            const ws = XLSX.utils.aoa_to_sheet([headers, ...localResult.rows]);
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...sortRowsByProductName(headers, localResult.rows)]);
             ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { c: 0, r: 0 }, e: { c: Math.max(headers.length - 1, 0), r: 0 } }) };
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, '발주서');

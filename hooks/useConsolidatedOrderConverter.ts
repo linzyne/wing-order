@@ -951,6 +951,20 @@ const generateWorkbookForCompany = async (
     }
 };
 
+/**
+ * 발주서로 내보내기 직전, 품목명(상품명) 칸 기준 오름차순 정렬.
+ * 업체가 품목별로 모아 보기 편하도록 합산/차수별 발주서 모두 같은 순서로 나가야 해서
+ * 다운로드·메일 첨부 직전에 항상 이 함수를 거친다. 원본 배열은 건드리지 않는다
+ * (allOrderRows와 rowOrderNumbers/rowPricing 등 행 병렬 배열의 순서가 어긋나면 안 되므로).
+ * 품목명 칸을 못 찾는 양식이면 원래 순서 그대로 둔다.
+ */
+export function sortRowsByProductName(header: string[], rows: any[][]): any[][] {
+    const idx = header.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'productName');
+    if (idx === -1) return rows;
+    // Array.sort는 안정 정렬이라 같은 품목끼리는 원래 순서(차수 순)가 유지된다
+    return [...rows].sort((a, b) => String(a[idx] || '').localeCompare(String(b[idx] || ''), 'ko'));
+}
+
 export function getHeaderForCompany(companyName: string, config: CompanyConfig): string[] {
     // 커스텀 헤더가 설정되어 있으면 하드코딩보다 우선 적용
     if (config.orderFormHeaders?.length) return config.orderFormHeaders;

@@ -8,7 +8,7 @@ import BatchInvoicePanel from './BatchInvoicePanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo, resolveSenderColumns } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
-import { getKeywordsForCompany, getHeaderForCompany, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
+import { getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
@@ -3011,7 +3011,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return;
         const header = getHeaderForCompany(companyName, companyConfig);
-        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, rows)]);
         ws['!cols'] = header.map(() => ({ wch: 15 }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
@@ -3030,7 +3030,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return null;
         const header = getHeaderForCompany(companyName, companyConfig);
-        const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, rows)]);
         ws['!cols'] = header.map(() => ({ wch: 15 }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
@@ -3516,7 +3516,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const companyConfig = pricingConfig[companyName];
             if (!companyConfig) return;
             const header = getHeaderForCompany(companyName, companyConfig);
-            const ws = XLSX.utils.aoa_to_sheet([header, ...mergedRows]);
+            const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, mergedRows)]);
             ws['!cols'] = header.map(() => ({ wch: 15 }));
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, '발주서');
@@ -4158,7 +4158,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return;
         const header = getHeaderForCompany(companyName, companyConfig);
-        const ws = XLSX.utils.aoa_to_sheet([header, ...mergedRows]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, mergedRows)]);
         ws['!cols'] = header.map(() => ({ wch: 15 }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
