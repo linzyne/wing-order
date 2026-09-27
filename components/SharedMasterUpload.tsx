@@ -23,6 +23,8 @@ interface MasterUploadHandlers {
   downloadCompanyRound?: (companyName: string, round: number) => void;
   emailCompanyMerged?: (companyName: string) => void;
   emailCompanyRound?: (companyName: string, round: number) => void;
+  kakaoCompanyMerged?: (companyName: string) => void;
+  kakaoCompanyRound?: (companyName: string, round: number) => void;
   downloadAllCompanies?: () => void;
   getCompanyClosed?: (companyName: string) => boolean;
   getCompanyRecorded?: (companyName: string) => boolean;
@@ -682,6 +684,20 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                 </button>
                               );
                             })()}
+                            {uploadFns[biz.businessId]?.kakaoCompanyMerged && totalCount > 0 && (() => {
+                              const kkey = `${biz.businessId}_${companyName}_merged_kakao`;
+                              const sending = emailingButtons.has(kkey);
+                              return (
+                                <button
+                                  onClick={() => sendOrderMail(kkey, () => uploadFns[biz.businessId]?.kakaoCompanyMerged?.(companyName))}
+                                  disabled={sending}
+                                  title="합산 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)"
+                                  className={`px-1.5 py-0.5 text-[11px] rounded-lg border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(kkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-yellow-400 border-yellow-700 hover:bg-yellow-700/20'}`}
+                                >
+                                  {sending ? '…' : '💬'}
+                                </button>
+                              );
+                            })()}
                             {company.rounds.filter(r => r.hasData).map(r => {
                               const matched = r.matchedCount ?? 0;
                               const unmatched = Math.max(0, (r.count ?? 0) - matched);
@@ -714,6 +730,20 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                         className={`shrink-0 px-1.5 py-0.5 text-[10px] leading-none rounded-md border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(rkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-teal-400/80 border-teal-700/70 hover:bg-teal-700/20'}`}
                                       >
                                         {sending ? '…' : '✉'}
+                                      </button>
+                                    );
+                                  })()}
+                                  {uploadFns[biz.businessId]?.kakaoCompanyRound && (() => {
+                                    const kkey = `${biz.businessId}_${companyName}_${r.round}_kakao`;
+                                    const sending = emailingButtons.has(kkey);
+                                    return (
+                                      <button
+                                        onClick={() => sendOrderMail(kkey, () => uploadFns[biz.businessId]?.kakaoCompanyRound?.(companyName, r.round))}
+                                        disabled={sending}
+                                        title={`${r.round}차 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)`}
+                                        className={`shrink-0 px-1.5 py-0.5 text-[10px] leading-none rounded-md border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(kkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-yellow-400/80 border-yellow-700/70 hover:bg-yellow-700/20'}`}
+                                      >
+                                        {sending ? '…' : '💬'}
                                       </button>
                                     );
                                   })()}
