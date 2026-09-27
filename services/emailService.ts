@@ -47,9 +47,9 @@ export async function sendOrderEmail(params: SendOrderEmailParams): Promise<{ ac
 }
 
 /** 발주서 메일 기본 제목/본문. 업체 설정(emailSubject/emailBody)이 비어있을 때 사용된다. */
-export const DEFAULT_ORDER_MAIL_SUBJECT = '[발주서] {사업자} {업체} {차수} ({날짜})';
+export const DEFAULT_ORDER_MAIL_SUBJECT = '({날짜}) {사업자} {업체} 발주서';
 export const DEFAULT_ORDER_MAIL_BODY =
-  '안녕하세요, {사업자} 입니다.\n\n{날짜} {업체} {차수} 발주서를 첨부드립니다.\n총 {건수}건입니다.\n\n[정산 요약]\n{정산요약}\n\n확인 부탁드립니다. 감사합니다.';
+  '안녕하세요, {사업자} 입니다.\n\n{날짜} {업체} {차수} 발주서를 첨부드립니다.\n총 {건수}건입니다.\n\n=================\n[정산 요약]\n{정산요약}\n=================\n\n확인 부탁드립니다. 감사합니다.';
 
 export interface OrderMailVars {
   업체: string;
@@ -78,16 +78,23 @@ export function renderMailTemplate(template: string, vars: OrderMailVars): strin
 
 /**
  * {정산요약} 치환. 요약이 없으면 그 줄을 지우고, 바로 위에 있던 `[정산 요약]` 같은
- * 대괄호 머리글도 같이 지운다 (빈 제목만 덩그러니 남지 않도록). 이어서 생긴 빈 줄도 정리한다.
+ * 대괄호 머리글도 같이 지운다 (빈 제목만 덩그러니 남지 않도록). 머리글 위·요약 아래의
+ * `=====` 구분선도 함께 지우고, 이어서 생긴 빈 줄도 정리한다.
  */
 function applySettlementSummary(text: string, summary: string): string {
   if (!/\{정산요약\}/.test(text)) return text;
   if (summary) return text.replace(/\{정산요약\}/g, () => summary);
   const lines = text.split('\n');
+  const isRule = (l: string | undefined) => /^\s*[=\-]{3,}\s*$/.test(l || '');
   const kept: string[] = [];
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (line.includes('{정산요약}')) {
       if (/^\s*\[[^\]]*\]\s*$/.test(kept[kept.length - 1] || '')) kept.pop();
+      if (isRule(kept[kept.length - 1])) {
+        kept.pop();
+        if (isRule(lines[i + 1])) i++;
+      }
       continue;
     }
     kept.push(line);
