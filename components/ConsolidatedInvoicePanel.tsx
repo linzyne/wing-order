@@ -1,5 +1,7 @@
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
+import type { MailInvoiceWatcher } from '../hooks/useMailInvoiceWatcher';
+import { getInvoiceMailToken, setInvoiceMailToken } from '../services/invoiceMailService';
 
 export interface InvoiceResult {
   fileName: string;
@@ -43,6 +45,7 @@ interface Props {
   onCourierResultDownload?: (templateId: string) => void;
   onDirectCoupangUpload?: (businessId: string) => Promise<void>;
   onCourierDirectCoupangUpload?: (templateId: string, businessId: string) => Promise<void>;
+  mailWatcher?: MailInvoiceWatcher;
 }
 
 function detectBusiness(filename: string, businesses: Business[]): Business | null {
@@ -67,7 +70,92 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
   return null;
 }
 
-const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, onReset, couriers, hasFakeOrders, onCourierFilesAdd, onCourierFileRemove, onCourierResultDownload, onDirectCoupangUpload, onCourierDirectCoupangUpload }) => {
+/** 업체 송장 메일 자동 가져오기 — 품목/업체 탭에 저장된 업체 이메일에서 온 송장만 그 업체 줄로 */
+const MailWatchSection: React.FC<{ w: MailInvoiceWatcher }> = ({ w }) => {
+  const [hasToken, setHasToken] = useState(() => !!getInvoiceMailToken());
+  const [tokenInput, setTokenInput] = useState('');
+  const [showLog, setShowLog] = useState(false);
+
+  const saveToken = () => {
+    const t = tokenInput.trim();
+    if (!t) return;
+    setInvoiceMailToken(t);
+    setHasToken(true);
+    setTokenInput('');
+    w.setEnabled(true);
+    w.checkNow();
+  };
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${w.enabled && hasToken ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-600'}`} />
+          <span className="text-[11px] font-black text-zinc-300 whitespace-nowrap">메일 송장 자동 가져오기</span>
+          {w.enabled && hasToken && (
+            <span className="text-[10px] text-zinc-500 truncate">{w.checking ? '확인 중…' : w.lastChecked ? `${w.lastChecked} 확인` : '대기 중'}</span>
+          )}
+        </div>
+        {hasToken && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            {w.enabled && (
+              <button onClick={w.checkNow} disabled={w.checking} className="text-[10px] font-black text-zinc-400 hover:text-white border border-zinc-700 rounded-lg px-2 py-0.5 disabled:opacity-40">지금 확인</button>
+            )}
+            <button
+              onClick={() => w.setEnabled(!w.enabled)}
+              className={`text-[10px] font-black rounded-lg px-2 py-0.5 border ${w.enabled ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300' : 'border-zinc-700 text-zinc-400 hover:text-white'}`}
+            >
+              {w.enabled ? '켜짐' : '꺼짐'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {!hasToken && (
+        <div className="flex items-center gap-1.5">
+          <input
+            type="password"
+            value={tokenInput}
+            onChange={e => setTokenInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') saveToken(); }}
+            placeholder="메일 가져오기 비밀번호 (이 기기에 한 번만)"
+            className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-[11px] text-zinc-200 focus:outline-none focus:border-emerald-500/50"
+          />
+          <button onClick={saveToken} className="text-[10px] font-black bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 py-1">시작</button>
+        </div>
+      )}
+
+      {w.error && (
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[10px] text-rose-400 whitespace-pre-line">{w.error}</p>
+          {w.error.includes('비밀번호') && hasToken && (
+            <button onClick={() => { setInvoiceMailToken(''); setHasToken(false); }} className="text-[10px] font-black text-zinc-400 hover:text-white shrink-0">다시 입력</button>
+          )}
+        </div>
+      )}
+
+      {w.log.length > 0 && (
+        <>
+          <button onClick={() => setShowLog(v => !v)} className="self-start text-[10px] text-zinc-500 hover:text-zinc-300 font-black">
+            {showLog ? '▾' : '▸'} 가져온 내역 {w.log.length}건
+          </button>
+          {showLog && (
+            <div className="max-h-32 overflow-y-auto space-y-1">
+              {w.log.map(l => (
+                <div key={l.id} className="flex gap-1.5 text-[10px] leading-snug">
+                  <span className="text-zinc-600 font-mono shrink-0">{l.time}</span>
+                  <span className={l.status === 'success' ? 'text-emerald-400' : l.status === 'pending' ? 'text-amber-400' : 'text-zinc-500'}>{l.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, onReset, couriers, hasFakeOrders, onCourierFilesAdd, onCourierFileRemove, onCourierResultDownload, onDirectCoupangUpload, onCourierDirectCoupangUpload, mailWatcher }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; uploadCount: number }[] }[]>([]);
@@ -248,6 +336,8 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
           <button onClick={onClose} className="text-zinc-500 hover:text-white text-sm font-black">×</button>
         </div>
       </div>
+
+      {mailWatcher && <MailWatchSection w={mailWatcher} />}
 
       {/* 사업자별 상태 배지 */}
       <div className="flex flex-wrap gap-1.5">

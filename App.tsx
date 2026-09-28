@@ -7,6 +7,7 @@ import CoupangDownloader from './components/CoupangDownloader';
 import PricingEditor from './components/PricingEditor';
 import SharedMasterUpload, { type UploadResult } from './components/SharedMasterUpload';
 import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from './components/ConsolidatedInvoicePanel';
+import { useMailInvoiceWatcher, type EmailInvoiceStatus } from './hooks/useMailInvoiceWatcher';
 import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
 import OrdererSearchPanel from './components/OrdererSearchPanel';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
@@ -117,13 +118,13 @@ const App: React.FC = () => {
   const [refreshKeys, setRefreshKeys] = useState<Record<string, number>>({});
   const [editingBusiness, setEditingBusiness] = useState<ReturnType<typeof useBusinessList>['businesses'][0] | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged?: (companyName: string) => void; emailCompanyRound?: (companyName: string, round: number) => void; kakaoCompanyMerged?: (companyName: string) => void; kakaoCompanyRound?: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getTotalMargin?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }>>({});
+  const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged?: (companyName: string) => void; emailCompanyRound?: (companyName: string, round: number) => void; kakaoCompanyMerged?: (companyName: string) => void; kakaoCompanyRound?: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState?: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getTotalMargin?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }>>({});
   const directCoupangUploadRef = useRef<((businessId: string, file: File) => Promise<void>) | null>(null);
   const resetFnsRef = useRef<Record<string, () => void>>({});
   type DepositExtraRow = { bankName: string; accountNumber: string; amount: string; label: string };
   const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void; getDepositCompanies?: () => string[] }>>({});
 
-  const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; getInvoiceState?: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getTotalMargin?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }) => {
+  const handleRegisterMasterUpload = useCallback((businessId: string, handlers: { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState?: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getTotalMargin?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }) => {
     uploadFnsRef.current[businessId] = handlers;
   }, []);
 
@@ -579,6 +580,12 @@ const App: React.FC = () => {
   }, [processGlobalCourierFiles]);
 
   // 통합 송장 변환 패널 "초기화": 화면 목록뿐 아니라 실제 매칭 데이터(업체송장/가구매 택배)까지 전부 비움
+  // 업체 송장 메일 자동 가져오기 → 통합 송장 변환 목록에 바로 추가
+  const handleMailInvoicesAccepted = useCallback((items: InvoiceResult[]) => {
+    setInvoiceResults(prev => [...prev, ...items]);
+  }, []);
+  const mailWatcher = useMailInvoiceWatcher(uploadFnsRef.current, businessIdNamePairs, handleMailInvoicesAccepted);
+
   const handleResetInvoicePanel = useCallback(() => {
     setInvoiceResults([]);
     allBusinesses.forEach(b => uploadFnsRef.current[b.id]?.resetInvoiceMatching?.());
@@ -898,6 +905,7 @@ const App: React.FC = () => {
           >
             <TruckIcon className="w-3.5 h-3.5" />
             <span>통합송장변환</span>
+            {mailWatcher.enabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="메일 송장 자동 가져오기 켜짐" />}
           </button>
 
           <button
@@ -1025,6 +1033,7 @@ const App: React.FC = () => {
             results={invoiceResults}
             onResultsChange={setInvoiceResults}
             onReset={handleResetInvoicePanel}
+            mailWatcher={mailWatcher}
             couriers={courierItemsForPanel}
             hasFakeOrders={globalFakeOrderInput.trim().length > 0}
             onCourierFilesAdd={handleCourierFilesAddForPanel}
