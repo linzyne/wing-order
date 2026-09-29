@@ -888,24 +888,24 @@ const App: React.FC = () => {
 
         <div className="flex-1 min-w-[12px]" />
 
-        {/* 자주 쓰는 도구는 바깥에, 가끔 쓰는 건 "더보기"로. 글자만으로 헷갈리지 않게 전부 아이콘 + 라벨.
+        {/* 자주 쓰는 도구는 바깥에, 가끔 쓰는 건 "더보기"로. 글자만으로 헷갈리지 않게 전부 컬러 아이콘 + 짧은 라벨.
+            순서: | 긴급공지 가구매 | 주문서 송장 입금 | 검색 CS | 더보기 — 주문서·송장은 제일 많이 쓰므로 색을 채워 눈에 띄게.
             onMouseDown 차단: 버튼 누름이 document 핸들러(전체 닫기)까지 가면 토글로 닫히지 않는다. */}
         <div className="flex items-center gap-1 flex-shrink-0" onMouseDown={(e) => e.stopPropagation()}>
+          {/* 긴급공지: 내용이 있으면 발주서 생성 때마다 팝업으로 리마인드되므로 상태가 한눈에 보여야 한다 */}
           <button
-            onClick={() => togglePanel('upload')}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showUpload ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
+            onClick={() => togglePanel('notice')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${
+              showUrgentNotice
+                ? 'bg-zinc-700 text-white border-zinc-600'
+                : globalUrgentNotice.trim()
+                ? 'text-amber-400 border-amber-500/50 hover:border-amber-400 hover:bg-amber-900/30'
+                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
+            }`}
           >
-            <DocumentArrowUpIcon className="w-3.5 h-3.5" />
-            <span>주문서 업로드</span>
-          </button>
-
-          <button
-            onClick={() => togglePanel('invoice')}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showInvoice ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
-          >
-            <TruckIcon className="w-3.5 h-3.5" />
-            <span>통합송장변환</span>
-            {mailWatcher.enabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" title="메일 송장 자동 가져오기 켜짐" />}
+            <MegaphoneIcon className="w-3.5 h-3.5 text-amber-400" />
+            <span>긴급공지</span>
+            {globalUrgentNotice.trim() && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
           </button>
 
           <button
@@ -918,48 +918,56 @@ const App: React.FC = () => {
                 : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
             }`}
           >
-            <UserGroupIcon className="w-3.5 h-3.5" />
-            <span>가구매 명단{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}</span>
+            <UserGroupIcon className="w-3.5 h-3.5 text-violet-400" />
+            <span>가구매{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}</span>
+          </button>
+
+          <div className="w-px h-5 bg-zinc-800 mx-0.5" />
+
+          <button
+            onClick={() => togglePanel('upload')}
+            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-white ${showUpload ? 'bg-sky-500 border-sky-300 ring-2 ring-sky-400/40' : 'bg-sky-600 border-sky-500 hover:bg-sky-500 shadow-sm shadow-sky-900/50'}`}
+          >
+            <DocumentArrowUpIcon className="w-3.5 h-3.5 text-sky-100" />
+            <span>주문서</span>
           </button>
 
           <button
-            onClick={() => togglePanel('cs')}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showCs ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
+            onClick={() => togglePanel('invoice')}
+            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-white ${showInvoice ? 'bg-orange-500 border-orange-300 ring-2 ring-orange-400/40' : 'bg-orange-600 border-orange-500 hover:bg-orange-500 shadow-sm shadow-orange-900/50'}`}
           >
-            <PhoneIcon className="w-3.5 h-3.5" />
-            <span>통합CS현황</span>
+            <TruckIcon className="w-3.5 h-3.5 text-orange-100" />
+            <span>송장</span>
+            {mailWatcher.enabled && <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" title="메일 송장 자동 가져오기 켜짐" />}
           </button>
 
           <button
             onClick={() => { closeAllPanels(); openBulkDepositModal(); }}
             className="px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-emerald-400 border-emerald-500/50 hover:bg-emerald-900/30 hover:border-emerald-400"
+            title="일괄 입금목록"
           >
-            <BanknotesIcon className="w-3.5 h-3.5" />
-            <span>일괄 입금목록</span>
+            <BanknotesIcon className="w-3.5 h-3.5 text-emerald-400" />
+            <span>입금</span>
+          </button>
+
+          <div className="w-px h-5 bg-zinc-800 mx-0.5" />
+
+          <button
+            onClick={() => togglePanel('orderer')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showOrdererSearch ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
+            title="주문자 검색"
+          >
+            <MagnifyingGlassIcon className="w-3.5 h-3.5 text-cyan-400" />
+            <span>검색</span>
           </button>
 
           <button
-            onClick={() => { closeAllPanels(); handleBulkWorkLog(); }}
-            className="px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-violet-400 border-violet-500/50 hover:bg-violet-900/30 hover:border-violet-400"
+            onClick={() => togglePanel('cs')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showCs ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
+            title="통합 CS 현황"
           >
-            <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
-            <span>일괄 업무일지</span>
-          </button>
-
-          {/* 긴급공지: 내용이 있으면 발주서 생성 때마다 팝업으로 리마인드되므로 상태가 한눈에 보여야 한다 */}
-          <button
-            onClick={() => togglePanel('notice')}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${
-              showUrgentNotice
-                ? 'bg-zinc-700 text-white border-zinc-600'
-                : globalUrgentNotice.trim()
-                ? 'text-amber-400 border-amber-500/50 hover:border-amber-400 hover:bg-amber-900/30'
-                : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'
-            }`}
-          >
-            <MegaphoneIcon className="w-3.5 h-3.5" />
-            <span>긴급공지</span>
-            {globalUrgentNotice.trim() && <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+            <PhoneIcon className="w-3.5 h-3.5 text-rose-400" />
+            <span>CS</span>
           </button>
 
           <div className="w-px h-5 bg-zinc-800 mx-0.5" />
@@ -969,32 +977,32 @@ const App: React.FC = () => {
             <button
               onClick={() => { const next = !showMoreMenu; closeAllPanels(); setShowMoreMenu(next); }}
               className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showMoreMenu ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
-              title="주문자 검색 · 수량 집계 · 쿠팡 주문 · 업체 라이브러리"
+              title="수량 집계 · 쿠팡 주문 · 일괄 업무일지 · 업체 라이브러리"
             >
-              <EllipsisHorizontalIcon className="w-4 h-4" />
+              <EllipsisHorizontalIcon className="w-4 h-4 text-zinc-300" />
               <span>더보기</span>
             </button>
             {showMoreMenu && (
               <div className="absolute right-0 top-full mt-2 z-50 w-[190px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl p-1.5">
                 <p className="px-2.5 pt-1 pb-1 text-[8px] font-black uppercase tracking-widest text-zinc-600">조회</p>
-                <button onClick={() => togglePanel('orderer')} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
-                  <MagnifyingGlassIcon className="w-3.5 h-3.5" />
-                  <span>주문자 검색</span>
-                </button>
                 <button onClick={() => togglePanel('regCounter')} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
-                  <CalculatorIcon className="w-3.5 h-3.5" />
+                  <CalculatorIcon className="w-3.5 h-3.5 text-indigo-400" />
                   <span>수량 집계</span>
                 </button>
 
                 <p className="px-2.5 pt-2 pb-1 text-[8px] font-black uppercase tracking-widest text-zinc-600">작업</p>
                 <button onClick={() => togglePanel('coupang')} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
-                  <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                  <ArrowDownTrayIcon className="w-3.5 h-3.5 text-red-400" />
                   <span>쿠팡 주문</span>
+                </button>
+                <button onClick={() => { closeAllPanels(); handleBulkWorkLog(); }} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
+                  <ClipboardDocumentListIcon className="w-3.5 h-3.5 text-fuchsia-400" />
+                  <span>일괄 업무일지</span>
                 </button>
 
                 <p className="px-2.5 pt-2 pb-1 text-[8px] font-black uppercase tracking-widest text-zinc-600">설정</p>
                 <button onClick={() => togglePanel('library')} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[11px] font-black text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors">
-                  <BuildingStorefrontIcon className="w-3.5 h-3.5" />
+                  <BuildingStorefrontIcon className="w-3.5 h-3.5 text-teal-400" />
                   <span>업체 라이브러리</span>
                 </button>
               </div>
