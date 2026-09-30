@@ -90,6 +90,18 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
 // 계산 로직(matchedCount)은 그대로 두었으니, 원인 파악 후 이 값만 true로 되돌리면 다시 켜진다.
 const SHOW_MATCH_BADGE = false;
 
+// 발주서 칩 안의 전송 아이콘 — 이모지 대신 단색 아이콘으로 칩 색을 따라가게
+const MAIL_ICON = (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
+  </svg>
+);
+const KAKAO_ICON = (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 3.5c-5 0-9 3.1-9 7 0 2.5 1.7 4.7 4.2 5.9l-.9 3.4c-.1.3.3.6.6.4l4-2.7c.4 0 .7.1 1.1.1 5 0 9-3.1 9-7s-4-7.1-9-7.1Z" />
+  </svg>
+);
+
 const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, warningCompanyIds, urgentNotice, companyMemos = {}, onCompanyMemoChange, onCompanyMemoDelete }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -362,11 +374,11 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   };
 
   const roundColors = (round: number) => {
-    if (round === 1) return { text: 'text-violet-400', bg: 'bg-violet-900/40 text-violet-300 border-violet-700/40 hover:bg-violet-800/60 hover:text-violet-100' };
-    if (round === 2) return { text: 'text-sky-400', bg: 'bg-sky-900/40 text-sky-300 border-sky-700/40 hover:bg-sky-800/60 hover:text-sky-100' };
-    if (round === 3) return { text: 'text-emerald-400', bg: 'bg-emerald-900/40 text-emerald-300 border-emerald-700/40 hover:bg-emerald-800/60 hover:text-emerald-100' };
-    if (round === 4) return { text: 'text-amber-400', bg: 'bg-amber-900/40 text-amber-300 border-amber-700/40 hover:bg-amber-800/60 hover:text-amber-100' };
-    return { text: 'text-rose-400', bg: 'bg-rose-900/40 text-rose-300 border-rose-700/40 hover:bg-rose-800/60 hover:text-rose-100' };
+    if (round === 1) return { text: 'text-violet-400', chip: 'bg-violet-900/50 text-violet-200 border-violet-700/60' };
+    if (round === 2) return { text: 'text-sky-400', chip: 'bg-sky-900/50 text-sky-200 border-sky-700/60' };
+    if (round === 3) return { text: 'text-emerald-400', chip: 'bg-emerald-900/50 text-emerald-200 border-emerald-700/60' };
+    if (round === 4) return { text: 'text-amber-400', chip: 'bg-amber-900/50 text-amber-200 border-amber-700/60' };
+    return { text: 'text-rose-400', chip: 'bg-rose-900/50 text-rose-200 border-rose-700/60' };
   };
 
   const roundLabel = (round: number) =>
@@ -652,104 +664,97 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                         const totalUnmatched = Math.max(0, totalCount - totalMatched);
                         const hasWarning = warningCompanyIds?.has(`${biz.businessId}_${companyName}`) ?? false;
                         return (
-                          <div key={biz.businessId} className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-[11px] text-zinc-400 w-16 shrink-0 truncate font-bold" title={biz.displayName ?? ''}>{biz.displayName}</span>
+                          <div key={biz.businessId} className="flex items-start gap-1.5">
+                            <span className="text-[11px] text-zinc-400 w-16 shrink-0 truncate font-bold pt-1" title={biz.displayName ?? ''}>{biz.displayName}</span>
                             {hasWarning && (
-                              <span title="워크스테이션에 경고가 있습니다" className="text-amber-400 text-xs leading-none shrink-0">⚠</span>
+                              <span title="워크스테이션에 경고가 있습니다" className="text-amber-400 text-xs leading-none shrink-0 pt-1.5">⚠</span>
                             )}
-                            <div className="flex flex-col items-center gap-0.5">
-                              <button
-                                onClick={() => { uploadFns[biz.businessId]?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(`${biz.businessId}_${companyName}_merged`); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); }}
-                                className={`px-2.5 py-0.5 text-[11px] font-black rounded-lg transition-colors border ${downloadedButtons.has(`${biz.businessId}_${companyName}_merged`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-teal-700 text-white hover:bg-teal-600 border-teal-600'}`}
-                              >
-                                합산{totalCount > 0 ? ` ${totalCount}` : ''}
-                              </button>
-                              {SHOW_MATCH_BADGE && hasMatchData && totalCount > 0 && (
-                                <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${totalUnmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                                  {totalUnmatched > 0 ? `미변환 ${totalUnmatched}` : '매칭완료'}
-                                </span>
-                              )}
-                            </div>
-                            {uploadFns[biz.businessId]?.emailCompanyMerged && totalCount > 0 && (() => {
-                              const mkey = `${biz.businessId}_${companyName}_merged`;
-                              const sending = emailingButtons.has(mkey);
-                              return (
-                                <button
-                                  onClick={() => sendOrderMail(mkey, () => uploadFns[biz.businessId]?.emailCompanyMerged?.(companyName))}
-                                  disabled={sending}
-                                  title="합산 발주서 메일 전송"
-                                  className={`px-1.5 py-0.5 text-[11px] rounded-lg border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(mkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-teal-400 border-teal-700 hover:bg-teal-700/20'}`}
-                                >
-                                  {sending ? '…' : '✉'}
-                                </button>
-                              );
-                            })()}
-                            {uploadFns[biz.businessId]?.kakaoCompanyMerged && totalCount > 0 && (() => {
-                              const kkey = `${biz.businessId}_${companyName}_merged_kakao`;
-                              const sending = emailingButtons.has(kkey);
-                              return (
-                                <button
-                                  onClick={() => sendOrderMail(kkey, () => uploadFns[biz.businessId]?.kakaoCompanyMerged?.(companyName))}
-                                  disabled={sending}
-                                  title="합산 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)"
-                                  className={`px-1.5 py-0.5 text-[11px] rounded-lg border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(kkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-yellow-400 border-yellow-700 hover:bg-yellow-700/20'}`}
-                                >
-                                  {sending ? '…' : '💬'}
-                                </button>
-                              );
-                            })()}
-                            {company.rounds.filter(r => r.hasData).map(r => {
-                              const matched = r.matchedCount ?? 0;
-                              const unmatched = Math.max(0, (r.count ?? 0) - matched);
-                              return (
-                                <div key={r.round} className="flex items-center gap-0.5">
-                                  <div className="flex flex-col items-center gap-0.5">
+                            {/* 다운로드 + 메일/카톡 전송을 한 덩어리(칩)로 묶어 차수별로 한눈에 구분되게 */}
+                            {(() => {
+                              const fns = uploadFns[biz.businessId];
+                              const renderSend = (key: string, kind: 'mail' | 'kakao', title: string, run: () => Promise<void> | void) => {
+                                const sending = emailingButtons.has(key);
+                                const sent = emailedButtons.has(key);
+                                return (
+                                  <button
+                                    key={key}
+                                    onClick={() => sendOrderMail(key, run)}
+                                    disabled={sending}
+                                    title={title}
+                                    className={`flex items-center justify-center w-6 border-l border-white/10 transition-colors ${sending ? 'opacity-40' : sent ? 'opacity-25 hover:opacity-60' : 'opacity-60 hover:opacity-100 hover:bg-white/10'}`}
+                                  >
+                                    {sending ? <span className="text-[10px] leading-none">…</span> : kind === 'mail' ? MAIL_ICON : KAKAO_ICON}
+                                  </button>
+                                );
+                              };
+                              const renderChip = (opts: {
+                                key: string; downloaded: boolean; color: string; label: string; sub?: string;
+                                onDownload: () => void; sends: React.ReactNode[]; badge?: React.ReactNode;
+                              }) => (
+                                <div key={opts.key} className="flex flex-col items-center gap-0.5">
+                                  <div className={`inline-flex items-stretch rounded-lg border overflow-hidden transition-colors ${opts.downloaded ? 'bg-zinc-800/40 text-zinc-600 border-zinc-800' : opts.color}`}>
                                     <button
-                                      onClick={() => { uploadFns[biz.businessId]?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(`${biz.businessId}_${companyName}_${r.round}`)); }}
-                                      className={`px-2.5 py-0.5 leading-tight text-[11px] font-black rounded-lg transition-colors border flex flex-col items-center ${downloadedButtons.has(`${biz.businessId}_${companyName}_${r.round}`) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : roundColors(r.round).bg}`}
+                                      onClick={opts.onDownload}
+                                      title="발주서 다운로드"
+                                      className="flex items-baseline gap-1 px-2.5 py-1 text-[11px] font-black leading-none whitespace-nowrap hover:bg-white/10 transition-colors"
                                     >
-                                      <span>{r.round}차{r.count > 0 ? ` ${r.count}` : ''}</span>
-                                      {r.timeLabel && (
-                                        <span className="text-[9px] font-normal opacity-70">{r.timeLabel}</span>
-                                      )}
+                                      <span>{opts.label}</span>
+                                      {opts.sub && <span className="text-[9px] font-bold opacity-60">{opts.sub}</span>}
                                     </button>
-                                    {SHOW_MATCH_BADGE && r.matchedCount !== undefined && r.count > 0 && (
+                                    {opts.sends}
+                                  </div>
+                                  {opts.badge}
+                                </div>
+                              );
+                              const mergedKey = `${biz.businessId}_${companyName}_merged`;
+                              const rounds = company.rounds.filter(r => r.hasData);
+                              // 합산은 윗줄, 차수(1차·2차·3차…)는 아랫줄
+                              return (
+                                <div className="flex flex-col items-start gap-1">
+                                {renderChip({
+                                  key: 'merged',
+                                  downloaded: downloadedButtons.has(mergedKey),
+                                  color: 'bg-teal-800/60 text-teal-100 border-teal-600/70',
+                                  label: `합산${totalCount > 0 ? ` ${totalCount}` : ''}`,
+                                  onDownload: () => { fns?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(mergedKey); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); },
+                                  sends: totalCount > 0 ? [
+                                    fns?.emailCompanyMerged && renderSend(mergedKey, 'mail', '합산 발주서 메일 전송', () => fns?.emailCompanyMerged?.(companyName)),
+                                    fns?.kakaoCompanyMerged && renderSend(`${mergedKey}_kakao`, 'kakao', '합산 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)', () => fns?.kakaoCompanyMerged?.(companyName)),
+                                  ] : [],
+                                  badge: SHOW_MATCH_BADGE && hasMatchData && totalCount > 0 && (
+                                    <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${totalUnmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
+                                      {totalUnmatched > 0 ? `미변환 ${totalUnmatched}` : '매칭완료'}
+                                    </span>
+                                  ),
+                                })}
+                                {rounds.length > 0 && (
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                {rounds.map(r => {
+                                  const unmatched = Math.max(0, (r.count ?? 0) - (r.matchedCount ?? 0));
+                                  const roundKey = `${biz.businessId}_${companyName}_${r.round}`;
+                                  return renderChip({
+                                    key: `r${r.round}`,
+                                    downloaded: downloadedButtons.has(roundKey),
+                                    color: roundColors(r.round).chip,
+                                    label: `${r.round}차${r.count > 0 ? ` ${r.count}` : ''}`,
+                                    sub: r.timeLabel,
+                                    onDownload: () => { fns?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(roundKey)); },
+                                    sends: [
+                                      fns?.emailCompanyRound && renderSend(`${roundKey}_mail`, 'mail', `${r.round}차 발주서 메일 전송`, () => fns?.emailCompanyRound?.(companyName, r.round)),
+                                      fns?.kakaoCompanyRound && renderSend(`${roundKey}_kakao`, 'kakao', `${r.round}차 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)`, () => fns?.kakaoCompanyRound?.(companyName, r.round)),
+                                    ],
+                                    badge: SHOW_MATCH_BADGE && r.matchedCount !== undefined && r.count > 0 && (
                                       <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${unmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
                                         {unmatched > 0 ? `미변환 ${unmatched}` : '매칭완료'}
                                       </span>
-                                    )}
-                                  </div>
-                                  {uploadFns[biz.businessId]?.emailCompanyRound && (() => {
-                                    const rkey = `${biz.businessId}_${companyName}_${r.round}_mail`;
-                                    const sending = emailingButtons.has(rkey);
-                                    return (
-                                      <button
-                                        onClick={() => sendOrderMail(rkey, () => uploadFns[biz.businessId]?.emailCompanyRound?.(companyName, r.round))}
-                                        disabled={sending}
-                                        title={`${r.round}차 발주서 메일 전송`}
-                                        className={`shrink-0 px-1.5 py-0.5 text-[10px] leading-none rounded-md border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(rkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-teal-400/80 border-teal-700/70 hover:bg-teal-700/20'}`}
-                                      >
-                                        {sending ? '…' : '✉'}
-                                      </button>
-                                    );
-                                  })()}
-                                  {uploadFns[biz.businessId]?.kakaoCompanyRound && (() => {
-                                    const kkey = `${biz.businessId}_${companyName}_${r.round}_kakao`;
-                                    const sending = emailingButtons.has(kkey);
-                                    return (
-                                      <button
-                                        onClick={() => sendOrderMail(kkey, () => uploadFns[biz.businessId]?.kakaoCompanyRound?.(companyName, r.round))}
-                                        disabled={sending}
-                                        title={`${r.round}차 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)`}
-                                        className={`shrink-0 px-1.5 py-0.5 text-[10px] leading-none rounded-md border transition-colors ${sending ? 'bg-zinc-800 text-zinc-500 border-transparent' : emailedButtons.has(kkey) ? 'bg-zinc-800/50 text-zinc-600 border-transparent' : 'bg-transparent text-yellow-400/80 border-yellow-700/70 hover:bg-yellow-700/20'}`}
-                                      >
-                                        {sending ? '…' : '💬'}
-                                      </button>
-                                    );
-                                  })()}
+                                    ),
+                                  });
+                                })}
+                                </div>
+                                )}
                                 </div>
                               );
-                            })}
+                            })()}
                           </div>
                         );
                       })}
