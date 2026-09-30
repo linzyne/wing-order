@@ -15,6 +15,7 @@ import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyO
 import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
 import { sendOrderEmail, renderMailTemplate, DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY } from '../services/emailService';
 import { splitEmails } from '../services/invoiceMailService';
+import { queueWorkbookDownload } from '../services/downloadQueue';
 import type { EmailInvoiceStatus } from '../hooks/useMailInvoiceWatcher';
 import {
     DndContext,
@@ -4391,7 +4392,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const sheetRows = [...chunk];
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetRows), "입금내역");
             const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
+            queueWorkbookDownload(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
         });
 
         setShowDepositModal(false);
@@ -4431,7 +4432,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunk), "입금내역");
             const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
+            queueWorkbookDownload(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
         });
     };
 
@@ -4465,7 +4466,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunk), "입금내역");
             const suffix = chunks.length > 1 ? ` ${idx + 1}` : '';
-            XLSX.writeFile(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
+            queueWorkbookDownload(wb, `${dateStr} [입금] ${businessPrefix}${suffix}.xlsx`);
         });
     };
 
@@ -4643,7 +4644,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(returnSheetData), "품목별비용");
         }
 
-        XLSX.writeFile(wb, `${workDate} [업무일지] ${businessPrefix}.xlsx`);
+        queueWorkbookDownload(wb, `${workDate} [업무일지] ${businessPrefix}.xlsx`);
     };
 
     const depositListFnRef = useRef<() => void>(() => {});
