@@ -60,7 +60,27 @@ export const useBusinessList = () => {
   const dynamicBusinessesRef = useRef<DynamicBusinessEntry[]>([]);
 
   useEffect(() => {
-    loadDynamicBusinesses().then(async (businesses) => {
+    let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const applyEntries = (allEntries: DynamicBusinessEntry[]) => {
+      registeredIdsRef.current.forEach(id => unregisterDynamicBusiness(id));
+      allEntries.forEach((b: DynamicBusinessEntry) => registerDynamicBusiness(b.id, {
+        displayName: b.displayName,
+        shortName: b.shortName,
+        senderName: b.senderName,
+        phone: b.phone,
+        address: b.address,
+        themeColor: b.themeColor,
+        buttonColor: b.buttonColor,
+      }));
+      registeredIdsRef.current = allEntries.map(b => b.id);
+      dynamicBusinessesRef.current = allEntries;
+      setDynamicBusinesses(allEntries);
+    };
+
+    const load = (attempt: number) => loadDynamicBusinesses().then(async (businesses) => {
+      if (cancelled) return;
       // 사업자가 1개 미만이면 Firestore 로드 실패로 간주 → 시딩 금지
       // (정상적으로는 최소 '안군농원', '조에' 2개 이상 존재)
       if (businesses.length === 0) {
@@ -97,25 +117,29 @@ export const useBusinessList = () => {
       const allEntries = [...toSeed, ...businesses];
       if (toSeed.length > 0) await saveDynamicBusinesses(allEntries);
       saveBusinessesBackup(allEntries);
-
-      registeredIdsRef.current.forEach(id => unregisterDynamicBusiness(id));
-      allEntries.forEach((b: DynamicBusinessEntry) => registerDynamicBusiness(b.id, {
-        displayName: b.displayName,
-        shortName: b.shortName,
-        senderName: b.senderName,
-        phone: b.phone,
-        address: b.address,
-        themeColor: b.themeColor,
-        buttonColor: b.buttonColor,
-      }));
-      registeredIdsRef.current = allEntries.map(b => b.id);
-      dynamicBusinessesRef.current = allEntries;
-      setDynamicBusinesses(allEntries);
+      if (cancelled) return;
+      applyEntries(allEntries);
       setIsLoading(false);
     }).catch(() => {
+      if (cancelled) return;
+      // 로드 실패/타임아웃(사파리 첫 연결 지연, 할당량 초과 등) → 기본 2개만 뜨고 한나푸드 등이 사라지던 문제.
+      // 로컬 백업이 있으면 먼저 보여주고(저장은 안 함), 성공할 때까지 간격을 늘려가며 재시도
+      if (attempt === 0) {
+        const backup = loadBusinessesBackup();
+        if (backup && backup.length > 0) {
+          console.warn('[BusinessList] Firestore 로드 실패 → 로컬 백업으로 표시 후 재시도');
+          applyEntries(backup);
+        }
+      }
       setIsLoading(false);
+      const delay = Math.min(60000, 3000 * 2 ** attempt);
+      retryTimer = setTimeout(() => load(attempt + 1), delay);
     });
+
+    load(0);
     return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
       registeredIdsRef.current.forEach(id => unregisterDynamicBusiness(id));
       registeredIdsRef.current = [];
     };
