@@ -1841,9 +1841,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             // 완전히 빈 행 건너뛰기 (데이터 행으로 카운트하지 않음)
             const hasAnyData = row.some((cell: any) => cell !== undefined && cell !== null && String(cell).trim() !== '');
             if (!hasAnyData) continue;
-            masterFileRowCount++;
             const orderNum = String(row[2] || '').trim();
             const rawGroupName = String(row[10] || '').trim();
+            // 주문번호·등록상품명·상품명·수취인이 모두 비어있는 행은 주문이 아님
+            // (사용자가 맨 아래에 넣은 =SUM(W2:W200) 합계 행 등) → 합계값이 수량으로 잡혀 '등록상품명 없음 N건 누락' 오탐
+            if (!orderNum && !rawGroupName && !String(row[11] || '').trim() && !String(row[26] || '').trim()) continue;
+            masterFileRowCount++;
             const rawQtyVal = row[qtyColIdx];
             const qty = parseInt(String(rawQtyVal != null ? rawQtyVal : '1'), 10) || 1;
             const recipientName = String(row[26] || '').trim();
