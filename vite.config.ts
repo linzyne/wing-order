@@ -265,8 +265,67 @@ function wingAutomationPlugin(): Plugin {
   };
 }
 
+// ── api/*.js (Vercel 서버리스 함수)를 로컬 dev/preview 서버에서도 실행 ──
+// 이게 없으면 localhost 에서 '메일로 보내기' 등이 404 가 난다.
+// Vercel 의 req.body / req.query / res.status().json() 만 흉내 낸다.
+function registerApiFunctionMiddleware(middlewares: any) {
+  middlewares.use('/api', async (req: any, res: any, next: any) => {
+    const url = new URL(req.url || '/', 'http://localhost');
+    const name = url.pathname.replace(/^\/+|\/+$/g, '');
+    if (!/^[\w-]+$/.test(name)) return next();
+    const file = path.resolve(__dirname, 'api', `${name}.js`);
+    try { await fsp.access(file); } catch { return next(); }
+
+    try {
+      const chunks: Buffer[] = [];
+      for await (const c of req) chunks.push(c as Buffer);
+      const raw = Buffer.concat(chunks).toString('utf8');
+      let body: any = raw;
+      if (raw && String(req.headers['content-type'] || '').includes('application/json')) {
+        try { body = JSON.parse(raw); } catch { /* 핸들러가 문자열로 받아 처리 */ }
+      }
+      req.body = body;
+      req.query = Object.fromEntries(url.searchParams);
+      res.status = (code: number) => { res.statusCode = code; return res; };
+      res.json = (obj: any) => {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify(obj));
+        return res;
+      };
+      res.send = (data: any) => {
+        if (data !== null && typeof data === 'object' && !Buffer.isBuffer(data)) return res.json(data);
+        res.end(data);
+        return res;
+      };
+
+      const { pathToFileURL } = await import('url');
+      const mod = await import(pathToFileURL(file).href);
+      await mod.default(req, res);
+    } catch (e: any) {
+      console.error(`[api/${name}]`, e);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'local_api_error', detail: e?.message ?? String(e) }));
+      }
+    }
+  });
+}
+
+function localApiPlugin(): Plugin {
+  return {
+    name: 'local-api-functions',
+    configureServer(server) { registerApiFunctionMiddleware(server.middlewares); },
+    configurePreviewServer(server) { registerApiFunctionMiddleware(server.middlewares); },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
+  // api/*.js 핸들러는 process.env 를 읽으므로 .env / .env.local 값을 넣어 준다 (GMAIL_USER 등).
+  for (const [k, v] of Object.entries(env)) {
+    if (process.env[k] === undefined) process.env[k] = v;
+  }
   return {
     server: {
       port: 3000,
@@ -293,7 +352,7 @@ export default defineConfig(({ mode }) => {
         },
       },
     },
-    plugins: [react(), wingAutomationPlugin()],
+    plugins: [react(), wingAutomationPlugin(), localApiPlugin()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
