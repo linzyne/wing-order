@@ -103,6 +103,7 @@ export interface CompanyConfig {
   emailBody?: string;    // 발주서 메일 본문 (비우면 기본 문구). {업체}{날짜}{차수}{건수}{사업자} 치환
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
   deposits?: CompanyDeposit[]; // 예수금(예치금) 입금 내역 — 정산 총합계가 여기서 차감됨
+  depositDisabled?: boolean; // 예치금 사용 안 함 — 정산요약 '남은 예치금'·원장 차감·입금목록 경고 모두 끔 (과거 기록은 보존)
   bankName?: string;
   accountNumber?: string;
   orderFormHeaders?: string[]; // 발주서 헤더

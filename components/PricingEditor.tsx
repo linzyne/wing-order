@@ -959,6 +959,12 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
         handleUpdate(newConfig);
     };
 
+    const handleUpdateDepositDisabled = (companyName: string, disabled: boolean) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        newConfig[companyName].depositDisabled = disabled || undefined;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateShippingSettlementSplit = (companyName: string, enabled: boolean) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].shippingSettlementSplit = enabled || undefined;
@@ -1300,6 +1306,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
                             deposits={companyDepositsMap[companyName] ?? (companyConfig as CompanyConfig)?.deposits ?? []}
                             showDeposits={!isLibraryMode}
                             onUpdateDeposits={(deposits) => handleUpdateDeposits(companyName, deposits)}
+                            onUpdateDepositDisabled={(disabled) => handleUpdateDepositDisabled(companyName, disabled)}
                             onUpdateOrderFormHeaders={(headers, fieldMap) => handleUpdateOrderFormHeaders(companyName, headers, fieldMap)}
                             onUpdateOrderFormFieldMap={(fieldMap) => handleUpdateOrderFormFieldMap(companyName, fieldMap)}
                             onUpdateOrderFormFixedValue={(idx, value) => handleUpdateOrderFormFixedValue(companyName, idx, value)}
@@ -1357,7 +1364,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
 };
 
 // 업체 예수금(예치금) 입금 내역 편집 — 여기 입력한 날짜부터 정산 총합계가 잔액에서 차감된다
-const DepositSection: React.FC<{ deposits: CompanyDeposit[]; onChange: (d: CompanyDeposit[]) => void }> = ({ deposits, onChange }) => {
+const DepositSection: React.FC<{ deposits: CompanyDeposit[]; onChange: (d: CompanyDeposit[]) => void; disabled: boolean; onToggleDisabled: (disabled: boolean) => void }> = ({ deposits, onChange, disabled, onToggleDisabled }) => {
     const [open, setOpen] = useState(false);
     const [draft, setDraft] = useState<{ date: string; amount: string; memo: string }>({
         date: new Date().toLocaleDateString('en-CA'), amount: '', memo: '',
@@ -1381,10 +1388,14 @@ const DepositSection: React.FC<{ deposits: CompanyDeposit[]; onChange: (d: Compa
                 <div className="flex items-center gap-3">
                     <span className="text-lg">💰</span>
                     <span className="text-[12px] font-black text-zinc-400 uppercase tracking-wide">예수금 (예치금)</span>
-                    <span className="text-[10px] text-zinc-600">입금일부터 정산 총합계가 잔액에서 차감</span>
+                    <span className="text-[10px] text-zinc-600">{disabled ? '사용 안 함 — 정산요약에 표시·차감하지 않음' : '입금일부터 정산 총합계가 잔액에서 차감'}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                    {deposits.length > 0 && <span className="text-[11px] font-black text-emerald-400 tabular-nums">총 {total.toLocaleString()}원 · {deposits.length}건</span>}
+                    <label className="flex items-center gap-1.5 text-[11px] font-black text-zinc-400 cursor-pointer select-none" onClick={e => e.stopPropagation()}>
+                        <input type="checkbox" checked={disabled} onChange={e => onToggleDisabled(e.target.checked)} className="accent-rose-500" />
+                        사용 안 함
+                    </label>
+                    {!disabled && deposits.length > 0 && <span className="text-[11px] font-black text-emerald-400 tabular-nums">총 {total.toLocaleString()}원 · {deposits.length}건</span>}
                     <ChevronDownIcon className={`w-4 h-4 text-zinc-600 transition-transform ${open ? 'rotate-180' : ''}`} />
                 </div>
             </div>
@@ -1445,6 +1456,7 @@ const CompanyCard: React.FC<{
     deposits: CompanyDeposit[];
     showDeposits: boolean;
     onUpdateDeposits: (deposits: CompanyDeposit[]) => void;
+    onUpdateDepositDisabled: (disabled: boolean) => void;
     onUpdateOrderFormHeaders: (headers: string[], fieldMap?: string[]) => void;
     onUpdateOrderFormFieldMap: (fieldMap: string[]) => void;
     onUpdateOrderFormFixedValue: (idx: number, value: string) => void;
@@ -1600,7 +1612,7 @@ const CompanyCard: React.FC<{
                             className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                         />
                     </div>
-                    {props.showDeposits && <DepositSection deposits={props.deposits} onChange={props.onUpdateDeposits} />}
+                    {props.showDeposits && <DepositSection deposits={props.deposits} onChange={props.onUpdateDeposits} disabled={!!companyConfig.depositDisabled} onToggleDisabled={props.onUpdateDepositDisabled} />}
                     <div className="bg-zinc-950 rounded-xl border border-zinc-800 shadow-inner overflow-hidden">
                         <div className="flex items-center gap-3 px-5 py-3 cursor-pointer hover:bg-zinc-900/40 transition-all" onClick={() => setOrderFormOpen(o => !o)}>
                             <span className="text-lg">📋</span>

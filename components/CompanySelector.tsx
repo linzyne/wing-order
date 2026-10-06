@@ -1146,6 +1146,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const depositInfoByCompany = useMemo(() => {
         const out: Record<string, ReturnType<typeof buildDepositInfo>> = {};
         Object.keys(pricingConfig).forEach(company => {
+            if (pricingConfig[company]?.depositDisabled) return; // 예치금 사용 안 함
             const list = companyDeposits[company] ?? pricingConfig[company]?.deposits;
             const info = buildDepositInfo(list, depositLedger, company, depositRecordDate);
             if (info) out[company] = info;
@@ -4996,6 +4997,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             // 예수금(예치금) 원장 갱신: 이 저장에 포함된 업체별로 그날 남은 잔액 스냅샷을 남긴다
             // 잔액 = (직전 스냅샷 + 그 이후 입금분) − 오늘 정산 총합계
             await Promise.all([...selectedCompanyNames].map(async (name) => {
+                if (pricingConfig[name]?.depositDisabled) return; // 예치금 사용 안 함 → 원장 차감 안 함
                 const depList = companyDeposits[name] ?? pricingConfig[name]?.deposits;
                 if (!hasDepositLedger(depList, depositLedger[name])) return;
                 const todayTotal = mergedRecords.filter(r => r.company === name).reduce((s, r) => s + r.totalPrice, 0);
