@@ -2257,6 +2257,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       .map(day => ({
         date: day.date,
         records: day.records.filter(r => r.company === activeCompany),
+        summaryText: day.companySettlementTexts?.[activeCompany] || '',
       }))
       .filter(d => d.records.length > 0);
 
@@ -2397,6 +2398,28 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
             </tbody>
           </table>
         </div>
+
+        {/* 기록 시점의 정산요약 원문 (카톡 복사용 텍스트) */}
+        {daysForCompany.some(d => d.summaryText) && (
+          <div className="space-y-1.5">
+            <div className="text-[11px] font-bold text-zinc-500 px-1">기록된 정산요약</div>
+            {[...daysForCompany].reverse().filter(d => d.summaryText).map(({ date, summaryText }) => (
+              <details key={date} className="rounded-xl border border-zinc-800 bg-zinc-900/60 group">
+                <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none text-xs font-bold text-zinc-300 hover:text-white">
+                  <span>{formatDate(date)}</span>
+                  <span className="text-zinc-600 font-normal truncate">{(summaryText.split('\n').find(l => /총\s*합계/.test(l)) || '').replace(/\s+/g, ' ').trim()}</span>
+                  <button
+                    onClick={e => { e.preventDefault(); navigator.clipboard.writeText(summaryText); }}
+                    className="ml-auto px-2 py-0.5 text-[11px] font-bold rounded-md bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 transition-all"
+                  >
+                    복사
+                  </button>
+                </summary>
+                <pre className="px-3 pb-3 text-xs text-zinc-300 whitespace-pre-wrap font-sans leading-relaxed">{summaryText}</pre>
+              </details>
+            ))}
+          </div>
+        )}
       </div>
     );
   };

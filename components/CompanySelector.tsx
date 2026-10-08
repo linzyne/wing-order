@@ -4968,6 +4968,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const mergedCompanyPricing: Record<string, { supplyPrice: number; sellingPrice: number; margin: number }[]> = isPartialSave
             ? { ...(existingDailySales?.companyOrderPricing || {}), ...newCompanyPricing }
             : newCompanyPricing;
+        // 정산요약(카톡 복사용 텍스트): 마지막 차수 카드가 올려준 그날 그 업체 누적 텍스트를 그대로 스냅샷으로 남긴다
+        const newCompanySettlementTexts: Record<string, string> = {};
+        selectedCompanyNames.forEach(name => {
+            const text = (companyLastSettlementRef.current[name]?.kakaoText || '').trim();
+            if (text) newCompanySettlementTexts[name] = text;
+        });
+        const mergedCompanySettlementTexts: Record<string, string> = isPartialSave
+            ? {
+                ...Object.fromEntries(Object.entries(existingDailySales?.companySettlementTexts || {}).filter(([k]) => !selectedCompanyNames.has(k))),
+                ...newCompanySettlementTexts,
+            }
+            : newCompanySettlementTexts;
         const flatOrderRows = Object.values(mergedCompanyOrderRows).flat();
         const flatInvoiceRows = Object.values(mergedCompanyInvoiceRows).flat();
 
@@ -4987,6 +4999,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             returnRecords: allReturns.length > 0 ? allReturns : undefined,
             returnTotal: returnTotal !== 0 ? returnTotal : undefined,
             fakeOrderRecords: mergedFakeOrderRecords.length > 0 ? mergedFakeOrderRecords : undefined,
+            companySettlementTexts: Object.keys(mergedCompanySettlementTexts).length > 0 ? mergedCompanySettlementTexts : undefined,
             // upsertDailySales는 문서 전체를 덮어쓰므로(setDoc, merge 없음), 이 화면이 모르는
             // csRecords(통합CS접수/매출현황 CS탭에서 기록)를 명시적으로 이어받지 않으면
             // 저장할 때마다 그날의 CS 접수 내역이 통째로 사라진다.

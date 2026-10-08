@@ -349,6 +349,7 @@ export const deleteCompanyFromDailySales = async (
     companyBundleNumbers: Object.fromEntries(Object.entries(existing.companyBundleNumbers || {}).filter(([k]) => k !== companyName)),
     companyRecipientNames: Object.fromEntries(Object.entries(existing.companyRecipientNames || {}).filter(([k]) => k !== companyName)),
     companyOrderPricing: Object.fromEntries(Object.entries(existing.companyOrderPricing || {}).filter(([k]) => k !== companyName)),
+    companySettlementTexts: Object.fromEntries(Object.entries(existing.companySettlementTexts || {}).filter(([k]) => k !== companyName)),
   };
   updated.totalAmount = (updated.records || []).reduce((s, r) => s + r.totalPrice, 0);
   updated.marginTotal = (updated.marginRecords || []).reduce((s, r) => s + r.totalMargin, 0) || undefined;
@@ -359,6 +360,7 @@ export const deleteCompanyFromDailySales = async (
   if (!Object.keys(updated.companyBundleNumbers || {}).length) delete updated.companyBundleNumbers;
   if (!Object.keys(updated.companyRecipientNames || {}).length) delete updated.companyRecipientNames;
   if (!Object.keys(updated.companyOrderPricing).length) delete updated.companyOrderPricing;
+  if (!Object.keys(updated.companySettlementTexts || {}).length) delete updated.companySettlementTexts;
   await upsertDailySales(updated, businessId);
 };
 
