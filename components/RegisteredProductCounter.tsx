@@ -20,36 +20,9 @@ export interface CountRow {
 const normalizeDate = (s: string): string | null => {
   const full = s.match(/(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/);
   if (full) return `${Number(full[2])}/${Number(full[3])}`;
-  const short = s.match(/(?:^|[^\d])(\d{1,2})\s*[.\-/월]\s*(\d{1,2})(?:일|[^\d]|$)/);
+  const short = s.match(/^(\d{1,2})\s*[.\-/월]\s*(\d{1,2})(?:일|[^\d]|$)/);
   if (short) return `${Number(short[1])}/${Number(short[2])}`;
   return null;
-};
-
-const ORDER_NO_LINE = /^\d{10,}$/;
-
-/**
- * 주문 블록(주문번호 줄로 시작)별 출고예정일을 찾는다.
- * "출고예정일" 글자가 있는 줄에서 날짜를 찾고, 없으면 바로 다음 몇 줄에서 찾는다.
- * 반환: 줄 index → 그 줄이 속한 블록의 출고예정일
- */
-const findShipDates = (lines: string[]): string[] => {
-  const blockStarts: number[] = [0];
-  lines.forEach((l, i) => { if (i > 0 && ORDER_NO_LINE.test(l.trim())) blockStarts.push(i); });
-  const result: string[] = new Array(lines.length).fill('');
-  blockStarts.forEach((start, bi) => {
-    const end = bi + 1 < blockStarts.length ? blockStarts[bi + 1] : lines.length;
-    let date = '';
-    for (let i = start; i < end && !date; i++) {
-      const line = lines[i];
-      if (!/출고\s*예정/.test(line)) continue;
-      date = normalizeDate(line.replace(/^.*출고\s*예정일?/, '')) || '';
-      for (let j = i + 1; j < Math.min(end, i + 4) && !date; j++) {
-        if (lines[j].trim()) date = normalizeDate(lines[j]) || '';
-      }
-    }
-    for (let i = start; i < end; i++) result[i] = date;
-  });
-  return result;
 };
 
 const compareShipDate = (a: string, b: string) => {
@@ -74,7 +47,6 @@ export const formatShipDates = (r: CountRow): string =>
  */
 export const parseRegisteredProducts = (text: string): { rows: CountRow[]; totalQty: number; totalOrders: number; unparsed: number; byShipDate: [string, number][] } => {
   const lines = text.split(/\r?\n/);
-  const shipDateOfLine = findShipDates(lines);
   const byShip = new Map<string, number>();
   const groups = new Map<string, CountRow>();
   let totalQty = 0;
@@ -83,6 +55,7 @@ export const parseRegisteredProducts = (text: string): { rows: CountRow[]; total
 
   let pendingName: string | null = null;
   let pendingShipDate = '';
+  let lastDate = ''; // 등록상품명 바로 앞에 나온 날짜 = 출고예정일
 
   const flush = (name: string, qty: number, shipDate: string) => {
     const key = name;
@@ -100,8 +73,8 @@ export const parseRegisteredProducts = (text: string): { rows: CountRow[]; total
     totalOrders += 1;
   };
 
-  for (let li = 0; li < lines.length; li++) {
-    const line = lines[li].trim();
+  for (const raw of lines) {
+    const line = raw.trim();
     if (!line) continue;
 
     const nameMatch = line.match(/^등록상품명\s*[:：]\s*(.+)$/);
@@ -109,9 +82,13 @@ export const parseRegisteredProducts = (text: string): { rows: CountRow[]; total
       // 앞의 등록상품명이 수량 줄을 못 만난 채로 새 등록상품명이 나오면 미집계로 표시
       if (pendingName !== null) unparsed += 1;
       pendingName = nameMatch[1].trim();
-      pendingShipDate = shipDateOfLine[li];
+      pendingShipDate = lastDate;
       continue;
     }
+
+    if (/^\d{10,}$/.test(line)) lastDate = ''; // 새 주문번호 → 앞 주문 날짜 넘어오지 않게
+    const d = normalizeDate(line);
+    if (d) lastDate = d;
 
     if (pendingName !== null) {
       // "(개당 중량: 2000 수량: 1) 1개" → 뒤쪽 "1개" 를 구매수량으로
