@@ -13,7 +13,57 @@ export interface CountRow {
   registeredName: string; // 원본 등록상품명
   qty: number;           // 구매수량 합계
   orderCount: number;    // 주문(줄) 건수
+  shipDates: Record<string, number>; // 출고예정일 → 구매수량 ('' = 못찾음)
 }
+
+/** "2026.10.12" / "2026-10-12" / "10/12" → "10/12" */
+const normalizeDate = (s: string): string | null => {
+  const full = s.match(/(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/);
+  if (full) return `${Number(full[2])}/${Number(full[3])}`;
+  const short = s.match(/(?:^|[^\d])(\d{1,2})\s*[.\-/월]\s*(\d{1,2})(?:일|[^\d]|$)/);
+  if (short) return `${Number(short[1])}/${Number(short[2])}`;
+  return null;
+};
+
+const ORDER_NO_LINE = /^\d{10,}$/;
+
+/**
+ * 주문 블록(주문번호 줄로 시작)별 출고예정일을 찾는다.
+ * "출고예정일" 글자가 있는 줄에서 날짜를 찾고, 없으면 바로 다음 몇 줄에서 찾는다.
+ * 반환: 줄 index → 그 줄이 속한 블록의 출고예정일
+ */
+const findShipDates = (lines: string[]): string[] => {
+  const blockStarts: number[] = [0];
+  lines.forEach((l, i) => { if (i > 0 && ORDER_NO_LINE.test(l.trim())) blockStarts.push(i); });
+  const result: string[] = new Array(lines.length).fill('');
+  blockStarts.forEach((start, bi) => {
+    const end = bi + 1 < blockStarts.length ? blockStarts[bi + 1] : lines.length;
+    let date = '';
+    for (let i = start; i < end && !date; i++) {
+      const line = lines[i];
+      if (!/출고\s*예정/.test(line)) continue;
+      date = normalizeDate(line.replace(/^.*출고\s*예정일?/, '')) || '';
+      for (let j = i + 1; j < Math.min(end, i + 4) && !date; j++) {
+        if (lines[j].trim()) date = normalizeDate(lines[j]) || '';
+      }
+    }
+    for (let i = start; i < end; i++) result[i] = date;
+  });
+  return result;
+};
+
+const compareShipDate = (a: string, b: string) => {
+  if (!a) return 1;
+  if (!b) return -1;
+  const [am, ad] = a.split('/').map(Number);
+  const [bm, bd] = b.split('/').map(Number);
+  return am - bm || ad - bd;
+};
+
+export const formatShipDates = (r: CountRow): string =>
+  Object.keys(r.shipDates).filter(Boolean).sort(compareShipDate)
+    .map(d => Object.keys(r.shipDates).length > 1 ? `${d}(${r.shipDates[d]})` : d)
+    .join(' · ');
 
 /**
  * 네이버 윙 "상품준비중" 목록을 대량 복붙하면
@@ -22,31 +72,36 @@ export interface CountRow {
  * 한 주문 블록에 등록상품명이 여러 개(합포장)일 수 있으므로,
  * "등록상품명:" 을 만나면 대기시켰다가 바로 다음에 오는 수량 줄과 짝지어 확정한다.
  */
-export const parseRegisteredProducts = (text: string): { rows: CountRow[]; totalQty: number; totalOrders: number; unparsed: number } => {
+export const parseRegisteredProducts = (text: string): { rows: CountRow[]; totalQty: number; totalOrders: number; unparsed: number; byShipDate: [string, number][] } => {
   const lines = text.split(/\r?\n/);
+  const shipDateOfLine = findShipDates(lines);
+  const byShip = new Map<string, number>();
   const groups = new Map<string, CountRow>();
   let totalQty = 0;
   let totalOrders = 0;
   let unparsed = 0;
 
   let pendingName: string | null = null;
+  let pendingShipDate = '';
 
-  const flush = (name: string, qty: number) => {
+  const flush = (name: string, qty: number, shipDate: string) => {
     const key = name;
     let g = groups.get(key);
     if (!g) {
       const { vendor, itemName } = splitRegisteredName(name);
-      g = { vendor, itemName, registeredName: name, qty: 0, orderCount: 0 };
+      g = { vendor, itemName, registeredName: name, qty: 0, orderCount: 0, shipDates: {} };
       groups.set(key, g);
     }
     g.qty += qty;
     g.orderCount += 1;
+    g.shipDates[shipDate] = (g.shipDates[shipDate] || 0) + qty;
+    byShip.set(shipDate, (byShip.get(shipDate) || 0) + qty);
     totalQty += qty;
     totalOrders += 1;
   };
 
-  for (const raw of lines) {
-    const line = raw.trim();
+  for (let li = 0; li < lines.length; li++) {
+    const line = lines[li].trim();
     if (!line) continue;
 
     const nameMatch = line.match(/^등록상품명\s*[:：]\s*(.+)$/);
@@ -54,6 +109,7 @@ export const parseRegisteredProducts = (text: string): { rows: CountRow[]; total
       // 앞의 등록상품명이 수량 줄을 못 만난 채로 새 등록상품명이 나오면 미집계로 표시
       if (pendingName !== null) unparsed += 1;
       pendingName = nameMatch[1].trim();
+      pendingShipDate = shipDateOfLine[li];
       continue;
     }
 
@@ -63,7 +119,7 @@ export const parseRegisteredProducts = (text: string): { rows: CountRow[]; total
       const innerQty = line.match(/수량\s*[:：]\s*(\d[\d,]*)/);
       if (trailingEa || innerQty) {
         const n = Number((trailingEa?.[1] || innerQty?.[1] || '0').replace(/,/g, '')) || 0;
-        flush(pendingName, n);
+        flush(pendingName, n, pendingShipDate);
         pendingName = null;
       }
     }
@@ -74,7 +130,8 @@ export const parseRegisteredProducts = (text: string): { rows: CountRow[]; total
   const rows = Array.from(groups.values()).sort(
     (a, b) => a.vendor.localeCompare(b.vendor, 'ko') || a.itemName.localeCompare(b.itemName, 'ko')
   );
-  return { rows, totalQty, totalOrders, unparsed };
+  const byShipDate = Array.from(byShip.entries()).sort((a, b) => compareShipDate(a[0], b[0]));
+  return { rows, totalQty, totalOrders, unparsed, byShipDate };
 };
 
 /** "여수참맛_총각김치,2kg 1박스" → { vendor: "여수참맛", itemName: "총각김치 2kg 1박스" } */
@@ -106,7 +163,7 @@ const RegisteredProductCounter: React.FC<Props> = ({ active, onClose }) => {
     } catch { /* noop */ }
   }, [text]);
 
-  const { rows, totalQty, totalOrders, unparsed } = useMemo(() => parseRegisteredProducts(text), [text]);
+  const { rows, totalQty, totalOrders, unparsed, byShipDate } = useMemo(() => parseRegisteredProducts(text), [text]);
 
   const vendorGroups = useMemo(() => {
     const m = new Map<string, CountRow[]>();
@@ -119,8 +176,8 @@ const RegisteredProductCounter: React.FC<Props> = ({ active, onClose }) => {
   }, [rows]);
 
   const handleCopy = () => {
-    const header = '업체명\t품목명\t구매수량\t등록상품명';
-    const body = rows.map(r => `${r.vendor}\t${r.itemName}\t${r.qty}\t${r.registeredName}`).join('\n');
+    const header = '업체명\t품목명\t구매수량\t출고예정일\t등록상품명';
+    const body = rows.map(r => `${r.vendor}\t${r.itemName}\t${r.qty}\t${formatShipDates(r)}\t${r.registeredName}`).join('\n');
     const tsv = [header, body].filter(Boolean).join('\n');
     navigator.clipboard.writeText(tsv).then(() => {
       setCopied(true);
@@ -166,6 +223,16 @@ const RegisteredProductCounter: React.FC<Props> = ({ active, onClose }) => {
               </button>
             </div>
 
+            {byShipDate.some(([d]) => d) && (
+              <div className="flex flex-wrap gap-1.5 mb-1.5">
+                {byShipDate.map(([d, q]) => (
+                  <span key={d || 'none'} className={`text-[10px] font-black px-2 py-0.5 rounded-md border ${d ? 'border-amber-500/40 text-amber-300' : 'border-zinc-700 text-zinc-500'}`}>
+                    {d ? `출고 ${d}` : '출고일 못찾음'} <span className="tabular-nums">{q}</span>
+                  </span>
+                ))}
+              </div>
+            )}
+
             <div className="border border-zinc-800 rounded-xl overflow-hidden">
               <table className="w-full text-[10px]">
                 <thead>
@@ -173,6 +240,7 @@ const RegisteredProductCounter: React.FC<Props> = ({ active, onClose }) => {
                     <th className="text-left px-2 py-1.5">업체명</th>
                     <th className="text-left px-2 py-1.5">품목명</th>
                     <th className="text-right px-2 py-1.5 whitespace-nowrap">구매수량</th>
+                    <th className="text-right px-2 py-1.5 whitespace-nowrap">출고예정일</th>
                     <th className="text-right px-2 py-1.5 whitespace-nowrap">주문</th>
                   </tr>
                 </thead>
@@ -191,6 +259,7 @@ const RegisteredProductCounter: React.FC<Props> = ({ active, onClose }) => {
                             ) : null}
                             <td className="px-2 py-1.5 text-zinc-300" title={r.registeredName}>{r.itemName}</td>
                             <td className="px-2 py-1.5 text-right tabular-nums font-black text-sky-400">{r.qty}</td>
+                            <td className="px-2 py-1.5 text-right tabular-nums text-amber-300 whitespace-nowrap">{formatShipDates(r) || <span className="text-zinc-600">-</span>}</td>
                             <td className="px-2 py-1.5 text-right tabular-nums text-zinc-500">{r.orderCount}</td>
                           </tr>
                         ))}
