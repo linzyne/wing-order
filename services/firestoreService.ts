@@ -942,6 +942,33 @@ export const saveQuickRecipients = async (recipients: QuickRecipientData[], busi
   await setDoc(docRef, { recipients, updatedAt: Timestamp.now() });
 };
 
+// ===== Regular Customers (단골 리스트, 사업자 공통) =====
+
+export interface RegularCustomer {
+  id: string;
+  name: string;
+  address: string;
+  phone?: string;
+  memo?: string;
+}
+
+export const subscribeRegularCustomers = (
+  callback: (customers: RegularCustomer[]) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', 'regularCustomers');
+  return onSnapshot(docRef, (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data().customers || []) : []);
+  }, (error) => {
+    console.error('[Firestore] RegularCustomers 구독 오류:', error);
+    if (isQuotaError(error)) enterQuotaCooldown();
+  });
+};
+
+export const saveRegularCustomers = async (customers: RegularCustomer[]): Promise<void> => {
+  const docRef = doc(db, 'config', 'regularCustomers');
+  await setDoc(docRef, { customers, updatedAt: Timestamp.now() });
+};
+
 // ===== Pending Manual Orders (날짜 무관, 삭제 전까지 유지) =====
 
 export const subscribeManualOrders = (

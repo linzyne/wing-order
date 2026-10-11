@@ -5,6 +5,7 @@ import CompanyWorkstationRow from './CompanyWorkstationRow';
 import FileUpload from './FileUpload';
 import AutoWatcherPanel from './AutoWatcherPanel';
 import BatchInvoicePanel from './BatchInvoicePanel';
+import RegularCustomerPanel, { type ServiceOrderDraft } from './RegularCustomerPanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo, resolveSenderColumns } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
@@ -1791,14 +1792,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
     }, [fakeOrderAnalysis.matched, onGlobalFakeMatch, globalFakeOrderInput]);
 
+    // 오늘 주문서 전체 데이터 행 (원본 + 추가 차수) — 공통 택배 기능 / 단골 매칭용
+    const allMasterDataRows = useMemo(() => {
+        const dataRows: any[][] = masterOrderData ? [...masterOrderData.slice(1)] : [];
+        (Object.values(batchMasterRows) as any[][][]).forEach(batchRows => { dataRows.push(...batchRows); });
+        return dataRows;
+    }, [masterOrderData, batchMasterRows]);
+
     // 공통 택배 기능용: 주문 행 데이터를 App.tsx로 전달
     useEffect(() => {
         if (!onExposeOrderRows) return;
-        const header = masterOrderData?.[0] ?? null;
-        const dataRows: any[][] = masterOrderData ? [...masterOrderData.slice(1)] : [];
-        (Object.values(batchMasterRows) as any[][][]).forEach(batchRows => { dataRows.push(...batchRows); });
-        onExposeOrderRows(header, dataRows);
-    }, [masterOrderData, batchMasterRows, onExposeOrderRows]);
+        onExposeOrderRows(masterOrderData?.[0] ?? null, allMasterDataRows);
+    }, [masterOrderData, allMasterDataRows, onExposeOrderRows]);
 
     // 가구매 수량 미매칭 여부: 명단 주문번호 수 vs 실제 제외된 주문번호 수
     const fakeMismatch = useMemo(() => {
@@ -3406,6 +3411,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setManualInput(prev => ({ ...prev, recipientName: '', phone: '', address: '', memo: '' }));
         setManualSelectedProducts([]);
     };
+
+    const handleAddServiceOrders = useCallback((drafts: ServiceOrderDraft[]) => {
+        const stamp = Date.now();
+        const newOrders: ManualOrder[] = drafts.map((d, idx) => ({ ...d, id: `mo-${stamp}-svc${idx}` }));
+        setManualOrders(prev => [...prev, ...newOrders]);
+        setSelectedManualOrderIds(prev => new Set([...prev, ...newOrders.map(o => o.id)]));
+    }, []);
 
     const handleStartEditManualOrder = (o: ManualOrder) => {
         setEditingOrderId(o.id);
@@ -5544,6 +5556,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     )}
                     </div>
                 </details>
+
+                {/* 1-1) 단골 관리 + 오늘 단골 주문 알림 + 서비스 추가 */}
+                <RegularCustomerPanel
+                    businessId={businessId}
+                    businessName={businessDisplayName}
+                    orderRows={allMasterDataRows}
+                    pricingConfig={pricingConfig}
+                    manualOrders={manualOrders}
+                    onAddOrders={handleAddServiceOrders}
+                />
 
                 {/* 1-2) 수동 입금 추가 */}
                 <details className="glass-light rounded-2xl mb-3 group/transfer">
