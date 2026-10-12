@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getHeaderForCompany, inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
 import { CS_SAVED_EVENT, WORKSPACE_ADJUSTMENT_EVENT } from '../services/firestoreService';
@@ -404,6 +404,10 @@ interface Props {
 const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onChange, onClose, onSaved, editing }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 서버 응답이 느려 저장이 오래 걸리는 중(실패 아님). 저장은 끝까지 기다렸다가 완료되면 닫는다.
+  const [slow, setSlow] = useState(false);
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   // 업체가 환불처리한다고 입력하면(예: "환불처리") 업체가 공급가를 돌려주는 것이므로 정산요약 추가/차감에 자동 반영
   const isVendorRefund = draft.vendorMethod.trim().includes('환불');
@@ -427,15 +431,13 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       return;
     }
     setSaving(true);
+    setSlow(false);
     setError(null);
-    // Firestore 쓰기가 네트워크 문제로 응답 없이 매달리면(LAN/오프라인 등) "저장 중..."이 영원히 돈다.
-    // 20초 넘으면 사용자에게 알리고 버튼을 풀어준다. 뒤늦게 완료돼도 모달은 닫지 않는다.
-    let timedOut = false;
-    const watchdog = setTimeout(() => {
-      timedOut = true;
-      setSaving(false);
-      setError('저장이 지연되고 있습니다. 네트워크 상태를 확인한 뒤, 잠시 후 새로고침해 반영 여부를 확인하고 필요하면 다시 시도하세요.');
-    }, 20000);
+    // Firestore 응답이 느려 20초를 넘기는 경우가 있는데, 실제로는 서버에 정상 저장된다.
+    // 예전엔 여기서 "저장 지연" 에러를 띄우고 버튼을 풀어 → 저장이 끝나도 모달이 안 닫히고,
+    // 다시 누르면 같은 CS가 중복 접수될 수 있었다. 이제 안내만 띄우고 끝까지 기다렸다가 완료되면 닫는다.
+    const startedAt = Date.now();
+    const watchdog = setTimeout(() => { if (mountedRef.current) setSlow(true); }, 8000);
     try {
       const product = needsProductForDeduction
         ? (pricingConfig?.[draft.company]?.products?.[draft.productKey] as any)
@@ -538,14 +540,16 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
       }
 
-      if (timedOut) return; // 이미 지연 안내함 — 모달 닫지 않고, 저장은 백그라운드에서 계속
+      const elapsed = Date.now() - startedAt;
+      if (elapsed > 8000) console.warn(`[CS] 저장 완료까지 ${Math.round(elapsed / 1000)}초 걸림`);
       onSaved();
-      onClose();
+      // 기다리는 사이 사용자가 창을 닫았으면 목록 갱신만 하고 onClose는 부르지 않는다(다른 모달을 닫지 않도록)
+      if (mountedRef.current) onClose();
     } catch (e: any) {
-      if (!timedOut) setError('저장 실패: ' + (e?.message || '알 수 없는 오류'));
+      if (mountedRef.current) setError('저장 실패: ' + (e?.message || '알 수 없는 오류'));
     } finally {
       clearTimeout(watchdog);
-      if (!timedOut) setSaving(false);
+      if (mountedRef.current) { setSaving(false); setSlow(false); }
     }
   };
 
@@ -560,7 +564,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-      onClick={() => !saving && onClose()}
+      onClick={() => (!saving || slow) && onClose()}
     >
       <div
         className="relative bg-zinc-900 border border-zinc-700 rounded-[2rem] shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col animate-fade-in"
@@ -804,6 +808,11 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
           )}
 
           {error && <p className="text-rose-400 text-xs font-bold">{error}</p>}
+          {slow && !error && (
+            <p className="text-amber-400 text-xs font-bold">
+              서버 응답이 느려 저장을 기다리는 중입니다. 다시 누르지 마세요 — 완료되면 자동으로 닫힙니다. (창을 닫아도 저장은 계속됩니다)
+            </p>
+          )}
         </div>
 
         <div className="px-6 py-4 border-t border-zinc-800 shrink-0 flex gap-2">
