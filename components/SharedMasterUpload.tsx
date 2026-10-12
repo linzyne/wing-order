@@ -131,9 +131,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
 
   // 대기저장 CS 목록: 최신 상태를 유지하다가 발주서 생성 시 팝업으로 리마인드
   const refreshPendingCs = useCallback(async () => {
-    const { loadAllSalesHistory } = await import('../services/firestoreService');
+    const { loadCsHistory } = await import('../services/firestoreService');
     const results = await Promise.all(businesses.map(async b => {
-      const history = await loadAllSalesHistory(b.id);
+      const history = await loadCsHistory(b.id);
       const found: PendingCsSummary[] = [];
       history.forEach(d => {
         (d.csRecords || []).forEach(r => {
