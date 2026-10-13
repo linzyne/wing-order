@@ -5,6 +5,7 @@ import {
   onSnapshot, Timestamp, deleteField, writeBatch,
   type Unsubscribe
 } from 'firebase/firestore';
+import { isCsFullyCompleted } from '../types';
 import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate, CompanyDeposit } from '../types';
 
 // ===== Firestore 한도 초과 감지 =====
@@ -225,28 +226,46 @@ const invalidateSalesHistoryCache = (businessId?: string): void => {
 
 // ===== CS 전용 조회 =====
 // 통합CS접수/대기CS는 csRecords만 필요한데, 전체 매출 문서(발주·송장 행 포함)를 다 받으면 너무 느리다.
-// upsertDailySales가 문서에 hasCs 플래그를 같이 써두고, CS가 있는 날짜 문서만 쿼리한다.
-// 플래그가 생기기 전 문서는 사업자별 1회 전체 스캔으로 플래그를 채운 뒤 config에 완료 표시를 남긴다.
+// upsertDailySales가 문서에 hasCs / hasOpenCs 플래그를 같이 써두고, 미완료·대기 CS가 있는 날짜 문서만 쿼리한다.
+// (hasCs만 쓰면 완료된 CS가 쌓일수록 읽는 문서가 계속 늘어나서 다시 느려짐)
+// 플래그가 생기기 전 문서는 사업자별 1회 스캔으로 플래그를 채운 뒤 config에 완료 표시를 남긴다.
 const csHistoryCache = new Map<string, { at: number; promise: Promise<DailySales[]> }>();
 const getCsIndexMarkerDocId = (businessId?: string): string => `csIndex_v1_${getSalesCollectionName(businessId)}`;
+const getOpenCsIndexMarkerDocId = (businessId?: string): string => `csIndex_v2_${getSalesCollectionName(businessId)}`;
 
-const backfillCsFlags = async (businessId?: string): Promise<void> => {
-  const markerRef = doc(db, 'config', getCsIndexMarkerDocId(businessId));
-  const marker = await getDoc(markerRef);
-  if (marker.exists()) return;
-  const history = await loadAllSalesHistory(businessId);
-  const targets = history.filter(d => (d.csRecords?.length ?? 0) > 0);
+const hasOpenCsRecords = (d: DailySales): boolean =>
+  (d.csRecords || []).some(r => r.pending || !isCsFullyCompleted(r));
+
+const commitCsFlags = async (businessId: string | undefined, targets: DailySales[], fields: (d: DailySales) => Record<string, boolean>): Promise<void> => {
   for (let i = 0; i < targets.length; i += 400) {
     const batch = writeBatch(db);
     targets.slice(i, i + 400).forEach(d => {
-      batch.update(doc(db, getSalesCollectionName(businessId), d.date), { hasCs: true });
+      batch.update(doc(db, getSalesCollectionName(businessId), d.date), fields(d));
     });
     await batch.commit();
   }
-  await setDoc(markerRef, { doneAt: Timestamp.now(), count: targets.length });
 };
 
-export const loadCsHistory = async (businessId?: string): Promise<DailySales[]> => {
+const backfillCsFlags = async (businessId?: string): Promise<void> => {
+  const v2Ref = doc(db, 'config', getOpenCsIndexMarkerDocId(businessId));
+  if ((await getDoc(v2Ref)).exists()) return;
+  const v1Ref = doc(db, 'config', getCsIndexMarkerDocId(businessId));
+  let csDocs: DailySales[];
+  if ((await getDoc(v1Ref)).exists()) {
+    // hasCs 플래그는 이미 채워져 있으니 CS 있는 문서만 읽어서 hasOpenCs를 채운다
+    const snapshot = await getDocs(query(collection(db, getSalesCollectionName(businessId)), where('hasCs', '==', true)));
+    csDocs = snapshot.docs.map(d => deserializeDailySales({ ...d.data() }));
+  } else {
+    const history = await loadAllSalesHistory(businessId);
+    csDocs = history.filter(d => (d.csRecords?.length ?? 0) > 0);
+  }
+  await commitCsFlags(businessId, csDocs, d => ({ hasCs: true, hasOpenCs: hasOpenCsRecords(d) }));
+  await setDoc(v1Ref, { doneAt: Timestamp.now(), count: csDocs.length });
+  await setDoc(v2Ref, { doneAt: Timestamp.now(), count: csDocs.filter(hasOpenCsRecords).length });
+};
+
+// 미완료(접수 중) 또는 대기저장 CS가 하나라도 있는 날짜 문서만 반환한다
+export const loadOpenCsHistory = async (businessId?: string): Promise<DailySales[]> => {
   const key = getSalesCollectionName(businessId);
   const cached = csHistoryCache.get(key);
   if (cached && Date.now() - cached.at < SALES_HISTORY_TTL_MS) return cached.promise;
@@ -255,11 +274,11 @@ export const loadCsHistory = async (businessId?: string): Promise<DailySales[]> 
       await backfillCsFlags(businessId);
     } catch (e) {
       // 플래그 채우기에 실패하면 이번엔 예전처럼 전체 문서에서 CS만 걸러 쓴다 (다음에 다시 시도)
-      console.warn('[CS] hasCs 플래그 채우기 실패, 전체 조회로 대체', e);
+      console.warn('[CS] hasOpenCs 플래그 채우기 실패, 전체 조회로 대체', e);
       const history = await loadAllSalesHistory(businessId);
-      return history.filter(d => (d.csRecords?.length ?? 0) > 0);
+      return history.filter(hasOpenCsRecords);
     }
-    const snapshot = await getDocs(query(collection(db, key), where('hasCs', '==', true)));
+    const snapshot = await getDocs(query(collection(db, key), where('hasOpenCs', '==', true)));
     return snapshot.docs
       .map(d => deserializeDailySales({ ...d.data() }))
       .sort((a, b) => b.date.localeCompare(a.date));
@@ -346,8 +365,9 @@ export const upsertDailySales = async (
       Object.entries(serialized.companyInvoiceRows).map(([k, v]) => [k, JSON.stringify(v)])
     );
   }
-  // CS 전용 조회(loadCsHistory)용 플래그 — CS가 있는 날짜 문서만 골라 읽기 위함
+  // CS 전용 조회(loadOpenCsHistory)용 플래그 — 미완료·대기 CS가 있는 날짜 문서만 골라 읽기 위함
   serialized.hasCs = (dailySales.csRecords?.length ?? 0) > 0;
+  serialized.hasOpenCs = hasOpenCsRecords(dailySales);
   // Firestore는 undefined 값을 허용하지 않으므로 제거
   Object.keys(serialized).forEach(key => {
     if (serialized[key] === undefined) delete serialized[key];

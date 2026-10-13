@@ -186,9 +186,9 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
 
   const load = useCallback(async () => {
     setLoading(true);
-    const { loadCsHistory } = await import('../services/firestoreService');
+    const { loadOpenCsHistory } = await import('../services/firestoreService');
     const results = await Promise.all(businesses.map(async b => {
-      const history = await loadCsHistory(b.id);
+      const history = await loadOpenCsHistory(b.id);
       const open: OpenCsItem[] = [];
       const pending: OpenCsItem[] = [];
       history.forEach(d => {
