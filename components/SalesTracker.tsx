@@ -2902,14 +2902,13 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                   {periodLabel} 매출현황
                 </h2>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-black text-white">{monthTotal.toLocaleString()}</span>
+                  <span className="text-[11px] text-emerald-500 font-black self-center">총 마진</span>
+                  <span className="text-4xl font-black text-white">{allMarginData.total.toLocaleString()}</span>
                   <span className="text-xl font-black text-violet-500">원</span>
                 </div>
                 <div className="flex gap-3 mt-1">
                   <span className="text-[11px] text-zinc-500 font-bold">총 {monthTotalCount}건</span>
-                  {allMarginData.total > 0 && (
-                    <span className="text-[11px] text-emerald-500 font-bold">마진 {allMarginData.total.toLocaleString()}원</span>
-                  )}
+                  <span className="text-[11px] text-zinc-400 font-bold">발주금액 {monthTotal.toLocaleString()}원</span>
                   {allReturnData.total < 0 && (
                     <span className="text-[11px] text-violet-400 font-bold">반품 {allReturnData.total.toLocaleString()}원</span>
                   )}
