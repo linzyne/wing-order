@@ -32,7 +32,7 @@ interface MasterUploadHandlers {
   toggleCompanyRecord?: (companyName: string) => Promise<void>;
   setWorkDate?: (date: string) => void;
   getWorkDate?: () => string;
-  uploadVendorInvoice?: (files: File[]) => void;
+  uploadVendorInvoice?: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>;
   getInvoiceState?: () => { name: string; uploadCount: number }[];
   downloadInvoice?: (companyName: string) => void;
   getLastSettlementSummaries?: () => { companyName: string; kakaoText: string; excelText: string }[];

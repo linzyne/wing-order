@@ -13,7 +13,7 @@ export interface InvoiceResult {
 }
 
 interface MasterUploadHandlers {
-  uploadVendorInvoice?: (files: File[]) => void;
+  uploadVendorInvoice?: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>;
   getInvoiceState?: () => { name: string; uploadCount: number }[];
   getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[];
   downloadInvoice?: (companyName: string) => void;
@@ -248,7 +248,21 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
     return null;
   };
 
-  const processFiles = (files: File[]) => {
+  /** 파일명에 사업자명이 없을 때: 파일 안 주문번호가 그 사업자의 발주 주문번호와 겹치는 사업자를 찾는다 */
+  const detectBusinessByContent = async (f: File): Promise<Business | null> => {
+    for (const b of businesses) {
+      try {
+        const owners = await uploadFns[b.id]?.findVendorInvoiceOwners?.(f);
+        if (owners && owners.length > 0) {
+          console.log(`[통합송장] 파일명으로 사업자 못 찾음 → 주문번호로 감지: ${f.name} → ${b.displayName} (${owners.join(', ')})`);
+          return b;
+        }
+      } catch { /* 감지 실패 → 다음 사업자 */ }
+    }
+    return null;
+  };
+
+  const processFiles = async (files: File[]) => {
     const items: InvoiceResult[] = [];
     const grouped: Record<string, File[]> = {};
     const courierGrouped: Record<string, File[]> = {};
@@ -260,7 +274,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
         items.push({ fileName: f.name, businessId: null, displayName: null, status: 'courier', courierLabel: courier.label ? `${courier.name} (${courier.label})` : courier.name });
         continue;
       }
-      const biz = detectBusiness(f.name, businesses);
+      const biz = detectBusiness(f.name, businesses) ?? await detectBusinessByContent(f);
       // 사업자명과도 매칭되지 않는 파일 → 가구매 택배 송장일 가능성이 높으므로 수동 선택 대기
       // (택배사가 주는 운송장 파일명에는 보통 "가구매"라는 단어가 없어 자동 인식이 안 되는 경우가 많음)
       if (!biz && couriers && couriers.length > 0) {

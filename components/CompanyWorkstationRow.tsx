@@ -1022,14 +1022,16 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     useEffect(() => {
         const newKey = vendorFiles.map(f => f.name + f.size).join('|');
         if (newKey && newKey !== vendorFilesKeyRef.current) {
-            vendorFilesKeyRef.current = newKey;
             const activeFile = localFile || batchFile || masterFile;
+            // 주문서가 아직 없거나 처리 중이면 "처리함"으로 표시하지 않는다 —
+            // 예전엔 여기서 키를 먼저 기록해, 주문서가 나중에 올라와도 변환이 영영 안 돌았다.
             if (activeFile && mergeStatus !== 'processing') {
+                vendorFilesKeyRef.current = newKey;
                 handleRunMerge();
             }
         }
         if (!vendorFiles.length) vendorFilesKeyRef.current = '';
-    }, [vendorFiles, localFile, masterFile, mergeStatus]);
+    }, [vendorFiles, localFile, batchFile, masterFile, mergeStatus]);
 
     const handleCopy = async (id: string, baseText: string, type: 'kakao' | 'excel' = 'kakao') => {
         let finalText = baseText;
@@ -2050,7 +2052,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             <div className="flex flex-col items-center gap-2">
                                 <label className={`flex items-center cursor-pointer px-2 py-1 rounded-lg text-[9px] font-black border transition-all shadow-md ${mergeStatus === 'error' ? 'bg-rose-950/20 border-rose-500/30 text-rose-400' : vendorFiles.length > 0 ? 'bg-emerald-950/20 border-emerald-500/30 text-emerald-400' : 'bg-zinc-800/40 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}>
                                     <UploadIcon className="w-3 h-3" />
-                                    <input type="file" className="sr-only" accept=".xlsx,.xls" multiple onChange={(e) => { const files = e.target.files; if (files && files.length > 0) { resetMerge(); onVendorFileChange(Array.from(files)); } }} />
+                                    <input type="file" className="sr-only" accept=".xlsx,.xls" multiple onChange={(e) => { const files = e.target.files; if (files && files.length > 0) { resetMerge(); vendorFilesKeyRef.current = ''; onVendorFileChange(Array.from(files)); } e.target.value = ''; }} />
                                 </label>
                                 {mergeStatus === 'error' && mergeError && (
                                     <div className="text-rose-400 text-[9px] font-bold text-center max-w-[200px] leading-tight">{mergeError}</div>
