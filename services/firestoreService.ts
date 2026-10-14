@@ -400,6 +400,39 @@ export const upsertDailySales = async (
   invalidateSalesHistoryCache(businessId);
 };
 
+// CS 기록만 고쳐 쓰기 — 매출 문서 전체(발주행 등 수백KB)를 다시 쓰지 않고 csRecords·플래그만 갱신한다.
+// 같은 날짜 문서에 연달아 누를 때 읽기-수정-쓰기가 서로 덮어쓰지 않도록 문서별로 순서대로 실행.
+const csWriteChains = new Map<string, Promise<unknown>>();
+export const updateCsRecords = (
+  date: string,
+  businessId: string | undefined,
+  mutate: (records: NonNullable<DailySales['csRecords']>) => NonNullable<DailySales['csRecords']> | null
+): Promise<boolean> => {
+  const key = `${getSalesCollectionName(businessId)}/${date}`;
+  const run = async (): Promise<boolean> => {
+    const docRef = doc(db, getSalesCollectionName(businessId), date);
+    const snapshot = await getDoc(docRef);
+    if (!snapshot.exists()) return false;
+    const current = (snapshot.data().csRecords || []) as NonNullable<DailySales['csRecords']>;
+    const next = mutate(current);
+    if (!next) return false;
+    const hasOpenCs = hasOpenCsRecords({ csRecords: next } as DailySales);
+    const batch = writeBatch(db);
+    batch.update(docRef, { csRecords: next, hasCs: next.length > 0, hasOpenCs });
+    batch.set(getOpenCsDatesRef(businessId), {
+      dates: hasOpenCs ? arrayUnion(date) : arrayRemove(date),
+    }, { merge: true });
+    await batch.commit();
+    invalidateSalesHistoryCache(businessId);
+    return true;
+  };
+  const prev = csWriteChains.get(key) || Promise.resolve();
+  const result = prev.catch(() => {}).then(run);
+  csWriteChains.set(key, result);
+  result.finally(() => { if (csWriteChains.get(key) === result) csWriteChains.delete(key); }).catch(() => {});
+  return result;
+};
+
 export const appendInvoiceRows = async (
   date: string,
   newRows: any[][],

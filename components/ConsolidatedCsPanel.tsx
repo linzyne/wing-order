@@ -165,7 +165,6 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
   const [items, setItems] = useState<OpenCsItem[]>([]);
   const [pendingItems, setPendingItems] = useState<OpenCsItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [completingId, setCompletingId] = useState<string | null>(null);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [sentId, setSentId] = useState<string | null>(null);
   const [creatingPoId, setCreatingPoId] = useState<string | null>(null);
@@ -271,39 +270,40 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     return set;
   }, [items, selectedBusinessId]);
 
+  // 누르는 즉시 화면에 반영하고 저장은 뒤에서 진행 (실패하면 되돌림)
   const handleToggleSide = async (item: OpenCsItem, side: 'vendor' | 'customer') => {
-    setCompletingId(`${item.businessId}-${item.id}-${side}`);
+    const isVendor = side === 'vendor';
+    const now = new Date().toISOString();
+    const toggle = (r: CsRecord): CsRecord => {
+      const currentStatus = isVendor ? getCsVendorStatus(r) : getCsCustomerStatus(r);
+      const nextStatus = currentStatus === '접수' ? '완료' as const : '접수' as const;
+      return {
+        ...r,
+        vendorStatus: isVendor ? nextStatus : getCsVendorStatus(r),
+        customerStatus: isVendor ? getCsCustomerStatus(r) : nextStatus,
+        vendorCompletedAt: isVendor ? (nextStatus === '완료' ? now : undefined) : r.vendorCompletedAt,
+        customerCompletedAt: isVendor ? r.customerCompletedAt : (nextStatus === '완료' ? now : undefined),
+      };
+    };
+    const isSame = (i: OpenCsItem) => i.id === item.id && i.businessId === item.businessId;
+    const nextItem = { ...item, ...toggle(item) };
+    if (isCsFullyCompleted(nextItem)) {
+      setItems(prev => prev.filter(i => !isSame(i)));
+    } else {
+      setItems(prev => prev.map(i => isSame(i) ? nextItem : i));
+    }
     try {
-      const { loadDailySales, upsertDailySales } = await import('../services/firestoreService');
-      const existing = await loadDailySales(item.date, item.businessId);
-      if (!existing?.csRecords) return;
-      const now = new Date().toISOString();
-      let nextItem: CsRecord | undefined;
-      const updated = existing.csRecords.map(r => {
-        if (r.id !== item.id) return r;
-        const isVendor = side === 'vendor';
-        const currentStatus = isVendor ? getCsVendorStatus(r) : getCsCustomerStatus(r);
-        const nextStatus = currentStatus === '접수' ? '완료' as const : '접수' as const;
-        const next: CsRecord = {
-          ...r,
-          vendorStatus: isVendor ? nextStatus : getCsVendorStatus(r),
-          customerStatus: isVendor ? getCsCustomerStatus(r) : nextStatus,
-          vendorCompletedAt: isVendor ? (nextStatus === '완료' ? now : undefined) : r.vendorCompletedAt,
-          customerCompletedAt: isVendor ? r.customerCompletedAt : (nextStatus === '완료' ? now : undefined),
-        };
-        nextItem = next;
-        return next;
+      const { updateCsRecords } = await import('../services/firestoreService');
+      await updateCsRecords(item.date, item.businessId, records => {
+        if (!records.some(r => r.id === item.id)) return null;
+        return records.map(r => r.id === item.id ? toggle(r) : r);
       });
-      await upsertDailySales({ ...existing, csRecords: updated }, item.businessId);
       window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId: item.businessId, date: item.date } }));
-      if (!nextItem) return;
-      if (isCsFullyCompleted(nextItem)) {
-        setItems(prev => prev.filter(i => !(i.id === item.id && i.businessId === item.businessId)));
-      } else {
-        setItems(prev => prev.map(i => (i.id === item.id && i.businessId === item.businessId) ? { ...i, ...nextItem } : i));
-      }
-    } finally {
-      setCompletingId(null);
+    } catch (e) {
+      console.error('[CS] 처리상태 저장 실패:', e);
+      // 이 건만 원래 상태로 되돌림 (그사이 다른 건 변경은 유지)
+      setItems(prev => [...prev.filter(i => !isSame(i)), item].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
+      alert('처리 상태 저장에 실패했습니다. 다시 시도해주세요.');
     }
   };
 
@@ -627,20 +627,18 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
                   {(['vendor', 'customer'] as const).map(side => {
                     const label = side === 'vendor' ? '업체' : '고객';
                     const status = side === 'vendor' ? getCsVendorStatus(item) : getCsCustomerStatus(item);
-                    const sideKey = `${key}-${side}`;
                     const isDone = status === '완료';
                     return (
                       <button
                         key={side}
                         onClick={e => { e.stopPropagation(); handleToggleSide(item, side); }}
-                        disabled={completingId === sideKey}
                         className={`px-2.5 py-1 rounded-full text-[10px] font-black border transition-colors disabled:opacity-50 ${
                           isDone
                             ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
                             : 'bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20'
                         }`}
                       >
-                        {completingId === sideKey ? `${label} 처리 중...` : `${label} ${isDone ? '처리완료' : '접수중'}`}
+                        {`${label} ${isDone ? '처리완료' : '접수중'}`}
                       </button>
                     );
                   })}
