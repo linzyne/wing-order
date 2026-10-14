@@ -2,7 +2,7 @@ import { db } from '../firebase';
 import {
   doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, orderBy, where, getDocs,
-  onSnapshot, Timestamp, deleteField, writeBatch,
+  onSnapshot, Timestamp, deleteField, writeBatch, arrayUnion, arrayRemove,
   type Unsubscribe
 } from 'firebase/firestore';
 import { isCsFullyCompleted } from '../types';
@@ -229,9 +229,12 @@ const invalidateSalesHistoryCache = (businessId?: string): void => {
 // upsertDailySales가 문서에 hasCs / hasOpenCs 플래그를 같이 써두고, 미완료·대기 CS가 있는 날짜 문서만 쿼리한다.
 // (hasCs만 쓰면 완료된 CS가 쌓일수록 읽는 문서가 계속 늘어나서 다시 느려짐)
 // 플래그가 생기기 전 문서는 사업자별 1회 스캔으로 플래그를 채운 뒤 config에 완료 표시를 남긴다.
+// 단, where 쿼리는 브라우저 로컬 캐시(IndexedDB)에 쌓인 매출 문서 전체를 훑어서 사파리에서 매우 느리다.
+// 그래서 미완료 CS가 있는 날짜 목록을 config/openCsDates_{컬렉션} 작은 문서에 따로 두고, 그 날짜 문서만 키로 바로 읽는다.
 const csHistoryCache = new Map<string, { at: number; promise: Promise<DailySales[]> }>();
 const getCsIndexMarkerDocId = (businessId?: string): string => `csIndex_v1_${getSalesCollectionName(businessId)}`;
 const getOpenCsIndexMarkerDocId = (businessId?: string): string => `csIndex_v2_${getSalesCollectionName(businessId)}`;
+const getOpenCsDatesRef = (businessId?: string) => doc(db, 'config', `openCsDates_${getSalesCollectionName(businessId)}`);
 
 const hasOpenCsRecords = (d: DailySales): boolean =>
   (d.csRecords || []).some(r => r.pending || !isCsFullyCompleted(r));
@@ -264,23 +267,38 @@ const backfillCsFlags = async (businessId?: string): Promise<void> => {
   await setDoc(v2Ref, { doneAt: Timestamp.now(), count: csDocs.filter(hasOpenCsRecords).length });
 };
 
+// 날짜 목록이 아직 완성 안 됐으면(처음 1회) 플래그 쿼리로 채운다.
+// upsertDailySales가 먼저 문서를 만들 수 있으므로 문서 존재가 아니라 built 표시로 완성 여부를 판단한다.
+const ensureOpenCsDates = async (businessId?: string): Promise<string[]> => {
+  const ref = getOpenCsDatesRef(businessId);
+  const existing = await getDoc(ref);
+  if (existing.exists() && existing.data().built) return (existing.data().dates || []) as string[];
+  await backfillCsFlags(businessId);
+  const snapshot = await getDocs(query(collection(db, getSalesCollectionName(businessId)), where('hasOpenCs', '==', true)));
+  const dates = snapshot.docs.map(d => d.id);
+  // 그사이 upsertDailySales가 넣은 날짜를 덮어쓰지 않도록 arrayUnion으로 합친다
+  await setDoc(ref, { dates: arrayUnion(...dates), built: true }, { merge: true });
+  return Array.from(new Set([...dates, ...((existing.data()?.dates || []) as string[])]));
+};
+
 // 미완료(접수 중) 또는 대기저장 CS가 하나라도 있는 날짜 문서만 반환한다
 export const loadOpenCsHistory = async (businessId?: string): Promise<DailySales[]> => {
   const key = getSalesCollectionName(businessId);
   const cached = csHistoryCache.get(key);
   if (cached && Date.now() - cached.at < SALES_HISTORY_TTL_MS) return cached.promise;
   const promise = (async () => {
+    let dates: string[];
     try {
-      await backfillCsFlags(businessId);
+      dates = await ensureOpenCsDates(businessId);
     } catch (e) {
-      // 플래그 채우기에 실패하면 이번엔 예전처럼 전체 문서에서 CS만 걸러 쓴다 (다음에 다시 시도)
-      console.warn('[CS] hasOpenCs 플래그 채우기 실패, 전체 조회로 대체', e);
+      // 날짜 목록 준비에 실패하면 이번엔 예전처럼 전체 문서에서 CS만 걸러 쓴다 (다음에 다시 시도)
+      console.warn('[CS] 미완료 CS 날짜 목록 준비 실패, 전체 조회로 대체', e);
       const history = await loadAllSalesHistory(businessId);
       return history.filter(hasOpenCsRecords);
     }
-    const snapshot = await getDocs(query(collection(db, key), where('hasOpenCs', '==', true)));
-    return snapshot.docs
-      .map(d => deserializeDailySales({ ...d.data() }))
+    const docs = await Promise.all(dates.map(date => loadDailySales(date, businessId)));
+    return docs
+      .filter((d): d is DailySales => !!d && hasOpenCsRecords(d))
       .sort((a, b) => b.date.localeCompare(a.date));
   })();
   csHistoryCache.set(key, { at: Date.now(), promise });
@@ -372,7 +390,13 @@ export const upsertDailySales = async (
   Object.keys(serialized).forEach(key => {
     if (serialized[key] === undefined) delete serialized[key];
   });
-  await setDoc(docRef, serialized);
+  // 매출 문서와 미완료 CS 날짜 목록을 함께 저장 (통합CS접수가 이 목록만 보고 날짜 문서를 읽음)
+  const batch = writeBatch(db);
+  batch.set(docRef, serialized);
+  batch.set(getOpenCsDatesRef(businessId), {
+    dates: serialized.hasOpenCs ? arrayUnion(dailySales.date) : arrayRemove(dailySales.date),
+  }, { merge: true });
+  await batch.commit();
   invalidateSalesHistoryCache(businessId);
 };
 
@@ -394,7 +418,10 @@ export const deleteDailySalesFromFirestore = async (
   businessId?: string
 ): Promise<void> => {
   const docRef = doc(db, getSalesCollectionName(businessId), date);
-  await deleteDoc(docRef);
+  const batch = writeBatch(db);
+  batch.delete(docRef);
+  batch.set(getOpenCsDatesRef(businessId), { dates: arrayRemove(date) }, { merge: true });
+  await batch.commit();
   invalidateSalesHistoryCache(businessId);
 };
 
