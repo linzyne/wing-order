@@ -839,7 +839,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     useEffect(() => {
         const manualOrdersStr = JSON.stringify(manualOrders);
-        const hasFileChanged = isFirstSession && masterFile && isDetected && masterFile !== lastProcessedMasterRef.current;
+        // 원본 주문서에 이 업체 주문이 없어도 수동발주가 등록돼 있으면 발주서를 생성한다
+        const hasFileChanged = isFirstSession && masterFile && (isDetected || manualOrders.length > 0) && masterFile !== lastProcessedMasterRef.current;
         const hasBatchFileChanged = batchFile && batchFile !== lastProcessedBatchRef.current;
         const hasFakeOrdersChanged = fakeOrderNumbers !== lastFakeOrdersRef.current;
         const hasManualOrdersChanged = isFirstSession && manualOrdersStr !== lastManualOrdersRef.current;
@@ -889,7 +890,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // 수동주문 변경: 이미 팝업으로 확인한 경우에만 재처리 (확인 전이면 무시)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
-            if (confirmedManualOrderIdsRef.current !== null && lastProcessedMasterRef.current) {
+            if (confirmedManualOrderIdsRef.current !== null && (lastProcessedMasterRef.current || manualOnlyProcessedRef.current)) {
                 handleLocalFileChange(lastProcessedMasterRef.current);
             }
         } else if (hasFileChangedButEvicted) {
@@ -1071,6 +1072,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [modalSelectedIds, setModalSelectedIds] = useState<Set<string>>(new Set());
     const pendingFileRef = useRef<File | null>(null);
     const confirmedManualOrderIdsRef = useRef<Set<string> | null>(null); // null = 아직 확인 안 함
+    const manualOnlyProcessedRef = useRef(false); // 원본 주문서 없이 수동발주만으로 생성한 경우
+
+    // 원본 주문서 없이 수동발주만으로 발주서 생성
+    const handleGenerateManualOnly = () => {
+        manualOnlyProcessedRef.current = true;
+        pendingFileRef.current = null;
+        setModalSelectedIds(new Set(manualOrders.map(o => o.id)));
+        setShowManualOrderModal(true);
+    };
 
     const handleManualOrderModalConfirm = () => {
         confirmedManualOrderIdsRef.current = new Set(modalSelectedIds);
@@ -1173,6 +1183,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const resetLocalFile = () => {
         revertReshipCsRecordsForReset();
+        manualOnlyProcessedRef.current = false;
         setLocalFile(null);
         setLocalResult(null);
         setExcludedList([]);
@@ -2000,6 +2011,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             }
                                         }} />
                                     </label>
+                                )}
+                                {excludedList.length === 0 && isFirstSession && manualOrders.length > 0 && !masterFile && (
+                                    <button onClick={handleGenerateManualOnly} className="px-3 py-1 rounded-lg text-[10px] font-black border border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 transition-all whitespace-nowrap">
+                                        수동발주로 생성 ({manualOrders.length})
+                                    </button>
                                 )}
                                 {sessionAdjustments.length > 0 && (
                                     <button onClick={() => setShowSummary(!showSummary)} className="text-zinc-600 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">{showSummary ? <ChevronUpIcon className="w-3 h-3"/> : <ChevronDownIcon className="w-3 h-3"/>}정산</button>
