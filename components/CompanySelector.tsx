@@ -1038,6 +1038,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const addAdjustmentFnsRef = useRef<Record<string, (amount: number, label: string, csRecordId?: string) => void>>({});
     // 세션별 "재배송 행 제거" 함수 등록소 — CS를 대기로 되돌릴 때 그 CS로 붙은 행을 걷어낸다
     const removeReshipRowFnsRef = useRef<Record<string, (csRecordId: string) => boolean>>({});
+    const generateManualFnsRef = useRef<Record<string, (orderId: string) => void>>({});
 
     const [workstationResetKey, setWorkstationResetKey] = useState(0);
 
@@ -5560,6 +5561,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
                                     <span className="text-[10px] font-bold text-zinc-300">{o.recipientName}</span>
                                     <span className="text-[9px] text-zinc-600 truncate max-w-[60px]">{o.productName}</span>
+                                    <button title="발주서 생성" onClick={(e) => {
+                                        e.stopPropagation();
+                                        // 수동발주는 그 업체의 1차 세션에만 들어간다
+                                        const firstSession = ((companySessions[o.companyName] || []) as SessionData[])[0];
+                                        const fn = firstSession && generateManualFnsRef.current[firstSession.id];
+                                        if (!fn) { alert(`[${o.companyName}] 업체 작업줄을 찾을 수 없습니다.`); return; }
+                                        if (!selectedManualOrderIds.has(o.id)) handleToggleManualOrderSelection(o.id);
+                                        fn(o.id);
+                                        document.getElementById(`session-${firstSession.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    }} className="text-emerald-500 hover:text-emerald-300 transition-colors"><DocumentArrowUpIcon className="w-3 h-3" /></button>
                                     <button onClick={(e) => { e.stopPropagation(); handleStartEditManualOrder(o); }} className="text-amber-500 hover:text-amber-300 transition-colors"><PencilIcon className="w-3 h-3" /></button>
                                     <button onClick={(e) => { e.stopPropagation(); handleRemoveManualOrder(o.id); }} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
                                 </div>
@@ -7165,6 +7176,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     registerAppendRow={(fn) => { appendRowFnsRef.current[session.id] = fn; }}
                                                     registerAddAdjustment={(fn) => { addAdjustmentFnsRef.current[session.id] = fn; }}
                                                     registerRemoveReshipRow={(fn) => { removeReshipRowFnsRef.current[session.id] = fn; }}
+                                                    registerGenerateManual={(fn) => { generateManualFnsRef.current[session.id] = fn; }}
                                                 />
                                             </React.Fragment>
                                         ) : null;

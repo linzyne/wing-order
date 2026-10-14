@@ -156,6 +156,7 @@ interface CompanyWorkstationRowProps {
     registerAddAdjustment?: (fn: (amount: number, label: string, csRecordId?: string) => void) => void;
     /** CS 되돌리기 시 그 CS로 덧붙인 재배송 행을 이 세션에서 제거 (기록이 있을 때만 true) */
     registerRemoveReshipRow?: (fn: (csRecordId: string) => boolean) => void;
+    registerGenerateManual?: (fn: (orderId: string) => void) => void; // 수동발주 칩의 '발주서 생성' 아이콘
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -187,6 +188,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     registerAppendRow,
     registerAddAdjustment,
     registerRemoveReshipRow,
+    registerGenerateManual,
 }) => {
     const dragHandle = useContext(DragHandleContext);
     const [showSummary, setShowSummary] = useState(false);
@@ -1385,6 +1387,24 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     removeReshipRowRef.current = removeReshipRowFn;
     useEffect(() => {
         registerRemoveReshipRow?.((csRecordId: string) => removeReshipRowRef.current(csRecordId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // 수동발주 칩의 아이콘 클릭: 그 수동발주를 포함해(이미 포함된 수동발주는 유지) 팝업 없이 바로 발주서 생성.
+    // 원본 주문서가 있으면 그 주문서 + 수동발주, 없으면 수동발주만으로 만든다.
+    const generateManualFn = (orderId: string) => {
+        const ids = new Set(confirmedManualOrderIdsRef.current || []);
+        ids.add(orderId);
+        confirmedManualOrderIdsRef.current = ids;
+        const file = localFile || lastProcessedMasterRef.current || masterFile || null;
+        if (file && file === masterFile) lastProcessedMasterRef.current = masterFile;
+        if (!file) manualOnlyProcessedRef.current = true;
+        handleLocalFileChange(file, manualOrders.filter(o => ids.has(o.id)));
+    };
+    const generateManualRef = useRef(generateManualFn);
+    generateManualRef.current = generateManualFn;
+    useEffect(() => {
+        registerGenerateManual?.((orderId: string) => generateManualRef.current(orderId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
