@@ -921,7 +921,7 @@ const generateWorkbookForCompany = async (
 
         const sortColIdx = headerRow.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'productName');
         if (sortColIdx !== -1) {
-            outputRows.sort((a, b) => String(a[sortColIdx] || '').localeCompare(String(b[sortColIdx] || ''), 'ko'));
+            outputRows.sort((a, b) => compareProductNameCells(a[sortColIdx], b[sortColIdx], companyName));
         }
         // rows(=outputRows)와 동일한 순서/길이로 정렬된 원본 주문번호 목록 (저장용, 발주서 물리 행에는 영향 없음)
         const rowOrderNumbers: string[] = outputRows.map(r => rowOrderNumberMap.get(r) || '');
@@ -958,11 +958,25 @@ const generateWorkbookForCompany = async (
  * (allOrderRows와 rowOrderNumbers/rowPricing 등 행 병렬 배열의 순서가 어긋나면 안 되므로).
  * 품목명 칸을 못 찾는 양식이면 원래 순서 그대로 둔다.
  */
-export function sortRowsByProductName(header: string[], rows: any[][]): any[][] {
+export function sortRowsByProductName(header: string[], rows: any[][], companyName?: string): any[][] {
     const idx = header.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'productName');
     if (idx === -1) return rows;
     // Array.sort는 안정 정렬이라 같은 품목끼리는 원래 순서(차수 순)가 유지된다
-    return [...rows].sort((a, b) => String(a[idx] || '').localeCompare(String(b[idx] || ''), 'ko'));
+    return [...rows].sort((a, b) => compareProductNameCells(a[idx], b[idx], companyName));
+}
+
+/** 키로수 작은 순으로 발주서를 정렬하는 업체 (그 외 업체는 품목명 가나다순) */
+const KG_ASC_SORT_COMPANIES = ['서한'];
+
+/** 발주서 품목명 칸 비교. 서한푸드는 kg 오름차순(kg 없는 품목은 뒤로), 같은 kg이면 품목명순 */
+function compareProductNameCells(a: any, b: any, companyName?: string): number {
+    const sa = String(a || ''), sb = String(b || '');
+    if (companyName && KG_ASC_SORT_COMPANIES.some(k => companyName.includes(k))) {
+        const kgOf = (s: string) => { const m = s.match(/(\d+(?:\.\d+)?)\s*kg/i); return m ? parseFloat(m[1]) : Infinity; };
+        const ka = kgOf(sa), kb = kgOf(sb);
+        if (ka !== kb) return ka < kb ? -1 : 1;
+    }
+    return sa.localeCompare(sb, 'ko');
 }
 
 export function getHeaderForCompany(companyName: string, config: CompanyConfig): string[] {
