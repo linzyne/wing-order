@@ -2259,7 +2259,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
         records: day.records.filter(r => r.company === activeCompany),
         summaryText: day.companySettlementTexts?.[activeCompany] || '',
       }))
-      .filter(d => d.records.length > 0);
+      .filter(d => d.records.length > 0)
+      .sort((a, b) => b.date.localeCompare(a.date)); // 최신 날짜가 위로
 
     const periodTotal = daysForCompany.reduce(
       (s, d) => s + d.records.reduce((ss, r) => ss + r.totalPrice, 0), 0
@@ -2387,7 +2388,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                 <td className="py-1.5 px-3 text-right text-white font-black tabular-nums border-r border-zinc-700">{periodTotal.toLocaleString()}</td>
                 <td className="py-1.5 px-3 text-right text-white font-black tabular-nums border-r border-zinc-700">{periodTotal.toLocaleString()}</td>
                 {(() => {
-                  const latest = [...daysForCompany].reverse().map(d => getDepositBalance(activeCompany, d.date)).find(v => v !== undefined);
+                  const latest = daysForCompany.map(d => getDepositBalance(activeCompany, d.date)).find(v => v !== undefined);
                   return (
                     <td className="py-1.5 px-3 text-right font-black tabular-nums">
                       {latest === undefined ? '' : <span className={latest < 0 ? 'text-rose-400' : 'text-emerald-400'}>{latest.toLocaleString()}원</span>}
@@ -2403,7 +2404,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
         {daysForCompany.some(d => d.summaryText) && (
           <div className="space-y-1.5">
             <div className="text-[11px] font-bold text-zinc-500 px-1">기록된 정산요약</div>
-            {[...daysForCompany].reverse().filter(d => d.summaryText).map(({ date, summaryText }) => (
+            {daysForCompany.filter(d => d.summaryText).map(({ date, summaryText }) => (
               <details key={date} className="rounded-xl border border-zinc-800 bg-zinc-900/60 group">
                 <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none text-xs font-bold text-zinc-300 hover:text-white">
                   <span>{formatDate(date)}</span>
