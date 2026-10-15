@@ -919,7 +919,7 @@ const generateWorkbookForCompany = async (
 
         if (outputRows.length === 0 && Object.keys(summary).length === 0) return [companyName, null];
 
-        const sortColIdx = headerRow.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'productName');
+        const sortColIdx = findProductNameColIdx(headerRow, companyConfig.orderFormFieldMap);
         if (sortColIdx !== -1) {
             outputRows.sort((a, b) => compareProductNameCells(a[sortColIdx], b[sortColIdx], companyName));
         }
@@ -958,11 +958,25 @@ const generateWorkbookForCompany = async (
  * (allOrderRows와 rowOrderNumbers/rowPricing 등 행 병렬 배열의 순서가 어긋나면 안 되므로).
  * 품목명 칸을 못 찾는 양식이면 원래 순서 그대로 둔다.
  */
-export function sortRowsByProductName(header: string[], rows: any[][], companyName?: string): any[][] {
-    const idx = header.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'productName');
+export function sortRowsByProductName(header: string[], rows: any[][], companyName?: string, fieldMap?: string[]): any[][] {
+    const idx = findProductNameColIdx(header, fieldMap);
     if (idx === -1) return rows;
     // Array.sort는 안정 정렬이라 같은 품목끼리는 원래 순서(차수 순)가 유지된다
     return [...rows].sort((a, b) => compareProductNameCells(a[idx], b[idx], companyName));
+}
+
+/**
+ * 발주서에서 품목명 칸 위치. 업체 설정의 필드 매핑을 먼저 보고,
+ * 없으면 헤더 이름으로 추측 ('품명'처럼 inferFieldFromHeader가 모르는 헤더도 포함).
+ */
+function findProductNameColIdx(header: string[], fieldMap?: string[]): number {
+    if (fieldMap && fieldMap.length === header.length) {
+        const mapped = fieldMap.indexOf('productName');
+        if (mapped !== -1) return mapped;
+    }
+    const inferred = header.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'productName');
+    if (inferred !== -1) return inferred;
+    return header.findIndex((h: string) => String(h).replace(/\s/g, '').includes('품명'));
 }
 
 /** 키로수 작은 순으로 발주서를 정렬하는 업체 (그 외 업체는 품목명 가나다순) */
@@ -972,7 +986,7 @@ const KG_ASC_SORT_COMPANIES = ['서한'];
 function compareProductNameCells(a: any, b: any, companyName?: string): number {
     const sa = String(a || ''), sb = String(b || '');
     if (companyName && KG_ASC_SORT_COMPANIES.some(k => companyName.includes(k))) {
-        const kgOf = (s: string) => { const m = s.match(/(\d+(?:\.\d+)?)\s*kg/i); return m ? parseFloat(m[1]) : Infinity; };
+        const kgOf = (s: string) => { const m = s.match(/(\d+(?:\.\d+)?)\s*(?:kg|키로|킬로|k\b)/i); return m ? parseFloat(m[1]) : Infinity; };
         const ka = kgOf(sa), kb = kgOf(sb);
         if (ka !== kb) return ka < kb ? -1 : 1;
     }

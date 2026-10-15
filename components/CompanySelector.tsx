@@ -3029,7 +3029,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return;
         const header = getHeaderForCompany(companyName, companyConfig);
-        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, rows, companyName)]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, rows, companyName, pricingConfig[companyName]?.orderFormFieldMap)]);
         ws['!cols'] = header.map(() => ({ wch: 15 }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
@@ -3048,7 +3048,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return null;
         const header = getHeaderForCompany(companyName, companyConfig);
-        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, rows, companyName)]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, rows, companyName, pricingConfig[companyName]?.orderFormFieldMap)]);
         ws['!cols'] = header.map(() => ({ wch: 15 }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
@@ -3599,7 +3599,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const companyConfig = pricingConfig[companyName];
             if (!companyConfig) return;
             const header = getHeaderForCompany(companyName, companyConfig);
-            const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, mergedRows, companyName)]);
+            const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, mergedRows, companyName, pricingConfig[companyName]?.orderFormFieldMap)]);
             ws['!cols'] = header.map(() => ({ wch: 15 }));
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, '발주서');
@@ -4290,7 +4290,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return;
         const header = getHeaderForCompany(companyName, companyConfig);
-        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, mergedRows, companyName)]);
+        const ws = XLSX.utils.aoa_to_sheet([header, ...sortRowsByProductName(header, mergedRows, companyName, pricingConfig[companyName]?.orderFormFieldMap)]);
         ws['!cols'] = header.map(() => ({ wch: 15 }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
