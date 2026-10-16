@@ -45,6 +45,7 @@ const columnLooksLikeTracking = (vendorAoa: any[][], colIdx: number, headerRowId
         nonEmpty++;
         if (isTrackingLikeValue(v)) trackingLike++;
     }
+    if (nonEmpty === 0) return false; // 빈 열(헤더만 남은 옛 송장열 등)은 송장열 아님
     if (nonEmpty < 3) return true; // 표본 부족 시 판단 보류 (기존 동작 유지)
     return trackingLike / nonEmpty >= 0.5;
 };
@@ -156,6 +157,38 @@ const buildMapFromColumns = (vendorAoa: any[][], vOrderIdx: number, vInvIdx: num
     }
     return invoiceMap;
 };
+
+/**
+ * 송장번호를 열 고정 없이 "0000-0000-0000" 형식 값으로 찾는 업체 (업체명 포함 매칭).
+ * 서한푸드는 송장번호를 K열·L열 등 매번 다른 칸에 적어 보낸다 → 행마다 그 형식 값을 찾아 쓴다.
+ */
+const DASHED_TRACKING_COMPANIES = ['서한'];
+const DASHED_TRACKING_RE = /^[1-9]\d{3}-\d{4}-\d{4}$/; // 0으로 시작하면 안심번호(0504-…) 등 전화번호
+
+/**
+ * 행마다 "0000-0000-0000" 형식 칸을 송장번호로 써서 invoiceMap을 빌드 (키 열·연락처 열 제외).
+ * 헤더명(운송장번호/비워둠 등)은 보지 않는다 — 서한푸드는 헤더 없이 아무 칸에나 적어 보낸다.
+ */
+const buildMapFromDashedTracking = (vendorAoa: any[][], vKeyIndices: number[], vHeaders: any[], makeKey: (row: any[]) => string): Map<string, string[]> => {
+    const invoiceMap = new Map<string, string[]>();
+    const isPhoneCol = (ci: number) => /연락|전화|휴대|핸드폰|hp|phone/i.test(String(vHeaders[ci] || '').replace(/\s+/g, ''));
+    for (const row of vendorAoa) {
+        if (!row) continue;
+        const key = makeKey(row);
+        if (!key) continue;
+        for (let ci = 0; ci < row.length; ci++) {
+            if (vKeyIndices.includes(ci) || isPhoneCol(ci)) continue;
+            if (!DASHED_TRACKING_RE.test(String(row[ci] ?? '').trim())) continue;
+            const val = normalizeValue(row[ci]);
+            const existing = invoiceMap.get(key) || [];
+            if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
+        }
+    }
+    return invoiceMap;
+};
+
+const buildMapFromDashedOrderCol = (vendorAoa: any[][], vOrderIdx: number, vHeaders: any[]) =>
+    buildMapFromDashedTracking(vendorAoa, [vOrderIdx], vHeaders, row => normalizeOrderNum(row[vOrderIdx]));
 
 /** vendorAoa + 여러 키 열 인덱스로 invoiceMap을 빌드 (복합 키 지원) */
 const buildMapFromMultiColumns = (vendorAoa: any[][], vKeyIndices: number[], vInvIdx: number): Map<string, string[]> => {
@@ -284,6 +317,18 @@ export const useInvoiceMerger = () => {
                 console.log(`[송장] ⚠ 업체: ${companyName}, 매칭 헤더(${matchHeaderNames}) 중 일부를 찾지 못함: ${vKeyIndices}`);
             }
 
+            // 서한푸드 등: 송장 칸이 매번 달라(헤더도 '비워둠') 행마다 "0000-0000-0000" 값을 찾는다
+            if (DASHED_TRACKING_COMPANIES.some(n => companyName.includes(n)) && !vKeyIndices.includes(-1)) {
+                const dashedMap = buildMapFromDashedTracking(vendorAoa, vKeyIndices, vHeaders, row => {
+                    const parts = vKeyIndices.map(idx => normalizeMatchValue(row[idx]));
+                    return parts.some(p => !p) ? '' : parts.join('|');
+                });
+                if (dashedMap.size > 0) {
+                    console.log(`[송장] 업체: ${companyName}, 매칭 헤더: ${matchHeaderNames.join('+')}, 송장 0000-0000-0000 행별 감지, map크기=${dashedMap.size}`);
+                    return dashedMap;
+                }
+            }
+
             const invoiceMap = buildMapFromMultiColumns(vendorAoa, vKeyIndices, vInvIdx);
             console.log(`[송장] 업체: ${companyName}, 매칭 헤더: ${matchHeaderNames.join('+')}, 키열: ${vKeyIndices}, 송장열: ${vInvIdx}, map크기=${invoiceMap.size}`);
             return invoiceMap;
@@ -347,6 +392,26 @@ export const useInvoiceMerger = () => {
             }
         }
 
+        // 서한푸드 등: 송장번호 칸이 매번 달라 열을 고정하지 않고 행마다 "0000-0000-0000" 형식 값을 찾는다
+        let buildMap = (orderIdx: number) => buildMapFromColumns(vendorAoa, orderIdx, vInvIdx);
+        if (DASHED_TRACKING_COMPANIES.some(n => companyName.includes(n))) {
+            const vHeaders = vendorAoa[findVendorHeaderIdx(vendorAoa)] || [];
+            let dashedMap = buildMapFromDashedOrderCol(vendorAoa, vOrderIdx, vHeaders);
+            if (dashedMap.size === 0) {
+                // 지정 주문열이 비었으면 '주문번호' 헤더 열(서한푸드 N열)로 재시도
+                const hdrOrder = findColIdx(vHeaders, ['주문번호', '묶음배송번호']);
+                if (hdrOrder !== -1 && hdrOrder !== vOrderIdx) {
+                    dashedMap = buildMapFromDashedOrderCol(vendorAoa, hdrOrder, vHeaders);
+                    if (dashedMap.size > 0) vOrderIdx = hdrOrder;
+                }
+            }
+            if (dashedMap.size > 0) {
+                buildMap = (orderIdx: number) => buildMapFromDashedOrderCol(vendorAoa, orderIdx, vHeaders);
+                vInvIdx = -2; // 열 고정 안 함 (아래 폴백 감지 건너뜀)
+                console.log(`[송장] 업체: ${companyName}, 송장번호 0000-0000-0000 형식으로 행별 감지 (열 고정 안 함)`);
+            }
+        }
+
         // 송장번호 열을 아직 못 정했으면 (fieldMap에 trackingNumber가 없거나 하드코딩 열이 -1) 공통 폴백:
         // 헤더 키워드 → 데이터에서 10자리 이상 숫자 열 자동 감지
         // (업체가 송장번호 헤더를 "비워둠" 등으로 보내면 inferVendorInvoiceField가 태깅하지 못해 여기로 옴)
@@ -384,8 +449,8 @@ export const useInvoiceMerger = () => {
             if (vInvIdx !== -1) console.log(`[송장] 업체: ${companyName}, 송장열 폴백 감지 → ${vInvIdx}`);
         }
 
-        const invoiceMap = buildMapFromColumns(vendorAoa, vOrderIdx, vInvIdx);
-        console.log(`[송장] 업체: ${companyName}, 감지 열: 주문=${vOrderIdx}, 송장=${vInvIdx}, map크기=${invoiceMap.size}`);
+        const invoiceMap = buildMap(vOrderIdx);
+        console.log(`[송장] 업체: ${companyName}, 감지 열: 주문=${vOrderIdx}, 송장=${vInvIdx === -2 ? '행별' : vInvIdx}, map크기=${invoiceMap.size}`);
 
         // --- 2단계: 실제 주문번호와 매칭 테스트 → 0건이면 자동 재탐색 ---
         if (orderKeys && orderKeys.size > 0 && invoiceMap.size > 0) {
@@ -418,7 +483,7 @@ export const useInvoiceMerger = () => {
 
                 if (bestHits > 0 && bestCol !== vOrderIdx) {
                     console.log(`[송장] ✓ 자동 재탐색 성공: 열 ${vOrderIdx} → 열 ${bestCol} (${bestHits}건 매칭)`);
-                    const betterMap = buildMapFromColumns(vendorAoa, bestCol, vInvIdx);
+                    const betterMap = buildMap(bestCol);
                     return betterMap;
                 } else {
                     console.log(`[송장] ✗ 자동 재탐색 실패: 매칭되는 열을 찾지 못함`);
@@ -497,10 +562,11 @@ export const useInvoiceMerger = () => {
                     if (lower.includes('주문') || lower.includes('오더') || lower.includes('접수') || lower.includes('관리')) {
                         // 주문번호 계열: 발주서가 주문번호(C열)로 생성되므로 주문번호 우선
                         headerToKeywords[hName] = ['주문번호', '주문정보', '오더번호', '접수번호', '관리번호', '묶음배송번호'];
-                    } else if (lower.includes('수령') || lower.includes('수취') || lower.includes('받는') || lower.includes('고객명')) {
-                        headerToKeywords[hName] = ['받는분', '수취인', '수령인', '고객명', '수신자'];
+                    // '받는분연락처'처럼 '받는'이 들어간 연락처 헤더가 있어 연락처 판정을 이름보다 먼저
                     } else if (lower.includes('전화') || lower.includes('연락') || lower.includes('핸드폰') || lower.includes('휴대') || lower.includes('hp')) {
                         headerToKeywords[hName] = ['전화', '연락처', '핸드폰', '휴대폰', 'HP', 'phone', 'mobile'];
+                    } else if (lower.includes('수령') || lower.includes('수취') || lower.includes('받는') || lower.includes('고객명')) {
+                        headerToKeywords[hName] = ['받는분', '수취인', '수령인', '고객명', '수신자'];
                     } else if (lower.includes('상품') || lower.includes('품목') || lower.includes('제품') || lower.includes('품명')) {
                         headerToKeywords[hName] = ['상품명', '품목명', '제품명', '품명'];
                     } else {
@@ -511,7 +577,15 @@ export const useInvoiceMerger = () => {
             }
 
             const orderMatchIndices: number[] = isHeaderBasedMatch
-                ? matchHeaderNames.map(hName => findColIdx(orderHeader, headerToKeywords[hName] || [hName]))
+                ? matchHeaderNames.map(hName => {
+                    const kws = headerToKeywords[hName] || [hName];
+                    // 연락처는 구매자전화번호보다 수취인전화번호 우선
+                    if (kws.includes('연락처')) {
+                        const recv = findColIdx(orderHeader, ['수취인전화', '수취인연락', '받는분전화', '받는분연락', '수령인전화', '수령인연락']);
+                        if (recv !== -1) return recv;
+                    }
+                    return findColIdx(orderHeader, kws);
+                })
                 : [targetOrderIdx];
 
             // 주문서 측 매칭 키 후보 열 (묶음배송번호 우선이지만 업체가 주문번호로 회신하는 경우도 있음 — 제이제이 등)
