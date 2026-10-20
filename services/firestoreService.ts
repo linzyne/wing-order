@@ -155,8 +155,12 @@ export const subscribePricingConfig = (
       if (!active) return;
       retryDelay = 2000;
       clearQuotaCooldown();
+      const fromCache = snapshot.metadata.fromCache;
       if (snapshot.exists()) {
         callback(snapshot.data().data as PricingConfig, true);
+      } else if (fromCache) {
+        // 캐시상 "없음"은 서버 확인 전이라 믿지 않음 (서버 응답 때 다시 호출됨)
+        callback(null, false);
       } else {
         callback(null, true);
       }

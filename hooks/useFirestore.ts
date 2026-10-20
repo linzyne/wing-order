@@ -64,7 +64,7 @@ export const usePricingConfig = (businessId?: string) => {
       : {};
   const [config, setConfig] = useState<PricingConfig>(defaultConfig);
   const [isLoading, setIsLoading] = useState(true);
-  const [configSource, setConfigSource] = useState<'loading' | 'firestore' | 'default'>('loading');
+  const [configSource, setConfigSource] = useState<'loading' | 'firestore' | 'default' | 'new'>('loading');
   const pendingSaves = useRef(0);
   const saveGraceUntil = useRef(0);
   const hasLoadedRef = useRef(false);
@@ -90,7 +90,13 @@ export const usePricingConfig = (businessId?: string) => {
         // (2초 후 재구독이 올 때까지 빈 config로 UI 활성화하지 않음)
         if (!connected) return;
         setConfig(defaultConfig);
-        setConfigSource('default');
+        if (businessId && businessId !== '안군농원' && businessId !== '조에') {
+          // 새로 추가한 사업자: 서버에 설정 문서가 아직 없을 뿐 → 빈 설정에서 저장(업체 추가) 허용
+          hasLoadedRef.current = true;
+          setConfigSource('new');
+        } else {
+          setConfigSource('default');
+        }
       }
       setIsLoading(false);
     }, businessId);
