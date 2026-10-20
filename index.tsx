@@ -1,6 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import { patchXlsxRead } from './utils/patchXlsxRead';
+
+patchXlsxRead();
 
 // 렌더 도중 에러가 나도 화면이 통째로 사라지지 않도록(=새까만 화면) 잡아서 안내
 class ErrorBoundary extends React.Component<{ children?: React.ReactNode }, { error: Error | null }> {
