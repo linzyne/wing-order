@@ -2,7 +2,7 @@ import { db } from '../firebase';
 import {
   doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, orderBy, where, getDocs,
-  onSnapshot, Timestamp, deleteField, writeBatch, arrayUnion, arrayRemove,
+  onSnapshot, getDocFromServer, Timestamp, deleteField, writeBatch, arrayUnion, arrayRemove,
   type Unsubscribe
 } from 'firebase/firestore';
 import { isCsFullyCompleted } from '../types';
@@ -159,8 +159,13 @@ export const subscribePricingConfig = (
       if (snapshot.exists()) {
         callback(snapshot.data().data as PricingConfig, true);
       } else if (fromCache) {
-        // 캐시상 "없음"은 서버 확인 전이라 믿지 않음 (서버 응답 때 다시 호출됨)
-        callback(null, false);
+        // 캐시상 "없음"은 서버 확인 전이라 믿지 않음 — 서버에 직접 물어봄
+        // (서버도 "없음"이면 onSnapshot이 다시 안 불려 로딩이 안 끝나므로)
+        getDocFromServer(docRef).then(s => {
+          if (!active) return;
+          if (s.exists()) callback(s.data().data as PricingConfig, true);
+          else callback(null, true);
+        }).catch(() => { if (active) callback(null, false); });
       } else {
         callback(null, true);
       }
