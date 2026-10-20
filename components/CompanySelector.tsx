@@ -905,6 +905,9 @@ function autoMapProducts(
     return out;
 }
 
+// 가구매 명단 빈 상태 알림: 여러 사업자에 동시에 발주서가 생겨도 한 번만 띄우기 위한 공용 시각
+let lastEmptyFakeAlertAt = 0;
+
 const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
@@ -1424,6 +1427,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const effectiveUnsentInput = globalUnsentOrderInput?.trim() ? globalUnsentOrderInput : unsentOrderInput;
     const [showFakeDetail, setShowFakeDetail] = useState(false);
     const [showUnmatchedFakeAlert, setShowUnmatchedFakeAlert] = useState(false);
+    const [showEmptyFakeAlert, setShowEmptyFakeAlert] = useState(false);
+    const effectiveFakeInputRef = useRef(effectiveFakeInput);
+    effectiveFakeInputRef.current = effectiveFakeInput;
 
     const [courierFiles, setCourierFiles] = useState<Record<string, File>>({});
     const [courierResults, setCourierResults] = useState<Record<string, { matched: number; total: number; notFound: string[] }>>({});
@@ -4205,6 +4211,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     }
                 };
                 sendNotif(`${companyName} 발주서 생성`, `${newCount}건`);
+                // 가구매 명단이 비어 있으면 알림 (붙여넣기 빠뜨림 방지)
+                if (!effectiveFakeInputRef.current.trim() && Date.now() - lastEmptyFakeAlertAt > 10000) {
+                    lastEmptyFakeAlertAt = Date.now();
+                    setShowEmptyFakeAlert(true);
+                }
             }
             // 발주서 불 켜기 (복원 억제 기간 이후 데이터가 있으면 항상 켬)
             setOrderLitSessions(prev => new Set([...prev, sessionId]));
@@ -7255,6 +7266,33 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <button
                             onClick={() => setShowUnmatchedFakeAlert(false)}
                             style={{ flex: 1, background: 'rgba(244,63,94,0.2)', color: '#fb7185', fontWeight: 900, fontSize: '12px', padding: '10px', borderRadius: '10px', border: '1px solid rgba(244,63,94,0.4)', cursor: 'pointer' }}
+                        >
+                            확인
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {/* 발주서 생성 시 가구매 명단이 비어 있으면 알림 */}
+            {showEmptyFakeAlert && createPortal(
+                <div
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.75)' }}
+                    onClick={() => setShowEmptyFakeAlert(false)}
+                >
+                    <div
+                        style={{ background: '#1c1c1e', borderRadius: '16px', padding: '28px 28px 20px', maxWidth: '400px', width: '90%', display: 'flex', flexDirection: 'column', border: '2px solid rgba(244,63,94,0.5)', boxShadow: '0 25px 60px rgba(0,0,0,0.6)' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div style={{ color: '#fb7185', fontWeight: 900, fontSize: '11px', letterSpacing: '0.08em', marginBottom: '6px', opacity: 0.8 }}>
+                            가구매 명단 비어 있음
+                        </div>
+                        <p style={{ color: '#fecdd3', fontSize: '13px', fontWeight: 600, margin: '0 0 18px' }}>
+                            발주서가 생성됐는데 가구매 명단이 비어 있습니다. 가구매 명단을 넣었는지 확인해주세요.
+                        </p>
+                        <button
+                            onClick={() => setShowEmptyFakeAlert(false)}
+                            style={{ background: 'rgba(244,63,94,0.2)', color: '#fb7185', fontWeight: 900, fontSize: '12px', padding: '10px', borderRadius: '10px', border: '1px solid rgba(244,63,94,0.4)', cursor: 'pointer' }}
                         >
                             확인
                         </button>
