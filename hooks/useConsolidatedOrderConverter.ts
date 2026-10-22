@@ -976,22 +976,23 @@ const generateWorkbookForCompany = async (
 
         if (outputRows.length === 0 && Object.keys(summary).length === 0) return [companyName, null];
 
-        // 주문번호 합치기: 같은 주문번호 행을 1행으로 (수동 주문은 제외)
-        if (companyConfig.mergeSameOrder && mergeQtyRows) {
+        // 행 합치기 / 주문번호 합치기: 수량 칸은 택배사가 박스 수로 읽으므로 1로 두고, 구매 수량은 품목명에 "여성용 4개"처럼 적는다.
+        // 주문번호 합치기면 같은 주문번호 행을 1행으로 묶어 "남성용 1개, 여성용 4개" (수동 주문은 묶지 않음)
+        if (mergeQtyRows) {
             const prodCol = findProductNameColIdx(headerRow, companyConfig.orderFormFieldMap);
             const qtyCol = findQtyColIdx(headerRow, companyConfig.orderFormFieldMap);
-            const groups = new Map<string, any[][]>();
-            const merged: any[][] = [];
+            const groups = new Map<any[], any[][]>();
+            const byOrder = new Map<string, any[]>();
             for (const r of outputRows) {
                 const on = rowOrderNumberMap.get(r) || '';
-                if (!on || on === '수동') { merged.push(r); continue; }
-                if (!groups.has(on)) { groups.set(on, []); merged.push(r); }
-                groups.get(on)!.push(r);
+                if (companyConfig.mergeSameOrder && on && on !== '수동') {
+                    const first = byOrder.get(on);
+                    if (first) { groups.get(first)!.push(r); continue; }
+                    byOrder.set(on, r);
+                }
+                groups.set(r, [r]);
             }
-            outputRows = merged.map(r => {
-                const on = rowOrderNumberMap.get(r) || '';
-                const g = groups.get(on);
-                if (!g || g.length < 2) return r;
+            outputRows = Array.from(groups.entries()).map(([r, g]) => {
                 // 품목별 수량 합산 (등장 순서 유지)
                 const byName = new Map<string, number>();
                 for (const gr of g) {
@@ -1001,13 +1002,13 @@ const generateWorkbookForCompany = async (
                 }
                 const total = Array.from(byName.values()).reduce((a, b) => a + b, 0);
                 const out = [...r];
-                if (byName.size > 1 && prodCol !== -1) {
-                    out[prodCol] = Array.from(byName.entries()).map(([n, q]) => q > 1 ? `${n} x${q}` : n).join(', ');
-                }
-                out[qtyCol] = total;
+                // 품목명 칸이 없으면 수량을 적을 곳이 없으니 수량 칸에 합계 유지
+                const boxQty = prodCol !== -1 ? 1 : total;
+                if (prodCol !== -1) out[prodCol] = Array.from(byName.entries()).map(([n, q]) => `${n} ${q}개`).join(', ');
+                out[qtyCol] = boxQty;
                 // 연두 양식: 신청건수 칸도 수량과 같이
-                if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName) && !companyConfig.orderFormHeaders?.length) out[12] = total;
-                rowOrderNumberMap.set(out, on);
+                if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName) && !companyConfig.orderFormHeaders?.length) out[12] = boxQty;
+                rowOrderNumberMap.set(out, rowOrderNumberMap.get(r) || '');
                 rowBundleNumberMap.set(out, rowBundleNumberMap.get(r) || '');
                 rowRecipientNameMap.set(out, rowRecipientNameMap.get(r) || '');
                 if (rowPricingMap.has(r)) rowPricingMap.set(out, rowPricingMap.get(r)!);

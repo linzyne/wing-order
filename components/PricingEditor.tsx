@@ -1647,7 +1647,7 @@ const CompanyCard: React.FC<{
                                         checked={companyConfig.qtyRowMode === 'merge'}
                                         onChange={() => props.onUpdateOrderOptions({ qtyRowMode: 'merge' })}
                                     />
-                                    행 합치기 <span className="text-[11px] text-zinc-500 font-normal">2개 → 1행(수량 2)</span>
+                                    행 합치기 <span className="text-[11px] text-zinc-500 font-normal">2개 → 1행, 품목명 '여성용 2개', 수량 1</span>
                                 </label>
                             </div>
                         </div>
@@ -1660,10 +1660,10 @@ const CompanyCard: React.FC<{
                                 className="w-4 h-4 mt-0.5 rounded border-zinc-700 bg-zinc-950 text-rose-500"
                             />
                             <span className="text-[11px] text-zinc-500 font-normal leading-relaxed">
-                                같은 주문번호는 1행으로 · 같은 품목은 수량 합산, 다른 품목은 "A x2, B" 처럼 이어 씀 · 켜면 위 행 나누기/합치기는 무시
+                                같은 주문번호는 1행으로 · 품목명에 "남성용 1개, 여성용 4개"처럼 적고 수량은 1 · 켜면 위 행 나누기/합치기는 무시
                             </span>
                         </label>
-                        <p className="text-[11px] text-zinc-600">발주서에 수량 칸이 없는 양식은 합치기를 켜도 행 나누기로 만듦</p>
+                        <p className="text-[11px] text-zinc-600">합치기의 수량 칸 1 = 박스 수 · 발주서에 수량 칸이 없는 양식은 합치기를 켜도 행 나누기로 만듦</p>
                     </div>
                     <div className="bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">
                         <div className="flex items-center gap-3">
