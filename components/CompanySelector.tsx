@@ -1909,6 +1909,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     }
                 }
                 if (bestCompany) productToCompany[groupName] = bestCompany;
+            } else if (customCompany && !productToCompany[groupName]) {
+                // 누락 검사가 등록상품명(K열) → 업체로 찾으므로 매칭 열 업체도 기록
+                productToCompany[groupName] = customCompany;
             }
             const isFake = fakeNums.has(orderNum);
             const company = customCompany || productToCompany[groupName] || '';

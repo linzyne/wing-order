@@ -763,7 +763,9 @@ const generateWorkbookForCompany = async (
             const dateHeaders = ['주문일시', '주문일', '결제일', '발주발송일', '접수일'];
             const dateColIdx = headers.findIndex(h => dateHeaders.some(dh => h.includes(dh)));
 
-            const groupColIdx = getGroupColIdx(companyName, pricingConfig);
+            // 집계·누락검사용 등록상품명은 항상 K열, 품목 매칭만 업체가 지정한 열 사용
+            const groupColIdx = DEFAULT_GROUP_COL_IDX;
+            const matchColIdx = getGroupColIdx(companyName, pricingConfig);
             const productColIdx = 11;
             // 수량 열 동적 탐색 (masterProductSummary와 동일 로직)
             let quantityColIdx = headers.findIndex(h => h.includes('수량'));
@@ -810,7 +812,9 @@ const generateWorkbookForCompany = async (
                     continue;
                 }
 
-                let rawProductName = `${row[groupColIdx] || ''} ${row[productColIdx] || ''}`.trim();
+                let rawProductName = matchColIdx === groupColIdx || matchColIdx === productColIdx
+                    ? `${row[groupColIdx] || ''} ${row[productColIdx] || ''}`.trim()
+                    : `${row[matchColIdx] || ''} ${row[productColIdx] || ''}`.trim();
                 if (optionColIdx !== -1 && row[optionColIdx]) {
                     rawProductName += ' ' + String(row[optionColIdx]).trim();
                 }
@@ -826,7 +830,7 @@ const generateWorkbookForCompany = async (
                         }
                     }
                 }
-                const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig, String(row[groupColIdx] || '').trim(), String(regOptionColIdx !== -1 ? row[regOptionColIdx] || '' : '').trim());
+                const productConfigTuple = await findBestMatchForProduct(ai, cache, companyName, rawProductName, companyConfig.products, findProductConfig, pricingConfig, String(row[matchColIdx] || '').trim(), String(regOptionColIdx !== -1 ? row[regOptionColIdx] || '' : '').trim());
 
                 if (productConfigTuple) {
                     const [productKey, config] = productConfigTuple;
