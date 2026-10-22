@@ -704,6 +704,31 @@ export const useInvoiceMerger = () => {
                 }
             }
 
+            // 주문번호 합치기 업체: 같은 주문번호의 여러 묶음배송번호가 발주서 1행(첫 묶음배송번호)으로 나가므로
+            // 업체 송장도 그 번호로만 온다 → 송장 없는 나머지 묶음배송번호에 같은 주문번호의 송장을 채움
+            if (pricingConfig?.[companyName]?.mergeSameOrder && !isHeaderBasedMatch && invoiceMap.size > 0) {
+                let orderNoIdx = (orderHeader || []).findIndex((h: any) => String(h || '').replace(/\s+/g, '') === '주문번호');
+                if (orderNoIdx === -1) orderNoIdx = findColIdx(orderHeader, ['주문번호']);
+                if (orderNoIdx !== -1 && orderNoIdx !== targetOrderIdx) {
+                    const invByOrderNo = new Map<string, string[]>();
+                    for (let i = headerIdx + 1; i < orderAoa.length; i++) {
+                        const row = orderAoa[i]; if (!row) continue;
+                        const on = normalizeOrderNum(row[orderNoIdx]);
+                        const inv = invoiceMap.get(buildOrderMatchKey(row));
+                        if (on && inv && inv.length > 0 && !invByOrderNo.has(on)) invByOrderNo.set(on, inv);
+                    }
+                    let filled = 0;
+                    for (let i = headerIdx + 1; i < orderAoa.length; i++) {
+                        const row = orderAoa[i]; if (!row) continue;
+                        const key = buildOrderMatchKey(row);
+                        if (!key || invoiceMap.has(key)) continue;
+                        const inv = invByOrderNo.get(normalizeOrderNum(row[orderNoIdx]));
+                        if (inv) { invoiceMap.set(key, [...inv]); filled++; }
+                    }
+                    if (filled > 0) console.log(`[송장] 주문번호 합치기: 같은 주문번호 송장으로 묶음배송번호 ${filled}건 채움`);
+                }
+            }
+
             // 송장 양식 헤더가 있으면 사용, 없으면 발주서 헤더 사용
             const companyConfig = pricingConfig?.[companyName];
             const useCustomInvoiceHeaders = companyConfig?.invoiceHeaders && companyConfig.invoiceHeaders.length > 0;
