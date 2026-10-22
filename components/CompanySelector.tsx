@@ -9,7 +9,7 @@ import RegularCustomerPanel, { type ServiceOrderDraft } from './RegularCustomerP
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo, resolveSenderColumns } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
-import { getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
+import { getKeywordsForCompany, matchCustomGroupColCompany, getHeaderForCompany, sortRowsByProductName, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
@@ -769,6 +769,9 @@ function simulateCompanyRouting(rows: any[][], cfg: import('../types').PricingCo
         if (!row) return '';
         const rawGroup = norm(String(row[10] || ''));
         const groupVal = rawGroup || norm(String(row[11] || ''));
+        // 매칭 열을 따로 지정한 업체 먼저
+        const custom = matchCustomGroupColCompany(row, cfg);
+        if (custom) return custom;
         let best = '';
         let bestPos = Infinity;
         if (rawGroup) {
@@ -1334,6 +1337,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         for (let i = 1; i < masterOrderData.length; i++) {
             const rawVal = String(masterOrderData[i]?.[groupColIdx] || '');
             const groupVal = rawVal.replace(/\s+/g, '').normalize('NFC');
+            const customCompany = matchCustomGroupColCompany(masterOrderData[i], pricingConfig);
+            if (customCompany) { companiesInFile.add(customCompany); continue; }
             if (!groupVal) continue;
             let bestCompany = '';
             let bestPos = Infinity;
@@ -1871,8 +1876,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 skippedOrders.push({ recipientName, productName, orderNumber: orderNum, qty, reason: '등록상품명 없음' });
                 continue;
             }
+            // 매칭 열을 따로 지정한 업체는 행마다 판단 (등록상품명 캐시 안 씀)
+            const customCompany = matchCustomGroupColCompany(row, pricingConfig);
             // 업체명 매핑
-            if (!productToCompany[groupName]) {
+            if (!customCompany && !productToCompany[groupName]) {
                 const groupNorm = groupName.replace(/\s+/g, '').normalize('NFC');
                 let bestCompany = '';
                 let bestPos = Infinity;
@@ -1904,7 +1911,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (bestCompany) productToCompany[groupName] = bestCompany;
             }
             const isFake = fakeNums.has(orderNum);
-            const company = productToCompany[groupName] || '';
+            const company = customCompany || productToCompany[groupName] || '';
             const platform = rowPlatformSources[i] || '쿠팡';
             allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake, platform });
             if (isFake) {
@@ -2299,9 +2306,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const groupVal = rawGroup.replace(/\s+/g, '').normalize('NFC');
                 // groupName이 없으면 productName으로 폴백 (토스 등 그룹명 없는 플랫폼)
                 const matchTarget = groupVal || String(json[i][productColIdx] || '').replace(/\s+/g, '').normalize('NFC');
-                if (!matchTarget) continue;
-                let bestCompany = '';
-                let bestPos = Infinity;
+                // 매칭 열을 따로 지정한 업체로 정해지면 bestPos=-1 이라 아래 K열 탐색이 덮어쓰지 않음
+                let bestCompany = matchCustomGroupColCompany(json[i], pricingConfig);
+                let bestPos = bestCompany ? -1 : Infinity;
+                if (!bestCompany && !matchTarget) continue;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
                     for (const k of keywords) {
                         const pos = matchTarget.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
@@ -2805,9 +2813,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const rawGroup = String(json[i][groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
                 // groupName이 없으면 productName으로 폴백 (토스 등 그룹명 없는 플랫폼)
                 const groupVal = rawGroup || String(json[i][productColIdx] || '').replace(/\s+/g, '').normalize('NFC');
-                if (!groupVal) continue;
-                let bestCompany = '';
-                let bestPos = Infinity;
+                // 매칭 열을 따로 지정한 업체로 정해지면 bestPos=-1 이라 아래 K열 탐색이 덮어쓰지 않음
+                let bestCompany = matchCustomGroupColCompany(json[i], pricingConfig);
+                let bestPos = bestCompany ? -1 : Infinity;
+                if (!bestCompany && !groupVal) continue;
                 for (const [name, keywords] of companyKeywordsMap.entries()) {
                     for (const k of keywords) {
                         const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));
@@ -2853,10 +2862,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const companyRows: any[][] = [];
                 for (let i = 1; i < json.length; i++) {
                     const groupVal = String(json[i][groupColIdx] || '').replace(/\s+/g, '').normalize('NFC');
-                    if (!groupVal) continue;
+                    let bestCompany = matchCustomGroupColCompany(json[i], pricingConfig);
+                    let bestPos = bestCompany ? -1 : Infinity;
+                    if (!bestCompany && !groupVal) continue;
                     // 가장 앞 위치 매칭 업체가 이 업체와 같은지 확인
-                    let bestCompany = '';
-                    let bestPos = Infinity;
                     for (const [name, kws] of companyKeywordsMap.entries()) {
                         for (const k of kws) {
                             const pos = groupVal.indexOf(k.replace(/\s+/g, '').normalize('NFC'));

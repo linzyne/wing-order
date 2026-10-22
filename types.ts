@@ -116,6 +116,9 @@ export interface CompanyConfig {
   vendorInvoiceFieldMap?: string[]; // 업체 송장파일 필드 매핑 (주문번호/송장번호 위치)
   vendorInvoiceMatchKey?: string; // 업체 송장 매칭 키 (기본: 'orderNumber')
   deadline?: string; // 마감 시간 (예: "09:00")
+  groupColIdx?: number; // 매칭 열 (마스터발주서 열 번호, 0부터. 비우면 10=K열 등록상품명)
+  qtyRowMode?: 'split' | 'merge'; // 구매수(W열) 처리: split=수량만큼 행 나누기(기본), merge=1행에 수량 표기
+  mergeSameOrder?: boolean; // 주문번호 합치기: 같은 주문번호 행을 1행으로 (켜면 qtyRowMode는 무시하고 수량 합산)
   autoConsolidate?: boolean; // 주문 자동 합산 (같은 수취인의 소량 주문을 큰 단위로 변환)
   shippingSettlementSplit?: boolean; // 배송지정산분리 (정산요약을 품목구매/택배로 분리 표시, 자동합산 시 택배 수량은 합산 후 박스 수 기준)
   keywords?: string[]; // 매칭 키워드 (엑셀 그룹컬럼 매칭용)

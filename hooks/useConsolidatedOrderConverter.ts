@@ -85,6 +85,57 @@ export const getKeywordsForCompany = (companyName: string, pricingConfig?: Prici
     return Array.from(keywords);
 };
 
+/** 기본 매칭 열: K열(등록상품명) */
+export const DEFAULT_GROUP_COL_IDX = 10;
+
+/** 업체별 매칭 열 (업체/품목에서 지정, 없으면 K열) */
+export const getGroupColIdx = (companyName: string, pricingConfig?: PricingConfig): number => {
+    const c = pricingConfig?.[companyName]?.groupColIdx;
+    return typeof c === 'number' && c >= 0 ? c : DEFAULT_GROUP_COL_IDX;
+};
+
+/** 열 번호 → 엑셀 열 문자 (0→A, 10→K, 26→AA) */
+export const colIdxToLetter = (idx: number): string => {
+    let s = '';
+    let n = idx + 1;
+    while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+    return s;
+};
+
+/**
+ * 매칭 열을 K열이 아닌 열로 지정한 업체 라우팅.
+ * 그 열 값에 업체 등록상품명 키워드가 들어 있으면 그 업체 (가장 앞에서 찾은 키워드 우선).
+ * K열 값이 K열 업체의 키워드와 완전일치하는 행은 기존대로 그 업체 몫이라 건드리지 않는다.
+ * 반환 '' = 해당 없음 → 기존 K열 라우팅으로 진행
+ */
+export const matchCustomGroupColCompany = (row: any[], pricingConfig?: PricingConfig): string => {
+    if (!row || !pricingConfig) return '';
+    const norm = (v: any) => String(v ?? '').replace(/\s+/g, '').normalize('NFC');
+    const names = Object.keys(pricingConfig);
+    const customNames = names.filter(n => getGroupColIdx(n, pricingConfig) !== DEFAULT_GROUP_COL_IDX);
+    if (customNames.length === 0) return '';
+    const kVal = norm(row[DEFAULT_GROUP_COL_IDX]);
+    if (kVal) {
+        for (const n of names) {
+            if (getGroupColIdx(n, pricingConfig) !== DEFAULT_GROUP_COL_IDX) continue;
+            if (getKeywordsForCompany(n, pricingConfig).some(k => norm(k) === kVal)) return '';
+        }
+    }
+    let best = '';
+    let bestPos = Infinity;
+    for (const n of customNames) {
+        const val = norm(row[getGroupColIdx(n, pricingConfig)]);
+        if (!val) continue;
+        for (const k of getKeywordsForCompany(n, pricingConfig)) {
+            const kn = norm(k);
+            if (!kn) continue;
+            const pos = val.indexOf(kn);
+            if (pos !== -1 && pos < bestPos) { bestPos = pos; best = n; }
+        }
+    }
+    return best;
+};
+
 class StatsManager {
     total: Record<string, { count: number, totalPrice: number }> = {};
     daily: Record<string, Record<string, { count: number, totalPrice: number }>> = {};
@@ -673,6 +724,10 @@ const generateWorkbookForCompany = async (
     try {
         const companyConfig = pricingConfig[companyName];
         if (!companyConfig) return [companyName, null];
+        // 구매수(W열) 2 이상을 1행에 수량으로 적을지 (행 합치기·주문번호 합치기). 발주서에 수량 칸이 없으면 수량이 사라지므로 나누기 유지
+        const poHeaderForQty = getHeaderForCompany(companyName, companyConfig);
+        const hasQtyCol = findQtyColIdx(poHeaderForQty, companyConfig.orderFormFieldMap) !== -1;
+        const mergeQtyRows = hasQtyCol && companyName !== '고랭지김치' && (companyConfig.qtyRowMode === 'merge' || !!companyConfig.mergeSameOrder);
 
         const bizInfo = getBusinessInfo(businessId || '') || BUSINESS_INFO['안군농원'];
         const senderName = bizInfo.senderName;
@@ -708,7 +763,7 @@ const generateWorkbookForCompany = async (
             const dateHeaders = ['주문일시', '주문일', '결제일', '발주발송일', '접수일'];
             const dateColIdx = headers.findIndex(h => dateHeaders.some(dh => h.includes(dh)));
 
-            const groupColIdx = 10;
+            const groupColIdx = getGroupColIdx(companyName, pricingConfig);
             const productColIdx = 11;
             // 수량 열 동적 탐색 (masterProductSummary와 동일 로직)
             let quantityColIdx = headers.findIndex(h => h.includes('수량'));
@@ -822,8 +877,7 @@ const generateWorkbookForCompany = async (
                 const { row, productKey, config, qty, dateStr } = order;
                 const splitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
                 const isQuantityMode = config.splitMode === 'quantity';
-                const poRowQty = isQuantityMode ? qty : qty * splitCount;
-                const poPerRowQty = isQuantityMode ? splitCount : 1;
+                const { rowCount: poRowQty, perRowQty: poPerRowQty } = calcPoRows(qty, splitCount, isQuantityMode, mergeQtyRows);
                 const shipping = splitCount > 1 && config.shippingCost ? config.shippingCost : 0;
 
                 if (companyConfig.shippingSettlementSplit) {
@@ -877,8 +931,7 @@ const generateWorkbookForCompany = async (
             const [productKey, config] = productConfigTuple || [mo.productName, { displayName: mo.productName, supplyPrice: 0 } as ProductPricing];
             const moSplitCount = config.orderSplitCount && config.orderSplitCount > 1 ? config.orderSplitCount : 1;
             const moIsQuantityMode = config.splitMode === 'quantity';
-            const moPoRowQty = moIsQuantityMode ? mo.qty : mo.qty * moSplitCount;
-            const moPerRowQty = moIsQuantityMode ? moSplitCount : 1;
+            const { rowCount: moPoRowQty, perRowQty: moPerRowQty } = calcPoRows(mo.qty, moSplitCount, moIsQuantityMode, mergeQtyRows);
             const moShipping = moSplitCount > 1 && config.shippingCost ? config.shippingCost : 0;
             manualOrderCounts[productKey] = (manualOrderCounts[productKey] || 0) + mo.qty;
             const moStatsName = config.orderFormName || config.displayName;
@@ -918,6 +971,45 @@ const generateWorkbookForCompany = async (
         headerRow = getHeaderForCompany(companyName, companyConfig);
 
         if (outputRows.length === 0 && Object.keys(summary).length === 0) return [companyName, null];
+
+        // 주문번호 합치기: 같은 주문번호 행을 1행으로 (수동 주문은 제외)
+        if (companyConfig.mergeSameOrder && mergeQtyRows) {
+            const prodCol = findProductNameColIdx(headerRow, companyConfig.orderFormFieldMap);
+            const qtyCol = findQtyColIdx(headerRow, companyConfig.orderFormFieldMap);
+            const groups = new Map<string, any[][]>();
+            const merged: any[][] = [];
+            for (const r of outputRows) {
+                const on = rowOrderNumberMap.get(r) || '';
+                if (!on || on === '수동') { merged.push(r); continue; }
+                if (!groups.has(on)) { groups.set(on, []); merged.push(r); }
+                groups.get(on)!.push(r);
+            }
+            outputRows = merged.map(r => {
+                const on = rowOrderNumberMap.get(r) || '';
+                const g = groups.get(on);
+                if (!g || g.length < 2) return r;
+                // 품목별 수량 합산 (등장 순서 유지)
+                const byName = new Map<string, number>();
+                for (const gr of g) {
+                    const name = String(prodCol !== -1 ? gr[prodCol] ?? '' : '');
+                    const q = Number(gr[qtyCol]) || 1;
+                    byName.set(name, (byName.get(name) || 0) + q);
+                }
+                const total = Array.from(byName.values()).reduce((a, b) => a + b, 0);
+                const out = [...r];
+                if (byName.size > 1 && prodCol !== -1) {
+                    out[prodCol] = Array.from(byName.entries()).map(([n, q]) => q > 1 ? `${n} x${q}` : n).join(', ');
+                }
+                out[qtyCol] = total;
+                // 연두 양식: 신청건수 칸도 수량과 같이
+                if (['연두', '총각김치', '포기김치', '배추김치'].includes(companyName) && !companyConfig.orderFormHeaders?.length) out[12] = total;
+                rowOrderNumberMap.set(out, on);
+                rowBundleNumberMap.set(out, rowBundleNumberMap.get(r) || '');
+                rowRecipientNameMap.set(out, rowRecipientNameMap.get(r) || '');
+                if (rowPricingMap.has(r)) rowPricingMap.set(out, rowPricingMap.get(r)!);
+                return out;
+            });
+        }
 
         const sortColIdx = findProductNameColIdx(headerRow, companyConfig.orderFormFieldMap);
         if (sortColIdx !== -1) {
@@ -977,6 +1069,27 @@ function findProductNameColIdx(header: string[], fieldMap?: string[]): number {
     const inferred = header.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'productName');
     if (inferred !== -1) return inferred;
     return header.findIndex((h: string) => String(h).replace(/\s/g, '').includes('품명'));
+}
+
+/** 발주서 수량 칸 위치 (없으면 -1) */
+function findQtyColIdx(header: string[], fieldMap?: string[]): number {
+    if (fieldMap && fieldMap.length === header.length) {
+        const mapped = fieldMap.indexOf('qty');
+        if (mapped !== -1) return mapped;
+    }
+    return header.findIndex((h: string) => inferFieldFromHeader(String(h)) === 'qty');
+}
+
+/**
+ * 발주서 행 수 / 행당 수량.
+ * 나누기(기본): 구매수 2 → 2행(각 1). 합치기: 1행(수량 2).
+ * 품목 발주분할(orderSplitCount)은 그대로 — 행분할 품목은 분할 수만큼 행, 수량변환 품목은 수량에 곱함.
+ */
+function calcPoRows(qty: number, splitCount: number, isQuantityMode: boolean, mergeQtyRows: boolean): { rowCount: number; perRowQty: number } {
+    if (mergeQtyRows) {
+        return isQuantityMode ? { rowCount: 1, perRowQty: qty * splitCount } : { rowCount: splitCount, perRowQty: qty };
+    }
+    return isQuantityMode ? { rowCount: qty, perRowQty: splitCount } : { rowCount: qty * splitCount, perRowQty: 1 };
 }
 
 /** 키로수 작은 순으로 발주서를 정렬하는 업체 (그 외 업체는 품목명 가나다순) */
@@ -1352,9 +1465,11 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
                         const groupVal = rawGroup || String(row[11] || '').replace(/\s+/g, '').normalize('NFC');
                         // K열이 있으면 등록상품명과 완전일치만 허용 (부분일치 금지)
                         // K열이 없으면 L열에서 부분일치 허용 (기존 동작)
-                        let bestCompany = '';
+                        let bestCompany = matchCustomGroupColCompany(row, pricingConfig);
                         let bestPos = Infinity;
-                        if (rawGroup) {
+                        if (bestCompany) {
+                            // 매칭 열을 따로 지정한 업체로 이미 결정됨
+                        } else if (rawGroup) {
                             for (const [name, keywords] of allCompanyKeywords.entries()) {
                                 for (const k of keywords) {
                                     if (rawGroup === k.replace(/\s+/g, '').normalize('NFC')) {

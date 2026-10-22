@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PricingConfig, CompanyConfig, CompanyDeposit, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
 import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES } from '../types';
-import { inferFieldFromHeader, inferVendorInvoiceField } from '../hooks/useConsolidatedOrderConverter';
+import { inferFieldFromHeader, inferVendorInvoiceField, DEFAULT_GROUP_COL_IDX, colIdxToLetter } from '../hooks/useConsolidatedOrderConverter';
 import { useCompanyDeposits } from '../hooks/useFirestore';
 import { DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY } from '../services/emailService';
 import {
@@ -959,6 +959,15 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
         handleUpdate(newConfig);
     };
 
+    const handleUpdateOrderOptions = (companyName: string, patch: Pick<CompanyConfig, 'groupColIdx' | 'qtyRowMode' | 'mergeSameOrder'>) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        for (const [k, v] of Object.entries(patch)) {
+            if (v === undefined) delete newConfig[companyName][k];
+            else newConfig[companyName][k] = v;
+        }
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateDepositDisabled = (companyName: string, disabled: boolean) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].depositDisabled = disabled || undefined;
@@ -1302,6 +1311,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
                             onUpdateDeadline={(deadline) => handleUpdateDeadline(companyName, deadline)}
                             onUpdateAutoConsolidate={(enabled) => handleUpdateAutoConsolidate(companyName, enabled)}
                             onUpdateShippingSettlementSplit={(enabled) => handleUpdateShippingSettlementSplit(companyName, enabled)}
+                            onUpdateOrderOptions={(patch) => handleUpdateOrderOptions(companyName, patch)}
                             onUpdateKeywords={(keywords) => handleUpdateKeywords(companyName, keywords)}
                             deposits={companyDepositsMap[companyName] ?? (companyConfig as CompanyConfig)?.deposits ?? []}
                             showDeposits={!isLibraryMode}
@@ -1452,6 +1462,7 @@ const CompanyCard: React.FC<{
     onUpdateDeadline: (deadline: string) => void;
     onUpdateAutoConsolidate: (enabled: boolean) => void;
     onUpdateShippingSettlementSplit: (enabled: boolean) => void;
+    onUpdateOrderOptions: (patch: Pick<CompanyConfig, 'groupColIdx' | 'qtyRowMode' | 'mergeSameOrder'>) => void;
     onUpdateKeywords: (keywords: string[]) => void;
     deposits: CompanyDeposit[];
     showDeposits: boolean;
@@ -1596,6 +1607,63 @@ const CompanyCard: React.FC<{
                             정산요약을 품목구매(공급가)와 택배(배송비)로 나눠서 표시
                             · 택배 수량은 자동합산 이후 실제 발송 박스 수 기준
                         </p>
+                    </div>
+                    <div className="bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner flex flex-col gap-2.5 max-w-md">
+                        <span className="text-[12px] font-black text-zinc-500 uppercase tracking-wide">발주서 생성 방식</span>
+                        <label className="flex items-center gap-3 text-sm font-bold text-zinc-400">
+                            <span className="w-24 shrink-0">매칭 열</span>
+                            <select
+                                value={companyConfig.groupColIdx ?? DEFAULT_GROUP_COL_IDX}
+                                onChange={(e) => {
+                                    const v = Number(e.target.value);
+                                    props.onUpdateOrderOptions({ groupColIdx: v === DEFAULT_GROUP_COL_IDX ? undefined : v });
+                                }}
+                                className="bg-zinc-900 border border-zinc-800 rounded-lg px-2 py-1 text-white text-sm"
+                            >
+                                {Array.from({ length: 52 }, (_, i) => (
+                                    <option key={i} value={i}>{colIdxToLetter(i)}열{i === DEFAULT_GROUP_COL_IDX ? ' (등록상품명·기본)' : ''}</option>
+                                ))}
+                            </select>
+                        </label>
+                        <p className="text-[11px] text-zinc-500 -mt-1.5 pl-[108px]">
+                            마스터발주서의 이 열에 아래 등록상품명이 들어 있으면 이 업체 주문. K열이 아니면 '포함'으로 찾음
+                        </p>
+                        <div className="flex items-start gap-3 text-sm font-bold text-zinc-400">
+                            <span className="w-24 shrink-0 pt-0.5">구매수 2개 이상</span>
+                            <div className={`flex flex-col gap-1 ${companyConfig.mergeSameOrder ? 'opacity-40' : ''}`}>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        disabled={!!companyConfig.mergeSameOrder}
+                                        checked={(companyConfig.qtyRowMode ?? 'split') === 'split'}
+                                        onChange={() => props.onUpdateOrderOptions({ qtyRowMode: undefined })}
+                                    />
+                                    행 나누기 <span className="text-[11px] text-zinc-500 font-normal">2개 → 2행(각 1개)</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        disabled={!!companyConfig.mergeSameOrder}
+                                        checked={companyConfig.qtyRowMode === 'merge'}
+                                        onChange={() => props.onUpdateOrderOptions({ qtyRowMode: 'merge' })}
+                                    />
+                                    행 합치기 <span className="text-[11px] text-zinc-500 font-normal">2개 → 1행(수량 2)</span>
+                                </label>
+                            </div>
+                        </div>
+                        <label className="flex items-start gap-3 text-sm font-bold text-zinc-400 cursor-pointer">
+                            <span className="w-24 shrink-0">주문번호 합치기</span>
+                            <input
+                                type="checkbox"
+                                checked={!!companyConfig.mergeSameOrder}
+                                onChange={(e) => props.onUpdateOrderOptions({ mergeSameOrder: e.target.checked || undefined })}
+                                className="w-4 h-4 mt-0.5 rounded border-zinc-700 bg-zinc-950 text-rose-500"
+                            />
+                            <span className="text-[11px] text-zinc-500 font-normal leading-relaxed">
+                                같은 주문번호는 1행으로 · 같은 품목은 수량 합산, 다른 품목은 "A x2, B" 처럼 이어 씀 · 켜면 위 행 나누기/합치기는 무시
+                            </span>
+                        </label>
+                        <p className="text-[11px] text-zinc-600">발주서에 수량 칸이 없는 양식은 합치기를 켜도 행 나누기로 만듦</p>
                     </div>
                     <div className="bg-zinc-950 px-4 py-2 rounded-xl border border-zinc-800 shadow-inner">
                         <div className="flex items-center gap-3">
