@@ -1053,6 +1053,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [excludedCountsMap, setExcludedCountsMap] = useState<Record<string, number>>({});
     const [allExcludedDetails, setAllExcludedDetails] = useState<Record<string, ExcludedOrder[]>>({});
     const [allOrderRows, setAllOrderRows] = useState<Record<string, any[][]>>({});
+    const [allOrderItems, setAllOrderItems] = useState<Record<string, { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[]>>({});
     // 세션(회사+차수)별 업로드 파일명에서 추출한 시간 라벨(예: "8시") — 공통 업로드 패널의 차수 배지에 표시.
     // Firestore(sessionResults[id].timeLabel)에도 함께 저장해 새로고침/다른 PC에서도 유지된다.
     const [sessionTimeLabels, setSessionTimeLabels] = useState<Record<string, string>>({});
@@ -1994,7 +1995,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             sessions.forEach((session: SessionData) => {
                 if (session.round <= 1) return;
                 if (session.round > maxRound) maxRound = session.round;
-                const rows = batchMasterRows[session.id] || allOrderRows[session.id];
+                // 업로드 원본 행이 없으면 발주서 품목 기록(등록상품명·수량)으로 대신 센다.
+                // 발주서 행(allOrderRows)은 업체 양식이라 K열이 주소 등 다른 칸일 수 있어 마지막 수단으로만 사용
+                const items = allOrderItems[session.id];
+                const rows = batchMasterRows[session.id]
+                    || (items && items.length > 0 ? items.map(it => { const r: any[] = []; r[2] = it.orderNumber; r[10] = it.registeredProductName; r[22] = it.qty; return r; }) : null)
+                    || allOrderRows[session.id];
                 if (!rows || rows.length === 0) return;
                 hasData = true;
                 const b = buckets[session.round] || (buckets[session.round] = makeBucket());
@@ -2041,7 +2047,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const realTotal = rounds.reduce((s, b) => s + b.realTotal, 0);
         const fakeTotal = rounds.reduce((s, b) => s + b.fakeTotal, 0);
         return { rounds, groupToCompany, realTotal, fakeTotal };
-    }, [companySessions, allOrderRows, effectiveFakeInput, batchMasterRows, batchPlatforms]);
+    }, [companySessions, allOrderRows, allOrderItems, effectiveFakeInput, batchMasterRows, batchPlatforms]);
 
     // 오늘 사용한 택배대행 양식이 지정되어 있으면 그 양식의 이름·단가·계좌를 쓰고,
     // 아니면 "가구매 택배 설정"의 기본값을 그대로 사용한다. (입금목록 / 기본 물류비 계산용)
@@ -4180,7 +4186,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, []);
 
     const [allRegisteredNames, setAllRegisteredNames] = useState<Record<string, Record<string, string>>>({});
-    const [allOrderItems, setAllOrderItems] = useState<Record<string, { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[]>>({});
     // allOrderRows[sessionId]와 동일한 순서/길이로 정렬된 원본 주문번호 목록 (매출현황 저장용)
     const [allRowOrderNumbers, setAllRowOrderNumbers] = useState<Record<string, string[]>>({});
     // allOrderRows[sessionId]와 동일한 순서/길이로 정렬된 묶음배송번호 목록 (매출현황 저장용)
