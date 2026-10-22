@@ -1717,7 +1717,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                                 {isFirstSession && (
                                     <div className="flex items-center justify-center gap-4">
-                                        <div className={`font-black text-xl ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-pink-400'}`}>{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                        <div className={`font-black text-xl ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-pink-400'}`}>{companyTotalOrders || Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}<span className="text-[11px] font-bold ml-0.5">행</span></div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         {onDownloadMergedOrder ? (
                                             <button onClick={() => triggerDownloadWithMemoCheck(() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); })} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${mergedOrderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-cyan-900/50 text-cyan-300 hover:bg-cyan-800/70 hover:text-cyan-100 border-cyan-700/50 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
@@ -1728,7 +1728,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 )}
                                 {isFirstSession ? (
                                     <div className="flex items-center justify-center gap-4">
-                                        <div className={`font-black text-base ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-indigo-400'}`}>{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                        <div className={`font-black text-base ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-indigo-400'}`}>{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}<span className="text-[11px] font-bold ml-0.5">개</span></div>
                                         <div className="h-6 w-px bg-zinc-800" />
                                         <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
                                         <button onClick={() => triggerDownloadWithMemoCheck(handleDownloadOrder)} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${(orderDownloaded || mergedOrderDownloaded) ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
@@ -1750,7 +1750,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="ml-auto flex items-center gap-2">
                                             <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                             <div className="h-5 w-px bg-zinc-700" />
-                                            <div className={`font-black text-base ${(orderDownloaded || mergedDownloaded) ? 'text-zinc-700' : 'text-indigo-400'}`}>+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}</div>
+                                            <div className={`font-black text-base ${(orderDownloaded || mergedDownloaded) ? 'text-zinc-700' : 'text-indigo-400'}`}>+{Object.values(localResult.summary).reduce((a:any, b:any) => a + b.count, 0)}<span className="text-[11px] font-bold ml-0.5">개</span></div>
                                             <div className="h-6 w-px bg-zinc-800" />
                                             <button onClick={() => setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-indigo-400 transition-colors" title="발주서 미리보기"><EyeIcon className="w-3.5 h-3.5" /></button>
                                             <button onClick={() => triggerDownloadWithMemoCheck(handleDownloadOrder)} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${(orderDownloaded || mergedDownloaded) ? 'bg-zinc-800 text-zinc-600 border-transparent' : roundNumber === 1 ? 'bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 border-violet-700/40 shadow-md' : roundNumber === 2 ? 'bg-sky-900/40 text-sky-300 hover:bg-sky-800/60 hover:text-sky-100 border-sky-700/40 shadow-md' : roundNumber === 3 ? 'bg-emerald-900/40 text-emerald-300 hover:bg-emerald-800/60 hover:text-emerald-100 border-emerald-700/40 shadow-md' : roundNumber === 4 ? 'bg-amber-900/40 text-amber-300 hover:bg-amber-800/60 hover:text-amber-100 border-amber-700/40 shadow-md' : 'bg-rose-900/40 text-rose-300 hover:bg-rose-800/60 hover:text-rose-100 border-rose-700/40 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
@@ -1881,7 +1881,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="text-center">
                                             {roundOrderCounts.length > 1 ? (
                                                 <>
-                                                    <div className="text-pink-400 font-black text-xl">{companyTotalOrders}</div>
+                                                    <div className="text-pink-400 font-black text-xl">{companyTotalOrders}<span className="text-[11px] font-bold ml-0.5">행</span></div>
                                                     <div className="flex items-center justify-center gap-1.5 mt-0.5">
                                                         {roundOrderCounts.map((r, i) => (
                                                             <span key={i} className={`text-[10px] font-black ${platformColorClass(r.platform)}`}>
@@ -1891,7 +1891,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     </div>
                                                 </>
                                             ) : (
-                                                <div className="font-black text-pink-400 text-xl">{syncedData.orderCount}</div>
+                                                <div className="font-black text-pink-400 text-xl">{syncedData.orderCount}<span className="text-[11px] font-bold ml-0.5">개</span></div>
                                             )}
                                         </div>
                                         <div className="h-6 w-px bg-zinc-800" />
@@ -1908,7 +1908,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div className="ml-auto flex items-center gap-2">
                                             <button onClick={resetSyncedData} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                             <div className="h-5 w-px bg-zinc-700" />
-                                            <div className="font-black text-indigo-400 text-base">+{syncedData.orderCount}</div>
+                                            <div className="font-black text-indigo-400 text-base">+{syncedData.orderCount}<span className="text-[11px] font-bold ml-0.5">개</span></div>
                                             <div className="h-6 w-px bg-zinc-800" />
                                             <span className="text-zinc-600 text-[9px] font-black">(복원됨)</span>
                                         </div>
