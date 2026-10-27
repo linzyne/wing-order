@@ -203,9 +203,16 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
         companies: uploadFns[b.id]?.getOrderState?.() ?? [],
       }))
       .filter(b => b.companies.length > 0);
-    setDownloadSnapshot(snapshot);
+    // 내용이 같으면 그대로 둬서 주기 갱신 때 불필요한 리렌더를 막는다
+    setDownloadSnapshot(prev => JSON.stringify(prev) === JSON.stringify(snapshot) ? prev : snapshot);
     return snapshot;
   }, [businesses, uploadFns]);
+
+  // 가구매 명단 추가 등으로 워크스테이션 발주 건수가 바뀌어도 버튼 건수가 따라가도록 주기적으로 다시 읽는다
+  useEffect(() => {
+    const t = setInterval(refreshDownloadSnapshot, 2000);
+    return () => clearInterval(t);
+  }, [refreshDownloadSnapshot]);
 
   const handleBulkToggleClosed = () => {
     const snapshot = refreshDownloadSnapshot();

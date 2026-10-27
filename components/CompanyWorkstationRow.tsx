@@ -913,6 +913,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // 모든 주문이 가구매(제외)인 경우: localResult는 null이지만 excludedList는 있음
             if (excludedList.length > 0) {
                 onResultUpdate(sessionId, adjTotalOnly, excludedList.length, excludedList);
+                // 가구매 명단 추가로 이 차수가 전부 제외된 경우: 부모의 발주 행도 비워야
+                // 통합주문서 합산/차수 다운로드에 예전 행이 남지 않는다.
+                if (hasCompletedLocalProcessingRef.current) onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);
             } else if (hasCompletedLocalProcessingRef.current) {
                 // 이 기기에서 재처리를 완료했는데 매칭 0건 → 부모(allOrderRows 등)에도 반드시
                 // 반영해야 한다. 안 그러면 K열 교체로 실제로는 0건이 됐는데도 부모가 들고 있던
