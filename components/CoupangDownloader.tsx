@@ -48,6 +48,9 @@ async function fetchWing(path: string, init: RequestInit): Promise<Response> {
     return await fetch(WING_API_BASE + path, init);
   } catch (e: any) {
     if (e?.name === 'AbortError') throw e;
+    // 크롬은 버셀 → localhost 요청에 '로컬 네트워크 액세스' 권한을 묻는다. 막혀 있으면 그걸 알려준다.
+    const perm = await navigator.permissions?.query({ name: 'local-network-access' as PermissionName }).catch(() => null);
+    if (perm?.state === 'denied') throw new Error('크롬이 로컬 접근을 막았습니다. 주소창 왼쪽 아이콘 → 사이트 설정 → 로컬 네트워크 액세스를 \'허용\'으로 바꿔주세요.');
     throw new Error(LOCAL_SERVER_OFF_MSG);
   }
 }
