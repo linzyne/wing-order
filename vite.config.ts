@@ -213,9 +213,27 @@ async function runWingInvoiceUpload(
   }
 }
 
+// 버셀 배포 화면에서 이 로컬 서버(localhost:3000)로 자동화를 요청할 수 있게 허용.
+// 아무 사이트나 부르지 못하도록 wing-order 버셀 주소만 받는다.
+const WING_ALLOWED_ORIGIN = /^https:\/\/wing-order[\w-]*\.vercel\.app$/;
+function allowWingCors(req: any, res: any): boolean {
+  const origin = req.headers.origin;
+  if (origin && WING_ALLOWED_ORIGIN.test(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+  }
+  if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return true; }
+  return false;
+}
+
 // Wing 자동화 미들웨어 등록 (dev/preview 공통)
 function registerWingMiddlewares(middlewares: any) {
   middlewares.use('/api/wing-download', (req: any, res: any) => {
+    if (allowWingCors(req, res)) return;
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
     let body = '';
     req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
@@ -238,6 +256,7 @@ function registerWingMiddlewares(middlewares: any) {
   });
 
   middlewares.use('/api/wing-invoice-upload', (req: any, res: any) => {
+    if (allowWingCors(req, res)) return;
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
     let body = '';
     req.on('data', (chunk: Buffer) => { body += chunk.toString(); });

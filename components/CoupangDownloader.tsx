@@ -37,6 +37,26 @@ function savePresetTimes(times: string[]): void {
   localStorage.setItem(PRESET_TIMES_KEY, JSON.stringify(times));
 }
 
+// 브라우저 자동화는 내 컴퓨터의 로컬 서버(npm run dev)에서만 돈다.
+// 버셀에서 열었으면 묻지 않고 localhost:3000 으로 바로 요청한다.
+const IS_LOCAL_PAGE = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const WING_API_BASE = IS_LOCAL_PAGE ? '' : 'http://localhost:3000';
+const LOCAL_SERVER_OFF_MSG = '로컬 서버가 꺼져 있습니다. 윙_발주 폴더에서 npm run dev 를 켜주세요.';
+
+async function fetchWing(path: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(WING_API_BASE + path, init);
+  } catch (e: any) {
+    if (e?.name === 'AbortError') throw e;
+    throw new Error(LOCAL_SERVER_OFF_MSG);
+  }
+}
+
+const SELECTED_KEY = 'coupang_dl_selected';
+function loadSelected(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem(SELECTED_KEY) ?? '{}') ?? {}; } catch { return {}; }
+}
+
 const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onRegisterDirectUpload }) => {
   const [isExpanded, setIsExpanded] = useState(() => localStorage.getItem('coupang_dl_expanded') !== 'false');
   const [selectedStatus, setSelectedStatus] = useState<Record<string, OrderStatus>>({});
@@ -57,6 +77,14 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
   const bulkInvoiceInputRef = useRef<HTMLInputElement>(null);
   const [bulkDownloadLoading, setBulkDownloadLoading] = useState(false);
   const [bulkInvoiceLoading, setBulkInvoiceLoading] = useState(false);
+  // 일괄 다운로드에 넣을 사업자 (기본은 전부 체크)
+  const [selected, setSelected] = useState<Record<string, boolean>>(() => loadSelected());
+  const isSelected = (id: string) => selected[id] !== false;
+  const toggleSelected = (id: string) => setSelected(prev => {
+    const next = { ...prev, [id]: !(prev[id] !== false) };
+    try { localStorage.setItem(SELECTED_KEY, JSON.stringify(next)); } catch {}
+    return next;
+  });
 
   // 모달
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -131,14 +159,14 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5분 타임아웃
     try {
-      const res = await fetch('/api/wing-download', {
+      const res = await fetchWing('/api/wing-download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: creds.id, password: creds.password, status: getStatus(business.id), businessName: business.displayName, timeLabel: timeLabelOverride ?? timeLabel }),
         signal: controller.signal,
       });
       if (!res.ok) {
-        if (res.status === 404) throw new Error('브라우저 자동화는 로컬(npm run dev)에서만 사용 가능합니다. API 모드를 이용해주세요.');
+        if (res.status === 404) throw new Error(LOCAL_SERVER_OFF_MSG);
         const err = await res.json().catch(() => ({ error: `서버 오류 (${res.status})` }));
         throw new Error(err.error ?? '다운로드 실패');
       }
@@ -169,7 +197,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
 
   const handleBulkDownload = async (timeLabelOverride?: string) => {
     if (bulkDownloadLoading) return;
-    const targets = businesses.filter(b => isConfigured(b.id));
+    const targets = businesses.filter(b => isConfigured(b.id) && isSelected(b.id));
     if (targets.length === 0) return;
     setBulkDownloadLoading(true);
     for (const b of targets) {
@@ -240,14 +268,14 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
         binary += String.fromCharCode(...uint8.slice(i, i + 8192));
       }
       const fileBase64 = btoa(binary);
-      const res = await fetch('/api/wing-invoice-upload', {
+      const res = await fetchWing('/api/wing-invoice-upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: creds.id, password: creds.password, fileBase64, fileName: file.name, businessName: business.displayName }),
         signal: controller.signal,
       });
       if (!res.ok) {
-        if (res.status === 404) throw new Error('브라우저 자동화는 로컬(npm run dev)에서만 사용 가능합니다.');
+        if (res.status === 404) throw new Error(LOCAL_SERVER_OFF_MSG);
         const err = await res.json().catch(() => ({ error: `서버 오류 (${res.status})` }));
         throw new Error(err.error ?? '업로드 실패');
       }
@@ -335,6 +363,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
   };
 
   const editingBusiness = businesses.find(b => b.id === editingId);
+  const selectedCount = businesses.filter(b => isConfigured(b.id) && isSelected(b.id)).length;
 
   return (
     <>
@@ -429,9 +458,9 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
             <div className="flex gap-2 pt-0.5">
               <button
                 onClick={openBulkTimeModal}
-                disabled={bulkDownloadLoading || businesses.every(b => !isConfigured(b.id))}
+                disabled={bulkDownloadLoading || selectedCount === 0}
                 className={`flex items-center gap-1 px-3 py-1.5 text-[10px] font-black rounded-lg transition-all ${
-                  bulkDownloadLoading || businesses.every(b => !isConfigured(b.id))
+                  bulkDownloadLoading || selectedCount === 0
                     ? 'bg-zinc-700/40 text-zinc-600 cursor-not-allowed'
                     : 'bg-sky-900/70 hover:bg-sky-800 text-sky-300 shadow'
                 }`}
@@ -439,7 +468,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
                 {bulkDownloadLoading
                   ? <span className="w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
                   : <ArrowDownTrayIcon className="w-3 h-3" />}
-                {bulkDownloadLoading ? '일괄 다운로드 중...' : '일괄 다운로드'}
+                {bulkDownloadLoading ? '선택 다운로드 중...' : `선택 다운로드 (${selectedCount})`}
               </button>
               {businesses.some(b => getMethod(b.id) === 'browser' && !!credentials[b.id]?.id) && (
                 <button
@@ -468,8 +497,17 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
               const hasCreds = !!credentials[b.id]?.id;
 
               return (
-                <div key={b.id} className="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/80 transition-colors">
-                  <span className="text-[11px] font-black text-zinc-300 w-16 shrink-0 truncate">{b.displayName}</span>
+                <div key={b.id} className={`flex items-center gap-2 py-1.5 px-2 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/80 transition-colors ${configured && !isSelected(b.id) ? 'opacity-50' : ''}`}>
+                  <label className="flex items-center gap-1.5 w-20 shrink-0 cursor-pointer" title="선택 다운로드에 포함">
+                    <input
+                      type="checkbox"
+                      checked={configured && isSelected(b.id)}
+                      disabled={!configured}
+                      onChange={() => toggleSelected(b.id)}
+                      className="w-3 h-3 accent-sky-600 shrink-0"
+                    />
+                    <span className="text-[11px] font-black text-zinc-300 truncate">{b.displayName}</span>
+                  </label>
 
                   <span className={`text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 ${
                     method === 'api' ? 'bg-violet-900/50 text-violet-400' : 'bg-sky-900/50 text-sky-400'
