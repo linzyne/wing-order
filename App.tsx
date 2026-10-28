@@ -48,29 +48,16 @@ function loadPersistedFakeOrder(): string {
 
 // 일괄 입금목록 하단 직접 입력: 만료 없이 "초기화" 누르기 전까지 유지 (모달을 닫거나 다른 패널로 이동해도 보존)
 const BULK_DEPOSIT_PASTE_KEY = 'bulkDepositPasteText';
-// 미션허브에서 마지막으로 받은 내용 (미션허브에서 빠진 줄을 찾으려고 기억)
-const MISSION_FEED_FAKE_KEY = 'missionHubFeedFakeLines';
-const MISSION_FEED_DEPOSIT_KEY = 'missionHubFeedDepositText';
+const readLs = (key: string) => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } };
+const writeLs = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch {} };
+// 빈 줄·앞뒤 공백 무시하고 같은 내용인지
+const sameLines = (a: string, b: string) => {
+  const norm = (t: string) => t.split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+  return norm(a) === norm(b);
+};
 const MISSION_CLEAR_REQ_KEY = 'missionClearRequestId';
 // 가구매 명단 창을 열어서 본 미션허브 메모 { bizId: 메모 } — 다르면 새 메모
 const MISSION_MEMO_SEEN_KEY = 'missionHubMemoSeen';
-const readLs = (key: string) => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } };
-const writeLs = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch {} };
-
-// cur에서 prevFeed에만 있던 줄(미션허브에서 빠진 것)은 지우고, feed 줄 중 없는 건 끝에 붙임. 바꿀 게 없으면 null
-export function mergeMissionLines(cur: string, prevFeed: string, feed: string): string | null {
-  const norm = (l: string) => l.trim();
-  const feedLines = feed.split('\n').filter(l => norm(l));
-  const feedSet = new Set(feedLines.map(norm));
-  const removed = new Set(prevFeed.split('\n').map(norm).filter(l => l && !feedSet.has(l)));
-  const curLines = cur.split('\n');
-  const kept = curLines.filter(l => !removed.has(norm(l)));
-  const keptSet = new Set(kept.map(norm));
-  const added = feedLines.filter(l => !keptSet.has(norm(l)));
-  if (kept.length === curLines.length && added.length === 0) return null;
-  const base = kept.join('\n').replace(/\s+$/, '');
-  return [base, ...added].filter(Boolean).join('\n');
-}
 function loadPersistedBulkDepositPaste(): string {
   try {
     return localStorage.getItem(BULK_DEPOSIT_PASTE_KEY) || '';
@@ -342,10 +329,22 @@ const App: React.FC = () => {
     setShowBulkDepositModal(true);
   }, [allBusinesses, bulkPasteText, parseBulkDepositLines]);
   // 미션허브 자동 연동 (가구매 = 윙업무 예약대기, 입금목록 = 윙업무 입금전)
-  // 미션허브 줄은 항상 들어가 있게 하고, 미션허브에서 빠진 줄은 지움. 직접 쓴 다른 줄은 그대로.
-  // 받을 때만이 아니라 명단·붙여넣기 칸이 바뀔 때마다 다시 맞춰서, 초기화·만료·지우기로 한쪽만 남는 일이 없게 함.
+  // 두 칸은 항상 미션허브와 똑같이 맞춤 — 예전에 붙여넣은 줄이나 직접 고친 내용도 미션허브 내용으로 바뀜
   const [missionFeed, setMissionFeed] = useState<MissionHubFeed | null>(null);
   useEffect(() => subscribeMissionHubFeed(setMissionFeed), []);
+  useEffect(() => {
+    if (!missionFeed) return;
+    if (sameLines(globalFakeOrderInput, missionFeed.fakeLines)) return;
+    setGlobalFakeOrderInput(missionFeed.fakeLines);
+    setMatchedFakeNums({});
+  }, [missionFeed, globalFakeOrderInput]);
+  useEffect(() => {
+    if (!missionFeed) return;
+    if (sameLines(bulkPasteText, missionFeed.depositText)) return;
+    setBulkPasteText(missionFeed.depositText);
+    setBulkExtraRowsMap(parseBulkDepositLines(missionFeed.depositText).grouped);
+    setBulkPasteSummary(null);
+  }, [missionFeed, bulkPasteText, parseBulkDepositLines]);
   const [feedNow, setFeedNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setFeedNow(Date.now()), 60 * 1000); return () => clearInterval(t); }, []);
   // 미션허브가 열려 있으면 5분마다 확인 시각을 올리므로, 10분 넘게 소식이 없으면 연동이 멈춘 것
@@ -355,22 +354,6 @@ const App: React.FC = () => {
     : missionFeedStale
       ? `미션허브 연동 멈춤 (${new Date(missionFeed.checkedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 내용) — 미션허브를 열어주세요`
       : `미션허브 연동 중 · ${new Date(missionFeed.checkedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 확인`;
-  useEffect(() => {
-    if (!missionFeed) return;
-    const merged = mergeMissionLines(globalFakeOrderInput, readLs(MISSION_FEED_FAKE_KEY), missionFeed.fakeLines);
-    writeLs(MISSION_FEED_FAKE_KEY, missionFeed.fakeLines);
-    if (merged !== null) setGlobalFakeOrderInput(merged);
-  }, [missionFeed, globalFakeOrderInput]);
-  useEffect(() => {
-    if (!missionFeed) return;
-    const merged = mergeMissionLines(bulkPasteText, readLs(MISSION_FEED_DEPOSIT_KEY), missionFeed.depositText);
-    writeLs(MISSION_FEED_DEPOSIT_KEY, missionFeed.depositText);
-    if (merged !== null) {
-      setBulkPasteText(merged);
-      setBulkExtraRowsMap(parseBulkDepositLines(merged).grouped);
-      setBulkPasteSummary(null);
-    }
-  }, [missionFeed, bulkPasteText, parseBulkDepositLines]);
   // 미션허브 메모: 가구매 명단 창이 닫혀 있을 때 새로 들어오거나 바뀐 메모가 있으면 "새 메모" 표시
   const missionMemos = missionFeed?.memos ?? [];
   const [memoSeen, setMemoSeen] = useState<Record<string, string>>(() => { try { return JSON.parse(readLs(MISSION_MEMO_SEEN_KEY) || '{}'); } catch { return {}; } });
