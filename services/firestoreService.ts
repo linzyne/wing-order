@@ -1386,24 +1386,29 @@ export const subscribeUrgentNotice = (
 export type MissionHubItem = { bizId: string; id: string };
 export type MissionHubMemo = { bizId: string; bizName: string; memo: string; updatedAt: number };
 export type MissionHubFeed = { fakeLines: string; depositText: string; fakeItems: MissionHubItem[]; depositItems: MissionHubItem[]; memos: MissionHubMemo[]; checkedAt: number };
-export const subscribeMissionHubFeed = (
-  callback: (feed: MissionHubFeed) => void
-): Unsubscribe => {
-  const docRef = doc(db, 'config', 'missionHubFeed');
-  return onSnapshot(docRef, (snapshot) => {
-    if (!snapshot.exists()) return;
-    const data = snapshot.data();
-    callback({
+const toMissionHubFeed = (data: any): MissionHubFeed => ({
       fakeLines: (data.fakeLines as string) || '',
       depositText: (data.depositText as string) || '',
       fakeItems: (data.fakeItems as MissionHubItem[]) || [],
       depositItems: (data.depositItems as MissionHubItem[]) || [],
       memos: (data.memos as MissionHubMemo[]) || [],
       checkedAt: (data.checkedAt as number) || (data.updatedAt as number) || 0,
-    });
+});
+export const subscribeMissionHubFeed = (
+  callback: (feed: MissionHubFeed) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', 'missionHubFeed');
+  return onSnapshot(docRef, (snapshot) => {
+    if (!snapshot.exists()) return;
+    callback(toMissionHubFeed(snapshot.data()));
   }, (error) => {
     console.error('[Firestore] MissionHubFeed 구독 오류:', error);
   });
+};
+// 캐시 말고 서버에서 바로 읽기 — 탭이 멈춰 있다가 다시 열렸을 때 최신 내용 확인용
+export const fetchMissionHubFeedFromServer = async (): Promise<MissionHubFeed | null> => {
+  const snapshot = await getDocFromServer(doc(db, 'config', 'missionHubFeed'));
+  return snapshot.exists() ? toMissionHubFeed(snapshot.data()) : null;
 };
 
 // ===== 미션클리어 요청 (미션허브가 status 'pending'을 받아 예약완료·입금완료 처리 후 'done'으로 바꿈) =====

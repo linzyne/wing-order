@@ -13,7 +13,7 @@ import OrdererSearchPanel from './components/OrdererSearchPanel';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon, EllipsisHorizontalIcon, DocumentArrowUpIcon, UserGroupIcon, PhoneIcon, BanknotesIcon, ClipboardDocumentListIcon, MegaphoneIcon, MagnifyingGlassIcon, CalculatorIcon, BuildingStorefrontIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
-import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, type SettlementUploadRecord } from './services/firestoreService';
+import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
@@ -332,6 +332,33 @@ const App: React.FC = () => {
   // 두 칸은 항상 미션허브와 똑같이 맞춤 — 예전에 붙여넣은 줄이나 직접 고친 내용도 미션허브 내용으로 바뀜
   const [missionFeed, setMissionFeed] = useState<MissionHubFeed | null>(null);
   useEffect(() => subscribeMissionHubFeed(setMissionFeed), []);
+  // 사파리 등은 안 보는 탭을 멈춰두므로, 탭으로 돌아오는 순간 서버에서 바로 다시 받아옴 (받는 동안 "확인 중" 표시)
+  const [missionFeedChecking, setMissionFeedChecking] = useState(false);
+  useEffect(() => {
+    let running = false;
+    const refresh = async () => {
+      if (document.visibilityState !== 'visible' || running) return;
+      running = true;
+      setMissionFeedChecking(true);
+      try {
+        const feed = await fetchMissionHubFeedFromServer();
+        if (feed) setMissionFeed(feed);
+      } catch (e) {
+        console.error('[미션허브 연동] 서버에서 다시 받기 실패:', e);
+      } finally {
+        running = false;
+        setMissionFeedChecking(false);
+      }
+    };
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
+    return () => {
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
+    };
+  }, []);
   useEffect(() => {
     if (!missionFeed) return;
     if (sameLines(globalFakeOrderInput, missionFeed.fakeLines)) return;
@@ -348,8 +375,10 @@ const App: React.FC = () => {
   const [feedNow, setFeedNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setFeedNow(Date.now()), 60 * 1000); return () => clearInterval(t); }, []);
   // 미션허브가 열려 있으면 5분마다 확인 시각을 올리므로, 10분 넘게 소식이 없으면 연동이 멈춘 것
-  const missionFeedStale = !missionFeed || feedNow - missionFeed.checkedAt > 10 * 60 * 1000;
-  const missionFeedStatus = !missionFeed
+  const missionFeedStale = missionFeedChecking || !missionFeed || feedNow - missionFeed.checkedAt > 10 * 60 * 1000;
+  const missionFeedStatus = missionFeedChecking
+    ? '미션허브 최신 내용 확인 중…'
+    : !missionFeed
     ? '미션허브 연동 내용 없음 — 미션허브를 열어주세요'
     : missionFeedStale
       ? `미션허브 연동 멈춤 (${new Date(missionFeed.checkedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 내용) — 미션허브를 열어주세요`
@@ -1803,7 +1832,7 @@ const App: React.FC = () => {
                   </button>
                   <button
                     onClick={handleMissionClear}
-                    disabled={!missionFeed || missionClearPending || (missionFeed.fakeItems.length + missionFeed.depositItems.length === 0)}
+                    disabled={!missionFeed || missionFeedChecking || missionClearPending || (missionFeed.fakeItems.length + missionFeed.depositItems.length === 0)}
                     className="flex items-center gap-2 px-5 py-2 text-xs font-black text-white bg-pink-600 hover:bg-pink-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all"
                     title="미션허브 윙업무: 예약완료 미처리 → 예약완료, 전체 입금전 → 입금완료"
                   >
