@@ -1381,14 +1381,20 @@ export const subscribeUrgentNotice = (
 
 // ===== 미션허브 연동 (가구매 미션허브가 config/missionHubFeed에 올림) =====
 // fakeLines: "사업자_이름_주문번호" 줄 목록, depositText: 일괄 입금목록 붙여넣기용 TSV
+// checkedAt: 미션허브가 마지막으로 확인한 시각 (미션허브가 열려 있으면 5분마다 갱신)
+export type MissionHubFeed = { fakeLines: string; depositText: string; checkedAt: number };
 export const subscribeMissionHubFeed = (
-  callback: (feed: { fakeLines: string; depositText: string }) => void
+  callback: (feed: MissionHubFeed) => void
 ): Unsubscribe => {
   const docRef = doc(db, 'config', 'missionHubFeed');
   return onSnapshot(docRef, (snapshot) => {
     if (!snapshot.exists()) return;
     const data = snapshot.data();
-    callback({ fakeLines: (data.fakeLines as string) || '', depositText: (data.depositText as string) || '' });
+    callback({
+      fakeLines: (data.fakeLines as string) || '',
+      depositText: (data.depositText as string) || '',
+      checkedAt: (data.checkedAt as number) || (data.updatedAt as number) || 0,
+    });
   }, (error) => {
     console.error('[Firestore] MissionHubFeed 구독 오류:', error);
   });
