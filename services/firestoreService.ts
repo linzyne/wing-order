@@ -1382,7 +1382,8 @@ export const subscribeUrgentNotice = (
 // ===== 미션허브 연동 (가구매 미션허브가 config/missionHubFeed에 올림) =====
 // fakeLines: "사업자_이름_주문번호" 줄 목록, depositText: 일괄 입금목록 붙여넣기용 TSV
 // checkedAt: 미션허브가 마지막으로 확인한 시각 (미션허브가 열려 있으면 5분마다 갱신)
-export type MissionHubFeed = { fakeLines: string; depositText: string; checkedAt: number };
+export type MissionHubItem = { bizId: string; id: string };
+export type MissionHubFeed = { fakeLines: string; depositText: string; fakeItems: MissionHubItem[]; depositItems: MissionHubItem[]; checkedAt: number };
 export const subscribeMissionHubFeed = (
   callback: (feed: MissionHubFeed) => void
 ): Unsubscribe => {
@@ -1393,10 +1394,39 @@ export const subscribeMissionHubFeed = (
     callback({
       fakeLines: (data.fakeLines as string) || '',
       depositText: (data.depositText as string) || '',
+      fakeItems: (data.fakeItems as MissionHubItem[]) || [],
+      depositItems: (data.depositItems as MissionHubItem[]) || [],
       checkedAt: (data.checkedAt as number) || (data.updatedAt as number) || 0,
     });
   }, (error) => {
     console.error('[Firestore] MissionHubFeed 구독 오류:', error);
+  });
+};
+
+// ===== 미션클리어 요청 (미션허브가 status 'pending'을 받아 예약완료·입금완료 처리 후 'done'으로 바꿈) =====
+export type MissionClearRequest = {
+  status: 'pending' | 'done' | 'error';
+  clickedAt: number;
+  fakeItems: MissionHubItem[];
+  depositItems: MissionHubItem[];
+  reservedCount?: number;
+  depositedCount?: number;
+  skippedCount?: number;
+  error?: string;
+};
+export const requestMissionClear = async (fakeItems: MissionHubItem[], depositItems: MissionHubItem[], clickedAt: number): Promise<string> => {
+  const docRef = doc(collection(db, 'missionHubClearRequests'));
+  await setDoc(docRef, { status: 'pending', clickedAt, fakeItems, depositItems });
+  return docRef.id;
+};
+export const subscribeMissionClearRequest = (
+  id: string,
+  callback: (req: MissionClearRequest | null) => void
+): Unsubscribe => {
+  return onSnapshot(doc(db, 'missionHubClearRequests', id), (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data() as MissionClearRequest) : null);
+  }, (error) => {
+    console.error('[Firestore] MissionClearRequest 구독 오류:', error);
   });
 };
 

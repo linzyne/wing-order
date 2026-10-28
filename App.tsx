@@ -13,7 +13,7 @@ import OrdererSearchPanel from './components/OrdererSearchPanel';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon, EllipsisHorizontalIcon, DocumentArrowUpIcon, UserGroupIcon, PhoneIcon, BanknotesIcon, ClipboardDocumentListIcon, MegaphoneIcon, MagnifyingGlassIcon, CalculatorIcon, BuildingStorefrontIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
-import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, type MissionHubFeed, type SettlementUploadRecord } from './services/firestoreService';
+import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
@@ -51,6 +51,7 @@ const BULK_DEPOSIT_PASTE_KEY = 'bulkDepositPasteText';
 // 미션허브에서 마지막으로 받은 내용 (미션허브에서 빠진 줄을 찾으려고 기억)
 const MISSION_FEED_FAKE_KEY = 'missionHubFeedFakeLines';
 const MISSION_FEED_DEPOSIT_KEY = 'missionHubFeedDepositText';
+const MISSION_CLEAR_REQ_KEY = 'missionClearRequestId';
 const readLs = (key: string) => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } };
 const writeLs = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch {} };
 
@@ -368,6 +369,35 @@ const App: React.FC = () => {
       setBulkPasteSummary(null);
     }
   }, [missionFeed, bulkPasteText, parseBulkDepositLines]);
+  // 미션클리어: 지금 연동된 가구매 → 예약완료, 입금목록 → 입금완료 (처리는 미션허브가 함, 시각은 누른 순간)
+  const [missionClearReqId, setMissionClearReqId] = useState(() => readLs(MISSION_CLEAR_REQ_KEY));
+  const [missionClearReq, setMissionClearReq] = useState<MissionClearRequest | null>(null);
+  const [missionClearSending, setMissionClearSending] = useState(false);
+  useEffect(() => {
+    if (!missionClearReqId) { setMissionClearReq(null); return; }
+    return subscribeMissionClearRequest(missionClearReqId, setMissionClearReq);
+  }, [missionClearReqId]);
+  const missionClearPending = missionClearSending || missionClearReq?.status === 'pending';
+  const handleMissionClear = async () => {
+    if (!missionFeed || missionClearPending) return;
+    const fakeCount = missionFeed.fakeItems.length, depositCount = missionFeed.depositItems.length;
+    if (fakeCount + depositCount === 0) { alert('미션허브에서 연동된 항목이 없습니다.'); return; }
+    if (!window.confirm(`미션클리어\n\n가구매 ${fakeCount}건 → 예약완료\n입금 ${depositCount}건 → 입금완료\n\n처리할까요?`)) return;
+    setMissionClearSending(true);
+    try {
+      const id = await requestMissionClear(missionFeed.fakeItems, missionFeed.depositItems, Date.now());
+      writeLs(MISSION_CLEAR_REQ_KEY, id);
+      setMissionClearReqId(id);
+    } catch (e) {
+      alert('미션클리어 요청 실패: ' + e);
+    } finally {
+      setMissionClearSending(false);
+    }
+  };
+  const missionClearStatus = !missionClearReq ? ''
+    : missionClearReq.status === 'pending' ? (missionFeedStale ? '미션클리어 대기 중 — 미션허브를 열면 처리돼요' : '미션클리어 처리 중…')
+    : missionClearReq.status === 'error' ? `미션클리어 실패: ${missionClearReq.error || ''}`
+    : `미션클리어 완료 (${new Date(missionClearReq.clickedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}) · 예약완료 ${missionClearReq.reservedCount ?? 0}건 · 입금완료 ${missionClearReq.depositedCount ?? 0}건${missionClearReq.skippedCount ? ` · 이미 처리돼 건너뜀 ${missionClearReq.skippedCount}건` : ''}`;
   const sharedSuppliers = useSharedSuppliers();
   const { courierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates();
 
@@ -1759,8 +1789,19 @@ const App: React.FC = () => {
                     <ArrowDownTrayIcon className="w-3.5 h-3.5" />
                     {allRelevantIds.length > 0 ? `${allRelevantIds.length}개 사업자 다운로드` : '다운로드'}
                   </button>
+                  <button
+                    onClick={handleMissionClear}
+                    disabled={!missionFeed || missionClearPending || (missionFeed.fakeItems.length + missionFeed.depositItems.length === 0)}
+                    className="flex items-center gap-2 px-5 py-2 text-xs font-black text-white bg-pink-600 hover:bg-pink-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all"
+                    title="미션허브 윙업무: 예약완료 미처리 → 예약완료, 전체 입금전 → 입금완료"
+                  >
+                    {missionClearPending ? '처리 중…' : `미션클리어${missionFeed ? ` (${missionFeed.fakeItems.length}/${missionFeed.depositItems.length})` : ''}`}
+                  </button>
                 </div>
               </div>
+              {missionClearStatus && (
+                <p className={`px-6 pb-3 -mt-2 text-right text-[11px] font-bold ${missionClearReq?.status === 'error' ? 'text-rose-400' : missionClearReq?.status === 'pending' ? 'text-amber-400' : 'text-emerald-400'}`}>{missionClearStatus}</p>
+              )}
             </div>
           </div>
         );
