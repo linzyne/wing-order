@@ -1381,9 +1381,11 @@ export const subscribeUrgentNotice = (
 
 // ===== 미션허브 연동 (가구매 미션허브가 config/missionHubFeed에 올림) =====
 // fakeLines: "사업자_이름_주문번호" 줄 목록, depositText: 일괄 입금목록 붙여넣기용 TSV
+// memos: 사업자별 구매 탭 상단 메모 (내용 있는 것만)
 // checkedAt: 미션허브가 마지막으로 확인한 시각 (미션허브가 열려 있으면 5분마다 갱신)
 export type MissionHubItem = { bizId: string; id: string };
-export type MissionHubFeed = { fakeLines: string; depositText: string; fakeItems: MissionHubItem[]; depositItems: MissionHubItem[]; checkedAt: number };
+export type MissionHubMemo = { bizId: string; bizName: string; memo: string; updatedAt: number };
+export type MissionHubFeed = { fakeLines: string; depositText: string; fakeItems: MissionHubItem[]; depositItems: MissionHubItem[]; memos: MissionHubMemo[]; checkedAt: number };
 export const subscribeMissionHubFeed = (
   callback: (feed: MissionHubFeed) => void
 ): Unsubscribe => {
@@ -1396,6 +1398,7 @@ export const subscribeMissionHubFeed = (
       depositText: (data.depositText as string) || '',
       fakeItems: (data.fakeItems as MissionHubItem[]) || [],
       depositItems: (data.depositItems as MissionHubItem[]) || [],
+      memos: (data.memos as MissionHubMemo[]) || [],
       checkedAt: (data.checkedAt as number) || (data.updatedAt as number) || 0,
     });
   }, (error) => {

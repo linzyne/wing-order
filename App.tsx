@@ -52,6 +52,8 @@ const BULK_DEPOSIT_PASTE_KEY = 'bulkDepositPasteText';
 const MISSION_FEED_FAKE_KEY = 'missionHubFeedFakeLines';
 const MISSION_FEED_DEPOSIT_KEY = 'missionHubFeedDepositText';
 const MISSION_CLEAR_REQ_KEY = 'missionClearRequestId';
+// 가구매 명단 창을 열어서 본 미션허브 메모 { bizId: 메모 } — 다르면 새 메모
+const MISSION_MEMO_SEEN_KEY = 'missionHubMemoSeen';
 const readLs = (key: string) => { try { return localStorage.getItem(key) ?? ''; } catch { return ''; } };
 const writeLs = (key: string, value: string) => { try { localStorage.setItem(key, value); } catch {} };
 
@@ -369,6 +371,19 @@ const App: React.FC = () => {
       setBulkPasteSummary(null);
     }
   }, [missionFeed, bulkPasteText, parseBulkDepositLines]);
+  // 미션허브 메모: 가구매 명단 창이 닫혀 있을 때 새로 들어오거나 바뀐 메모가 있으면 "새 메모" 표시
+  const missionMemos = missionFeed?.memos ?? [];
+  const [memoSeen, setMemoSeen] = useState<Record<string, string>>(() => { try { return JSON.parse(readLs(MISSION_MEMO_SEEN_KEY) || '{}'); } catch { return {}; } });
+  const [memoSeenAtOpen, setMemoSeenAtOpen] = useState<Record<string, string>>({});
+  const hasNewMissionMemo = missionMemos.some(m => memoSeen[m.bizId] !== m.memo);
+  useEffect(() => { if (showGlobalFake) setMemoSeenAtOpen(memoSeen); }, [showGlobalFake]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!showGlobalFake || !missionFeed || !hasNewMissionMemo) return;
+    const seen = Object.fromEntries(missionMemos.map(m => [m.bizId, m.memo]));
+    setMemoSeen(seen);
+    writeLs(MISSION_MEMO_SEEN_KEY, JSON.stringify(seen));
+  }, [showGlobalFake, missionFeed, hasNewMissionMemo]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // 미션클리어: 지금 연동된 가구매 → 예약완료, 입금목록 → 입금완료 (처리는 미션허브가 함, 시각은 누른 순간)
   const [missionClearReqId, setMissionClearReqId] = useState(() => readLs(MISSION_CLEAR_REQ_KEY));
   const [missionClearReq, setMissionClearReq] = useState<MissionClearRequest | null>(null);
@@ -999,6 +1014,7 @@ const App: React.FC = () => {
             }`}
           >
             <UserGroupIcon className="w-3.5 h-3.5 text-violet-400" />
+            {hasNewMissionMemo && !showGlobalFake && <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[9px] font-black">새 메모</span>}
             <span>가구매{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}</span>
           </button>
 
@@ -1154,6 +1170,19 @@ const App: React.FC = () => {
               </div>
               <p className="text-zinc-600 text-[10px] mb-1 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
               <p className={`text-[10px] mb-2 font-bold ${missionFeedStale ? 'text-amber-400' : 'text-emerald-500'}`}>{missionFeedStatus}</p>
+              {missionMemos.length > 0 && (
+                <div className="mb-2 space-y-1.5">
+                  {missionMemos.map(m => (
+                    <div key={m.bizId} className="rounded-lg border border-amber-500/30 bg-amber-950/30 px-2.5 py-1.5">
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="text-[10px] font-black text-amber-300">{m.bizName} 메모</span>
+                        {memoSeenAtOpen[m.bizId] !== m.memo && <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[8px] font-black">NEW</span>}
+                      </div>
+                      <p className="text-[11px] text-zinc-200 whitespace-pre-wrap break-words">{m.memo}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* 편집 모드 또는 비어있을 때: textarea */}
               {(isEditingGlobalFake || !globalFakeOrderInput.trim()) ? (
