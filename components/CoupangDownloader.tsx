@@ -38,21 +38,59 @@ function savePresetTimes(times: string[]): void {
 }
 
 // 브라우저 자동화는 내 컴퓨터의 로컬 서버(npm run dev)에서만 돈다.
-// 버셀에서 열었으면 묻지 않고 localhost:3000 으로 바로 요청한다.
+// 버셀에서 열었으면 작은 localhost 창(/wing-bridge)을 띄워 그 창이 대신 요청하게 한다.
+// (버셀 페이지가 localhost 로 직접 fetch 하면 크롬이 로컬 네트워크 권한을 요구해 막힌다)
 const IS_LOCAL_PAGE = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const WING_API_BASE = IS_LOCAL_PAGE ? '' : 'http://localhost:3000';
+const WING_LOCAL_ORIGIN = 'http://localhost:3000';
 const LOCAL_SERVER_OFF_MSG = '로컬 서버가 꺼져 있습니다. 윙_발주 폴더에서 npm run dev 를 켜주세요.';
 
+let bridgeWin: Window | null = null;
+let bridgeReady: Promise<Window> | null = null;
+
+function openBridge(): Promise<Window> {
+  if (bridgeReady && bridgeWin && !bridgeWin.closed) return bridgeReady;
+  const win = window.open(`${WING_LOCAL_ORIGIN}/wing-bridge`, 'wing-bridge', 'width=320,height=140');
+  if (!win) return Promise.reject(new Error('팝업이 차단됐습니다. 주소창 오른쪽 팝업 차단 아이콘 → 이 사이트 팝업 항상 허용 후 다시 눌러주세요.'));
+  bridgeWin = win;
+  bridgeReady = new Promise<Window>((resolve, reject) => {
+    const timer = setTimeout(() => { cleanup(); bridgeReady = null; reject(new Error(LOCAL_SERVER_OFF_MSG)); }, 15000);
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== WING_LOCAL_ORIGIN || e.data?.type !== 'wing-bridge-ready') return;
+      cleanup();
+      resolve(win);
+    };
+    const cleanup = () => { clearTimeout(timer); window.removeEventListener('message', onMsg); };
+    window.addEventListener('message', onMsg);
+  });
+  return bridgeReady;
+}
+
 async function fetchWing(path: string, init: RequestInit): Promise<Response> {
-  try {
-    return await fetch(WING_API_BASE + path, init);
-  } catch (e: any) {
-    if (e?.name === 'AbortError') throw e;
-    // 크롬은 버셀 → localhost 요청에 '로컬 네트워크 액세스' 권한을 묻는다. 막혀 있으면 그걸 알려준다.
-    const perm = await navigator.permissions?.query({ name: 'local-network-access' as PermissionName }).catch(() => null);
-    if (perm && perm.state !== 'granted') throw new Error('크롬의 로컬 접근 권한이 없습니다. 주소창 왼쪽 아이콘 → 사이트 설정 → 로컬 네트워크 액세스를 \'허용\'으로 바꾸고 새로고침해주세요.');
-    throw new Error(LOCAL_SERVER_OFF_MSG);
+  if (IS_LOCAL_PAGE) {
+    try { return await fetch(path, init); }
+    catch (e: any) { if (e?.name === 'AbortError') throw e; throw new Error(LOCAL_SERVER_OFF_MSG); }
   }
+  const win = await openBridge();
+  const reqId = Math.random().toString(36).slice(2);
+  return new Promise<Response>((resolve, reject) => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== WING_LOCAL_ORIGIN || e.data?.type !== 'wing-response' || e.data.reqId !== reqId) return;
+      cleanup();
+      if (e.data.error) return reject(new Error(e.data.error === 'Failed to fetch' ? LOCAL_SERVER_OFF_MSG : e.data.error));
+      const headers: Record<string, string> = {};
+      if (e.data.contentType) headers['Content-Type'] = e.data.contentType;
+      if (e.data.disposition) headers['Content-Disposition'] = e.data.disposition;
+      resolve(new Response(e.data.buffer, { status: e.data.status, headers }));
+    };
+    const onAbort = () => { cleanup(); reject(new DOMException('aborted', 'AbortError')); };
+    const closedPoll = setInterval(() => {
+      if (win.closed) { cleanup(); bridgeReady = null; reject(new Error('로컬 연결 창이 닫혔습니다. 다시 눌러주세요.')); }
+    }, 1000);
+    const cleanup = () => { window.removeEventListener('message', onMsg); init.signal?.removeEventListener('abort', onAbort); clearInterval(closedPoll); };
+    window.addEventListener('message', onMsg);
+    init.signal?.addEventListener('abort', onAbort);
+    win.postMessage({ type: 'wing-request', reqId, path, body: init.body }, WING_LOCAL_ORIGIN);
+  });
 }
 
 const SELECTED_KEY = 'coupang_dl_selected';

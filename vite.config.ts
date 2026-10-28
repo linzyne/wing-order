@@ -213,27 +213,37 @@ async function runWingInvoiceUpload(
   }
 }
 
-// 버셀 배포 화면에서 이 로컬 서버(localhost:3000)로 자동화를 요청할 수 있게 허용.
-// 아무 사이트나 부르지 못하도록 wing-order 버셀 주소만 받는다.
-const WING_ALLOWED_ORIGIN = /^https:\/\/wing-order[\w-]*\.vercel\.app$/;
-function allowWingCors(req: any, res: any): boolean {
-  const origin = req.headers.origin;
-  if (origin && WING_ALLOWED_ORIGIN.test(origin)) {
-    res.setHeader('Access-Control-Allow-Origin', origin);
-    res.setHeader('Vary', 'Origin');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    res.setHeader('Access-Control-Allow-Private-Network', 'true');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
-  }
-  if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return true; }
-  return false;
-}
+// 버셀 화면 → 로컬 서버 다리 창.
+// 크롬은 버셀 페이지가 localhost 로 직접 fetch 하면 '로컬 네트워크' 권한을 요구하므로,
+// 버셀이 이 작은 localhost 창을 열고 postMessage 로 요청을 넘기면 창이 같은 출처로 대신 요청한다.
+// 아무 사이트나 부르지 못하도록 wing-order 버셀 주소에서 온 메시지만 받는다.
+const WING_BRIDGE_HTML = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>윙 로컬 연결</title>
+<style>body{margin:0;font:13px sans-serif;background:#18181b;color:#a1a1aa;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center}</style></head>
+<body><div>윙 로컬 연결 창<br><small>쿠팡 다운로드·송장 업로드 중에는 닫지 마세요</small></div>
+<script>
+const ALLOWED = /^https:\\/\\/wing-order[\\w-]*\\.vercel\\.app$/;
+window.addEventListener('message', async (e) => {
+  if (!ALLOWED.test(e.origin) || !e.data || e.data.type !== 'wing-request') return;
+  const { reqId, path, body } = e.data;
+  const reply = (msg, transfer) => e.source.postMessage({ type: 'wing-response', reqId, ...msg }, e.origin, transfer || []);
+  if (path !== '/api/wing-download' && path !== '/api/wing-invoice-upload') return reply({ error: '알 수 없는 요청' });
+  try {
+    const res = await fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    const buffer = await res.arrayBuffer();
+    reply({ status: res.status, contentType: res.headers.get('Content-Type') || '', disposition: res.headers.get('Content-Disposition') || '', buffer }, [buffer]);
+  } catch (err) { reply({ error: String(err && err.message || err) }); }
+});
+if (window.opener) window.opener.postMessage({ type: 'wing-bridge-ready' }, '*');
+</script></body></html>`;
 
 // Wing 자동화 미들웨어 등록 (dev/preview 공통)
 function registerWingMiddlewares(middlewares: any) {
+  middlewares.use('/wing-bridge', (_req: any, res: any) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.end(WING_BRIDGE_HTML);
+  });
+
   middlewares.use('/api/wing-download', (req: any, res: any) => {
-    if (allowWingCors(req, res)) return;
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
     let body = '';
     req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
@@ -256,7 +266,6 @@ function registerWingMiddlewares(middlewares: any) {
   });
 
   middlewares.use('/api/wing-invoice-upload', (req: any, res: any) => {
-    if (allowWingCors(req, res)) return;
     if (req.method !== 'POST') { res.statusCode = 405; res.end(); return; }
     let body = '';
     req.on('data', (chunk: Buffer) => { body += chunk.toString(); });
