@@ -13,7 +13,7 @@ import OrdererSearchPanel from './components/OrdererSearchPanel';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon, EllipsisHorizontalIcon, DocumentArrowUpIcon, UserGroupIcon, PhoneIcon, BanknotesIcon, ClipboardDocumentListIcon, MegaphoneIcon, MagnifyingGlassIcon, CalculatorIcon, BuildingStorefrontIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
-import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, type SettlementUploadRecord } from './services/firestoreService';
+import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
@@ -48,6 +48,9 @@ function loadPersistedFakeOrder(): string {
 
 // 일괄 입금목록 하단 직접 입력: 만료 없이 "초기화" 누르기 전까지 유지 (모달을 닫거나 다른 패널로 이동해도 보존)
 const BULK_DEPOSIT_PASTE_KEY = 'bulkDepositPasteText';
+// 미션허브에서 마지막으로 받은 내용 (바뀐 것만 반영하려고 기억)
+const MISSION_FEED_FAKE_KEY = 'missionHubFeedFakeLines';
+const MISSION_FEED_DEPOSIT_KEY = 'missionHubFeedDepositText';
 function loadPersistedBulkDepositPaste(): string {
   try {
     return localStorage.getItem(BULK_DEPOSIT_PASTE_KEY) || '';
@@ -318,6 +321,35 @@ const App: React.FC = () => {
     setBulkExtraRowsMap(parseBulkDepositLines(bulkPasteText).grouped);
     setShowBulkDepositModal(true);
   }, [allBusinesses, bulkPasteText, parseBulkDepositLines]);
+  // 미션허브 자동 연동: 주문번호 입력된 건 → 가구매 명단에 추가/삭제 (직접 쓴 줄은 그대로),
+  // 입금전 체크된 건 → 일괄 입금목록 붙여넣기 칸을 통째로 교체 (초기화 후 새로 불러오기)
+  const parseBulkDepositLinesRef = useRef(parseBulkDepositLines);
+  parseBulkDepositLinesRef.current = parseBulkDepositLines;
+  useEffect(() => subscribeMissionHubFeed(({ fakeLines, depositText }) => {
+    const toLines = (t: string) => t.split('\n').map(l => l.trim()).filter(Boolean);
+    try {
+      const prevFake = localStorage.getItem(MISSION_FEED_FAKE_KEY) ?? '';
+      if (fakeLines !== prevFake) {
+        const prevSet = new Set(toLines(prevFake));
+        const next = toLines(fakeLines);
+        const nextSet = new Set(next);
+        setGlobalFakeOrderInput(cur => {
+          const kept = toLines(cur).filter(l => !prevSet.has(l) || nextSet.has(l));
+          const keptSet = new Set(kept);
+          const added = next.filter(l => !prevSet.has(l) && !keptSet.has(l));
+          return [...kept, ...added].join('\n');
+        });
+        localStorage.setItem(MISSION_FEED_FAKE_KEY, fakeLines);
+      }
+      const prevDeposit = localStorage.getItem(MISSION_FEED_DEPOSIT_KEY) ?? '';
+      if (depositText !== prevDeposit) {
+        setBulkPasteText(depositText);
+        setBulkExtraRowsMap(parseBulkDepositLinesRef.current(depositText).grouped);
+        setBulkPasteSummary(null);
+        localStorage.setItem(MISSION_FEED_DEPOSIT_KEY, depositText);
+      }
+    } catch {}
+  }), []);
   const sharedSuppliers = useSharedSuppliers();
   const { courierTemplates, fakeCourierSettings, saveFakeCourierSettings } = useCourierTemplates();
 

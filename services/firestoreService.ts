@@ -1379,6 +1379,21 @@ export const subscribeUrgentNotice = (
   });
 };
 
+// ===== 미션허브 연동 (가구매 미션허브가 config/missionHubFeed에 올림) =====
+// fakeLines: "사업자_이름_주문번호" 줄 목록, depositText: 일괄 입금목록 붙여넣기용 TSV
+export const subscribeMissionHubFeed = (
+  callback: (feed: { fakeLines: string; depositText: string }) => void
+): Unsubscribe => {
+  const docRef = doc(db, 'config', 'missionHubFeed');
+  return onSnapshot(docRef, (snapshot) => {
+    if (!snapshot.exists()) return;
+    const data = snapshot.data();
+    callback({ fakeLines: (data.fakeLines as string) || '', depositText: (data.depositText as string) || '' });
+  }, (error) => {
+    console.error('[Firestore] MissionHubFeed 구독 오류:', error);
+  });
+};
+
 export const saveUrgentNotice = async (text: string): Promise<void> => {
   const docRef = doc(db, 'config', 'urgentNotice');
   await setDoc(docRef, { text, updatedAt: Timestamp.now() });
