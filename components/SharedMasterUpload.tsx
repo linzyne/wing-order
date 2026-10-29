@@ -381,9 +381,10 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     const files = Array.from(fileList).filter(f => /\.(xlsx|xls)$/i.test(f.name));
     if (files.length === 0) return;
     if (urgentNotice?.trim() || pendingCsItems.length > 0) {
-      pendingNotesRef.current = notes ?? new Map();
-      pendingSourcesRef.current = sources ?? new Map();
-      setPendingUrgentFiles(files);
+      // 긴급공지 확인을 기다리는 중에 확장으로 다른 사업자 파일이 또 들어오면 앞 파일을 덮지 않고 뒤에 붙인다
+      notes?.forEach((v, k) => pendingNotesRef.current.set(k, v));
+      sources?.forEach((v, k) => pendingSourcesRef.current.set(k, v));
+      setPendingUrgentFiles(prev => [...(prev ?? []), ...files]);
       return;
     }
     processFiles(files, notes, sources);
@@ -408,10 +409,14 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
 
   const handleUrgentNoticeConfirm = () => {
     if (pendingUrgentFiles) processFiles(pendingUrgentFiles, pendingNotesRef.current, pendingSourcesRef.current);
+    pendingNotesRef.current = new Map();
+    pendingSourcesRef.current = new Map();
     setPendingUrgentFiles(null);
   };
 
   const handleUrgentNoticeCancel = () => {
+    pendingNotesRef.current = new Map();
+    pendingSourcesRef.current = new Map();
     setPendingUrgentFiles(null);
   };
 
