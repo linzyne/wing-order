@@ -23,24 +23,45 @@
 
   // ── 패널 ──
   const box = document.createElement('div');
-  box.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:2147483647;width:180px;background:#18181b;color:#e4e4e7;border:1px solid #3f3f46;border-radius:10px;padding:8px;font:12px/1.4 sans-serif;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:6px';
+  box.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;width:104px;background:#fff;color:#3f3f46;border:1px solid #e4e4e7;border-radius:10px;padding:6px;font:11px/1.35 -apple-system,BlinkMacSystemFont,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.08);display:flex;flex-direction:column;gap:4px';
   box.innerHTML = `
-    <div style="font-weight:800;color:#f87171">윙 → 윙발주</div>
-    <input data-k="biz" placeholder="사업자명 (예: 한나푸드)" style="width:100%;box-sizing:border-box;background:#27272a;color:#fff;border:1px solid #3f3f46;border-radius:6px;padding:4px 6px;font-size:12px">
-    <button data-k="run" style="background:#dc2626;color:#fff;border:0;border-radius:6px;padding:6px;font-weight:800;cursor:pointer">상품준비중 받아 보내기</button>
-    <button data-k="log" style="background:#27272a;color:#a1a1aa;border:0;border-radius:6px;padding:4px;font-size:11px;cursor:pointer">로그 받기</button>
-    <div data-k="msg" style="font-size:11px;color:#a1a1aa;white-space:pre-wrap"></div>`;
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:4px">
+      <span style="font-size:10px;font-weight:800;color:#e11d48;letter-spacing:-.2px">윙발주</span>
+      <span data-k="log" title="진단 로그 받기" style="font-size:9px;color:#a1a1aa;cursor:pointer">로그</span>
+    </div>
+    <span data-k="bizLabel" title="눌러서 사업자명 바꾸기" style="display:none;font-size:10px;font-weight:700;color:#52525b;background:#f4f4f5;border-radius:5px;padding:2px 5px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <input data-k="biz" placeholder="사업자명" style="width:100%;box-sizing:border-box;background:#fafafa;color:#18181b;border:1px solid #e4e4e7;border-radius:5px;padding:3px 5px;font-size:10px;outline:none">
+    <button data-k="run" style="background:#e11d48;color:#fff;border:0;border-radius:6px;padding:5px 0;font-size:10px;font-weight:800;cursor:pointer">상품준비중 보내기</button>
+    <div data-k="msg" style="display:none;font-size:9px;color:#71717a;white-space:pre-wrap;word-break:break-all"></div>`;
   document.documentElement.appendChild(box);
   const $ = (k) => box.querySelector(`[data-k="${k}"]`);
   const show = (text, color) => {
+    $('msg').style.display = text ? 'block' : 'none';
     $('msg').textContent = text;
-    $('msg').style.color = color || '#a1a1aa';
+    $('msg').style.color = color || '#71717a';
   };
 
-  chrome.storage.local.get('businessName', ({ businessName }) => {
-    $('biz').value = businessName || '';
+  // 사업자명은 프로필마다 한 번만 적으면 저장되고, 그다음부터는 이름표로만 보인다(누르면 다시 고치기)
+  const showBiz = (name) => {
+    $('biz').value = name || '';
+    $('biz').style.display = name ? 'none' : 'block';
+    $('bizLabel').style.display = name ? 'block' : 'none';
+    $('bizLabel').textContent = name || '';
+  };
+  chrome.storage.local.get('businessName', ({ businessName }) => showBiz(businessName));
+  const saveBiz = () => {
+    const name = $('biz').value.trim();
+    if (!name) return;
+    chrome.storage.local.set({ businessName: name });
+    showBiz(name);
+  };
+  $('biz').addEventListener('change', saveBiz);
+  $('biz').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveBiz(); });
+  $('bizLabel').addEventListener('click', () => {
+    $('bizLabel').style.display = 'none';
+    $('biz').style.display = 'block';
+    $('biz').focus();
   });
-  $('biz').addEventListener('change', () => chrome.storage.local.set({ businessName: $('biz').value.trim() }));
   $('log').addEventListener('click', saveLog);
 
   // ── 화면 찾기 도우미 ──
@@ -96,11 +117,13 @@
     if (running) return;
     const biz = $('biz').value.trim();
     if (!biz) {
-      show('사업자명을 먼저 적어 주세요', '#f87171');
+      showBiz('');
+      show('사업자명을 먼저 적어 주세요', '#dc2626');
       $('biz').focus();
       return;
     }
     chrome.storage.local.set({ businessName: biz });
+    showBiz(biz);
     if (!location.href.startsWith(MANAGE_URL)) {
       sessionStorage.setItem(AUTO_RUN, String(Date.now()));
       location.href = MANAGE_URL;
@@ -185,10 +208,10 @@
       const res = await chrome.runtime.sendMessage({ type: 'SEND_INBOX', fileName: name, fileBase64: base64, wingCount, businessName: biz });
       if (!res || res.error) throw new Error(`윙발주로 보내기 실패: ${res && res.error}\n(다운로드 폴더의 엑셀을 직접 올려 주세요)`);
       L(`보냄 · ${name}`);
-      show(`보냄 ✓\n${name}\n윙 상품준비중 ${wingCount ?? '?'}건`, '#4ade80');
+      show(`보냄 ✓\n${name}\n윙 상품준비중 ${wingCount ?? '?'}건`, '#16a34a');
     } catch (err) {
       L(`실패: ${err.message}`);
-      show(err.message, '#f87171');
+      show(err.message, '#dc2626');
       saveLog();
     } finally {
       sessionStorage.removeItem(ARM);
