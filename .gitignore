@@ -32,3 +32,4 @@ export_code.js
 
 # 윙 주문서 확장의 Firestore 키
 wing-order-extension/config.js
+admin-order-extension/config.js

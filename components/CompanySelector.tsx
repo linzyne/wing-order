@@ -16,6 +16,7 @@ import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyO
 import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
 import { sendOrderEmail, renderMailTemplate, DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY } from '../services/emailService';
 import { splitEmails } from '../services/invoiceMailService';
+import { sendAdminOutbox } from '../services/adminOutbox';
 import { queueWorkbookDownload } from '../services/downloadQueue';
 import type { EmailInvoiceStatus } from '../hooks/useMailInvoiceWatcher';
 import {
@@ -63,7 +64,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositCompanies: () => string[] }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged: (companyName: string) => Promise<boolean>; emailCompanyRound: (companyName: string, round: number) => Promise<boolean>; kakaoCompanyMerged: (companyName: string) => void; kakaoCompanyRound: (companyName: string, round: number) => void; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; getTotalMargin?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositCompanies: () => string[] }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged: (companyName: string) => Promise<boolean>; emailCompanyRound: (companyName: string, round: number) => Promise<boolean>; kakaoCompanyMerged: (companyName: string) => void; kakaoCompanyRound: (companyName: string, round: number) => void; adminCompanyMerged: (companyName: string) => Promise<boolean>; adminCompanyRound: (companyName: string, round: number) => Promise<boolean>; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; getTotalMargin?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -2941,6 +2942,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const emailCompanyRoundRef = useRef<(companyName: string, round: number) => Promise<boolean>>(async () => false);
     const kakaoCompanyMergedRef = useRef<(companyName: string) => Promise<void>>(async () => {});
     const kakaoCompanyRoundRef = useRef<(companyName: string, round: number) => Promise<void>>(async () => {});
+    const adminCompanyMergedRef = useRef<(companyName: string) => Promise<boolean>>(async () => false);
+    const adminCompanyRoundRef = useRef<(companyName: string, round: number) => Promise<boolean>>(async () => false);
     const getCompanyClosedRef = useRef<(companyName: string) => boolean>(() => false);
     const getCompanyRecordedRef = useRef<(companyName: string) => boolean>(() => false);
     const toggleCompanyClosedRef = useRef<(companyName: string) => void>(() => {});
@@ -3135,6 +3138,39 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             emailInFlightRef.current.delete(key);
         }
     };
+    // 어드민 전송: 업체 양식 발주서를 adminOutbox로 넘기면 업체 어드민 탭의 크롬 확장이 대량 주문입력(엑셀)에 올린다.
+    const adminInFlightRef = useRef<Set<string>>(new Set());
+    const sendOrderAdmin = async (companyName: string, rows: any[][], label: string): Promise<boolean> => {
+        if (!rows || rows.length === 0) { alert('전송할 발주 데이터가 없습니다.'); return false; }
+        const key = `${companyName}:${label}`;
+        if (adminInFlightRef.current.has(key)) return false;
+        const built = buildOrderXlsxBase64(companyName, rows, label);
+        if (!built) { alert('발주서 양식 설정을 찾을 수 없습니다.'); return false; }
+        const business = businessDisplayName || (businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '');
+        adminInFlightRef.current.add(key);
+        try {
+            await sendAdminOutbox({ company: companyName, business, fileName: built.filename, fileBase64: built.base64, rowCount: rows.length, label });
+            alert(`${companyName} 어드민으로 보냈습니다 (${rows.length}행).\n크롬의 ${companyName} 어드민 탭에서 '엑셀 내용 확인' 화면까지 자동으로 넘어갑니다.\n내용 확인 후 주문 등록은 직접 눌러 주세요.`);
+            return true;
+        } catch (e: any) {
+            alert(`어드민 전송 실패\n${e?.message || e}`);
+            return false;
+        } finally {
+            adminInFlightRef.current.delete(key);
+        }
+    };
+    adminCompanyRoundRef.current = async (companyName: string, round: number) => {
+        const sessions = (companySessions[companyName] || []) as SessionData[];
+        const session = sessions.find(s => s.round === round);
+        const rows = session ? allOrderRows[session.id] : undefined;
+        return sendOrderAdmin(companyName, rows || [], `${round}차`);
+    };
+    adminCompanyMergedRef.current = async (companyName: string) => {
+        const sessions = (companySessions[companyName] || []) as SessionData[];
+        const mergedRows: any[][] = [];
+        sessions.forEach(s => { if (allOrderRows[s.id]?.length) mergedRows.push(...allOrderRows[s.id]); });
+        return sendOrderAdmin(companyName, mergedRows, '합산');
+    };
     // 카톡 전송: 웹에서는 특정 대화방을 지정할 수 없어 OS 공유창(→ 카카오톡 → 대화방 선택)으로 파일을 넘긴다.
     // 공유창은 파일만 확실히 전달되므로 정산 요약은 클립보드에 넣어 두고 붙여넣게 한다.
     // share()·clipboard 모두 클릭 제스처 안에서 호출돼야 해서 await 없이 바로 부른다.
@@ -3210,6 +3246,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             emailCompanyRound: (companyName, round) => emailCompanyRoundRef.current(companyName, round),
             kakaoCompanyMerged: (companyName) => kakaoCompanyMergedRef.current(companyName),
             kakaoCompanyRound: (companyName, round) => kakaoCompanyRoundRef.current(companyName, round),
+            adminCompanyMerged: (companyName) => adminCompanyMergedRef.current(companyName),
+            adminCompanyRound: (companyName, round) => adminCompanyRoundRef.current(companyName, round),
             downloadAllCompanies: () => downloadAllCompaniesRef.current(),
             getCompanyClosed: (companyName) => getCompanyClosedRef.current(companyName),
             getCompanyRecorded: (companyName) => getCompanyRecordedRef.current(companyName),

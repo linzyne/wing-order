@@ -28,6 +28,8 @@ interface MasterUploadHandlers {
   emailCompanyRound?: (companyName: string, round: number) => Promise<boolean> | void;
   kakaoCompanyMerged?: (companyName: string) => void;
   kakaoCompanyRound?: (companyName: string, round: number) => void;
+  adminCompanyMerged?: (companyName: string) => Promise<boolean> | void;
+  adminCompanyRound?: (companyName: string, round: number) => Promise<boolean> | void;
   downloadAllCompanies?: () => void;
   getCompanyClosed?: (companyName: string) => boolean;
   getCompanyRecorded?: (companyName: string) => boolean;
@@ -100,6 +102,11 @@ const SHOW_MATCH_BADGE = false;
 const MAIL_ICON = (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
+  </svg>
+);
+const ADMIN_ICON = (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 16V4" /><path d="m7 9 5-5 5 5" /><path d="M4 20h16" />
   </svg>
 );
 const KAKAO_ICON = (
@@ -715,7 +722,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                             {/* 다운로드 + 메일/카톡 전송을 한 덩어리(칩)로 묶어 차수별로 한눈에 구분되게 */}
                             {(() => {
                               const fns = uploadFns[biz.businessId];
-                              const renderSend = (key: string, kind: 'mail' | 'kakao', title: string, run: () => Promise<void> | void) => {
+                              const renderSend = (key: string, kind: 'mail' | 'kakao' | 'admin', title: string, run: () => Promise<void> | void) => {
                                 const sending = emailingButtons.has(key);
                                 const sent = emailedButtons.has(key);
                                 return (
@@ -724,9 +731,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     onClick={() => sendOrderMail(key, run)}
                                     disabled={sending}
                                     title={title}
-                                    className={`flex items-center justify-center w-6 border-l border-white/10 transition-colors ${sending ? 'opacity-40' : sent && kind === 'mail' ? 'bg-emerald-500 text-white hover:bg-emerald-400' : sent ? 'opacity-25 hover:opacity-60' : 'opacity-60 hover:opacity-100 hover:bg-white/10'}`}
+                                    className={`flex items-center justify-center w-6 border-l border-white/10 transition-colors ${sending ? 'opacity-40' : sent && kind !== 'kakao' ? 'bg-emerald-500 text-white hover:bg-emerald-400' : sent ? 'opacity-25 hover:opacity-60' : 'opacity-60 hover:opacity-100 hover:bg-white/10'}`}
                                   >
-                                    {sending ? <span className="text-[10px] leading-none">…</span> : sent && kind === 'mail' ? <span className="text-[11px] font-black leading-none">✓</span> : kind === 'mail' ? MAIL_ICON : KAKAO_ICON}
+                                    {sending ? <span className="text-[10px] leading-none">…</span> : sent && kind !== 'kakao' ? <span className="text-[11px] font-black leading-none">✓</span> : kind === 'mail' ? MAIL_ICON : kind === 'admin' ? ADMIN_ICON : KAKAO_ICON}
                                   </button>
                                 );
                               };
@@ -751,6 +758,8 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                   ) : opts.badge}
                                 </div>
                               );
+                              // 발주방식이 어드민인 업체는 메일 대신 어드민 올리기 버튼 (완료 표시는 메일과 같이 초록 ✓)
+                              const isAdmin = company.orderMethod === 'admin';
                               const mergedKey = `${biz.businessId}_${companyName}_merged`;
                               // 메일 완료 키에 건수를 넣어, 초기화 후 같은 차수가 새로 생겨도 예전 완료 표시가 붙지 않게
                               const mergedMailKey = `${mergedKey}_mail_${totalCount}`;
@@ -771,7 +780,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                   onDownload: () => { fns?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(mergedKey); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); },
                                   mailed: emailedButtons.has(mergedMailKey),
                                   sends: totalCount > 0 ? [
-                                    fns?.emailCompanyMerged && renderSend(mergedMailKey, 'mail', '합산 발주서 메일 전송', () => fns?.emailCompanyMerged?.(companyName)),
+                                    isAdmin
+                                      ? fns?.adminCompanyMerged && renderSend(mergedMailKey, 'admin', '합산 발주서 어드민에 올리기 (크롬 어드민 탭의 확장이 엑셀 내용 확인까지 진행)', () => fns?.adminCompanyMerged?.(companyName))
+                                      : fns?.emailCompanyMerged && renderSend(mergedMailKey, 'mail', '합산 발주서 메일 전송', () => fns?.emailCompanyMerged?.(companyName)),
                                     fns?.kakaoCompanyMerged && renderSend(`${mergedKey}_kakao`, 'kakao', '합산 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)', () => fns?.kakaoCompanyMerged?.(companyName)),
                                   ] : [],
                                   badge: SHOW_MATCH_BADGE && hasMatchData && totalCount > 0 && (
@@ -796,7 +807,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     onDownload: () => { fns?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(roundKey)); },
                                     mailed: emailedButtons.has(roundMailKey),
                                     sends: [
-                                      fns?.emailCompanyRound && renderSend(roundMailKey, 'mail', `${r.round}차 발주서 메일 전송`, () => fns?.emailCompanyRound?.(companyName, r.round)),
+                                      isAdmin
+                                        ? fns?.adminCompanyRound && renderSend(roundMailKey, 'admin', `${r.round}차 발주서 어드민에 올리기 (크롬 어드민 탭의 확장이 엑셀 내용 확인까지 진행)`, () => fns?.adminCompanyRound?.(companyName, r.round))
+                                        : fns?.emailCompanyRound && renderSend(roundMailKey, 'mail', `${r.round}차 발주서 메일 전송`, () => fns?.emailCompanyRound?.(companyName, r.round)),
                                       fns?.kakaoCompanyRound && renderSend(`${roundKey}_kakao`, 'kakao', `${r.round}차 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)`, () => fns?.kakaoCompanyRound?.(companyName, r.round)),
                                     ],
                                     badge: SHOW_MATCH_BADGE && r.matchedCount !== undefined && r.count > 0 && (
