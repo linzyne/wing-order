@@ -286,6 +286,14 @@
   $('first').addEventListener('click', () => run('first'));
   $('next').addEventListener('click', () => run('next'));
 
+  // 확장 코드가 바뀌었으면 확장이 스스로 다시 불러오고, 이 탭도 새로고침해 새 코드로 띄운다
+  chrome.runtime.sendMessage({ type: 'CHECK_UPDATE' }).then((r) => {
+    if (r && r.reloading) {
+      show('확장 업데이트 중…', '#2563eb');
+      setTimeout(() => location.reload(), 1500);
+    }
+  }).catch(() => {});
+
   // 다른 윙 화면에서 눌러 주문배송관리로 넘어온 경우 이어서 실행
   try {
     const auto = JSON.parse(sessionStorage.getItem(AUTO_RUN) || 'null');

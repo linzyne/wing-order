@@ -57,7 +57,39 @@ function saveLog(log, page) {
   chrome.downloads.download({ url: dataUrl, filename: `윙주문서로그_${stamp}.json`, saveAs: false });
 }
 
+// ── 자동 새로고침 ──
+// 확장 폴더의 파일이 바뀌면(코드 수정) 윙 화면을 열 때 스스로 다시 불러온다.
+// 프로필마다 chrome://extensions 에서 ↻ 를 누르지 않아도 되게.
+const FILES = ['manifest.json', 'background.js', 'hook.js', 'wing.js', 'config.js'];
+async function diskHash() {
+  const texts = await Promise.all(FILES.map((f) => fetch(chrome.runtime.getURL(f), { cache: 'no-store' }).then((r) => r.text())));
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texts.join('\n\u0000\n')));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+// 설치·다시 불러오기 직후의 파일 상태를 기준으로 저장
+chrome.runtime.onInstalled.addListener(() => {
+  diskHash().then((loadedHash) => chrome.storage.local.set({ loadedHash })).catch(() => {});
+});
+async function checkUpdate() {
+  const [{ loadedHash, reloadAt }, now] = await Promise.all([chrome.storage.local.get(['loadedHash', 'reloadAt']), diskHash()]);
+  // 기준이 없거나 방금 다시 불러온 직후면(onInstalled 저장 전일 수 있음) 지금 상태를 기준으로 — 되풀이 새로고침 방지
+  if (!loadedHash || Date.now() - (reloadAt || 0) < 15000) {
+    await chrome.storage.local.set({ loadedHash: now });
+    return false;
+  }
+  if (loadedHash === now) return false;
+  await chrome.storage.local.set({ reloadAt: Date.now() });
+  return true;
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'CHECK_UPDATE') {
+    checkUpdate().then((changed) => {
+      sendResponse({ reloading: changed });
+      if (changed) setTimeout(() => chrome.runtime.reload(), 200);
+    }, () => sendResponse({ reloading: false }));
+    return true;
+  }
   if (msg.type === 'ARM') {
     armedAt = Date.now();
     lastDownloadUrl = null;
