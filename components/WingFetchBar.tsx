@@ -37,7 +37,9 @@ const WingFetchBar: React.FC<Props> = ({ businesses, nextRounds }) => {
 
   useEffect(() => (batchId ? subscribeWingRequests(batchId, setReqs) : undefined), [batchId]);
   // '응답 없음' 판단용 시계 (진행 중일 때만)
-  const active = reqs.some(r => r.status === 'pending' || r.status === 'running');
+  // 45초 넘게 아무 확장도 안 가져간 요청(응답 없음)이나 5분 넘게 안 끝난 요청은 끝난 것으로 봐서 다시 누를 수 있게 한다
+  const active = reqs.some(r =>
+    (r.status === 'running' && now - r.createdAt <= 5 * 60_000) || (r.status === 'pending' && now - r.createdAt <= 45_000));
   useEffect(() => {
     if (!active) return;
     const t = setInterval(() => setNow(Date.now()), 2000);
