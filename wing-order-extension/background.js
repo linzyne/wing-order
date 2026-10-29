@@ -6,6 +6,18 @@ const pad = (n) => String(n).padStart(2, '0');
 // "엑셀 다운"을 누른 뒤 크롬이 시작한 다운로드 주소 (hook이 못 잡았을 때 대신 받아 보기용)
 let armedAt = 0;
 let lastDownloadUrl = null;
+let armedName = '';
+
+// 보내는 엑셀이 다운로드 폴더에도 저장될 때 윙 원래 이름 대신 윙발주에 보낸 이름으로 저장
+// (보내기가 실패해 직접 올려도 사업자·시간이 그대로 인식되게)
+chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  if (armedName && Date.now() - armedAt < 2 * 60 * 1000 && /\.xlsx?$/i.test(item.filename || '')) {
+    suggest({ filename: armedName, conflictAction: 'uniquify' });
+    armedName = '';
+    return;
+  }
+  suggest();
+});
 chrome.downloads.onCreated.addListener((item) => {
   if (Date.now() - armedAt > 2 * 60 * 1000) return;
   const url = item.finalUrl || item.url || '';
@@ -93,6 +105,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'ARM') {
     armedAt = Date.now();
     lastDownloadUrl = null;
+    armedName = msg.fileName || '';
     return false;
   }
   if (msg.type === 'LAST_DOWNLOAD_URL') {

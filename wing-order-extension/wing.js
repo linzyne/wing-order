@@ -175,7 +175,7 @@
     sessionStorage.setItem(DIALOG_ARM, String(Date.now()));
     if (capture) {
       sessionStorage.setItem(ARM, String(Date.now()));
-      chrome.runtime.sendMessage({ type: 'ARM' });
+      chrome.runtime.sendMessage({ type: 'ARM', fileName: currentName });
     }
     btn.click();
     await passReasonPopup();
@@ -242,6 +242,8 @@
 
   // ── 실행 ──
   let running = false;
+  // 이번에 보낼 파일 이름 — 다운로드 폴더에 저장되는 백업 파일도 이 이름으로 바꾼다
+  let currentName = '';
   const run = async (mode) => {
     if (running) return;
     const biz = $('biz').value.trim();
@@ -262,11 +264,12 @@
     $('first').disabled = true;
     $('next').disabled = true;
     log.length = 0;
+    currentName = fileName(biz);
     L(`시작 · ${mode === 'first' ? '1차' : '2차~'} · 사업자 ${biz} · ${location.href}`);
     try {
       const { base64, wingCount, label } = mode === 'first' ? await runFirst() : await runNext();
       show('윙발주로 보내는 중…');
-      const name = fileName(biz);
+      const name = currentName;
       const res = await chrome.runtime.sendMessage({ type: 'SEND_INBOX', fileName: name, fileBase64: base64, wingCount, businessName: biz });
       if (!res || res.error) throw new Error(`윙발주로 보내기 실패: ${res && res.error}\n(다운로드 폴더의 엑셀을 직접 올려 주세요)`);
       L(`보냄 · ${name}`);
