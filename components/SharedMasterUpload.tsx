@@ -10,6 +10,8 @@ export interface UploadResult {
   status: 'pending' | 'uploading' | 'done' | 'error' | 'unmatched';
   round?: number;
   error?: string;
+  /** 확장으로 받은 주문서의 윙 건수 대조 결과 */
+  note?: { text: string; warn: boolean };
 }
 
 interface MasterUploadHandlers {
@@ -62,6 +64,9 @@ interface Props {
   companyMemos?: Record<string, string>;
   onCompanyMemoChange?: (companyName: string, text: string) => void;
   onCompanyMemoDelete?: (companyName: string) => void;
+  /** 크롬 확장이 윙에서 받아 보낸 주문서 — 사업자 패널이 준비되면 직접 올린 것처럼 처리 */
+  incomingFiles?: { file: File; note?: UploadResult['note'] }[];
+  onIncomingTaken?: () => void;
 }
 
 function detectBusiness(filename: string, businesses: Business[]): Business | null {
@@ -102,7 +107,7 @@ const KAKAO_ICON = (
   </svg>
 );
 
-const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, warningCompanyIds, urgentNotice, companyMemos = {}, onCompanyMemoChange, onCompanyMemoDelete }) => {
+const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, warningCompanyIds, urgentNotice, companyMemos = {}, onCompanyMemoChange, onCompanyMemoDelete, incomingFiles, onIncomingTaken }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
@@ -307,7 +312,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     setShowDownload(v => !v);
   };
 
-  const processFiles = async (files: File[]) => {
+  const processFiles = async (files: File[], notes?: Map<File, UploadResult['note']>) => {
     // 모드를 파일별로 사업자 상태 기준으로 자동 감지
     const items: UploadResult[] = files.map(f => {
       const biz = detectBusiness(f.name, businesses);
@@ -320,6 +325,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
         mode,
         status: biz ? 'pending' : 'unmatched',
         round: nextRound,
+        note: notes?.get(f),
       };
     });
     const offset = results.length;
@@ -353,19 +359,38 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     setTimeout(() => { refreshDownloadSnapshot(); }, 4000);
   };
 
-  const handleFiles = (fileList: FileList | null) => {
+  const pendingNotesRef = useRef<Map<File, UploadResult['note']>>(new Map());
+  const handleFiles = (fileList: FileList | File[] | null, notes?: Map<File, UploadResult['note']>) => {
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList).filter(f => /\.(xlsx|xls)$/i.test(f.name));
     if (files.length === 0) return;
     if (urgentNotice?.trim() || pendingCsItems.length > 0) {
+      pendingNotesRef.current = notes ?? new Map();
       setPendingUrgentFiles(files);
       return;
     }
-    processFiles(files);
+    processFiles(files, notes);
   };
 
+  // 확장으로 들어온 주문서: 사업자 패널(uploadFns)이 아직 안 떴으면 최대 30초 기다렸다가 올린다
+  useEffect(() => {
+    if (!incomingFiles || incomingFiles.length === 0) return;
+    const started = Date.now();
+    const tick = setInterval(() => {
+      const ready = incomingFiles.every(({ file }) => {
+        const b = detectBusiness(file.name, businesses);
+        return !b || uploadFns[b.id];
+      });
+      if (!ready && Date.now() - started < 30_000) return;
+      clearInterval(tick);
+      onIncomingTaken?.();
+      handleFiles(incomingFiles.map(x => x.file), new Map(incomingFiles.map(x => [x.file, x.note])));
+    }, 500);
+    return () => clearInterval(tick);
+  }, [incomingFiles]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleUrgentNoticeConfirm = () => {
-    if (pendingUrgentFiles) processFiles(pendingUrgentFiles);
+    if (pendingUrgentFiles) processFiles(pendingUrgentFiles, pendingNotesRef.current);
     setPendingUrgentFiles(null);
   };
 
@@ -819,6 +844,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   </div>
                 ) : (
                   <div className="text-[9px] text-amber-500">사업자 감지 실패</div>
+                )}
+                {r.note && (
+                  <div className={`text-[9px] font-bold ${r.note.warn ? 'text-red-400' : 'text-emerald-500'}`}>{r.note.text}</div>
                 )}
               </div>
               {(r.status === 'done' || r.status === 'error') && r.businessId && (

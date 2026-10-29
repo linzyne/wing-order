@@ -15,6 +15,7 @@ import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayI
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
 import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
+import { subscribeWingInbox } from './services/wingInbox';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
 import { resolveSenderColumns } from './types';
@@ -797,6 +798,18 @@ const App: React.FC = () => {
     setShowMoreMenu(false);
   }, [panelSetters]);
 
+  // 크롬 확장이 윙에서 받아 보낸 주문서 → 주문서 업로드 패널을 열고 그대로 올린다
+  const [incomingWingFiles, setIncomingWingFiles] = useState<{ file: File; note?: UploadResult['note'] }[]>([]);
+  useEffect(() => subscribeWingInbox(({ file, wingCount, fileCount }) => {
+    const note = wingCount == null || fileCount < 0
+      ? { text: `확장으로 받음 · 파일 주문 ${Math.max(fileCount, 0)}건`, warn: false }
+      : wingCount === fileCount
+        ? { text: `윙 ${wingCount}건 = 파일 ${fileCount}건 ✓`, warn: false }
+        : { text: `⚠ 윙 ${wingCount}건 ≠ 파일 ${fileCount}건 — 윙 화면 확인`, warn: true };
+    setIncomingWingFiles(prev => [...prev, { file, note }]);
+    (Object.keys(panelSetters) as PanelKey[]).forEach(k => panelSetters[k](k === 'upload'));
+  }), [panelSetters]);
+
   // 메뉴 항목 클릭: 누른 패널만 토글하고 나머지는 모두 닫는다 ("더보기"도 함께 닫힘)
   const togglePanel = useCallback((key: PanelKey) => {
     (Object.keys(panelSetters) as PanelKey[]).forEach(k => {
@@ -1136,6 +1149,8 @@ const App: React.FC = () => {
               companyMemos={companyMemos}
               onCompanyMemoChange={updateCompanyMemo}
               onCompanyMemoDelete={removeCompanyMemo}
+              incomingFiles={incomingWingFiles}
+              onIncomingTaken={() => setIncomingWingFiles([])}
             />
           </div>
         )}

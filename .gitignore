@@ -29,3 +29,6 @@ export_code.js
 *.njsproj
 *.sln
 *.sw?
+
+# 윙 주문서 확장의 Firestore 키
+wing-order-extension/config.js
