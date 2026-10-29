@@ -94,7 +94,130 @@ async function checkUpdate() {
   return true;
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// ── 윙발주에서 온 받기 요청 (wingRequests) ──
+// 윙발주의 "1차 받기 / 2차 받기"가 사업자별 요청 문서를 남기면, 그 사업자 프로필의 확장이
+// 윙 주문배송관리 탭을 뒤에서 열어 받아 보내고 결과를 문서에 적는다. 프로필 창이 열려 있기만 하면 된다.
+const MANAGE_URL = 'https://wing.coupang.com/tenants/sfl-portal/delivery/management';
+const docsBase = () => `https://firestore.googleapis.com/v1/projects/${self.WING_FIREBASE.projectId}/databases/(default)/documents`;
+const keyQ = () => `key=${self.WING_FIREBASE.apiKey}`;
+
+// 윙발주 사업자명('주식회사 안군농원')과 확장에 적은 이름('안군농원')이 조금 달라도 같은 사업자로 본다
+const normName = (s) => String(s || '').normalize('NFC').replace(/주식회사|\(주\)|㈜|\s/g, '').toLowerCase();
+const sameBusiness = (a, b) => {
+  const x = normName(a);
+  const y = normName(b);
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
+};
+
+async function findRequests(businessName) {
+  const res = await fetch(`${docsBase()}:runQuery?${keyQ()}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: 'wingRequests' }],
+        where: { fieldFilter: { field: { fieldPath: 'status' }, op: 'EQUAL', value: { stringValue: 'pending' } } },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Firestore ${res.status}`);
+  return (await res.json())
+    .filter((r) => r.document && sameBusiness(r.document.fields?.businessName?.stringValue, businessName))
+    .map((r) => r.document);
+}
+
+async function patchRequest(name, fields, updateTime) {
+  const mask = Object.keys(fields).map((f) => `updateMask.fieldPaths=${f}`).join('&');
+  const pre = updateTime ? `&currentDocument.updateTime=${encodeURIComponent(updateTime)}` : '';
+  const body = {};
+  for (const [k, v] of Object.entries(fields)) body[k] = { stringValue: String(v) };
+  const res = await fetch(`https://firestore.googleapis.com/v1/${name}?${mask}${pre}&${keyQ()}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: body }),
+  });
+  return res.ok;
+}
+
+let polling = false;
+async function pollRequests() {
+  if (polling) return;
+  polling = true;
+  try {
+    const { businessName } = await chrome.storage.local.get('businessName');
+    if (!businessName) return;
+    for (const doc of await findRequests(businessName)) {
+      const f = doc.fields || {};
+      if (f.status?.stringValue !== 'pending') continue;
+      // 3분 넘게 묵은 요청은 버린다 (프로필을 늦게 열었을 때 예전 요청이 실행되지 않게)
+      if (Date.now() - Date.parse(f.createdAt?.timestampValue || 0) > 3 * 60 * 1000) {
+        await patchRequest(doc.name, { status: 'error', message: '요청이 오래돼서 건너뜀' }, doc.updateTime);
+        continue;
+      }
+      // 같은 프로필 창이 둘이어도 한 번만 실행되도록 문서가 그대로일 때만 가져간다
+      if (!(await patchRequest(doc.name, { status: 'running', message: '윙 여는 중' }, doc.updateTime))) continue;
+      const tab = await chrome.tabs.create({ url: MANAGE_URL, active: false });
+      const { jobs = {} } = await chrome.storage.local.get('jobs');
+      jobs[tab.id] = { mode: f.mode?.stringValue === 'next' ? 'next' : 'first', reqName: doc.name, at: Date.now() };
+      await chrome.storage.local.set({ jobs });
+    }
+  } catch (err) {
+    console.warn('[윙 요청 확인]', err);
+  } finally {
+    polling = false;
+  }
+}
+
+// 요청으로 연 탭이 윙 로그인 화면으로 넘어가면(로그인 풀림) 실패로 적고 탭은 남겨 둔다
+chrome.tabs.onUpdated.addListener(async (tabId, info) => {
+  if (!info.url || /^https:\/\/wing\.coupang\.com\//.test(info.url) || !/login|xauth/i.test(info.url)) return;
+  const { jobs = {} } = await chrome.storage.local.get('jobs');
+  const job = jobs[tabId];
+  if (!job) return;
+  delete jobs[tabId];
+  await chrome.storage.local.set({ jobs });
+  await patchRequest(job.reqName, { status: 'error', message: '윙 로그인이 풀렸어요 — 그 프로필에서 다시 로그인' });
+  chrome.tabs.update(tabId, { active: true }).catch(() => {});
+});
+
+// 서비스 워커가 잠들지 않게 30초마다 깨우고, 깨어 있는 동안 5초마다 요청을 확인한다
+chrome.alarms.create('wingRequests', { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener(async (a) => {
+  if (a.name !== 'wingRequests') return;
+  for (let i = 0; i < 5; i++) {
+    await pollRequests();
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'GET_JOB') {
+    chrome.storage.local.get('jobs').then(({ jobs = {} }) => {
+      const job = sender.tab && jobs[sender.tab.id];
+      sendResponse(job && Date.now() - job.at < 10 * 60 * 1000 ? job : null);
+    });
+    return true;
+  }
+  if (msg.type === 'JOB_DONE') {
+    chrome.storage.local.get('jobs').then(async ({ jobs = {} }) => {
+      const tabId = sender.tab && sender.tab.id;
+      const job = jobs[tabId];
+      if (!job) return;
+      delete jobs[tabId];
+      await chrome.storage.local.set({ jobs });
+      await patchRequest(job.reqName, { status: msg.ok ? 'done' : 'error', message: msg.message || '' });
+      // 잘 끝난 탭은 닫고, 실패한 탭은 화면을 볼 수 있게 남겨 둔다
+      if (msg.ok) chrome.tabs.remove(tabId).catch(() => {});
+    });
+    return false;
+  }
+  if (msg.type === 'JOB_STEP') {
+    chrome.storage.local.get('jobs').then(({ jobs = {} }) => {
+      const job = sender.tab && jobs[sender.tab.id];
+      if (job) patchRequest(job.reqName, { message: msg.message });
+    });
+    return false;
+  }
   if (msg.type === 'CHECK_UPDATE') {
     checkUpdate().then((changed) => {
       sendResponse({ reloading: changed });

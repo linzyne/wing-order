@@ -11,6 +11,8 @@
   const ARM = '__wingOrderArm';
   const DIALOG_ARM = '__wingOrderDialogArm';
   const HOOK_SRC = 'wing-order-hook';
+  // 윙발주에서 온 받기 요청으로 확장이 연 탭이면 { mode } — 진행 상황과 결과를 확장에 알린다
+  let job = null;
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const pad = (n) => String(n).padStart(2, '0');
@@ -39,6 +41,7 @@
   document.documentElement.appendChild(box);
   const $ = (k) => box.querySelector(`[data-k="${k}"]`);
   const show = (text, color) => {
+    if (job && text) chrome.runtime.sendMessage({ type: 'JOB_STEP', message: text.split('\n')[0] }).catch(() => {});
     $('msg').style.display = text ? 'block' : 'none';
     $('msg').textContent = text;
     $('msg').style.color = color || '#71717a';
@@ -244,9 +247,8 @@
   let running = false;
   // 이번에 보낼 파일 이름 — 다운로드 폴더에 저장되는 백업 파일도 이 이름으로 바꾼다
   let currentName = '';
-  const run = async (mode) => {
+  const run = async (mode, biz = $('biz').value.trim()) => {
     if (running) return;
-    const biz = $('biz').value.trim();
     if (!biz) {
       showBiz('');
       show('사업자명을 먼저 적어 주세요', '#dc2626');
@@ -274,10 +276,12 @@
       if (!res || res.error) throw new Error(`윙발주로 보내기 실패: ${res && res.error}\n(다운로드 폴더의 엑셀을 직접 올려 주세요)`);
       L(`보냄 · ${name}`);
       show(`보냄 ✓\n${name}\n윙 ${label} ${wingCount ?? '?'}건`, '#16a34a');
+      if (job) chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: true, message: `보냄 · 윙 ${label} ${wingCount ?? '?'}건` });
     } catch (err) {
       L(`실패: ${err.message}`);
       show(err.message, '#dc2626');
       saveLog();
+      if (job) chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: false, message: err.message });
     } finally {
       sessionStorage.removeItem(ARM);
       sessionStorage.removeItem(DIALOG_ARM);
@@ -290,11 +294,21 @@
   $('next').addEventListener('click', () => run('next'));
 
   // 확장 코드가 바뀌었으면 확장이 스스로 다시 불러오고, 이 탭도 새로고침해 새 코드로 띄운다
-  chrome.runtime.sendMessage({ type: 'CHECK_UPDATE' }).then((r) => {
+  // 그다음, 윙발주 요청으로 열린 탭이면 바로 실행한다
+  chrome.runtime.sendMessage({ type: 'CHECK_UPDATE' }).then(async (r) => {
     if (r && r.reloading) {
       show('확장 업데이트 중…', '#2563eb');
       setTimeout(() => location.reload(), 1500);
+      return;
     }
+    job = await chrome.runtime.sendMessage({ type: 'GET_JOB' });
+    if (!job) return;
+    const { businessName } = await chrome.storage.local.get('businessName');
+    if (!location.href.startsWith(MANAGE_URL)) {
+      chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: false, message: '주문배송관리 화면이 안 열렸어요 (윙 로그인 확인)' });
+      return;
+    }
+    setTimeout(() => run(job.mode, businessName || ''), 1500);
   }).catch(() => {});
 
   // 다른 윙 화면에서 눌러 주문배송관리로 넘어온 경우 이어서 실행

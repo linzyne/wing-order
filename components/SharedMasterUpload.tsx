@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { CS_SAVED_EVENT } from '../services/firestoreService';
+import WingFetchBar from './WingFetchBar';
 import { ORDER_METHODS } from '../types';
 
 export interface UploadResult {
@@ -478,6 +479,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
           <button onClick={onClose} className="text-zinc-500 hover:text-white text-sm font-black">×</button>
         </div>
       </div>
+
+      {/* 쿠팡에서 받기 — 사업자 크롬 프로필의 확장이 윙에서 받아 보냄 */}
+      <WingFetchBar businesses={businesses} nextRounds={nextRounds} />
 
       {/* 업체별 현재 차수 상태 배지 */}
       <div className="flex flex-wrap gap-1.5">

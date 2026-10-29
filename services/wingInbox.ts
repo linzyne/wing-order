@@ -1,4 +1,4 @@
-import { collection, onSnapshot, runTransaction } from 'firebase/firestore';
+import { collection, onSnapshot, runTransaction, addDoc, getDocs, deleteDoc, query, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 
 declare var XLSX: any;
@@ -56,4 +56,44 @@ export function subscribeWingInbox(onFile: (f: WingInboxFile) => void): () => vo
       }).catch(err => console.error('[윙 주문서 받기]', err));
     });
   }, err => console.error('[윙 주문서 받기] 구독 실패', err));
+}
+
+// ── 받기 요청 (wingRequests) ──
+// 윙발주에서 "쿠팡에서 받기"를 누르면 사업자별 요청을 남기고, 각 사업자 크롬 프로필의 확장이
+// 가져가 윙에서 받은 뒤 wingInbox로 보내며 status/message를 적는다.
+export type WingRequestStatus = 'pending' | 'running' | 'done' | 'error';
+export interface WingRequest {
+  id: string;
+  businessName: string;
+  mode: 'first' | 'next';
+  status: WingRequestStatus;
+  message: string;
+  createdAt: number;
+}
+
+export async function createWingRequests(targets: { businessName: string; mode: 'first' | 'next' }[]): Promise<string> {
+  const col = collection(db, 'wingRequests');
+  // 1시간 넘은 예전 요청은 정리
+  const old = await getDocs(col).catch(() => null);
+  old?.docs.forEach(d => {
+    const at = d.data().createdAt?.toMillis?.() ?? 0;
+    if (Date.now() - at > 60 * 60 * 1000) deleteDoc(d.ref).catch(() => {});
+  });
+  const batchId = `${Date.now()}`;
+  await Promise.all(targets.map(t => addDoc(col, {
+    businessName: t.businessName, mode: t.mode, status: 'pending', message: '', batchId, createdAt: serverTimestamp(),
+  })));
+  return batchId;
+}
+
+export function subscribeWingRequests(batchId: string, onChange: (reqs: WingRequest[]) => void): () => void {
+  return onSnapshot(query(collection(db, 'wingRequests'), where('batchId', '==', batchId)), snap => {
+    onChange(snap.docs.map(d => {
+      const x = d.data();
+      return {
+        id: d.id, businessName: x.businessName, mode: x.mode, status: x.status, message: x.message || '',
+        createdAt: x.createdAt?.toMillis?.() ?? Date.now(),
+      };
+    }));
+  }, err => console.error('[윙 받기 요청] 구독 실패', err));
 }
