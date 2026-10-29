@@ -1,6 +1,7 @@
-// 윙 화면 왼쪽 아래 작은 패널: "상품준비중 받아 보내기"를 누르면
-// 주문배송관리 → 상품준비중 → 엑셀 다운 → 사유 입력 → 다운로드 를 차례로 누르고,
-// 받은 엑셀을 윙발주(Firestore wingInbox)로 보낸다. 윙 주문 상태는 바꾸지 않는다.
+// 윙 화면 왼쪽 아래 작은 패널.
+// 1차 보내기: 결제완료 → 발주확인 처리(상품준비중으로 모음) → 상품준비중 → 엑셀 다운 → 사유 입력 → 다운로드
+// 2차~ 보내기: 결제완료 → 발주확인 처리 → 사유 입력 → 다운로드 (새 주문만)
+// 받은 엑셀은 윙발주(Firestore wingInbox)로 보낸다. 둘 다 발주확인 처리를 하므로 윙 주문 상태가 바뀐다.
 (() => {
   if (window.__wingOrderPanel) return;
   window.__wingOrderPanel = true;
@@ -8,6 +9,7 @@
   const MANAGE_URL = 'https://wing.coupang.com/tenants/sfl-portal/delivery/management';
   const AUTO_RUN = '__wingOrderAutoRun';
   const ARM = '__wingOrderArm';
+  const DIALOG_ARM = '__wingOrderDialogArm';
   const HOOK_SRC = 'wing-order-hook';
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -31,7 +33,8 @@
     </div>
     <span data-k="bizLabel" title="눌러서 사업자명 바꾸기" style="display:none;font-size:10px;font-weight:700;color:#52525b;background:#f4f4f5;border-radius:5px;padding:2px 5px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
     <input data-k="biz" placeholder="사업자명" style="width:100%;box-sizing:border-box;background:#fafafa;color:#18181b;border:1px solid #e4e4e7;border-radius:5px;padding:3px 5px;font-size:10px;outline:none">
-    <button data-k="run" style="background:#e11d48;color:#fff;border:0;border-radius:6px;padding:5px 0;font-size:10px;font-weight:800;cursor:pointer">상품준비중 보내기</button>
+    <button data-k="first" title="결제완료를 발주확인으로 상품준비중에 모은 뒤, 상품준비중 전체를 보냄" style="background:#e11d48;color:#fff;border:0;border-radius:6px;padding:5px 0;font-size:10px;font-weight:800;cursor:pointer">1차 보내기</button>
+    <button data-k="next" title="결제완료의 새 주문만 발주확인하면서 보냄" style="background:#fff;color:#e11d48;border:1px solid #fda4af;border-radius:6px;padding:4px 0;font-size:10px;font-weight:800;cursor:pointer">2차~ 보내기</button>
     <div data-k="msg" style="display:none;font-size:9px;color:#71717a;white-space:pre-wrap;word-break:break-all"></div>`;
   document.documentElement.appendChild(box);
   const $ = (k) => box.querySelector(`[data-k="${k}"]`);
@@ -97,7 +100,11 @@
     if (e.source !== window || !e.data || e.data.source !== HOOK_SRC) return;
     const d = e.data;
     if (d.type === 'LOG') L(`[hook] ${d.text}`);
-    else if (d.type === 'URL') {
+    else if (d.type === 'ALERT') {
+      // 윙 알림창(예: 처리할 주문이 없다) — 진행은 계속하되 내용을 보여 준다
+      L(`[윙 알림] ${d.text}`);
+      show(`윙 알림: ${d.text}`, '#d97706');
+    } else if (d.type === 'URL') {
       L(`[hook] 파일 주소(${d.via}) ${String(d.url).slice(0, 200)}`);
       capturedUrl = capturedUrl || d.url;
     } else if (d.type === 'FILE' && !captured) {
@@ -111,9 +118,131 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} [원본 ${d.getHours() || '00'}시] ${biz}.xlsx`;
   };
 
+  // ── 단계 ──
+  // 탭(결제완료/상품준비중)을 누르고 그 건수를 읽는다 (예: "결제완료 12") — 못 읽으면 null
+  const readCount = (label) => {
+    const re = new RegExp(`^${label}\\s*([\\d,]+)\\s*(건)?$`);
+    for (const el of document.querySelectorAll('button,a,div,li,span,label')) {
+      if (!visible(el) || box.contains(el)) continue;
+      const m = re.exec(ownText(el));
+      if (m) return Number(m[1].replace(/,/g, ''));
+    }
+    return null;
+  };
+  const openTab = async (label) => {
+    show(`${label} 여는 중…`);
+    const tab = await waitFor(() => findExact(label), 15000);
+    if (!tab) throw new Error(`"${label}" 버튼을 못 찾았어요`);
+    L(`${label} 클릭: <${tab.tagName.toLowerCase()}> ${tab.className}`);
+    tab.click();
+    await sleep(2500);
+    const n = readCount(label);
+    L(`윙 ${label} 건수: ${n ?? '못 읽음'}`);
+    return n;
+  };
+  const findButton = (re) =>
+    waitFor(() => [...document.querySelectorAll('button,a')].find((el) => visible(el) && !box.contains(el) && re.test(ownText(el))), 10000);
+
+  // 개인정보 다운로드 사유 팝업 → "다운로드"
+  const passReasonPopup = async () => {
+    const reason = await waitFor(
+      () => [...document.querySelectorAll('textarea')].find((t) => visible(t) && /사유|기재/.test(t.placeholder || '')),
+      8000
+    );
+    if (!reason) {
+      L('사유 팝업 없음 — 바로 내려받는 것으로 보고 기다림');
+      return;
+    }
+    L('사유 칸 발견 → 입력');
+    setValue(reason, '발주서 작성');
+    await sleep(400);
+    let popup = reason.parentElement;
+    let dlBtn = null;
+    while (popup && popup !== document.body) {
+      dlBtn = [...popup.querySelectorAll('button,a,[id="submitConfirm"]')].find((b) => visible(b) && ownText(b) === '다운로드');
+      if (dlBtn) break;
+      popup = popup.parentElement;
+    }
+    if (!dlBtn) throw new Error('사유 팝업의 "다운로드" 버튼을 못 찾았어요');
+    L('팝업 다운로드 클릭');
+    dlBtn.click();
+  };
+
+  // 버튼을 누르고 내려오는 엑셀을 받는다 (capture=false면 확인창만 넘기고 파일은 안 받음)
+  const clickAndPass = async (btn, capture) => {
+    captured = null;
+    capturedUrl = null;
+    sessionStorage.setItem(DIALOG_ARM, String(Date.now()));
+    if (capture) {
+      sessionStorage.setItem(ARM, String(Date.now()));
+      chrome.runtime.sendMessage({ type: 'ARM' });
+    }
+    btn.click();
+    await passReasonPopup();
+  };
+
+  const waitCaptured = async () => {
+    show('엑셀 받는 중…');
+    const got = await waitFor(() => captured || (capturedUrl && 'url'), 60000, 300);
+    if (captured) return captured;
+    // 화면이 주소로 내려받았거나 hook이 못 잡았으면 확장이 직접 받아 본다
+    const url = capturedUrl || (await chrome.runtime.sendMessage({ type: 'LAST_DOWNLOAD_URL' }));
+    L(`hook 파일 없음 · 주소로 받기 시도: ${url || '주소도 없음'}`);
+    if (!got && !url) throw new Error('엑셀 파일을 1분 안에 못 받았어요');
+    const r = await chrome.runtime.sendMessage({ type: 'FETCH_FILE', url });
+    if (!r || r.error) throw new Error(`주소로 받기 실패: ${r && r.error}`);
+    return r.base64;
+  };
+
+  // 결제완료 → 발주확인 처리 (윙 주문 상태가 상품준비중으로 바뀜)
+  const confirmPaid = async (capture) => {
+    const btn = await findButton(/^발주확인\s*처리/);
+    if (!btn) throw new Error('"발주확인 처리" 버튼을 못 찾았어요');
+    L(`발주확인 처리 클릭: "${ownText(btn)}"`);
+    show('발주확인 처리 중…');
+    await clickAndPass(btn, capture);
+  };
+
+  // 1차: 결제완료가 있으면 발주확인으로 상품준비중에 모은 뒤, 상품준비중 전체를 받는다
+  const runFirst = async () => {
+    const paid = await openTab('결제완료');
+    if (paid !== 0) {
+      await confirmPaid(false);
+      // 결제완료가 0이 될 때까지 기다린다 (건수를 못 읽는 화면이면 8초만 기다림)
+      show('상품준비중으로 넘어가길 기다리는 중…');
+      if (paid == null) await sleep(8000);
+      else {
+        const end = Date.now() + 40000;
+        let left = paid;
+        while (Date.now() < end) {
+          await sleep(3000);
+          left = await openTab('결제완료');
+          if (left === 0) break;
+        }
+        if (left !== 0) throw new Error(`결제완료가 아직 ${left}건 남아 있어요 — 윙 화면 확인`);
+      }
+    }
+    const count = await openTab('상품준비중');
+    if (count === 0) throw new Error('상품준비중 주문이 0건이에요');
+    const excelBtn = await findButton(/엑셀\s*다운/);
+    if (!excelBtn) throw new Error('"엑셀 다운" 버튼을 못 찾았어요');
+    L(`엑셀 다운 클릭: "${ownText(excelBtn)}"`);
+    show('엑셀 다운 누르는 중…');
+    await clickAndPass(excelBtn, true);
+    return { base64: await waitCaptured(), wingCount: count, label: '상품준비중' };
+  };
+
+  // 2차~: 결제완료의 새 주문만 발주확인 처리하면서 내려오는 엑셀을 받는다
+  const runNext = async () => {
+    const paid = await openTab('결제완료');
+    if (paid === 0) throw new Error('결제완료에 새 주문이 없어요');
+    await confirmPaid(true);
+    return { base64: await waitCaptured(), wingCount: paid, label: '결제완료' };
+  };
+
   // ── 실행 ──
   let running = false;
-  const run = async () => {
+  const run = async (mode) => {
     if (running) return;
     const biz = $('biz').value.trim();
     if (!biz) {
@@ -125,105 +254,42 @@
     chrome.storage.local.set({ businessName: biz });
     showBiz(biz);
     if (!location.href.startsWith(MANAGE_URL)) {
-      sessionStorage.setItem(AUTO_RUN, String(Date.now()));
+      sessionStorage.setItem(AUTO_RUN, JSON.stringify({ at: Date.now(), mode }));
       location.href = MANAGE_URL;
       return;
     }
     running = true;
-    $('run').disabled = true;
-    captured = null;
-    capturedUrl = null;
+    $('first').disabled = true;
+    $('next').disabled = true;
     log.length = 0;
-    L(`시작 · 사업자 ${biz} · ${location.href}`);
+    L(`시작 · ${mode === 'first' ? '1차' : '2차~'} · 사업자 ${biz} · ${location.href}`);
     try {
-      show('상품준비중 여는 중…');
-      const tab = await waitFor(() => findExact('상품준비중'), 15000);
-      if (!tab) throw new Error('"상품준비중" 버튼을 못 찾았어요');
-      L(`상품준비중 클릭: <${tab.tagName.toLowerCase()}> ${tab.className}`);
-      tab.click();
-      await sleep(2500);
-
-      // 화면에 보이는 상품준비중 건수 (예: "상품준비중 12") — 파일과 대조용
-      let wingCount = null;
-      for (const el of document.querySelectorAll('button,a,div,li,span,label')) {
-        if (!visible(el) || box.contains(el)) continue;
-        const m = /^상품준비중\s*([\d,]+)\s*(건)?$/.exec(ownText(el));
-        if (m) {
-          wingCount = Number(m[1].replace(/,/g, ''));
-          break;
-        }
-      }
-      L(`윙 상품준비중 건수: ${wingCount ?? '못 읽음'}`);
-      if (wingCount === 0) throw new Error('상품준비중 주문이 0건이에요');
-
-      show('엑셀 다운 누르는 중…');
-      const excelBtn = await waitFor(
-        () => [...document.querySelectorAll('button,a')].find((el) => visible(el) && !box.contains(el) && /엑셀\s*다운/.test(ownText(el))),
-        10000
-      );
-      if (!excelBtn) throw new Error('"엑셀 다운" 버튼을 못 찾았어요');
-      L(`엑셀 다운 클릭: "${ownText(excelBtn)}"`);
-      sessionStorage.setItem(ARM, String(Date.now()));
-      chrome.runtime.sendMessage({ type: 'ARM' });
-      excelBtn.click();
-
-      // 개인정보 다운로드 사유 팝업
-      const reason = await waitFor(
-        () => [...document.querySelectorAll('textarea')].find((t) => visible(t) && /사유|기재/.test(t.placeholder || '')),
-        8000
-      );
-      if (reason) {
-        L('사유 칸 발견 → 입력');
-        setValue(reason, '발주서 작성');
-        await sleep(400);
-        let popup = reason.parentElement;
-        let dlBtn = null;
-        while (popup && popup !== document.body) {
-          dlBtn = [...popup.querySelectorAll('button,a,[id="submitConfirm"]')].find((b) => visible(b) && ownText(b) === '다운로드');
-          if (dlBtn) break;
-          popup = popup.parentElement;
-        }
-        if (!dlBtn) throw new Error('사유 팝업의 "다운로드" 버튼을 못 찾았어요');
-        L('팝업 다운로드 클릭');
-        dlBtn.click();
-      } else {
-        L('사유 팝업 없음 — 바로 내려받는 것으로 보고 기다림');
-      }
-
-      show('엑셀 받는 중…');
-      const got = await waitFor(() => captured || (capturedUrl && 'url'), 60000, 300);
-      let base64 = captured;
-      if (!base64) {
-        // 화면이 주소로 내려받았거나 hook이 못 잡았으면 확장이 직접 받아 본다
-        const url = capturedUrl || (await chrome.runtime.sendMessage({ type: 'LAST_DOWNLOAD_URL' }));
-        L(`hook 파일 없음 · 주소로 받기 시도: ${url || '주소도 없음'}`);
-        if (!got && !url) throw new Error('엑셀 파일을 1분 안에 못 받았어요');
-        const r = await chrome.runtime.sendMessage({ type: 'FETCH_FILE', url });
-        if (!r || r.error) throw new Error(`주소로 받기 실패: ${r && r.error}`);
-        base64 = r.base64;
-      }
-
+      const { base64, wingCount, label } = mode === 'first' ? await runFirst() : await runNext();
       show('윙발주로 보내는 중…');
       const name = fileName(biz);
       const res = await chrome.runtime.sendMessage({ type: 'SEND_INBOX', fileName: name, fileBase64: base64, wingCount, businessName: biz });
       if (!res || res.error) throw new Error(`윙발주로 보내기 실패: ${res && res.error}\n(다운로드 폴더의 엑셀을 직접 올려 주세요)`);
       L(`보냄 · ${name}`);
-      show(`보냄 ✓\n${name}\n윙 상품준비중 ${wingCount ?? '?'}건`, '#16a34a');
+      show(`보냄 ✓\n${name}\n윙 ${label} ${wingCount ?? '?'}건`, '#16a34a');
     } catch (err) {
       L(`실패: ${err.message}`);
       show(err.message, '#dc2626');
       saveLog();
     } finally {
       sessionStorage.removeItem(ARM);
+      sessionStorage.removeItem(DIALOG_ARM);
       running = false;
-      $('run').disabled = false;
+      $('first').disabled = false;
+      $('next').disabled = false;
     }
   };
-  $('run').addEventListener('click', run);
+  $('first').addEventListener('click', () => run('first'));
+  $('next').addEventListener('click', () => run('next'));
 
   // 다른 윙 화면에서 눌러 주문배송관리로 넘어온 경우 이어서 실행
-  if (Date.now() - Number(sessionStorage.getItem(AUTO_RUN) || 0) < 60000) {
+  try {
+    const auto = JSON.parse(sessionStorage.getItem(AUTO_RUN) || 'null');
     sessionStorage.removeItem(AUTO_RUN);
-    setTimeout(run, 1500);
-  }
+    if (auto && Date.now() - auto.at < 60000) setTimeout(() => run(auto.mode), 1500);
+  } catch (err) {}
 })();

@@ -101,4 +101,26 @@
     tellUrl(url, 'window.open');
     return origWinOpen.call(window, url, ...rest);
   };
+
+  // 확장이 발주확인 처리를 누르는 동안(2분) 윙이 띄우는 확인창은 확인으로 넘기고, 알림창 내용은 로그에 남긴다
+  // (창이 떠 있으면 진행이 멈춘다). 표시가 없을 때는 원래대로 동작한다.
+  const DIALOG_ARM = '__wingOrderDialogArm';
+  const dialogArmed = () => {
+    try {
+      return Date.now() - Number(sessionStorage.getItem(DIALOG_ARM) || 0) < 2 * 60 * 1000;
+    } catch (err) {
+      return false;
+    }
+  };
+  const origConfirm = window.confirm;
+  const origAlert = window.alert;
+  window.confirm = function (msg) {
+    if (!dialogArmed()) return origConfirm.call(window, msg);
+    post({ type: 'LOG', text: `확인창 → 확인: ${String(msg || '')}` });
+    return true;
+  };
+  window.alert = function (msg) {
+    if (!dialogArmed()) return origAlert.call(window, msg);
+    post({ type: 'ALERT', text: String(msg || '') });
+  };
 })();
