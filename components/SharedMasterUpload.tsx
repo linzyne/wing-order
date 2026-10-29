@@ -21,8 +21,8 @@ interface MasterUploadHandlers {
   getOrderState?: () => { name: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
-  emailCompanyMerged?: (companyName: string) => void;
-  emailCompanyRound?: (companyName: string, round: number) => void;
+  emailCompanyMerged?: (companyName: string) => Promise<boolean> | void;
+  emailCompanyRound?: (companyName: string, round: number) => Promise<boolean> | void;
   kakaoCompanyMerged?: (companyName: string) => void;
   kakaoCompanyRound?: (companyName: string, round: number) => void;
   downloadAllCompanies?: () => void;
@@ -113,12 +113,17 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const [downloadedButtons, setDownloadedButtons] = useState<Set<string>>(new Set());
   const [emailedButtons, setEmailedButtons] = useState<Set<string>>(new Set());
   const [emailingButtons, setEmailingButtons] = useState<Set<string>>(new Set());
-  const sendOrderMail = useCallback(async (key: string, fn?: () => void | Promise<void>) => {
+  const sendOrderMail = useCallback(async (key: string, fn?: () => void | Promise<boolean | void>) => {
     if (!fn || emailingButtons.has(key)) return;
     setEmailingButtons(prev => new Set(prev).add(key));
     try {
-      await fn();
-      setEmailedButtons(prev => new Set(prev).add(key));
+      // 메일은 실제로 전송됐을 때만(true) 완료 표시 — 취소·실패는 그대로 둔다
+      if ((await fn()) === false) return;
+      setEmailedButtons(prev => {
+        const next = new Set(prev).add(key);
+        try { localStorage.setItem(sentStorageKeyRef.current, JSON.stringify([...next])); } catch { /* 저장 실패는 무시 */ }
+        return next;
+      });
     } finally {
       setEmailingButtons(prev => { const n = new Set(prev); n.delete(key); return n; });
     }
@@ -126,6 +131,15 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const [settlementCompany, setSettlementCompany] = useState<string | null>(null);
   const [copiedSettlement, setCopiedSettlement] = useState<string | null>(null);
   const [globalWorkDate, setGlobalWorkDate] = useState<string>(() => new Date().toLocaleDateString('en-CA'));
+  // 메일 발주완료 표시는 창을 닫았다 열어도 남도록 작업날짜별로 저장
+  const sentStorageKey = `wing_order_sent_${globalWorkDate}`;
+  useEffect(() => {
+    let saved: unknown = [];
+    try { saved = JSON.parse(localStorage.getItem(sentStorageKey) || '[]'); } catch { /* 없으면 빈 목록 */ }
+    setEmailedButtons(new Set(Array.isArray(saved) ? saved : []));
+  }, [sentStorageKey]);
+  const sentStorageKeyRef = useRef(sentStorageKey);
+  sentStorageKeyRef.current = sentStorageKey;
   const [pendingUrgentFiles, setPendingUrgentFiles] = useState<File[] | null>(null);
   const [pendingCsItems, setPendingCsItems] = useState<PendingCsSummary[]>([]);
 
@@ -671,11 +685,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                         const totalUnmatched = Math.max(0, totalCount - totalMatched);
                         const hasWarning = warningCompanyIds?.has(`${biz.businessId}_${companyName}`) ?? false;
                         return (
-                          <div key={biz.businessId} className="flex items-start gap-1.5">
-                            <span className="text-[11px] text-zinc-400 w-16 shrink-0 truncate font-bold pt-1" title={biz.displayName ?? ''}>{biz.displayName}</span>
-                            {hasWarning && (
-                              <span title="워크스테이션에 경고가 있습니다" className="text-amber-400 text-xs leading-none shrink-0 pt-1.5">⚠</span>
-                            )}
+                          <div key={biz.businessId} className="flex items-start gap-2">
                             {/* 다운로드 + 메일/카톡 전송을 한 덩어리(칩)로 묶어 차수별로 한눈에 구분되게 */}
                             {(() => {
                               const fns = uploadFns[biz.businessId];
@@ -688,18 +698,18 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     onClick={() => sendOrderMail(key, run)}
                                     disabled={sending}
                                     title={title}
-                                    className={`flex items-center justify-center w-6 border-l border-white/10 transition-colors ${sending ? 'opacity-40' : sent ? 'opacity-25 hover:opacity-60' : 'opacity-60 hover:opacity-100 hover:bg-white/10'}`}
+                                    className={`flex items-center justify-center w-6 border-l border-white/10 transition-colors ${sending ? 'opacity-40' : sent && kind === 'mail' ? 'bg-emerald-500 text-white hover:bg-emerald-400' : sent ? 'opacity-25 hover:opacity-60' : 'opacity-60 hover:opacity-100 hover:bg-white/10'}`}
                                   >
-                                    {sending ? <span className="text-[10px] leading-none">…</span> : kind === 'mail' ? MAIL_ICON : KAKAO_ICON}
+                                    {sending ? <span className="text-[10px] leading-none">…</span> : sent && kind === 'mail' ? <span className="text-[11px] font-black leading-none">✓</span> : kind === 'mail' ? MAIL_ICON : KAKAO_ICON}
                                   </button>
                                 );
                               };
                               const renderChip = (opts: {
                                 key: string; downloaded: boolean; color: string; label: string; sub?: string;
-                                onDownload: () => void; sends: React.ReactNode[]; badge?: React.ReactNode;
+                                onDownload: () => void; sends: React.ReactNode[]; badge?: React.ReactNode; mailed?: boolean;
                               }) => (
                                 <div key={opts.key} className="flex flex-col items-center gap-0.5">
-                                  <div className={`inline-flex items-stretch rounded-lg border overflow-hidden transition-colors ${opts.downloaded ? 'bg-zinc-800/40 text-zinc-600 border-zinc-800' : opts.color}`}>
+                                  <div className={`inline-flex items-stretch rounded-lg border overflow-hidden transition-colors ${opts.mailed ? 'bg-emerald-900/50 text-emerald-200 border-emerald-500 ring-1 ring-emerald-500/40' : opts.downloaded ? 'bg-zinc-800/40 text-zinc-600 border-zinc-800' : opts.color}`}>
                                     <button
                                       onClick={opts.onDownload}
                                       title="발주서 다운로드"
@@ -710,22 +720,32 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     </button>
                                     {opts.sends}
                                   </div>
-                                  {opts.badge}
+                                  {opts.mailed ? (
+                                    <span className="text-[9px] font-black px-1.5 rounded-full whitespace-nowrap bg-emerald-500 text-white">✓ 발주완료</span>
+                                  ) : opts.badge}
                                 </div>
                               );
                               const mergedKey = `${biz.businessId}_${companyName}_merged`;
+                              // 메일 완료 키에 건수를 넣어, 초기화 후 같은 차수가 새로 생겨도 예전 완료 표시가 붙지 않게
+                              const mergedMailKey = `${mergedKey}_mail_${totalCount}`;
                               const rounds = company.rounds.filter(r => r.hasData);
-                              // 합산은 윗줄, 차수(1차·2차·3차…)는 아랫줄
+                              // 왼쪽: 사업자명 아래 합산 / 오른쪽: 차수(1차·2차·3차…) — 합산과 차수를 헷갈리지 않게 떼어 둔다
                               return (
-                                <div className="flex flex-col items-start gap-1">
+                                <>
+                                <div className="flex flex-col items-start gap-1 w-28 shrink-0">
+                                <span className="flex items-center gap-1 max-w-full text-[11px] text-zinc-400 font-bold" title={biz.displayName ?? ''}>
+                                  <span className="truncate">{biz.displayName}</span>
+                                  {hasWarning && <span title="워크스테이션에 경고가 있습니다" className="text-amber-400 text-xs leading-none shrink-0">⚠</span>}
+                                </span>
                                 {renderChip({
                                   key: 'merged',
                                   downloaded: downloadedButtons.has(mergedKey),
                                   color: 'bg-teal-800/60 text-teal-100 border-teal-600/70',
                                   label: `합산${totalCount > 0 ? ` ${totalCount}` : ''}`,
                                   onDownload: () => { fns?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(mergedKey); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); },
+                                  mailed: emailedButtons.has(mergedMailKey),
                                   sends: totalCount > 0 ? [
-                                    fns?.emailCompanyMerged && renderSend(mergedKey, 'mail', '합산 발주서 메일 전송', () => fns?.emailCompanyMerged?.(companyName)),
+                                    fns?.emailCompanyMerged && renderSend(mergedMailKey, 'mail', '합산 발주서 메일 전송', () => fns?.emailCompanyMerged?.(companyName)),
                                     fns?.kakaoCompanyMerged && renderSend(`${mergedKey}_kakao`, 'kakao', '합산 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)', () => fns?.kakaoCompanyMerged?.(companyName)),
                                   ] : [],
                                   badge: SHOW_MATCH_BADGE && hasMatchData && totalCount > 0 && (
@@ -734,11 +754,13 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     </span>
                                   ),
                                 })}
+                                </div>
                                 {rounds.length > 0 && (
-                                <div className="flex items-center gap-1.5 flex-wrap">
+                                <div className="flex items-start gap-1.5 flex-wrap pt-[18px]">
                                 {rounds.map(r => {
                                   const unmatched = Math.max(0, (r.count ?? 0) - (r.matchedCount ?? 0));
                                   const roundKey = `${biz.businessId}_${companyName}_${r.round}`;
+                                  const roundMailKey = `${roundKey}_mail_${r.count}`;
                                   return renderChip({
                                     key: `r${r.round}`,
                                     downloaded: downloadedButtons.has(roundKey),
@@ -746,8 +768,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     label: `${r.round}차${r.count > 0 ? ` ${r.count}` : ''}`,
                                     sub: r.timeLabel,
                                     onDownload: () => { fns?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(roundKey)); },
+                                    mailed: emailedButtons.has(roundMailKey),
                                     sends: [
-                                      fns?.emailCompanyRound && renderSend(`${roundKey}_mail`, 'mail', `${r.round}차 발주서 메일 전송`, () => fns?.emailCompanyRound?.(companyName, r.round)),
+                                      fns?.emailCompanyRound && renderSend(roundMailKey, 'mail', `${r.round}차 발주서 메일 전송`, () => fns?.emailCompanyRound?.(companyName, r.round)),
                                       fns?.kakaoCompanyRound && renderSend(`${roundKey}_kakao`, 'kakao', `${r.round}차 발주서 카톡 전송 (공유창에서 카카오톡 → 대화방 선택, 본문은 복사됨)`, () => fns?.kakaoCompanyRound?.(companyName, r.round)),
                                     ],
                                     badge: SHOW_MATCH_BADGE && r.matchedCount !== undefined && r.count > 0 && (
@@ -759,7 +782,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                 })}
                                 </div>
                                 )}
-                                </div>
+                                </>
                               );
                             })()}
                           </div>
