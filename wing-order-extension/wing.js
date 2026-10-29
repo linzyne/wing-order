@@ -33,8 +33,8 @@
     </div>
     <span data-k="bizLabel" title="눌러서 사업자명 바꾸기" style="display:none;font-size:10px;font-weight:700;color:#52525b;background:#f4f4f5;border-radius:5px;padding:2px 5px;cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
     <input data-k="biz" placeholder="사업자명" style="width:100%;box-sizing:border-box;background:#fafafa;color:#18181b;border:1px solid #e4e4e7;border-radius:5px;padding:3px 5px;font-size:10px;outline:none">
-    <button data-k="first" title="결제완료를 발주확인으로 상품준비중에 모은 뒤, 상품준비중 전체를 보냄" style="background:#e11d48;color:#fff;border:0;border-radius:6px;padding:5px 0;font-size:10px;font-weight:800;cursor:pointer">1차 (발주→상품준비중)</button>
-    <button data-k="next" title="결제완료의 새 주문만 발주확인하면서 보냄" style="background:#fff;color:#e11d48;border:1px solid #fda4af;border-radius:6px;padding:4px 0;font-size:10px;font-weight:800;cursor:pointer">2차 (상품준비중)</button>
+    <button data-k="first" title="결제완료를 발주확인으로 상품준비중에 모은 뒤, 상품준비중 전체를 보냄" style="background:#e11d48;color:#fff;border:0;border-radius:6px;padding:5px 0;font-size:10px;font-weight:800;cursor:pointer">1차 (상품준비중)</button>
+    <button data-k="next" title="결제완료의 새 주문만 발주확인하면서 보냄" style="background:#fff;color:#e11d48;border:1px solid #fda4af;border-radius:6px;padding:4px 0;font-size:10px;font-weight:800;cursor:pointer">2차 (결제확인)</button>
     <div data-k="msg" style="display:none;font-size:9px;color:#71717a;white-space:pre-wrap;word-break:break-all"></div>`;
   document.documentElement.appendChild(box);
   const $ = (k) => box.querySelector(`[data-k="${k}"]`);
