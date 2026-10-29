@@ -279,7 +279,7 @@
       const { base64, wingCount, label } = mode === 'first' ? await runFirst() : await runNext();
       show('윙발주로 보내는 중…');
       const name = currentName;
-      const res = await chrome.runtime.sendMessage({ type: 'SEND_INBOX', fileName: name, fileBase64: base64, wingCount, businessName: biz });
+      const res = await chrome.runtime.sendMessage({ type: 'SEND_INBOX', fileName: name, fileBase64: base64, wingCount, businessName: biz, source: label });
       if (!res || res.error) throw new Error(`윙발주로 보내기 실패: ${res && res.error}\n(다운로드 폴더의 엑셀을 직접 올려 주세요)`);
       L(`보냄 · ${name}`);
       show(`보냄 ✓\n${name}\n윙 ${label} ${wingCount ?? '?'}건`, '#16a34a');

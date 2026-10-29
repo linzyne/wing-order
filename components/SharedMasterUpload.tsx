@@ -69,7 +69,7 @@ interface Props {
   onCompanyMemoChange?: (companyName: string, text: string) => void;
   onCompanyMemoDelete?: (companyName: string) => void;
   /** 크롬 확장이 윙에서 받아 보낸 주문서 — 사업자 패널이 준비되면 직접 올린 것처럼 처리 */
-  incomingFiles?: { file: File; note?: UploadResult['note'] }[];
+  incomingFiles?: { file: File; note?: UploadResult['note']; source?: string }[];
   onIncomingTaken?: () => void;
 }
 
@@ -321,9 +321,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     setShowDownload(v => !v);
   };
 
-  const processFiles = async (files: File[], notes?: Map<File, UploadResult['note']>) => {
+  const processFiles = async (files: File[], notes?: Map<File, UploadResult['note']>, sources?: Map<File, string>) => {
     // 모드를 파일별로 사업자 상태 기준으로 자동 감지
-    const items: UploadResult[] = files.map(f => {
+    const items: UploadResult[] = files.map((f): UploadResult => {
       const biz = detectBusiness(f.name, businesses);
       const nextRound = biz ? (uploadFns[biz.id]?.getNextRound?.() ?? 1) : undefined;
       const mode: 'master' | 'batch' = nextRound === 1 ? 'master' : 'batch';
@@ -336,6 +336,12 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
         round: nextRound,
         note: notes?.get(f),
       };
+    }).map((item, i): UploadResult => {
+      // 확장이 상품준비중 '전체'를 받아 왔는데 이 사업자에 이미 1차가 있으면 같은 주문이 또 들어가므로 올리지 않는다
+      if (item.businessId && item.round !== 1 && sources?.get(files[i]) === '상품준비중') {
+        return { ...item, status: 'error', error: '이미 1차가 있어서 상품준비중 전체는 안 올렸어요 (중복 방지) — 2차는 결제확인으로 받기' };
+      }
+      return item;
     });
     const offset = results.length;
     onResultsChange(prev => [...prev, ...items]);
@@ -343,7 +349,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
       const resultIdx = offset + i;
-      if (!item.businessId) continue;
+      if (!item.businessId || item.status === 'error') continue;
       const handlers = uploadFns[item.businessId];
       if (!handlers) {
         onResultsChange(prev => prev.map((r, idx) => idx === resultIdx ? { ...r, status: 'error', error: '핸들러 없음 (패널 미로드)' } : r));
@@ -369,16 +375,18 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   };
 
   const pendingNotesRef = useRef<Map<File, UploadResult['note']>>(new Map());
-  const handleFiles = (fileList: FileList | File[] | null, notes?: Map<File, UploadResult['note']>) => {
+  const pendingSourcesRef = useRef<Map<File, string>>(new Map());
+  const handleFiles = (fileList: FileList | File[] | null, notes?: Map<File, UploadResult['note']>, sources?: Map<File, string>) => {
     if (!fileList || fileList.length === 0) return;
     const files = Array.from(fileList).filter(f => /\.(xlsx|xls)$/i.test(f.name));
     if (files.length === 0) return;
     if (urgentNotice?.trim() || pendingCsItems.length > 0) {
       pendingNotesRef.current = notes ?? new Map();
+      pendingSourcesRef.current = sources ?? new Map();
       setPendingUrgentFiles(files);
       return;
     }
-    processFiles(files, notes);
+    processFiles(files, notes, sources);
   };
 
   // 확장으로 들어온 주문서: 사업자 패널(uploadFns)이 아직 안 떴으면 최대 30초 기다렸다가 올린다
@@ -393,13 +401,13 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
       if (!ready && Date.now() - started < 30_000) return;
       clearInterval(tick);
       onIncomingTaken?.();
-      handleFiles(incomingFiles.map(x => x.file), new Map(incomingFiles.map(x => [x.file, x.note])));
+      handleFiles(incomingFiles.map(x => x.file), new Map(incomingFiles.map(x => [x.file, x.note])), new Map(incomingFiles.map(x => [x.file, x.source ?? ''])));
     }, 500);
     return () => clearInterval(tick);
   }, [incomingFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleUrgentNoticeConfirm = () => {
-    if (pendingUrgentFiles) processFiles(pendingUrgentFiles, pendingNotesRef.current);
+    if (pendingUrgentFiles) processFiles(pendingUrgentFiles, pendingNotesRef.current, pendingSourcesRef.current);
     setPendingUrgentFiles(null);
   };
 
@@ -481,7 +489,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
       </div>
 
       {/* 쿠팡에서 받기 — 사업자 크롬 프로필의 확장이 윙에서 받아 보냄 */}
-      <WingFetchBar businesses={businesses} nextRounds={nextRounds} />
+      <WingFetchBar businesses={businesses} getNextRound={id => uploadFns[id]?.getNextRound?.() ?? 1} />
 
       {/* 업체별 현재 차수 상태 배지 */}
       <div className="flex flex-wrap gap-1.5">

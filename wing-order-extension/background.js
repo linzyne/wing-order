@@ -40,7 +40,7 @@ async function fetchFile(url) {
   return toBase64(buf);
 }
 
-async function sendInbox({ fileName, fileBase64, wingCount, businessName }) {
+async function sendInbox({ fileName, fileBase64, wingCount, businessName, source }) {
   // Firestore 문서 한 개는 1MB까지
   if (fileBase64.length > 1_000_000) throw new Error('파일이 너무 커요(1MB 넘음)');
   const { projectId, apiKey } = self.WING_FIREBASE;
@@ -53,6 +53,8 @@ async function sendInbox({ fileName, fileBase64, wingCount, businessName }) {
         fileName: { stringValue: fileName },
         fileBase64: { stringValue: fileBase64 },
         businessName: { stringValue: businessName },
+        // 어느 탭에서 받은 파일인지 (상품준비중 = 그날 전체, 결제완료 = 새 주문만)
+        source: { stringValue: source || '' },
         wingCount: wingCount == null ? { nullValue: null } : { integerValue: String(wingCount) },
         createdAt: { timestampValue: new Date().toISOString() },
       },

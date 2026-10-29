@@ -11,6 +11,8 @@ export interface WingInboxFile {
   wingCount: number | null;
   /** 파일 안 주문번호 개수 */
   fileCount: number;
+  /** 받은 윙 탭: '상품준비중'(그날 전체) | '결제완료'(새 주문만) | ''(예전 확장) */
+  source: string;
 }
 
 const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
@@ -52,7 +54,7 @@ export function subscribeWingInbox(onFile: (f: WingInboxFile) => void): () => vo
         if (!data?.fileBase64 || !data?.fileName) return;
         const file = base64ToFile(data.fileBase64, data.fileName);
         const fileCount = await countOrders(file).catch(() => -1);
-        onFile({ file, wingCount: typeof data.wingCount === 'number' ? data.wingCount : null, fileCount });
+        onFile({ file, wingCount: typeof data.wingCount === 'number' ? data.wingCount : null, fileCount, source: data.source || '' });
       }).catch(err => console.error('[윙 주문서 받기]', err));
     });
   }, err => console.error('[윙 주문서 받기] 구독 실패', err));

@@ -799,14 +799,14 @@ const App: React.FC = () => {
   }, [panelSetters]);
 
   // 크롬 확장이 윙에서 받아 보낸 주문서 → 주문서 업로드 패널을 열고 그대로 올린다
-  const [incomingWingFiles, setIncomingWingFiles] = useState<{ file: File; note?: UploadResult['note'] }[]>([]);
-  useEffect(() => subscribeWingInbox(({ file, wingCount, fileCount }) => {
+  const [incomingWingFiles, setIncomingWingFiles] = useState<{ file: File; note?: UploadResult['note']; source?: string }[]>([]);
+  useEffect(() => subscribeWingInbox(({ file, wingCount, fileCount, source }) => {
     const note = wingCount == null || fileCount < 0
       ? { text: `확장으로 받음 · 파일 주문 ${Math.max(fileCount, 0)}건`, warn: false }
       : wingCount === fileCount
         ? { text: `윙 ${wingCount}건 = 파일 ${fileCount}건 ✓`, warn: false }
         : { text: `⚠ 윙 ${wingCount}건 ≠ 파일 ${fileCount}건 — 윙 화면 확인`, warn: true };
-    setIncomingWingFiles(prev => [...prev, { file, note }]);
+    setIncomingWingFiles(prev => [...prev, { file, note, source }]);
     (Object.keys(panelSetters) as PanelKey[]).forEach(k => panelSetters[k](k === 'upload'));
     // 결과 목록 글씨는 작아서 놓치기 쉬우니 건수가 다르면 알림창으로 한 번 더 알린다
     if (note.warn) setTimeout(() => alert(`${file.name}\n\n윙 상품준비중 ${wingCount}건인데 받은 파일은 주문 ${fileCount}건이에요.\n윙 화면을 확인해 주세요.`), 300);

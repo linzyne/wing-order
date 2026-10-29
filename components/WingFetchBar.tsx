@@ -3,8 +3,9 @@ import { createWingRequests, subscribeWingRequests, type WingRequest } from '../
 
 interface Props {
   businesses: { id: string; displayName: string }[];
-  /** 사업자별 다음 차수 — 1이면 1차(상품준비중), 아니면 2차(결제확인)로 받는다 */
-  nextRounds: Record<string, number>;
+  /** 사업자의 지금 다음 차수 — 1이면 1차(상품준비중), 아니면 2차(결제확인)로 받는다.
+   *  화면에 들고 있던 값은 늦게 바뀔 수 있어(1차가 있는데 1차로 보여 상품준비중 전체를 또 받던 일) 누를 때마다 새로 읽는다 */
+  getNextRound: (businessId: string) => number;
 }
 
 const SELECTED_KEY = 'wingFetchSelected';
@@ -14,7 +15,7 @@ const loadSelected = (): Record<string, boolean> => {
 
 // 쿠팡에서 받기: 체크한 사업자마다 그 크롬 프로필의 확장에 받기 요청을 보내고 진행 상황을 보여 준다.
 // 받은 파일은 wingInbox → 주문서 업로드로 따로 들어온다.
-const WingFetchBar: React.FC<Props> = ({ businesses, nextRounds }) => {
+const WingFetchBar: React.FC<Props> = ({ businesses, getNextRound }) => {
   const [selected, setSelected] = useState<Record<string, boolean>>(loadSelected);
   // 주문서 창을 닫았다 열어도 진행 상황이 이어지게 이번 요청 묶음 id를 기억
   const [batchId, setBatchIdState] = useState<string | null>(() => {
@@ -36,19 +37,18 @@ const WingFetchBar: React.FC<Props> = ({ businesses, nextRounds }) => {
   });
 
   useEffect(() => (batchId ? subscribeWingRequests(batchId, setReqs) : undefined), [batchId]);
-  // '응답 없음' 판단용 시계 (진행 중일 때만)
+  // '응답 없음' 판단·칩의 차수 표시를 위해 2초마다 다시 그린다
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 2000);
+    return () => clearInterval(t);
+  }, []);
   // 45초 넘게 아무 확장도 안 가져간 요청(응답 없음)이나 5분 넘게 안 끝난 요청은 끝난 것으로 봐서 다시 누를 수 있게 한다
   const active = reqs.some(r =>
     (r.status === 'running' && now - r.createdAt <= 5 * 60_000) || (r.status === 'pending' && now - r.createdAt <= 45_000));
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setNow(Date.now()), 2000);
-    return () => clearInterval(t);
-  }, [active]);
 
   const start = async () => {
     const targets = businesses.filter(b => isOn(b.id))
-      .map(b => ({ businessName: b.displayName, mode: (nextRounds[b.id] ?? 1) === 1 ? 'first' as const : 'next' as const }));
+      .map(b => ({ businessName: b.displayName, mode: getNextRound(b.id) === 1 ? 'first' as const : 'next' as const }));
     if (targets.length === 0 || sending) return;
     setSending(true);
     try {
@@ -86,7 +86,7 @@ const WingFetchBar: React.FC<Props> = ({ businesses, nextRounds }) => {
       </div>
       <div className="flex flex-wrap gap-1">
         {businesses.map(b => {
-          const first = (nextRounds[b.id] ?? 1) === 1;
+          const first = getNextRound(b.id) === 1;
           return (
             <button
               key={b.id}
