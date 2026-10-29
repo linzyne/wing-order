@@ -808,6 +808,8 @@ const App: React.FC = () => {
         : { text: `⚠ 윙 ${wingCount}건 ≠ 파일 ${fileCount}건 — 윙 화면 확인`, warn: true };
     setIncomingWingFiles(prev => [...prev, { file, note }]);
     (Object.keys(panelSetters) as PanelKey[]).forEach(k => panelSetters[k](k === 'upload'));
+    // 결과 목록 글씨는 작아서 놓치기 쉬우니 건수가 다르면 알림창으로 한 번 더 알린다
+    if (note.warn) setTimeout(() => alert(`${file.name}\n\n윙 상품준비중 ${wingCount}건인데 받은 파일은 주문 ${fileCount}건이에요.\n윙 화면을 확인해 주세요.`), 300);
   }), [panelSetters]);
 
   // 메뉴 항목 클릭: 누른 패널만 토글하고 나머지는 모두 닫는다 ("더보기"도 함께 닫힘)

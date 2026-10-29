@@ -87,7 +87,7 @@
 
   const fileName = (biz) => {
     const d = new Date();
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} [원본 ${d.getHours()}시] ${biz}.xlsx`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} [원본 ${d.getHours() || '00'}시] ${biz}.xlsx`;
   };
 
   // ── 실행 ──
