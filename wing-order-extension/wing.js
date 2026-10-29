@@ -122,13 +122,20 @@
   };
 
   // ── 단계 ──
-  // 탭(결제완료/상품준비중)을 누르고 그 건수를 읽는다 (예: "결제완료 12") — 못 읽으면 null
+  // 탭(결제완료/상품준비중) 카드에 보이는 건수를 읽는다 — 못 읽으면 null
+  // 카드는 "상품준비중 ⓘ" 글자와 "8" 숫자가 따로 있어서, 이름 글자에서 위로 올라가며
+  // 이름 + 숫자 하나만 들어 있는 짧은 상자를 찾는다 (배송상태 칩·목록 제목 같은 건 숫자가 없어 지나감)
   const readCount = (label) => {
-    const re = new RegExp(`^${label}\\s*([\\d,]+)\\s*(건)?$`);
-    for (const el of document.querySelectorAll('button,a,div,li,span,label')) {
-      if (!visible(el) || box.contains(el)) continue;
-      const m = re.exec(ownText(el));
-      if (m) return Number(m[1].replace(/,/g, ''));
+    const labels = [...document.querySelectorAll('span,div,p,strong,label,button,a,li,dt,h3,h4')]
+      .filter((el) => visible(el) && !box.contains(el) && ownText(el) === label);
+    for (const el of labels) {
+      let cur = el.parentElement;
+      for (let i = 0; i < 4 && cur && cur !== document.body; i++, cur = cur.parentElement) {
+        const text = ownText(cur);
+        if (text.length > 30) break;
+        const m = /^([\d,]+)\s*(건)?$/.exec(text.replace(label, '').replace(/[?ⓘ]/g, '').trim());
+        if (m) return Number(m[1].replace(/,/g, ''));
+      }
     }
     return null;
   };
