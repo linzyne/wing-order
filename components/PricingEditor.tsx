@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PricingConfig, CompanyConfig, CompanyDeposit, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
-import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES } from '../types';
+import type { OrderMethod } from '../types';
+import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES, ORDER_METHODS } from '../types';
 import { inferFieldFromHeader, inferVendorInvoiceField, DEFAULT_GROUP_COL_IDX, colIdxToLetter } from '../hooks/useConsolidatedOrderConverter';
 import { useCompanyDeposits } from '../hooks/useFirestore';
 import { DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY } from '../services/emailService';
@@ -923,6 +924,13 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
         handleUpdate(newConfig);
     };
 
+    const handleUpdateOrderMethod = (companyName: string, method: OrderMethod | '') => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        if (method) newConfig[companyName].orderMethod = method;
+        else delete newConfig[companyName].orderMethod;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateEmailSubject = (companyName: string, subject: string) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].emailSubject = subject;
@@ -1303,6 +1311,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
                             onUpdateCompanyName={(newName) => handleUpdateCompanyName(companyName, newName)}
                             onUpdatePhone={(phone) => handleUpdatePhone(companyName, phone)}
                             onUpdateEmail={(email) => handleUpdateEmail(companyName, email)}
+                            onUpdateOrderMethod={(method) => handleUpdateOrderMethod(companyName, method)}
                             onUpdateEmailSubject={(subject) => handleUpdateEmailSubject(companyName, subject)}
                             onUpdateEmailBody={(body) => handleUpdateEmailBody(companyName, body)}
                             onUpdateBank={(bank) => handleUpdateBank(companyName, bank)}
@@ -1454,6 +1463,7 @@ const CompanyCard: React.FC<{
     onUpdateCompanyName: (newName: string) => void;
     onUpdatePhone: (phone: string) => void;
     onUpdateEmail: (email: string) => void;
+    onUpdateOrderMethod: (method: OrderMethod | '') => void;
     onUpdateEmailSubject: (subject: string) => void;
     onUpdateEmailBody: (body: string) => void;
     onUpdateBank: (bank: string) => void;
@@ -1534,6 +1544,17 @@ const CompanyCard: React.FC<{
                                 placeholder="발주서 메일주소"
                                 className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                             />
+                        </div>
+                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner" title="발주방식 — 주문서 패널에서 업체를 이 기준으로 묶어 보여줍니다">
+                            <span className="text-sm shrink-0">📮</span>
+                            <select
+                                value={companyConfig.orderMethod ?? ''}
+                                onChange={(e) => props.onUpdateOrderMethod(e.target.value as OrderMethod | '')}
+                                className="bg-transparent text-sm font-bold text-zinc-400 focus:outline-none w-full"
+                            >
+                                <option value="">{companyConfig.email?.trim() ? '발주방식 (이메일)' : '발주방식 미지정'}</option>
+                                {ORDER_METHODS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                            </select>
                         </div>
                         <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">
                             <span className="text-sm shrink-0">🏦</span>

@@ -96,11 +96,24 @@ export interface CompanyDeposit {
   memo?: string;
 }
 
+export type OrderMethod = 'email' | 'admin' | 'kakao';
+export const ORDER_METHODS: { key: OrderMethod; label: string }[] = [
+  { key: 'email', label: '이메일' },
+  { key: 'admin', label: '어드민' },
+  { key: 'kakao', label: '카톡' },
+];
+/** 업체 발주방식 — 직접 정한 값, 없으면 이메일 주소가 있으면 email */
+export function getOrderMethod(config?: CompanyConfig): OrderMethod | undefined {
+  if (!config) return undefined;
+  return config.orderMethod ?? (config.email?.trim() ? 'email' : undefined);
+}
+
 export interface CompanyConfig {
   phone?: string;
   email?: string;        // 발주서 전송용 수신 이메일 (여러 개면 콤마로 구분)
   emailSubject?: string; // 발주서 메일 제목 (비우면 기본 제목). {업체}{날짜}{차수}{건수}{사업자} 치환
   emailBody?: string;    // 발주서 메일 본문 (비우면 기본 문구). {업체}{날짜}{차수}{건수}{사업자} 치환
+  orderMethod?: OrderMethod; // 발주방식 — 주문서 패널에서 업체를 이 기준으로 묶어 보여줌 (비우면 이메일 있으면 email)
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
   deposits?: CompanyDeposit[]; // 예수금(예치금) 입금 내역 — 정산 총합계가 여기서 차감됨
   depositDisabled?: boolean; // 예치금 사용 안 함 — 정산요약 '남은 예치금'·원장 차감·입금목록 경고 모두 끔 (과거 기록은 보존)

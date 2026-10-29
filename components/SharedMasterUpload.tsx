@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { CS_SAVED_EVENT } from '../services/firestoreService';
+import { ORDER_METHODS } from '../types';
 
 export interface UploadResult {
   fileName: string;
@@ -20,7 +21,7 @@ interface MasterUploadHandlers {
   getNextRound?: () => number;
   deleteBatchRound?: (round: number) => boolean;
   clearMaster?: () => void;
-  getOrderState?: () => { name: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[];
+  getOrderState?: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
   emailCompanyMerged?: (companyName: string) => Promise<boolean> | void;
@@ -111,7 +112,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
-  const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; rounds: { round: number; hasData: boolean; count: number; timeLabel?: string }[] }[] }[]>([]);
+  const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; timeLabel?: string }[] }[] }[]>([]);
   const [nextRounds, setNextRounds] = useState<Record<string, number>>({});
   const [companyClosedMap, setCompanyClosedMap] = useState<Record<string, boolean>>({});
   const [companyRecordedMap, setCompanyRecordedMap] = useState<Record<string, boolean>>({});
@@ -599,7 +600,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
               Object.keys(companyMemos).forEach(name => {
                 if (!seen.has(name)) { seen.add(name); companyOrder.push(name); }
               });
-              return companyOrder.map(companyName => {
+              const renderCompany = (companyName: string) => {
                 const bizEntries = downloadSnapshot
                   .map(biz => ({ biz, company: biz.companies.find(c => c.name === companyName) }))
                   .filter((e): e is { biz: typeof downloadSnapshot[0]; company: NonNullable<typeof e.company> } => !!e.company);
@@ -816,7 +817,28 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                     </div>
                   </div>
                 );
-              });
+              };
+              // 발주방식(업체 설정)별로 묶어서 이메일 → 어드민 → 카톡 → 미지정 순으로 보여준다
+              const methodOf = (name: string) => {
+                for (const biz of downloadSnapshot) {
+                  const m = biz.companies.find(c => c.name === name)?.orderMethod;
+                  if (m) return m;
+                }
+                return '';
+              };
+              const groups = [...ORDER_METHODS, { key: '', label: '미지정' }]
+                .map(g => ({ ...g, names: companyOrder.filter(n => methodOf(n) === g.key) }))
+                .filter(g => g.names.length > 0);
+              return groups.map(g => (
+                <div key={g.key || 'none'} className="flex flex-col gap-3">
+                  <div className="flex items-center gap-2 pt-1">
+                    <span className="text-[11px] font-black text-sky-400">{g.label}</span>
+                    <span className="text-[10px] font-bold text-zinc-600 tabular-nums">{g.names.length}곳</span>
+                    <div className="flex-1 border-t border-zinc-800/80" />
+                  </div>
+                  {g.names.map(renderCompany)}
+                </div>
+              ));
             })()}
             <button
               onClick={refreshDownloadSnapshot}
