@@ -165,13 +165,9 @@
   $('retry').addEventListener('click', () => { if (lastItem && !busy) upload(lastItem); });
 
   // ── 상품 상세보기 '구성상품'에서 옵션 골라 구글 시트용으로 복사 ──
-  // 표의 각 줄 제품명 앞에 체크칸을 붙인다. 공급가는 '공급가' 머리글 아래 같은 가로 위치의 ₩값.
+  // 구성상품 표(th.col_name·th.col_price)의 각 줄 제품명 앞에 체크칸을 붙인다. 공급가 = 줄의 첫 td.col_price(￦9,000).
   // 복사하면 고른 순서대로 "상품명\t공급가" 줄 → 시트의 견적 메뉴(시트스크립트.gs)가 A열·D열에 2줄씩 넣는다.
   const picked = new Map(); // 상품명 → 공급가
-  const isOurs = (el) => el.hasAttribute('data-pick');
-  const isLeaf = (el) => ![...el.children].some((c) => !isOurs(c));
-  const leaves = (root) => [...root.querySelectorAll('*')].filter((el) => !isOurs(el) && isLeaf(el) && text(el) && !box.contains(el));
-  const overlapX = (a, b) => a.left < b.right && a.right > b.left;
 
   function showPicks() {
     const n = picked.size;
@@ -181,32 +177,13 @@
   }
 
   function scanOptions() {
-    const all = leaves(document.body).filter(visible);
-    const nameHead = all.find((el) => text(el) === '제품명');
-    if (!nameHead) return;
-    const nh = nameHead.getBoundingClientRect();
-    const supplyHead = all.find((el) => text(el) === '공급가' && Math.abs(el.getBoundingClientRect().top - nh.top) < 10);
-    if (!supplyHead) return;
-    const sh = supplyHead.getBoundingClientRect();
-    // 제품명 칸 = 제품명 머리글부터 오른쪽 다음 머리글(재고) 앞까지
-    const nextHeadLeft = Math.min(sh.left, ...all
-      .map((el) => el.getBoundingClientRect())
-      .filter((r) => Math.abs(r.top - nh.top) < 10 && r.left > nh.right)
-      .map((r) => r.left));
-    const nameCol = { left: nh.left - 10, right: nextHeadLeft - 4 };
-    const prices = all.filter((el) => {
-      if (!/^₩\s*[\d,]+$/.test(text(el))) return false;
-      const r = el.getBoundingClientRect();
-      return r.top > sh.bottom && overlapX(r, sh);
-    });
-    const countIn = (el) => prices.filter((p) => el.contains(p)).length;
-    for (const price of prices) {
-      // 줄 = 이 공급가 하나만 품은 가장 큰 조상
-      let row = price;
-      while (row.parentElement && row.parentElement !== document.body && !row.parentElement.contains(supplyHead) && countIn(row.parentElement) === 1) row = row.parentElement;
-      const nameLeaves = leaves(row).filter((el) => overlapX(el.getBoundingClientRect(), nameCol));
-      const name = nameLeaves.map(text).join(' ').trim();
-      if (!name || name.startsWith('₩')) continue;
+    for (const row of document.querySelectorAll('table tbody tr')) {
+      const nameCell = row.querySelector('td.col_name');
+      const priceCell = row.querySelector('td.col_price');
+      if (!nameCell || !priceCell) continue;
+      const name = text(nameCell);
+      const price = text(priceCell).replace(/[^\d]/g, '');
+      if (!name || !price) continue;
       let cb = row.querySelector('input[data-pick]');
       if (!cb) {
         cb = document.createElement('input');
@@ -220,10 +197,12 @@
           row.style.background = cb.checked ? '#eff6ff' : '';
           showPicks();
         });
-        nameLeaves[0].prepend(cb);
+        // 제품명 글자가 든 가장 안쪽 칸(p) 앞에
+        const inner = [...nameCell.querySelectorAll('*')].filter((el) => !el.children.length && text(el)).pop() || nameCell;
+        inner.prepend(cb);
       }
       cb.dataset.name = name;
-      cb.dataset.price = text(price).replace(/[^\d]/g, '');
+      cb.dataset.price = price;
       cb.checked = picked.has(name);
       row.style.background = cb.checked ? '#eff6ff' : '';
     }
