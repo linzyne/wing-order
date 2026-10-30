@@ -9,6 +9,7 @@ import {
   loadCoupangApiKeys, saveCoupangApiKeys, deleteCoupangApiKeys, downloadOrdersAsExcel,
   type CoupangApiKeys,
 } from '../services/coupangApi';
+import { requestWingInvoiceUpload } from '../services/wingInbox';
 import { Cog6ToothIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ChevronDownIcon, XMarkIcon, EyeIcon, EyeSlashIcon, PencilIcon, PlusIcon, TrashIcon } from './icons';
 
 interface Business { id: string; displayName: string; }
@@ -17,7 +18,7 @@ interface CoupangDownloaderProps {
   onRegisterDirectUpload?: (fn: (businessId: string, file: File) => Promise<void>) => void;
 }
 type OrderStatus = 'INSTRUCT' | 'ACCEPT';
-interface DownloadState { loading: boolean; error: string | null; lastCount?: number; success?: boolean; }
+interface DownloadState { loading: boolean; error: string | null; lastCount?: number; success?: boolean; step?: string; }
 
 const EMPTY_CREDS: WingCredentials = { id: '', password: '' };
 const EMPTY_KEYS: CoupangApiKeys = { accessKey: '', secretKey: '', vendorId: '' };
@@ -263,71 +264,39 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
     const files: File[] = e.target.files ? Array.from(e.target.files) : [];
     e.target.value = '';
     if (files.length === 0) return;
-    const browserBusinesses = businesses.filter(b => getMethod(b.id) === 'browser' && !!credentials[b.id]?.id);
     const unmatched: string[] = [];
     const matched: { business: Business; file: File }[] = [];
     for (const file of files) {
-      const found = browserBusinesses.find(b => file.name.includes(b.displayName));
+      const found = businesses.find(b => file.name.includes(b.displayName));
       if (found) matched.push({ business: found, file });
       else unmatched.push(file.name);
     }
     if (matched.length === 0) {
-      alert(`매칭된 사업자가 없습니다.\n파일명에 사업자 이름(${browserBusinesses.map(b => b.displayName).join(', ')})이 포함되어야 합니다.`);
+      alert(`매칭된 사업자가 없습니다.\n파일명에 사업자 이름(${businesses.map(b => b.displayName).join(', ')})이 포함되어야 합니다.`);
       return;
     }
     setBulkInvoiceLoading(true);
-    for (const { business, file } of matched) {
-      try {
-        await uploadInvoiceDirectly(business.id, file);
-      } catch {
-        // 개별 오류는 invoiceStates에 표시됨, 다음 사업자 계속
-      }
-    }
+    // 사업자마다 자기 크롬 프로필에서 올리므로 한꺼번에 보낸다 (개별 오류는 invoiceStates에 표시됨)
+    await Promise.allSettled(matched.map(({ business, file }) => uploadInvoiceDirectly(business.id, file)));
     setBulkInvoiceLoading(false);
     if (unmatched.length > 0) {
       alert(`업로드 완료.\n다음 파일은 매칭 실패:\n${unmatched.join('\n')}`);
     }
   };
 
-  const credentialsRef = useRef(credentials);
-  credentialsRef.current = credentials;
-
+  // 송장은 그 사업자 크롬 프로필의 윙 주문서 확장이 로그인된 윙에서 올린다 (윙발주 → Firestore wingRequests)
   const uploadInvoiceDirectly = React.useCallback(async (businessId: string, file: File) => {
     const business = businessesRef.current.find(b => b.id === businessId);
-    const creds = credentialsRef.current[businessId];
-    if (!business || !creds) {
-      throw new Error(`${business?.displayName ?? businessId} 사업자의 Wing 로그인 정보가 없습니다. 쿠팡 주문 패널에서 설정해주세요.`);
-    }
-    setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: true, error: null } }));
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5분 타임아웃
+    if (!business) throw new Error(`사업자를 찾을 수 없습니다: ${businessId}`);
+    setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: true, error: null, step: '프로필 확장 기다리는 중' } }));
     try {
-      const arrayBuffer = await file.arrayBuffer();
-      const uint8 = new Uint8Array(arrayBuffer);
-      let binary = '';
-      for (let i = 0; i < uint8.length; i += 8192) {
-        binary += String.fromCharCode(...uint8.slice(i, i + 8192));
-      }
-      const fileBase64 = btoa(binary);
-      const res = await fetchWing('/api/wing-invoice-upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: creds.id, password: creds.password, fileBase64, fileName: file.name, businessName: business.displayName }),
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        if (res.status === 404) throw new Error(LOCAL_SERVER_OFF_MSG);
-        const err = await res.json().catch(() => ({ error: `서버 오류 (${res.status})` }));
-        throw new Error(err.error ?? '업로드 실패');
-      }
+      await requestWingInvoiceUpload(business.displayName, file, step =>
+        setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: true, error: null, step } })));
       setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: null, success: true } }));
       setTimeout(() => setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: null, success: false } })), 3000);
     } catch (e: any) {
-      const msg = e?.name === 'AbortError' ? '타임아웃: 브라우저 자동화가 5분 내에 완료되지 않았습니다.' : (e.message ?? '오류');
-      setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: msg } }));
+      setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: e.message ?? '오류' } }));
       throw e;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }, []);
 
@@ -511,7 +480,7 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
                   : <ArrowDownTrayIcon className="w-3 h-3" />}
                 {bulkDownloadLoading ? '선택 다운로드 중...' : `선택 다운로드 (${selectedCount})`}
               </button>
-              {businesses.some(b => getMethod(b.id) === 'browser' && !!credentials[b.id]?.id) && (
+              {businesses.length > 0 && (
                 <button
                   onClick={() => bulkInvoiceInputRef.current?.click()}
                   disabled={bulkInvoiceLoading}
@@ -535,7 +504,6 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
               const status = getStatus(b.id);
               const method = getMethod(b.id);
               const configured = isConfigured(b.id);
-              const hasCreds = !!credentials[b.id]?.id;
 
               return (
                 <div key={b.id} className={`flex items-center gap-2 py-1.5 px-2 rounded-lg bg-zinc-800/50 hover:bg-zinc-800/80 transition-colors ${configured && !isSelected(b.id) ? 'opacity-50' : ''}`}>
@@ -585,30 +553,27 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
                     {state?.loading ? (method === 'browser' ? '자동화 중...' : '가져오는 중...') : '다운로드'}
                   </button>
 
-                  {method === 'browser' && (
-                    <button
-                      onClick={() => handleInvoiceUploadClick(b.id)}
-                      disabled={!hasCreds || invState?.loading}
-                      title="엑셀대량배송 송장 업로드"
-                      className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-black rounded-lg transition-all shrink-0 ${
-                        !hasCreds ? 'bg-zinc-700/40 text-zinc-600 cursor-not-allowed'
-                          : invState?.loading ? 'bg-emerald-900 text-zinc-400 cursor-wait'
-                          : invState?.success ? 'bg-emerald-600 text-white shadow'
-                          : 'bg-emerald-800 hover:bg-emerald-700 text-white shadow'
-                      }`}
-                    >
-                      {invState?.loading
-                        ? <span className="w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
-                        : <ArrowUpTrayIcon className="w-3 h-3" />}
-                      {invState?.loading ? '업로드 중...' : invState?.success ? '✓ 완료' : '송장'}
-                    </button>
-                  )}
+                  <button
+                    onClick={() => handleInvoiceUploadClick(b.id)}
+                    disabled={invState?.loading}
+                    title="그 사업자 크롬 프로필에서 엑셀 대량배송으로 송장 업로드 (프로필 창을 열어 두세요)"
+                    className={`flex items-center gap-1 px-2.5 py-1 text-[10px] font-black rounded-lg transition-all shrink-0 ${
+                      invState?.loading ? 'bg-emerald-900 text-zinc-400 cursor-wait'
+                        : invState?.success ? 'bg-emerald-600 text-white shadow'
+                        : 'bg-emerald-800 hover:bg-emerald-700 text-white shadow'
+                    }`}
+                  >
+                    {invState?.loading
+                      ? <span className="w-3 h-3 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin inline-block" />
+                      : <ArrowUpTrayIcon className="w-3 h-3" />}
+                    {invState?.loading ? '업로드 중...' : invState?.success ? '✓ 완료' : '송장'}
+                  </button>
 
                   <div className="flex-1 min-w-0 text-[9px] font-bold truncate">
                     {invState?.error && <span className="text-red-400" title={invState.error}>{invState.error}</span>}
                     {!invState?.error && state?.error && <span className="text-red-400" title={state.error}>{state.error}</span>}
                     {!invState?.error && !state?.error && state?.lastCount != null && <span className="text-emerald-400">{state.lastCount}건</span>}
-                    {!invState?.error && !state?.error && invState?.loading && <span className="text-emerald-500">브라우저가 열립니다...</span>}
+                    {!invState?.error && !state?.error && invState?.loading && <span className="text-emerald-500">{invState.step || '프로필 확장 기다리는 중'}</span>}
                     {!invState?.error && !state?.error && state?.loading && method === 'browser' && <span className="text-sky-500">브라우저가 열립니다...</span>}
                     {!configured && !state?.loading && !invState?.loading && <span className="text-zinc-600">미설정</span>}
                   </div>

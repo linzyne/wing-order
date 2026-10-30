@@ -2,6 +2,7 @@
 // 1차 보내기: 결제완료 → 발주확인 처리(상품준비중으로 모음) → 상품준비중 → 엑셀 다운 → 사유 입력 → 다운로드
 // 2차~ 보내기: 결제완료 → 발주확인 처리 → 사유 입력 → 다운로드 (새 주문만)
 // 받은 엑셀은 윙발주(Firestore wingInbox)로 보낸다. 둘 다 발주확인 처리를 하므로 윙 주문 상태가 바뀐다.
+// 송장 올리기: 윙발주 요청으로 연 탭이면 상품준비중 → 엑셀 대량배송에 송장 파일을 넣고 등록한다.
 (() => {
   if (window.__wingOrderPanel) return;
   window.__wingOrderPanel = true;
@@ -99,6 +100,7 @@
   // ── hook.js 에서 오는 파일 ──
   let captured = null;
   let capturedUrl = null;
+  const alerts = [];
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data || e.data.source !== HOOK_SRC) return;
     const d = e.data;
@@ -106,6 +108,7 @@
     else if (d.type === 'ALERT') {
       // 윙 알림창(예: 처리할 주문이 없다) — 진행은 계속하되 내용을 보여 준다
       L(`[윙 알림] ${d.text}`);
+      alerts.push(d.text);
       show(`윙 알림: ${d.text}`, '#d97706');
     } else if (d.type === 'URL') {
       L(`[hook] 파일 주소(${d.via}) ${String(d.url).slice(0, 200)}`);
@@ -268,6 +271,61 @@
     return { base64: await waitCaptured(), wingCount: paid, label: '결제완료' };
   };
 
+  // ── 송장 올리기 (윙발주 요청) ──
+  // 상품준비중 → 엑셀 대량배송 → 파일 넣기 → 등록하기. 끝나면 화면·알림에 뜬 결과 글자를 그대로 알린다.
+  const RESULT_RE = /(성공|실패|완료|오류|등록되었|처리되었|업로드)[^\n]{0,60}/g;
+  const resultText = () => {
+    const texts = [...document.querySelectorAll('[role="dialog"],.modal,[class*="modal"],[class*="Modal"],[class*="popup"],[class*="Popup"]')]
+      .filter((el) => visible(el) && !box.contains(el))
+      .map((el) => (el.innerText || '').trim())
+      .filter(Boolean);
+    return texts.join(' / ').replace(/\s+/g, ' ').slice(0, 300);
+  };
+  const runInvoice = async ({ fileName: name, fileBase64 }) => {
+    if (!fileBase64) throw new Error('송장 파일이 비어 있어요');
+    await openTab('상품준비중');
+    const btn = await findButton(/엑셀\s*대량\s*배송/);
+    if (!btn) throw new Error('"엑셀 대량배송" 버튼을 못 찾았어요');
+    const before = new Set(document.querySelectorAll('input[type="file"]'));
+    sessionStorage.setItem(DIALOG_ARM, String(Date.now()));
+    L(`엑셀 대량배송 클릭: "${ownText(btn)}"`);
+    show('엑셀 대량배송 여는 중…');
+    btn.click();
+    // 새로 생긴 파일 칸을 먼저, 없으면 화면의 마지막 파일 칸
+    const input = await waitFor(() => {
+      const all = [...document.querySelectorAll('input[type="file"]')];
+      return all.find((el) => !before.has(el)) || (all.length ? all[all.length - 1] : null);
+    }, 10000);
+    if (!input) throw new Error('송장 파일 칸을 못 찾았어요');
+    L(`파일 칸: accept=${input.accept || '-'} 새로 생김=${!before.has(input)}`);
+    show('송장 파일 넣는 중…');
+    const bin = atob(fileBase64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const dt = new DataTransfer();
+    dt.items.add(new File([bytes], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+    input.files = dt.files;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    L(`파일 넣음: ${name} ${bytes.length}바이트`);
+    await sleep(1500);
+    const ok = await findButton(/^등록하기$/);
+    if (!ok) throw new Error('"등록하기" 버튼을 못 찾았어요');
+    alerts.length = 0;
+    sessionStorage.setItem(DIALOG_ARM, String(Date.now()));
+    L('등록하기 클릭');
+    show('등록하는 중…');
+    ok.click();
+    // 결과 알림창이나 결과 글자가 뜰 때까지 (최대 30초)
+    const got = await waitFor(() => alerts.length || (resultText().match(RESULT_RE) || []).length, 30000, 500);
+    await sleep(1500);
+    const shown = [alerts.join(' / '), resultText()].filter(Boolean).join(' / ');
+    L(`결과: ${shown || '(글자 없음)'}`);
+    // 안내 글자에 걸리지 않게, 알림창은 실패·오류 말만, 화면 글자는 '실패 n건'만 실패로 본다
+    if (/실패|오류|올바르지|잘못|형식/.test(alerts.join(' ')) || /실패\s*:?\s*[1-9]/.test(shown)) throw new Error(`윙: ${shown.slice(0, 200)}`);
+    return got ? shown.slice(0, 200) || '등록함' : '등록하기 누름 (결과 글자 못 읽음 — 윙에서 확인)';
+  };
+
   // ── 실행 ──
   let running = false;
   // 이번에 보낼 파일 이름 — 다운로드 폴더에 저장되는 백업 파일도 이 이름으로 바꾼다
@@ -321,6 +379,26 @@
       $('next').disabled = false;
     }
   };
+  const runInvoiceJob = async (j) => {
+    if (running) return;
+    running = true;
+    log.length = 0;
+    L(`시작 · 송장 올리기 · ${j.fileName} · ${location.href}`);
+    try {
+      const msg = await runInvoice(j);
+      show(`송장 올림 ✓\n${msg}`, '#16a34a');
+      chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: true, message: `송장 올림 · ${msg}` });
+    } catch (err) {
+      L(`실패: ${err.message}`);
+      show(err.message, '#dc2626');
+      chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: false, message: err.message });
+    } finally {
+      // 처음 몇 번은 윙 결과 화면을 보려고 성공해도 로그를 남긴다
+      saveLog();
+      sessionStorage.removeItem(DIALOG_ARM);
+      running = false;
+    }
+  };
   $('first').addEventListener('click', () => run('first'));
   $('next').addEventListener('click', () => run('next'));
 
@@ -339,7 +417,8 @@
       chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: false, message: '주문배송관리 화면이 안 열렸어요 (윙 로그인 확인)' });
       return;
     }
-    setTimeout(() => run(job.mode, businessName || ''), 1500);
+    if (job.mode === 'invoice') setTimeout(() => runInvoiceJob(job), 1500);
+    else setTimeout(() => run(job.mode, businessName || ''), 1500);
   }).catch(() => {});
 
   // 다른 윙 화면에서 눌러 주문배송관리로 넘어온 경우 이어서 실행

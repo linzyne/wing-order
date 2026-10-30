@@ -160,7 +160,13 @@ async function pollRequests() {
       if (!(await patchRequest(doc.name, { status: 'running', message: '윙 여는 중' }, doc.updateTime))) continue;
       const tab = await chrome.tabs.create({ url: MANAGE_URL, active: false });
       const { jobs = {} } = await chrome.storage.local.get('jobs');
-      jobs[tab.id] = { mode: f.mode?.stringValue === 'next' ? 'next' : 'first', reqName: doc.name, at: Date.now() };
+      const mode = f.mode?.stringValue;
+      jobs[tab.id] = { mode: mode === 'next' || mode === 'invoice' ? mode : 'first', reqName: doc.name, at: Date.now() };
+      // 송장 올리기: 윙발주가 문서에 담아 보낸 송장 파일
+      if (mode === 'invoice') {
+        jobs[tab.id].fileName = f.fileName?.stringValue || '송장.xlsx';
+        jobs[tab.id].fileBase64 = f.fileBase64?.stringValue || '';
+      }
       await chrome.storage.local.set({ jobs });
     }
   } catch (err) {

@@ -115,3 +115,43 @@ export function subscribeWingRequests(batchId: string, onChange: (reqs: WingRequ
     }));
   }, err => console.error('[윙 받기 요청] 구독 실패', err));
 }
+
+// ── 송장 올리기 요청 (wingRequests, mode 'invoice') ──
+// 송장 파일을 요청 문서에 담아 두면 그 사업자 프로필의 확장이 로그인된 윙에서 엑셀 대량배송으로 올리고
+// status/message를 적는다. 끝나면(done/error) 문서를 지우고 결과를 돌려준다.
+export async function requestWingInvoiceUpload(businessName: string, file: File, onStep?: (message: string) => void): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+  const fileBase64 = btoa(bin);
+  // Firestore 문서 한 개는 1MB까지
+  if (fileBase64.length > 1_000_000) throw new Error('송장 파일이 너무 커요(1MB 넘음)');
+  const ref = await addDoc(collection(db, 'wingRequests'), {
+    businessName, mode: 'invoice', status: 'pending', message: '', fileName: file.name, fileBase64,
+    batchId: `${Date.now()}`, createdAt: serverTimestamp(),
+  });
+  return new Promise<string>((resolve, reject) => {
+    // 확장이 3분 안에 안 가져가면 그 프로필이 안 열린 것 (가져간 뒤에는 5분까지 기다림)
+    let claimed = false;
+    const finish = (err: Error | null, msg = '') => {
+      clearInterval(timer);
+      unsub();
+      deleteDoc(ref).catch(() => {});
+      err ? reject(err) : resolve(msg);
+    };
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const waited = Date.now() - startedAt;
+      if (!claimed && waited > 3 * 60 * 1000) finish(new Error(`${businessName} 크롬 프로필이 안 열려 있어요 (윙 주문서 확장 확인)`));
+      else if (waited > 8 * 60 * 1000) finish(new Error('송장 올리기가 5분 넘게 안 끝났어요 — 그 프로필의 윙 탭 확인'));
+    }, 5000);
+    const unsub = onSnapshot(ref, snap => {
+      const x = snap.data();
+      if (!x) return;
+      if (x.status !== 'pending') claimed = true;
+      if (x.status === 'done') finish(null, x.message || '');
+      else if (x.status === 'error') finish(new Error(x.message || '송장 올리기 실패'));
+      else if (x.message) onStep?.(x.message);
+    }, err => finish(err));
+  });
+}
