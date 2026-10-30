@@ -3128,8 +3128,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const { subject, text } = renderOrderMessage(companyName, rows.length, subjectLabel);
         emailInFlightRef.current.add(key);
         try {
-            const { accepted } = await sendOrderEmail({ to, subject, text, filename: built.filename, contentBase64: built.base64 });
-            alert(`발주서 메일을 전송했습니다.\n받는사람: ${accepted.join(', ') || to}`);
+            // 성공은 아이콘의 ✓로만 알린다 — 알림창이 뜨면 다음 아이콘이 안 눌려서
+            await sendOrderEmail({ to, subject, text, filename: built.filename, contentBase64: built.base64 });
             return true;
         } catch (e: any) {
             alert(`메일 전송 실패\n${e?.message || e}`);
@@ -3150,7 +3150,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         adminInFlightRef.current.add(key);
         try {
             await sendAdminOutbox({ company: companyName, business, fileName: built.filename, fileBase64: built.base64, rowCount: rows.length, label });
-            alert(`${companyName} 어드민으로 보냈습니다 (${rows.length}행).\n크롬의 ${companyName} 어드민 탭에서 '엑셀 내용 확인' 화면까지 자동으로 넘어갑니다.\n내용 확인 후 주문 등록은 직접 눌러 주세요.`);
+            // 성공은 아이콘의 ✓로만 알린다 (어드민 탭이 '엑셀 내용 확인'까지 넘기면 주문 등록은 직접)
             return true;
         } catch (e: any) {
             alert(`어드민 전송 실패\n${e?.message || e}`);
