@@ -6,7 +6,6 @@
   if (window.__adminOrderPanel) return;
   window.__adminOrderPanel = true;
 
-  const POLL_MS = 4000;
   const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   const host = location.host;
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -247,8 +246,16 @@
       return; // 확장을 다시 불러온 직후 등
     }
     if (res?.error) { L(`목록 실패: ${res.error}`); return; }
-    if (res?.item) await upload(res.item);
+    if (res?.item) {
+      await upload(res.item);
+      // 같은 업체 앞으로 하나 더 와 있을 수 있다
+      poll();
+    }
   }
+  // 발주서가 오면 확장 뒤편이 알려 준다 (계속 물어보지 않음)
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg.type === 'OUTBOX_CHANGED') poll();
+  });
 
   chrome.storage.local.get(storeKey, (got) => {
     names = got[storeKey] || guessNames();
@@ -256,6 +263,5 @@
     showNames();
     L(`시작: ${host} ${names.company} · ${names.business}`);
     poll();
-    setInterval(poll, POLL_MS);
   });
 })();

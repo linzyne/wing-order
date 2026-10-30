@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "윙발주 → 업체 어드민",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "윙발주에서 보낸 업체 양식 발주서를 업체 어드민(adminplus) 대량 주문입력(엑셀)에 올립니다. 상품 상세보기에서 고른 옵션을 견적 시트용으로 복사합니다.",
-  "permissions": ["storage", "downloads"],
+  "permissions": ["storage", "downloads", "alarms", "offscreen"],
   "host_permissions": [
     "*://*.adminplus.co.kr/*",
     "https://firestore.googleapis.com/*"

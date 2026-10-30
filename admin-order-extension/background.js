@@ -43,7 +43,38 @@ function saveLog(log, page) {
   chrome.downloads.download({ url: dataUrl, filename: `어드민발주로그_${stamp}.json`, saveAs: false });
 }
 
+// 발주서가 오면 offscreen 창(Firestore 구독)이 알려 주고, 그때 열린 어드민 탭들에 '가져가 봐'를 보낸다.
+// 계속 물어보지 않으므로 발주서가 있을 때만 읽는다. 창이 닫혀 있으면 1분마다 다시 띄우기만 한다.
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument()) return;
+  await chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['WORKERS'],
+    justification: '윙발주 발주서가 오면 바로 알기 위한 Firestore 구독',
+  }).catch((e) => { if (!/single offscreen/i.test(e.message)) console.warn('[구독 창]', e); });
+}
+chrome.alarms.create('adminOutbox', { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'adminOutbox') ensureOffscreen(); });
+chrome.runtime.onStartup.addListener(ensureOffscreen);
+chrome.runtime.onInstalled.addListener(ensureOffscreen);
+ensureOffscreen();
+
+async function tellAdminTabs() {
+  const tabs = await chrome.tabs.query({ url: '*://*.adminplus.co.kr/partner-app/*' });
+  for (const t of tabs) chrome.tabs.sendMessage(t.id, { type: 'OUTBOX_CHANGED' }).catch(() => {});
+}
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg.type === 'FIRESTORE_CHANGED') {
+    // 남은 발주서가 없으면(가져가서 지워진 것) 탭에 알릴 것도 없다
+    if (msg.count > 0) tellAdminTabs();
+    return false;
+  }
+  if (msg.type === 'FIRESTORE_FAILED') {
+    console.warn('[구독 끊김]', msg.message);
+    chrome.offscreen.closeDocument().catch(() => {}).finally(() => setTimeout(ensureOffscreen, 5000));
+    return false;
+  }
   if (msg.type === 'TAKE') {
     // 맨 앞 발주서 하나를 가져간다
     (async () => {

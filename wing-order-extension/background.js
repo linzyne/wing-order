@@ -74,7 +74,7 @@ function saveLog(log, page) {
 // ── 자동 새로고침 ──
 // 확장 폴더의 파일이 바뀌면(코드 수정) 윙 화면을 열 때 스스로 다시 불러온다.
 // 프로필마다 chrome://extensions 에서 ↻ 를 누르지 않아도 되게.
-const FILES = ['manifest.json', 'background.js', 'hook.js', 'wing.js', 'config.js'];
+const FILES = ['manifest.json', 'background.js', 'hook.js', 'wing.js', 'config.js', 'offscreen.html', 'offscreen.js', 'listen-target.js'];
 async function diskHash() {
   const texts = await Promise.all(FILES.map((f) => fetch(chrome.runtime.getURL(f), { cache: 'no-store' }).then((r) => r.text())));
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texts.join('\n\u0000\n')));
@@ -188,17 +188,33 @@ chrome.tabs.onUpdated.addListener(async (tabId, info) => {
   chrome.tabs.update(tabId, { active: true }).catch(() => {});
 });
 
-// 서비스 워커가 잠들지 않게 30초마다 깨우고, 깨어 있는 동안 5초마다 요청을 확인한다
-chrome.alarms.create('wingRequests', { periodInMinutes: 0.5 });
-chrome.alarms.onAlarm.addListener(async (a) => {
-  if (a.name !== 'wingRequests') return;
-  for (let i = 0; i < 5; i++) {
-    await pollRequests();
-    await new Promise((r) => setTimeout(r, 5000));
-  }
-});
+// 요청이 생기면 offscreen 창(Firestore 구독)이 알려 준다 — 계속 물어보지 않는다.
+// 창이 닫혀 있으면 다시 띄우기만 1분마다 확인한다(Firestore 읽기 없음).
+async function ensureOffscreen() {
+  if (await chrome.offscreen.hasDocument()) return;
+  await chrome.offscreen.createDocument({
+    url: 'offscreen.html',
+    reasons: ['WORKERS'],
+    justification: '윙발주 요청이 생기면 바로 알기 위한 Firestore 구독',
+  }).catch((e) => { if (!/single offscreen/i.test(e.message)) console.warn('[구독 창]', e); });
+}
+chrome.alarms.create('wingRequests', { periodInMinutes: 1 });
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === 'wingRequests') ensureOffscreen(); });
+chrome.runtime.onStartup.addListener(ensureOffscreen);
+chrome.runtime.onInstalled.addListener(ensureOffscreen);
+ensureOffscreen();
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'FIRESTORE_CHANGED') {
+    pollRequests();
+    return false;
+  }
+  if (msg.type === 'FIRESTORE_FAILED') {
+    // 구독이 끊겼다 — 창을 닫고 다시 띄운다
+    console.warn('[구독 끊김]', msg.message);
+    chrome.offscreen.closeDocument().catch(() => {}).finally(() => setTimeout(ensureOffscreen, 5000));
+    return false;
+  }
   if (msg.type === 'GET_JOB') {
     chrome.storage.local.get('jobs').then(({ jobs = {} }) => {
       const job = sender.tab && jobs[sender.tab.id];
