@@ -43,8 +43,8 @@ interface Props {
   onCourierFilesAdd?: (templateId: string, files: File[]) => void;
   onCourierFileRemove?: (templateId: string, index: number) => void;
   onCourierResultDownload?: (templateId: string) => void;
-  onDirectCoupangUpload?: (businessId: string) => Promise<void>;
-  onCourierDirectCoupangUpload?: (templateId: string, businessId: string) => Promise<void>;
+  onDirectCoupangUpload?: (businessId: string, onStep?: (step: string) => void) => Promise<string | void>;
+  onCourierDirectCoupangUpload?: (templateId: string, businessId: string, onStep?: (step: string) => void) => Promise<string | void>;
   mailWatcher?: MailInvoiceWatcher;
 }
 
@@ -165,6 +165,40 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
   const [courierBizPicker, setCourierBizPicker] = useState<string | null>(null);
   const [coupangStates, setCoupangStates] = useState<Record<string, 'idle' | 'loading' | 'success'>>({});
   const [courierCoupangStates, setCourierCoupangStates] = useState<Record<string, 'idle' | 'loading' | 'success'>>({});
+  // 쿠팡 송장 올리기 진행 상황 (사업자마다 자기 크롬 프로필에서 올리므로 여러 개를 동시에 눌러도 된다)
+  const [coupangProgress, setCoupangProgress] = useState<Record<string, { text: string; tone: 'run' | 'ok' | 'err' }>>({});
+  const runCoupangUpload = async (
+    key: string,
+    setStates: React.Dispatch<React.SetStateAction<Record<string, 'idle' | 'loading' | 'success'>>>,
+    upload: (onStep: (step: string) => void) => Promise<string | void>,
+  ) => {
+    setStates(prev => ({ ...prev, [key]: 'loading' }));
+    setCoupangProgress(prev => ({ ...prev, [key]: { text: '프로필 확장 기다리는 중', tone: 'run' } }));
+    try {
+      const msg = await upload(step => setCoupangProgress(prev => ({ ...prev, [key]: { text: step, tone: 'run' } })));
+      setStates(prev => ({ ...prev, [key]: 'success' }));
+      setCoupangProgress(prev => ({ ...prev, [key]: { text: msg || '송장 올림', tone: 'ok' } }));
+      setTimeout(() => setStates(prev => ({ ...prev, [key]: 'idle' })), 3000);
+    } catch (e: any) {
+      setStates(prev => ({ ...prev, [key]: 'idle' }));
+      setCoupangProgress(prev => ({ ...prev, [key]: { text: e.message ?? '업로드 실패', tone: 'err' } }));
+    }
+  };
+  const CoupangProgressLine = ({ k }: { k: string }) => {
+    const p = coupangProgress[k];
+    if (!p) return null;
+    return (
+      <div className={`mt-1 flex items-start gap-1 text-[10px] font-bold break-all ${p.tone === 'err' ? 'text-red-400' : p.tone === 'ok' ? 'text-emerald-400' : 'text-sky-400'}`}>
+        {p.tone === 'run'
+          ? <span className="mt-0.5 w-2.5 h-2.5 border-2 border-sky-400 border-t-transparent rounded-full animate-spin inline-block shrink-0" />
+          : <span className="shrink-0">{p.tone === 'ok' ? '✓' : '✕'}</span>}
+        <span className="flex-1">{p.text}</span>
+        {p.tone !== 'run' && (
+          <button onClick={() => setCoupangProgress(prev => { const n = { ...prev }; delete n[k]; return n; })} className="text-zinc-600 hover:text-zinc-400 shrink-0">닫기</button>
+        )}
+      </div>
+    );
+  };
 
   const refreshInvoiceCounts = useCallback(() => {
     const map: Record<string, number> = {};
@@ -506,17 +540,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                   </button>
                   {onDirectCoupangUpload && (
                     <button
-                      onClick={async () => {
-                        setCoupangStates(prev => ({ ...prev, [biz.businessId]: 'loading' }));
-                        try {
-                          await onDirectCoupangUpload(biz.businessId);
-                          setCoupangStates(prev => ({ ...prev, [biz.businessId]: 'success' }));
-                          setTimeout(() => setCoupangStates(prev => ({ ...prev, [biz.businessId]: 'idle' })), 3000);
-                        } catch (e: any) {
-                          alert(e.message ?? '업로드 실패');
-                          setCoupangStates(prev => ({ ...prev, [biz.businessId]: 'idle' }));
-                        }
-                      }}
+                      onClick={() => runCoupangUpload(biz.businessId, setCoupangStates, onStep => onDirectCoupangUpload(biz.businessId, onStep))}
                       disabled={coupangStates[biz.businessId] === 'loading'}
                       className={`px-3 py-1 text-[11px] font-black rounded-lg transition-colors border shrink-0 ${
                         coupangStates[biz.businessId] === 'loading'
@@ -534,6 +558,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                   )}
                 </div>
               )}
+              <CoupangProgressLine k={biz.businessId} />
             </div>
           ))
         )}
@@ -618,15 +643,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                             <button
                               onClick={async () => {
                                 if (businesses.length === 1) {
-                                  setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'loading' }));
-                                  try {
-                                    await onCourierDirectCoupangUpload(c.id, businesses[0].id);
-                                    setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'success' }));
-                                    setTimeout(() => setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'idle' })), 3000);
-                                  } catch (e: any) {
-                                    alert(e.message ?? '업로드 실패');
-                                    setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'idle' }));
-                                  }
+                                  runCoupangUpload(c.id, setCourierCoupangStates, onStep => onCourierDirectCoupangUpload(c.id, businesses[0].id, onStep));
                                 } else {
                                   setCourierBizPicker(prev => prev === c.id ? null : c.id);
                                 }
@@ -655,15 +672,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                               key={b.id}
                               onClick={async () => {
                                 setCourierBizPicker(null);
-                                setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'loading' }));
-                                try {
-                                  await onCourierDirectCoupangUpload!(c.id, b.id);
-                                  setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'success' }));
-                                  setTimeout(() => setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'idle' })), 3000);
-                                } catch (e: any) {
-                                  alert(e.message ?? '업로드 실패');
-                                  setCourierCoupangStates(prev => ({ ...prev, [c.id]: 'idle' }));
-                                }
+                                runCoupangUpload(c.id, setCourierCoupangStates, onStep => onCourierDirectCoupangUpload!(c.id, b.id, onStep));
                               }}
                               className="px-2.5 py-1 text-[10px] font-black rounded-lg bg-sky-900/60 text-sky-300 hover:bg-sky-700 hover:text-white transition-colors border border-sky-700/50"
                             >
@@ -672,6 +681,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                           ))}
                         </div>
                       )}
+                      <CoupangProgressLine k={c.id} />
                     </div>
                   )}
                 </div>

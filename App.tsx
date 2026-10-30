@@ -130,7 +130,7 @@ const App: React.FC = () => {
   const [editingBusiness, setEditingBusiness] = useState<ReturnType<typeof useBusinessList>['businesses'][0] | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const uploadFnsRef = useRef<Record<string, { uploadMaster: (f: File) => Promise<void>; uploadBatch: (f: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; rounds: { round: number; hasData: boolean }[] }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged?: (companyName: string) => Promise<boolean> | void; emailCompanyRound?: (companyName: string, round: number) => Promise<boolean> | void; kakaoCompanyMerged?: (companyName: string) => void; kakaoCompanyRound?: (companyName: string, round: number) => void; adminCompanyMerged?: (companyName: string) => Promise<boolean> | void; adminCompanyRound?: (companyName: string, round: number) => Promise<boolean> | void; downloadAllCompanies?: () => void; uploadVendorInvoice?: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState?: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice?: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; resetInvoiceMatching?: () => void; getTotalMargin?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }>>({});
-  const directCoupangUploadRef = useRef<((businessId: string, file: File) => Promise<void>) | null>(null);
+  const directCoupangUploadRef = useRef<((businessId: string, file: File, onStep?: (step: string) => void) => Promise<string>) | null>(null);
   const resetFnsRef = useRef<Record<string, () => void>>({});
   type DepositExtraRow = { bankName: string; accountNumber: string; amount: string; label: string };
   const downloadActionsRef = useRef<Record<string, { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: DepositExtraRow[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: DepositExtraRow[]) => void; getDepositCompanies?: () => string[] }>>({});
@@ -718,7 +718,7 @@ const App: React.FC = () => {
     XLSX.writeFile(wb, `${new Date().toLocaleDateString('en-CA')} ${senderName} ${tmplSuffix} 운송장완료.xlsx`);
   }, [globalCourierMatchedRows, globalCourierResults, courierTemplates, allBusinesses]);
 
-  const handleCourierDirectCoupangUpload = useCallback(async (templateId: string, businessId: string) => {
+  const handleCourierDirectCoupangUpload = useCallback(async (templateId: string, businessId: string, onStep?: (step: string) => void) => {
     const rows = globalCourierMatchedRows[templateId];
     if (!rows) throw new Error('운송장 매칭 데이터가 없습니다. 먼저 운송장을 업로드해주세요.');
     if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
@@ -733,7 +733,7 @@ const App: React.FC = () => {
     XLSX.utils.book_append_sheet(wb, ws, '주문서');
     const binary: ArrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const file = new File([binary], fileName, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    await directCoupangUploadRef.current(businessId, file);
+    return directCoupangUploadRef.current(businessId, file, onStep);
   }, [globalCourierMatchedRows, globalCourierResults, courierTemplates, allBusinesses]);
 
   const courierItemsForPanel = useMemo<CourierItem[]>(() =>
@@ -1173,11 +1173,11 @@ const App: React.FC = () => {
             onCourierFileRemove={handleCourierFileRemoveForPanel}
             onCourierResultDownload={handleGlobalCourierResultDownload}
             onCourierDirectCoupangUpload={handleCourierDirectCoupangUpload}
-            onDirectCoupangUpload={async (businessId) => {
+            onDirectCoupangUpload={async (businessId, onStep) => {
               const file = uploadFnsRef.current[businessId]?.getInvoiceWorkbookFile?.();
               if (!file) throw new Error('송장 데이터가 없습니다. 먼저 송장 파일을 업로드해주세요.');
               if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
-              await directCoupangUploadRef.current(businessId, file);
+              return directCoupangUploadRef.current(businessId, file, onStep);
             }}
           />
         </div>

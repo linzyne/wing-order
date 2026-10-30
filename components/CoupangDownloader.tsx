@@ -15,7 +15,7 @@ import { Cog6ToothIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, ChevronDownIcon, XMa
 interface Business { id: string; displayName: string; }
 interface CoupangDownloaderProps {
   businesses: Business[];
-  onRegisterDirectUpload?: (fn: (businessId: string, file: File) => Promise<void>) => void;
+  onRegisterDirectUpload?: (fn: (businessId: string, file: File, onStep?: (step: string) => void) => Promise<string>) => void;
 }
 type OrderStatus = 'INSTRUCT' | 'ACCEPT';
 interface DownloadState { loading: boolean; error: string | null; lastCount?: number; success?: boolean; step?: string; }
@@ -285,15 +285,18 @@ const CoupangDownloader: React.FC<CoupangDownloaderProps> = ({ businesses, onReg
   };
 
   // 송장은 그 사업자 크롬 프로필의 윙 주문서 확장이 로그인된 윙에서 올린다 (윙발주 → Firestore wingRequests)
-  const uploadInvoiceDirectly = React.useCallback(async (businessId: string, file: File) => {
+  const uploadInvoiceDirectly = React.useCallback(async (businessId: string, file: File, onStep?: (step: string) => void): Promise<string> => {
     const business = businessesRef.current.find(b => b.id === businessId);
     if (!business) throw new Error(`사업자를 찾을 수 없습니다: ${businessId}`);
     setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: true, error: null, step: '프로필 확장 기다리는 중' } }));
     try {
-      await requestWingInvoiceUpload(business.displayName, file, step =>
-        setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: true, error: null, step } })));
+      const msg = await requestWingInvoiceUpload(business.displayName, file, step => {
+        setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: true, error: null, step } }));
+        onStep?.(step);
+      });
       setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: null, success: true } }));
       setTimeout(() => setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: null, success: false } })), 3000);
+      return msg;
     } catch (e: any) {
       setInvoiceStates(prev => ({ ...prev, [businessId]: { loading: false, error: e.message ?? '오류' } }));
       throw e;
