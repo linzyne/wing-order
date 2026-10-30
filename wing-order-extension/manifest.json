@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "윙 주문서 → 윙발주",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "쿠팡 윙 주문배송관리에서 주문서 엑셀을 받아 윙발주로 바로 보내고, 윙발주의 송장을 엑셀 대량배송으로 올립니다. 사업자명은 크롬 프로필마다 따로 저장합니다.",
   "permissions": ["storage", "downloads", "alarms", "tabs", "offscreen"],
   "host_permissions": [

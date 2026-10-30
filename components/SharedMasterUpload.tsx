@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CS_SAVED_EVENT } from '../services/firestoreService';
 import WingFetchBar from './WingFetchBar';
 import { ORDER_METHODS } from '../types';
-import { subscribeWingCounts, requestWingCount, sameBusinessName, type WingReadyCount } from '../services/wingInbox';
+import WingCountBadge from './WingCountBadge';
 
 export interface UploadResult {
   fileName: string;
@@ -122,10 +122,6 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
-  // 윙 상품준비중 건수 (사업자 크롬 프로필의 확장이 윙에서 읽어 남김)
-  const [wingCounts, setWingCounts] = useState<WingReadyCount[]>([]);
-  const [wingCountAsked, setWingCountAsked] = useState<Record<string, number>>({});
-  useEffect(() => subscribeWingCounts(setWingCounts), []);
   const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; timeLabel?: string }[] }[] }[]>([]);
   const [nextRounds, setNextRounds] = useState<Record<string, number>>({});
   const [companyClosedMap, setCompanyClosedMap] = useState<Record<string, boolean>>({});
@@ -586,10 +582,6 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   const bizMargin = uploadFns[biz.businessId]?.getTotalMargin?.() ?? 0;
                   grandMargin += bizMargin;
                   const fakeCount = uploadFns[biz.businessId]?.getFakeCount?.() ?? 0;
-                  const wing = wingCounts.find(w => sameBusinessName(w.businessName, biz.displayName));
-                  const wingToday = !!wing && new Date(wing.at).toDateString() === new Date().toDateString();
-                  const asking = (wingCountAsked[biz.businessId] ?? 0) > (wing?.at ?? 0) && Date.now() - wingCountAsked[biz.businessId] < 60_000;
-                  const wingAt = wing ? new Date(wing.at).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
                   return (
                     <button
                       key={biz.businessId}
@@ -597,19 +589,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                       className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-black rounded-lg bg-violet-900/40 text-violet-300 hover:bg-violet-800/60 hover:text-violet-100 transition-colors border border-violet-700/40"
                     >
                       <span>{biz.displayName}</span>
-                      <span
-                        role="button"
-                        onClick={(e) => {
-                          // 칩을 누르면 다운로드라서, 윙 건수만 다시 읽기는 따로
-                          e.stopPropagation();
-                          setWingCountAsked(prev => ({ ...prev, [biz.businessId]: Date.now() }));
-                          requestWingCount(biz.displayName).catch(err => alert(`윙 건수 요청 실패\n${err?.message || err}`));
-                        }}
-                        title={wing ? `윙 상품준비중 ${wing.count}건 · ${wingAt}에 읽음\n눌러서 지금 다시 읽기 (그 사업자 크롬 프로필이 열려 있어야 함)` : '윙 상품준비중 건수 — 눌러서 읽기 (그 사업자 크롬 프로필이 열려 있어야 함)'}
-                        className={`tabular-nums rounded px-0.5 hover:bg-white/10 ${asking ? 'animate-pulse' : ''} ${wingToday ? 'text-sky-300' : 'text-zinc-500'}`}
-                      >
-                        윙{wingToday ? wing!.count.toLocaleString() : '-'}
-                      </span>
+                      <WingCountBadge businessName={biz.displayName} />
                       <span className="tabular-nums text-pink-300" title="가구매 명단 중 이 사업자 주문서에서 찾은 주문 수">가{fakeCount.toLocaleString()}</span>
                       <span className="tabular-nums text-violet-100" title="총구매수량 (업체에 발주하는 수량)">실{bizTotalCount.toLocaleString()}</span>
                       {bizMargin !== 0 && (

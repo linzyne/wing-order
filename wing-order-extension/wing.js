@@ -298,6 +298,14 @@
       .filter(Boolean);
     return texts.join(' / ').replace(/\s+/g, ' ').slice(0, 300);
   };
+  // 등록 결과 창을 닫고 상품준비중을 다시 눌러 건수를 읽는다
+  const readReadyAfterUpload = async () => {
+    const close = [...document.querySelectorAll('button,a')].find((b) => visible(b) && !box.contains(b) && /^(닫기|확인)$/.test(ownText(b)));
+    if (close) { L(`결과 창 닫기: "${ownText(close)}"`); close.click(); await sleep(800); }
+    const n = await openTab('상품준비중').catch(() => null);
+    L(`등록 뒤 상품준비중: ${n ?? '못 읽음'}`);
+    return n;
+  };
   const runInvoice = async ({ fileName: name, fileBase64 }) => {
     if (!fileBase64) throw new Error('송장 파일이 비어 있어요');
     await openTab('상품준비중');
@@ -340,7 +348,13 @@
     L(`결과: ${shown || '(글자 없음)'}`);
     // 안내 글자에 걸리지 않게, 알림창은 실패·오류 말만, 화면 글자는 '실패 n건'만 실패로 본다
     if (/실패|오류|올바르지|잘못|형식/.test(alerts.join(' ')) || /실패\s*:?\s*[1-9]/.test(shown)) throw new Error(`윙: ${shown.slice(0, 200)}`);
-    return got ? shown.slice(0, 200) || '등록함' : '등록하기 누름 (결과 글자 못 읽음 — 윙에서 확인)';
+    const result = got ? shown.slice(0, 200) || '등록함' : '등록하기 누름 (결과 글자 못 읽음 — 윙에서 확인)';
+    // 송장이 들어간 주문은 상품준비중에서 빠지므로, 남은 건수를 다시 읽어 알린다 (윙이 반영할 시간을 조금 줌)
+    show('남은 상품준비중 읽는 중…');
+    await sleep(3000);
+    const left = await readReadyAfterUpload();
+    if (left != null) reportCount(left);
+    return left != null ? `${result} · 남은 상품준비중 ${left}건` : result;
   };
 
   // ── 실행 ──

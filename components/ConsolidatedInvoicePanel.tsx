@@ -1,5 +1,6 @@
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
+import WingCountBadge from './WingCountBadge';
 import type { MailInvoiceWatcher } from '../hooks/useMailInvoiceWatcher';
 import { getInvoiceMailToken, setInvoiceMailToken } from '../services/invoiceMailService';
 
@@ -504,6 +505,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
               {businesses.length > 1 && (
                 <div className="flex items-center gap-2 mb-1.5">
                   <span className="text-[13px] font-black text-white">{biz.displayName}</span>
+                  <WingCountBadge businessName={biz.displayName} className="text-[12px] font-black" />
                   <div className="flex-1 h-px bg-zinc-600" />
                 </div>
               )}
