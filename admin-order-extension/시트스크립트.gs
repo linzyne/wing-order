@@ -1,7 +1,7 @@
 // 견적 구글 시트에 붙이는 Apps Script (확장 프로그램 > Apps Script 에 통째로 붙여넣고 저장).
 // 어드민 상세보기에서 '시트 복사'한 "상품명\t공급가" 줄을 받아
-// 선택한 칸의 줄부터 2줄씩 내려가며 A열 = 상품명, D열 첫 줄 = 공급가를 넣는다. B·C열과 둘째 줄은 건드리지 않는다.
-// 숨긴 칸 묶음에 들어가게 되면 그 줄을 다시 보이게 한다. B열이 빈 줄을 만나면(표 끝) 멈춘다.
+// 선택한 칸부터 2줄씩 내려가며 그 칸 = 상품명, 세 칸 오른쪽(A에서 고르면 D) 첫 줄 = 공급가를 넣는다. 사이 두 칸과 둘째 줄은 건드리지 않는다.
+// 숨긴 칸 묶음에 들어가게 되면 그 줄을 다시 보이게 한다. 둘째 품목부터는 바로 오른쪽 칸(A에서 고르면 B)이 빈 줄을 만나면(표 끝) 멈춘다.
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -13,7 +13,7 @@ function onOpen() {
 function showAdminPaste() {
   const html = HtmlService.createHtmlOutput(
     '<div style="font:13px sans-serif">' +
-    '<p style="margin:0 0 6px">첫 품명 칸(예: A6)을 고른 상태에서 여기 붙여넣기(⌘V) 후 넣기</p>' +
+    '<p style="margin:0 0 6px">넣을 첫 품명 칸을 고른 상태에서 여기 붙여넣기(⌘V) 후 넣기</p>' +
     '<textarea id="t" style="width:100%;height:180px;box-sizing:border-box"></textarea>' +
     '<button id="b" style="margin-top:8px;padding:6px 16px">넣기</button> <span id="m"></span>' +
     '<script>' +
@@ -37,13 +37,15 @@ function fillAdminItems(text) {
   if (!items.length) return '붙여넣은 내용이 없음';
 
   const sheet = SpreadsheetApp.getActiveSheet();
-  let row = sheet.getActiveCell().getRow();
+  const cell = sheet.getActiveCell();
+  let row = cell.getRow();
+  const col = cell.getColumn();
   let done = 0;
   for (const item of items) {
-    if (sheet.getRange(row, 2).getDisplayValue() === '') break;
+    if (done && sheet.getRange(row, col + 1).getDisplayValue() === '') break;
     if (sheet.isRowHiddenByUser(row) || sheet.isRowHiddenByUser(row + 1)) sheet.showRows(row, 2);
-    sheet.getRange(row, 1).setValue(item.name);
-    sheet.getRange(row, 4).setValue(item.price);
+    sheet.getRange(row, col).setValue(item.name);
+    sheet.getRange(row, col + 3).setValue(item.price);
     done++;
     row += 2;
   }
