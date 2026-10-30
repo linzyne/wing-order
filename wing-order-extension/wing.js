@@ -243,6 +243,7 @@
       }
     }
     const count = await openTab('상품준비중');
+    reportCount(count);
     if (count === 0) throw new Error('상품준비중 주문이 0건이에요');
     const excelBtn = await findButton(/엑셀\s*다운/);
     if (!excelBtn) throw new Error('"엑셀 다운" 버튼을 못 찾았어요');
@@ -255,7 +256,10 @@
   // 2차~: 결제완료의 새 주문만 발주확인 처리하면서 내려오는 엑셀을 받는다
   const runNext = async () => {
     const paid = await openTab('결제완료');
-    if (paid === 0) return { none: true };
+    if (paid === 0) {
+      reportCount(await openTab('상품준비중'));
+      return { none: true };
+    }
     const btn = await findButton(/^발주확인\s*처리/);
     if (!btn) throw new Error('"발주확인 처리" 버튼을 못 찾았어요');
     L(`발주확인 처리 클릭: "${ownText(btn)}"`);
@@ -265,10 +269,23 @@
       // 건수를 못 읽었는데 사유 팝업도 안 뜨면 처리할 주문이 없는 것 — 15초만 기다려 보고 끝낸다
       if (!(await waitFor(() => captured || capturedUrl, 15000))) {
         L('팝업·파일 없음 → 결제완료 새 주문 없음으로 끝냄');
+        reportCount(await openTab('상품준비중'));
         return { none: true };
       }
     }
-    return { base64: await waitCaptured(), wingCount: paid, label: '결제완료' };
+    const base64 = await waitCaptured();
+    // 발주확인으로 상품준비중에 넘어간 뒤의 전체 건수
+    await sleep(1500);
+    reportCount(await openTab('상품준비중'));
+    return { base64, wingCount: paid, label: '결제완료' };
+  };
+
+  // 윙 상품준비중 건수를 윙발주에 알린다 (발주서 화면의 '윙 N')
+  const reportCount = (n) => {
+    if (n == null) return;
+    chrome.storage.local.get('businessName', ({ businessName }) => {
+      if (businessName) chrome.runtime.sendMessage({ type: 'READY_COUNT', businessName, count: n }).catch(() => {});
+    });
   };
 
   // ── 송장 올리기 (윙발주 요청) ──
@@ -418,6 +435,17 @@
       return;
     }
     if (job.mode === 'invoice') setTimeout(() => runInvoiceJob(job), 1500);
+    else if (job.mode === 'count') setTimeout(async () => {
+      // 윙발주에서 '윙 N'을 눌러 건수만 새로 읽기
+      try {
+        const n = await openTab('상품준비중');
+        if (n == null) throw new Error('상품준비중 건수를 못 읽었어요');
+        reportCount(n);
+        chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: true, message: `상품준비중 ${n}건` });
+      } catch (err) {
+        chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: false, message: err.message });
+      }
+    }, 1500);
     else setTimeout(() => run(job.mode, businessName || ''), 1500);
   }).catch(() => {});
 

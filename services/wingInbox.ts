@@ -155,3 +155,31 @@ export async function requestWingInvoiceUpload(businessName: string, file: File,
     }, err => finish(err));
   });
 }
+
+// ── 윙 상품준비중 건수 (wingCounts) ──
+// 확장이 윙에서 주문서를 받을 때(또는 '건수만' 요청 때) 읽은 상품준비중 건수를 사업자마다 남긴다.
+export interface WingReadyCount { businessName: string; count: number; at: number; }
+
+// 윙발주 사업자명('주식회사 안군농원')과 확장에 적은 이름('안군농원')이 조금 달라도 같은 사업자로 본다
+const normName = (s: string) => String(s || '').normalize('NFC').replace(/주식회사|\(주\)|㈜|\s/g, '').toLowerCase();
+export const sameBusinessName = (a: string, b: string) => {
+  const x = normName(a);
+  const y = normName(b);
+  return !!x && !!y && (x === y || x.includes(y) || y.includes(x));
+};
+
+export function subscribeWingCounts(onChange: (counts: WingReadyCount[]) => void): () => void {
+  return onSnapshot(collection(db, 'wingCounts'), snap => {
+    onChange(snap.docs.map(d => {
+      const x = d.data();
+      return { businessName: x.businessName || '', count: Number(x.count ?? 0), at: x.at?.toMillis?.() ?? 0 };
+    }));
+  }, err => console.error('[윙 건수] 구독 실패', err));
+}
+
+// 그 사업자 프로필 확장에 윙 상품준비중 건수만 다시 읽어 달라고 요청
+export async function requestWingCount(businessName: string): Promise<void> {
+  await addDoc(collection(db, 'wingRequests'), {
+    businessName, mode: 'count', status: 'pending', message: '', batchId: `${Date.now()}`, createdAt: serverTimestamp(),
+  });
+}

@@ -141,6 +141,24 @@ async function patchRequest(name, fields, updateTime) {
   return res.ok;
 }
 
+// 윙 상품준비중 건수 — 윙발주 발주서 화면에 '윙 N'으로 보인다 (사업자마다 문서 하나를 덮어씀)
+async function saveReadyCount(businessName, count) {
+  if (!businessName || count == null) return;
+  const id = encodeURIComponent(normName(businessName));
+  const res = await fetch(`${docsBase()}/wingCounts/${id}?${keyQ()}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fields: {
+        businessName: { stringValue: businessName },
+        count: { integerValue: String(count) },
+        at: { timestampValue: new Date().toISOString() },
+      },
+    }),
+  }).catch((e) => ({ ok: false, statusText: e.message }));
+  if (!res.ok) console.warn('[윙 건수 저장 실패]', res.status || res.statusText);
+}
+
 let polling = false;
 async function pollRequests() {
   if (polling) return;
@@ -161,7 +179,7 @@ async function pollRequests() {
       const tab = await chrome.tabs.create({ url: MANAGE_URL, active: false });
       const { jobs = {} } = await chrome.storage.local.get('jobs');
       const mode = f.mode?.stringValue;
-      jobs[tab.id] = { mode: mode === 'next' || mode === 'invoice' ? mode : 'first', reqName: doc.name, at: Date.now() };
+      jobs[tab.id] = { mode: ['next', 'invoice', 'count'].includes(mode) ? mode : 'first', reqName: doc.name, at: Date.now() };
       // 송장 올리기: 윙발주가 문서에 담아 보낸 송장 파일
       if (mode === 'invoice') {
         jobs[tab.id].fileName = f.fileName?.stringValue || '송장.xlsx';
@@ -213,6 +231,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // 구독이 끊겼다 — 창을 닫고 다시 띄운다
     console.warn('[구독 끊김]', msg.message);
     chrome.offscreen.closeDocument().catch(() => {}).finally(() => setTimeout(ensureOffscreen, 5000));
+    return false;
+  }
+  if (msg.type === 'READY_COUNT') {
+    saveReadyCount(msg.businessName, msg.count);
     return false;
   }
   if (msg.type === 'GET_JOB') {
