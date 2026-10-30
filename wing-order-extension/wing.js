@@ -41,7 +41,7 @@
   document.documentElement.appendChild(box);
   const $ = (k) => box.querySelector(`[data-k="${k}"]`);
   const show = (text, color) => {
-    if (job && text) chrome.runtime.sendMessage({ type: 'JOB_STEP', message: text.split('\n')[0] }).catch(() => {});
+    if (job && text && !color) chrome.runtime.sendMessage({ type: 'JOB_STEP', message: text.split('\n')[0] }).catch(() => {});
     $('msg').style.display = text ? 'block' : 'none';
     $('msg').textContent = text;
     $('msg').style.color = color || '#71717a';
@@ -137,6 +137,12 @@
         if (m) return Number(m[1].replace(/,/g, ''));
       }
     }
+    // 카드 글자 줄이 "결제완료" 다음 줄에 숫자로 보이는 경우, 또는 안내 띠의 "(결제완료 0, 상품준비중 8 …)"
+    const page = document.body.innerText || '';
+    const m1 = new RegExp(`(?:^|\\n)\\s*${label}[\\s?ⓘ]*\\n\\s*([\\d,]+)\\s*(?:\\n|$)`).exec(page);
+    if (m1) return Number(m1[1].replace(/,/g, ''));
+    const m2 = new RegExp(`${label}\\s*([\\d,]+)\\s*[,)]`).exec(page);
+    if (m2) return Number(m2[1].replace(/,/g, ''));
     return null;
   };
   const openTab = async (label) => {
@@ -161,7 +167,7 @@
     );
     if (!reason) {
       L('사유 팝업 없음 — 바로 내려받는 것으로 보고 기다림');
-      return;
+      return false;
     }
     L('사유 칸 발견 → 입력');
     setValue(reason, '발주서 작성');
@@ -176,6 +182,7 @@
     if (!dlBtn) throw new Error('사유 팝업의 "다운로드" 버튼을 못 찾았어요');
     L('팝업 다운로드 클릭');
     dlBtn.click();
+    return true;
   };
 
   // 버튼을 누르고 내려오는 엑셀을 받는다 (capture=false면 확인창만 넘기고 파일은 안 받음)
@@ -188,12 +195,12 @@
       chrome.runtime.sendMessage({ type: 'ARM', fileName: currentName });
     }
     btn.click();
-    await passReasonPopup();
+    return passReasonPopup();
   };
 
-  const waitCaptured = async () => {
+  const waitCaptured = async (ms = 60000) => {
     show('엑셀 받는 중…');
-    const got = await waitFor(() => captured || (capturedUrl && 'url'), 60000, 300);
+    const got = await waitFor(() => captured || (capturedUrl && 'url'), ms, 300);
     if (captured) return captured;
     // 화면이 주소로 내려받았거나 hook이 못 잡았으면 확장이 직접 받아 본다
     const url = capturedUrl || (await chrome.runtime.sendMessage({ type: 'LAST_DOWNLOAD_URL' }));
@@ -245,8 +252,19 @@
   // 2차~: 결제완료의 새 주문만 발주확인 처리하면서 내려오는 엑셀을 받는다
   const runNext = async () => {
     const paid = await openTab('결제완료');
-    if (paid === 0) throw new Error('결제완료에 새 주문이 없어요');
-    await confirmPaid(true);
+    if (paid === 0) return { none: true };
+    const btn = await findButton(/^발주확인\s*처리/);
+    if (!btn) throw new Error('"발주확인 처리" 버튼을 못 찾았어요');
+    L(`발주확인 처리 클릭: "${ownText(btn)}"`);
+    show('발주확인 처리 중…');
+    const popup = await clickAndPass(btn, true);
+    if (!popup && paid == null) {
+      // 건수를 못 읽었는데 사유 팝업도 안 뜨면 처리할 주문이 없는 것 — 15초만 기다려 보고 끝낸다
+      if (!(await waitFor(() => captured || capturedUrl, 15000))) {
+        L('팝업·파일 없음 → 결제완료 새 주문 없음으로 끝냄');
+        return { none: true };
+      }
+    }
     return { base64: await waitCaptured(), wingCount: paid, label: '결제완료' };
   };
 
@@ -276,7 +294,13 @@
     currentName = fileName(biz);
     L(`시작 · ${mode === 'first' ? '1차' : '2차~'} · 사업자 ${biz} · ${location.href}`);
     try {
-      const { base64, wingCount, label } = mode === 'first' ? await runFirst() : await runNext();
+      const { base64, wingCount, label, none } = mode === 'first' ? await runFirst() : await runNext();
+      if (none) {
+        L('결제완료 새 주문 없음 — 할 일 없음');
+        show('결제확인 새 주문 없음 ✓', '#16a34a');
+        if (job) chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: true, message: '새 주문 없음' });
+        return;
+      }
       show('윙발주로 보내는 중…');
       const name = currentName;
       const res = await chrome.runtime.sendMessage({ type: 'SEND_INBOX', fileName: name, fileBase64: base64, wingCount, businessName: biz, source: label });
