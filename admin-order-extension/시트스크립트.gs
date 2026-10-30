@@ -29,11 +29,21 @@ function showAdminPaste() {
   SpreadsheetApp.getUi().showModalDialog(html, '어드민 품목 넣기');
 }
 
+// 상품명: 한글·영문·숫자 말고는 빼고(1.5kg 같은 숫자 사이 점은 둠) 띄어쓰기는 한 칸으로.
+function cleanName(s) {
+  return String(s)
+    .replace(/(\d)\.(\d)/g, '$1\u0000$2')
+    .replace(/[^0-9A-Za-z가-힣\u0000]+/g, ' ')
+    .replace(/\u0000/g, '.')
+    .replace(/ +/g, ' ')
+    .trim();
+}
+
 function fillAdminItems(text) {
   const items = String(text).split(/\r?\n/)
     .map(function (line) { return line.split('\t'); })
     .filter(function (c) { return c[0] && c[0].trim(); })
-    .map(function (c) { return { name: c[0].trim(), price: Number(String(c[1] || '').replace(/[^\d]/g, '')) || '' }; });
+    .map(function (c) { return { name: cleanName(c[0]), price: Number(String(c[1] || '').replace(/[^\d]/g, '')) || '' }; });
   if (!items.length) return '붙여넣은 내용이 없음';
 
   const sheet = SpreadsheetApp.getActiveSheet();
