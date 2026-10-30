@@ -131,7 +131,7 @@ export async function requestWingInvoiceUpload(businessName: string, file: File,
     batchId: `${Date.now()}`, createdAt: serverTimestamp(),
   });
   return new Promise<string>((resolve, reject) => {
-    // 확장이 3분 안에 안 가져가면 그 프로필이 안 열린 것 (가져간 뒤에는 5분까지 기다림)
+    // 확장은 늦어도 30초마다 요청을 확인하므로, 45초 안에 안 가져가면 그 프로필이 안 열린 것 (가져간 뒤에는 5분까지 기다림)
     let claimed = false;
     const finish = (err: Error | null, msg = '') => {
       clearInterval(timer);
@@ -142,8 +142,8 @@ export async function requestWingInvoiceUpload(businessName: string, file: File,
     const startedAt = Date.now();
     const timer = setInterval(() => {
       const waited = Date.now() - startedAt;
-      if (!claimed && waited > 3 * 60 * 1000) finish(new Error(`${businessName} 크롬 프로필이 안 열려 있어요 (윙 주문서 확장 확인)`));
-      else if (waited > 8 * 60 * 1000) finish(new Error('송장 올리기가 5분 넘게 안 끝났어요 — 그 프로필의 윙 탭 확인'));
+      if (!claimed && waited > 45 * 1000) finish(new Error(`${businessName} 크롬 프로필이 안 열려 있어요 (윙 주문서 확장 확인)`));
+      else if (waited > 6 * 60 * 1000) finish(new Error('송장 올리기가 5분 넘게 안 끝났어요 — 그 프로필의 윙 탭 확인'));
     }, 5000);
     const unsub = onSnapshot(ref, snap => {
       const x = snap.data();
