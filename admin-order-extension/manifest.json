@@ -1,18 +1,38 @@
 {
   "manifest_version": 3,
   "name": "윙발주 → 업체 어드민",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "윙발주에서 보낸 업체 양식 발주서를 업체 어드민(adminplus) 대량 주문입력(엑셀)에 올립니다. 상품 상세보기에서 고른 옵션을 견적 시트용으로 복사합니다.",
-  "permissions": ["storage", "downloads", "alarms", "offscreen"],
+  "permissions": [
+    "storage",
+    "downloads",
+    "alarms",
+    "offscreen"
+  ],
   "host_permissions": [
     "*://*.adminplus.co.kr/*",
     "https://firestore.googleapis.com/*"
   ],
-  "background": { "service_worker": "background.js" },
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
-      "matches": ["*://*.adminplus.co.kr/partner-app/*"],
-      "js": ["admin.js"],
+      "matches": [
+        "*://*.adminplus.co.kr/partner-app/*"
+      ],
+      "js": [
+        "admin.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://*.adminplus.co.kr/partner-app/*"
+      ],
+      "js": [
+        "auto-reload-page.js"
+      ],
       "run_at": "document_idle"
     }
   ]

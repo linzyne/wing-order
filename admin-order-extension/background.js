@@ -1,3 +1,5 @@
+self.AUTO_RELOAD_FILES = ["config.js", "offscreen.html", "offscreen.js", "listen-target.js"];
+importScripts('auto-reload.js'); // 파일이 바뀌면 일하는 화면을 열 때 스스로 다시 불러옴
 // 확장 뒤편: 윙발주가 넣은 발주서(Firestore adminOutbox) 찾기·가져가기, 진단 로그 저장
 importScripts('config.js');
 
