@@ -859,12 +859,51 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
               const groups = [...ORDER_METHODS, { key: '', label: '미지정' }]
                 .map(g => ({ ...g, names: companyOrder.filter(n => methodOf(n) === g.key) }))
                 .filter(g => g.names.length > 0);
+              // 전체 전송: 이 묶음 업체들의 합산 발주서 중 아직 안 보낸(✓ 없는) 것을 한꺼번에 메일/어드민으로 보낸다
+              const pendingMerged = (names: string[], kind: 'email' | 'admin') => {
+                const jobs: { key: string; run: () => Promise<boolean | void> | void }[] = [];
+                for (const companyName of names) {
+                  for (const biz of downloadSnapshot) {
+                    const company = biz.companies.find(c => c.name === companyName);
+                    if (!company || (company.orderMethod === 'admin') !== (kind === 'admin')) continue;
+                    const totalCount = company.rounds.reduce((s, r) => s + (r.count ?? 0), 0);
+                    if (totalCount === 0) continue;
+                    const key = `${biz.businessId}_${companyName}_merged_mail_${totalCount}`;
+                    if (emailedButtons.has(key) || emailingButtons.has(key)) continue;
+                    const fns = uploadFns[biz.businessId];
+                    const fn = kind === 'admin' ? fns?.adminCompanyMerged : fns?.emailCompanyMerged;
+                    if (fn) jobs.push({ key, run: () => fn(companyName) });
+                  }
+                }
+                return jobs;
+              };
               return groups.map(g => (
                 <div key={g.key || 'none'} className="flex flex-col gap-3">
                   <div className="flex items-center gap-2 pt-1">
                     <span className="text-[11px] font-black text-sky-400">{g.label}</span>
                     <span className="text-[10px] font-bold text-zinc-600 tabular-nums">{g.names.length}곳</span>
                     <div className="flex-1 border-t border-zinc-800/80" />
+                    {(g.key === 'email' || g.key === 'admin') && (() => {
+                      const jobs = pendingMerged(g.names, g.key);
+                      return (
+                        <button
+                          onClick={async () => {
+                            // 어드민은 업체 탭이 각자 가져가니 한꺼번에, 메일은 Gmail이 동시 접속을 막을 수 있어 하나씩 이어서
+                            if (g.key === 'admin') jobs.forEach(j => sendOrderMail(j.key, j.run));
+                            else for (const j of jobs) await sendOrderMail(j.key, j.run);
+                          }}
+                          disabled={jobs.length === 0}
+                          title={`아직 안 보낸 합산 발주서 ${jobs.length}개를 한꺼번에 ${g.key === 'admin' ? '어드민에 올리기' : '메일 전송'}`}
+                          className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-black border transition-colors ${
+                            jobs.length === 0
+                              ? 'text-zinc-600 border-zinc-800 cursor-default'
+                              : 'text-sky-300 border-sky-700/60 hover:bg-sky-900/40 hover:text-sky-100'
+                          }`}
+                        >
+                          {jobs.length === 0 ? '전체 전송 ✓' : `합산 전체 전송 ${jobs.length}`}
+                        </button>
+                      );
+                    })()}
                   </div>
                   {g.names.map(renderCompany)}
                 </div>
