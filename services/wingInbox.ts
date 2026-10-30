@@ -1,4 +1,4 @@
-import { collection, onSnapshot, runTransaction, addDoc, getDocs, deleteDoc, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, runTransaction, addDoc, getDocs, deleteDoc, query, where, serverTimestamp, type DocumentReference } from 'firebase/firestore';
 import { db } from '../firebase';
 
 declare var XLSX: any;
@@ -40,11 +40,16 @@ async function countOrders(file: File): Promise<number> {
 }
 
 export function subscribeWingInbox(onFile: (f: WingInboxFile) => void): () => void {
-  return onSnapshot(collection(db, 'wingInbox'), snap => {
-    snap.docChanges().forEach(ch => {
-      if (ch.type !== 'added') return;
-      const ref = ch.doc.ref;
-      // 윙발주 창이 여러 개 열려 있어도 한 창만 가져가도록, 서버에서 지우는 데 성공한 창이 가져간다.
+  // 윙발주 탭이 여러 개면 보고 있지 않은 탭이 가져가 거기서 긴급공지 확인창이 떠 묻히던 일이 있어,
+  // 지금 보이는 탭만 가져간다. 다 가려져 있으면 기다렸다가 윙발주 탭으로 돌아오는 순간 가져간다.
+  const waiting = new Map<string, DocumentReference>();
+  const claiming = new Set<string>();
+  const claimAll = () => {
+    if (document.hidden) return;
+    waiting.forEach((ref, id) => {
+      if (claiming.has(id)) return;
+      claiming.add(id);
+      // 그래도 두 탭이 동시에 보이면 서버에서 지우는 데 성공한 탭이 가져간다
       runTransaction(db, async tx => {
         const s = await tx.get(ref);
         if (!s.exists()) return null;
@@ -55,9 +60,20 @@ export function subscribeWingInbox(onFile: (f: WingInboxFile) => void): () => vo
         const file = base64ToFile(data.fileBase64, data.fileName);
         const fileCount = await countOrders(file).catch(() => -1);
         onFile({ file, wingCount: typeof data.wingCount === 'number' ? data.wingCount : null, fileCount, source: data.source || '' });
-      }).catch(err => console.error('[윙 주문서 받기]', err));
+      }).catch(err => console.error('[윙 주문서 받기]', err))
+        .finally(() => claiming.delete(id));
     });
+  };
+  const unsub = onSnapshot(collection(db, 'wingInbox'), snap => {
+    waiting.clear();
+    snap.docs.forEach(d => waiting.set(d.id, d.ref));
+    claimAll();
   }, err => console.error('[윙 주문서 받기] 구독 실패', err));
+  document.addEventListener('visibilitychange', claimAll);
+  return () => {
+    unsub();
+    document.removeEventListener('visibilitychange', claimAll);
+  };
 }
 
 // ── 받기 요청 (wingRequests) ──
