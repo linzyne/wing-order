@@ -32,6 +32,8 @@
     <input data-k="company" placeholder="업체명" style="display:none;width:100%;box-sizing:border-box;background:#fafafa;color:#18181b;border:1px solid #e4e4e7;border-radius:5px;padding:3px 5px;font-size:10px;outline:none">
     <input data-k="business" placeholder="사업자명" style="display:none;width:100%;box-sizing:border-box;background:#fafafa;color:#18181b;border:1px solid #e4e4e7;border-radius:5px;padding:3px 5px;font-size:10px;outline:none">
     <button data-k="retry" title="마지막으로 받은 발주서를 다시 올리기" style="display:none;background:#fff;color:#2563eb;border:1px solid #93c5fd;border-radius:6px;padding:4px 0;font-size:10px;font-weight:800;cursor:pointer">다시 올리기</button>
+    <button data-k="pickcopy" title="고른 옵션을 '상품명 [탭] 공급가' 줄로 복사 — 시트에서 견적 > 어드민 품목 넣기에 붙여넣기" style="display:none;background:#2563eb;color:#fff;border:0;border-radius:6px;padding:4px 0;font-size:10px;font-weight:800;cursor:pointer"></button>
+    <span data-k="pickclear" style="display:none;font-size:9px;color:#a1a1aa;cursor:pointer;text-align:center">고른 것 비우기</span>
     <div data-k="msg" style="font-size:9px;color:#71717a;white-space:pre-wrap;word-break:break-all">기다리는 중</div>`;
   document.documentElement.appendChild(box);
   const $ = (k) => box.querySelector(`[data-k="${k}"]`);
@@ -161,6 +163,100 @@
     }
   }
   $('retry').addEventListener('click', () => { if (lastItem && !busy) upload(lastItem); });
+
+  // ── 상품 상세보기 '구성상품'에서 옵션 골라 구글 시트용으로 복사 ──
+  // 표의 각 줄 제품명 앞에 체크칸을 붙인다. 공급가는 '공급가' 머리글 아래 같은 가로 위치의 ₩값.
+  // 복사하면 고른 순서대로 "상품명\t공급가" 줄 → 시트의 견적 메뉴(시트스크립트.gs)가 A열·D열에 2줄씩 넣는다.
+  const picked = new Map(); // 상품명 → 공급가
+  const isOurs = (el) => el.hasAttribute('data-pick');
+  const isLeaf = (el) => ![...el.children].some((c) => !isOurs(c));
+  const leaves = (root) => [...root.querySelectorAll('*')].filter((el) => !isOurs(el) && isLeaf(el) && text(el) && !box.contains(el));
+  const overlapX = (a, b) => a.left < b.right && a.right > b.left;
+
+  function showPicks() {
+    const n = picked.size;
+    $('pickcopy').style.display = n ? 'block' : 'none';
+    $('pickclear').style.display = n ? 'block' : 'none';
+    $('pickcopy').textContent = `시트 복사 ${n}개`;
+  }
+
+  function scanOptions() {
+    const all = leaves(document.body).filter(visible);
+    const nameHead = all.find((el) => text(el) === '제품명');
+    if (!nameHead) return;
+    const nh = nameHead.getBoundingClientRect();
+    const supplyHead = all.find((el) => text(el) === '공급가' && Math.abs(el.getBoundingClientRect().top - nh.top) < 10);
+    if (!supplyHead) return;
+    const sh = supplyHead.getBoundingClientRect();
+    // 제품명 칸 = 제품명 머리글부터 오른쪽 다음 머리글(재고) 앞까지
+    const nextHeadLeft = Math.min(sh.left, ...all
+      .map((el) => el.getBoundingClientRect())
+      .filter((r) => Math.abs(r.top - nh.top) < 10 && r.left > nh.right)
+      .map((r) => r.left));
+    const nameCol = { left: nh.left - 10, right: nextHeadLeft - 4 };
+    const prices = all.filter((el) => {
+      if (!/^₩\s*[\d,]+$/.test(text(el))) return false;
+      const r = el.getBoundingClientRect();
+      return r.top > sh.bottom && overlapX(r, sh);
+    });
+    const countIn = (el) => prices.filter((p) => el.contains(p)).length;
+    for (const price of prices) {
+      // 줄 = 이 공급가 하나만 품은 가장 큰 조상
+      let row = price;
+      while (row.parentElement && row.parentElement !== document.body && !row.parentElement.contains(supplyHead) && countIn(row.parentElement) === 1) row = row.parentElement;
+      const nameLeaves = leaves(row).filter((el) => overlapX(el.getBoundingClientRect(), nameCol));
+      const name = nameLeaves.map(text).join(' ').trim();
+      if (!name || name.startsWith('₩')) continue;
+      let cb = row.querySelector('input[data-pick]');
+      if (!cb) {
+        cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.setAttribute('data-pick', '');
+        cb.style.cssText = 'width:15px;height:15px;margin:0 8px 0 0;vertical-align:middle;cursor:pointer;accent-color:#2563eb';
+        cb.addEventListener('click', (e) => e.stopPropagation());
+        cb.addEventListener('change', () => {
+          if (cb.checked) picked.set(cb.dataset.name, cb.dataset.price);
+          else picked.delete(cb.dataset.name);
+          row.style.background = cb.checked ? '#eff6ff' : '';
+          showPicks();
+        });
+        nameLeaves[0].prepend(cb);
+      }
+      cb.dataset.name = name;
+      cb.dataset.price = text(price).replace(/[^\d]/g, '');
+      cb.checked = picked.has(name);
+      row.style.background = cb.checked ? '#eff6ff' : '';
+    }
+  }
+  let scanTimer = 0;
+  new MutationObserver(() => {
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(scanOptions, 300);
+  }).observe(document.body, { childList: true, subtree: true });
+
+  async function copyText(s) {
+    try {
+      await navigator.clipboard.writeText(s);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = s;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+  }
+  $('pickcopy').addEventListener('click', async () => {
+    const lines = [...picked].map(([name, price]) => `${name}\t${price}`);
+    await copyText(lines.join('\n'));
+    L(`시트 복사 ${lines.length}개`);
+    show(`${lines.length}개 복사함\n시트: 견적 > 어드민 품목 넣기`, '#16a34a');
+  });
+  $('pickclear').addEventListener('click', () => {
+    picked.clear();
+    scanOptions();
+    showPicks();
+  });
 
   // ── 윙발주에서 온 발주서 기다리기 ──
   async function poll() {
