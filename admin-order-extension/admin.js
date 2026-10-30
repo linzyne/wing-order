@@ -2,12 +2,14 @@
 // 윙발주에서 이 업체·사업자 앞으로 보낸 발주서가 오면:
 // 주문입력 → 대량 주문입력(엑셀) → 공통 엑셀파일 → 파일 넣기 → '다음: 엑셀 내용 확인' 까지 누르고 멈춘다.
 // 내용 확인·제품 매칭·주문 등록은 사람이 한다.
+// 오더플로(app.orderflow.kr)에서는 발주서는 안 받고, 상품 화면 '옵션별 가격·재고'에서 옵션 골라 시트 복사만 한다.
 (() => {
   if (window.__adminOrderPanel) return;
   window.__adminOrderPanel = true;
 
   const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   const host = location.host;
+  const pickOnly = host === 'app.orderflow.kr';
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const pad = (n) => String(n).padStart(2, '0');
 
@@ -36,6 +38,10 @@
     <div data-k="msg" style="font-size:9px;color:#71717a;white-space:pre-wrap;word-break:break-all">기다리는 중</div>`;
   document.documentElement.appendChild(box);
   const $ = (k) => box.querySelector(`[data-k="${k}"]`);
+  if (pickOnly) {
+    box.style.display = 'none'; // 고를 옵션이 있는 화면에서만 보임
+    box.firstElementChild.style.display = 'none';
+  }
   const show = (text, color) => {
     $('msg').textContent = text;
     $('msg').style.color = color || '#71717a';
@@ -50,6 +56,7 @@
     return { company: m ? m[1] : '', business: '' };
   };
   const showNames = () => {
+    if (pickOnly) return;
     const ok = names.company && names.business;
     $('label').style.display = ok ? 'block' : 'none';
     $('label').textContent = ok ? `${names.company} · ${names.business}` : '';
@@ -165,6 +172,7 @@
 
   // ── 상품 상세보기 '구성상품'에서 옵션 골라 구글 시트용으로 복사 ──
   // 구성상품 표(th.col_name·th.col_price)의 각 줄 제품명 앞에 체크칸을 붙인다. 공급가 = 줄의 첫 td.col_price(￦9,000).
+  // 오더플로는 옵션별 가격·재고 표의 td[data-label="옵션명"]·td[data-label="공급가"](5,025원).
   // 복사하면 고른 순서대로 "상품명\t공급가" 줄 → 시트의 견적 메뉴(시트스크립트.gs)가 고른 칸·세 칸 오른쪽에 2줄씩 넣는다.
   const picked = new Map(); // 상품명 → 공급가
 
@@ -176,13 +184,15 @@
   }
 
   function scanOptions() {
+    let found = 0;
     for (const row of document.querySelectorAll('table tbody tr')) {
-      const nameCell = row.querySelector('td.col_name');
-      const priceCell = row.querySelector('td.col_price');
+      const nameCell = row.querySelector('td.col_name, td[data-label="옵션명"]');
+      const priceCell = row.querySelector('td.col_price, td[data-label="공급가"]');
       if (!nameCell || !priceCell) continue;
       const name = text(nameCell);
       const price = text(priceCell).replace(/[^\d]/g, '');
       if (!name || !price) continue;
+      found++;
       let cb = row.querySelector('input[data-pick]');
       if (!cb) {
         cb = document.createElement('input');
@@ -205,6 +215,7 @@
       cb.checked = picked.has(name);
       row.style.background = cb.checked ? '#eff6ff' : '';
     }
+    if (pickOnly) box.style.display = found || picked.size ? 'flex' : 'none';
   }
   let scanTimer = 0;
   new MutationObserver(() => {
@@ -257,6 +268,11 @@
     if (msg.type === 'OUTBOX_CHANGED') poll();
   });
 
+  if (pickOnly) {
+    show('옵션 골라 시트 복사');
+    scanOptions();
+    return;
+  }
   chrome.storage.local.get(storeKey, (got) => {
     names = got[storeKey] || guessNames();
     if (names.company && names.business && !got[storeKey]) chrome.storage.local.set({ [storeKey]: names });
