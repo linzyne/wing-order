@@ -1,7 +1,7 @@
 // 견적 구글 시트에 붙이는 Apps Script (확장 프로그램 > Apps Script 에 통째로 붙여넣고 저장).
 // 어드민 상세보기에서 '시트 복사'한 "상품명\t공급가" 줄을 받아
 // 선택한 칸의 줄부터 2줄씩 내려가며 A열 = 상품명, D열 첫 줄 = 공급가를 넣는다. B·C열과 둘째 줄은 건드리지 않는다.
-// 숨긴 칸 묶음에 들어가게 되면 그 줄을 다시 보이게 한다. B열에 수식이 없는 줄을 만나면(표 끝) 멈춘다.
+// 숨긴 칸 묶음에 들어가게 되면 그 줄을 다시 보이게 한다. B열이 빈 줄을 만나면(표 끝) 멈춘다.
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -40,7 +40,7 @@ function fillAdminItems(text) {
   let row = sheet.getActiveCell().getRow();
   let done = 0;
   for (const item of items) {
-    if (!sheet.getRange(row, 2).getFormula()) break;
+    if (sheet.getRange(row, 2).getDisplayValue() === '') break;
     if (sheet.isRowHiddenByUser(row) || sheet.isRowHiddenByUser(row + 1)) sheet.showRows(row, 2);
     sheet.getRange(row, 1).setValue(item.name);
     sheet.getRange(row, 4).setValue(item.price);
