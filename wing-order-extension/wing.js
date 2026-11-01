@@ -233,13 +233,19 @@
   // 1차: 결제완료가 있으면 발주확인으로 상품준비중에 모은 뒤, 상품준비중 전체를 받는다
   const runFirst = async () => {
     const paid = await openTab('결제완료');
+    // 발주확인 뒤 상품준비중 카드 숫자는 몇 분씩 옛날 그대로라, 발주확인 전에 읽어 둔 숫자 + 넘긴 결제완료로 센다
+    const readyBefore = readCount('상품준비중');
+    let moved = false;
     if (paid !== 0) {
       // 엑셀이 안 내려오면 이미 다 넘어간 것(카드 숫자만 옛날 것) — 그대로 상품준비중을 받는다
-      await confirmPaid();
+      moved = await confirmPaid();
       show('상품준비중으로 넘어가길 기다리는 중…');
       await sleep(4000);
     }
-    const count = await openTab('상품준비중');
+    const cardCount = await openTab('상품준비중');
+    const expected = moved && paid != null && readyBefore != null ? readyBefore + paid : null;
+    const count = expected != null && cardCount != null ? Math.max(cardCount, expected) : cardCount ?? expected;
+    L(`상품준비중 건수: 카드 ${cardCount ?? '?'} · 발주확인 전 ${readyBefore ?? '?'} + 결제완료 ${moved ? paid : 0} → ${count ?? '?'}`);
     reportCount(count);
     if (count === 0) throw new Error('상품준비중 주문이 0건이에요');
     const excelBtn = await findButton(/엑셀\s*다운/);
