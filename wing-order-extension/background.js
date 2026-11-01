@@ -7,6 +7,9 @@ const pad = (n) => String(n).padStart(2, '0');
 let armedAt = 0;
 let lastDownloadUrl = null;
 let armedName = '';
+// 이름을 바꿔 저장 중인 다운로드 — 잘 끝난 탭을 닫기 전에 이 저장이 끝나길 기다린다 (큰 파일은 탭이 닫히면 취소됨)
+let armedDownloadId = null;
+const onArmedStart = new Set();
 
 // 보내는 엑셀이 다운로드 폴더에도 저장될 때 윙 원래 이름 대신 윙발주에 보낸 이름으로 저장
 // (보내기가 실패해 직접 올려도 사업자·시간이 그대로 인식되게)
@@ -14,6 +17,8 @@ chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
   if (armedName && Date.now() - armedAt < 2 * 60 * 1000 && /\.xlsx?$/i.test(item.filename || '')) {
     suggest({ filename: armedName, conflictAction: 'uniquify' });
     armedName = '';
+    armedDownloadId = item.id;
+    onArmedStart.forEach((fn) => fn(item.id));
     return;
   }
   suggest();
@@ -22,6 +27,28 @@ chrome.downloads.onCreated.addListener((item) => {
   if (Date.now() - armedAt > 2 * 60 * 1000) return;
   const url = item.finalUrl || item.url || '';
   if (/^https?:/i.test(url)) lastDownloadUrl = url;
+});
+
+// 다운로드 폴더 저장이 끝나거나(완료·중단) ms가 지나면 끝 — 저장할 게 없으면 바로 끝
+const waitArmedDownload = (ms) => new Promise((resolve) => {
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    clearTimeout(timer);
+    chrome.downloads.onChanged.removeListener(onChanged);
+    onArmedStart.delete(check);
+    resolve();
+  };
+  const timer = setTimeout(finish, ms);
+  const onChanged = (delta) => {
+    if (delta.id === armedDownloadId && delta.state && delta.state.current !== 'in_progress') finish();
+  };
+  const check = (id) => chrome.downloads.search({ id }).then(([d]) => { if (!d || d.state !== 'in_progress') finish(); }, finish);
+  chrome.downloads.onChanged.addListener(onChanged);
+  if (armedDownloadId != null) check(armedDownloadId);
+  else if (armedName && Date.now() - armedAt < 2 * 60 * 1000) onArmedStart.add(check);
+  else finish();
 });
 
 const toBase64 = (buf) => {
@@ -253,7 +280,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       await chrome.storage.local.set({ jobs });
       await patchRequest(job.reqName, { status: msg.ok ? 'done' : 'error', message: msg.message || '' });
       // 잘 끝난 탭은 닫고, 실패한 탭은 화면을 볼 수 있게 남겨 둔다
-      if (msg.ok) chrome.tabs.remove(tabId).catch(() => {});
+      if (msg.ok) {
+        await waitArmedDownload(2 * 60 * 1000);
+        chrome.tabs.remove(tabId).catch(() => {});
+      }
     });
     return false;
   }
@@ -275,6 +305,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     armedAt = Date.now();
     lastDownloadUrl = null;
     armedName = msg.fileName || '';
+    armedDownloadId = null;
     return false;
   }
   if (msg.type === 'LAST_DOWNLOAD_URL') {
