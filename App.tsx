@@ -1152,7 +1152,7 @@ const App: React.FC = () => {
               onCompanyMemoChange={updateCompanyMemo}
               onCompanyMemoDelete={removeCompanyMemo}
               incomingFiles={incomingWingFiles}
-              onIncomingTaken={() => setIncomingWingFiles([])}
+              onIncomingTaken={taken => setIncomingWingFiles(prev => prev.filter(x => !taken.includes(x)))}
             />
           </div>
         )}

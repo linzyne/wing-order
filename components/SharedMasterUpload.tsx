@@ -72,7 +72,8 @@ interface Props {
   onCompanyMemoDelete?: (companyName: string) => void;
   /** 크롬 확장이 윙에서 받아 보낸 주문서 — 사업자 패널이 준비되면 직접 올린 것처럼 처리 */
   incomingFiles?: { file: File; note?: UploadResult['note']; source?: string }[];
-  onIncomingTaken?: () => void;
+  /** 가져간 것만 넘긴다 — 그사이 새로 들어온 파일까지 비우면 그 파일이 사라짐 */
+  onIncomingTaken?: (taken: { file: File }[]) => void;
 }
 
 function detectBusiness(filename: string, businesses: Business[]): Business | null {
@@ -403,7 +404,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
       });
       if (!ready && Date.now() - started < 30_000) return;
       clearInterval(tick);
-      onIncomingTaken?.();
+      onIncomingTaken?.(incomingFiles);
       handleFiles(incomingFiles.map(x => x.file), new Map(incomingFiles.map(x => [x.file, x.note])), new Map(incomingFiles.map(x => [x.file, x.source ?? ''])));
     }, 500);
     return () => clearInterval(tick);
