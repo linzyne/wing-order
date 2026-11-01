@@ -11,6 +11,8 @@
   const AUTO_RUN = '__wingOrderAutoRun';
   const ARM = '__wingOrderArm';
   const DIALOG_ARM = '__wingOrderDialogArm';
+  // 발주확인 뒤 결제완료 숫자가 안 줄면 한 번 새로고침해서 다시 읽는다 (윙 카드 숫자는 새로고침 전까지 그대로일 때가 있음)
+  const RECHECK = '__wingOrderRecheck';
   const HOOK_SRC = 'wing-order-hook';
   // 윙발주에서 온 받기 요청으로 확장이 연 탭이면 { mode } — 진행 상황과 결과를 확장에 알린다
   let job = null;
@@ -239,6 +241,17 @@
           left = await openTab('결제완료');
           if (left === 0) break;
         }
+        if (left !== 0 && Date.now() - Number(sessionStorage.getItem(RECHECK) || 0) > 2 * 60 * 1000) {
+          // 처음부터 다시 — 새로고침한 화면에서 결제완료가 0이면 바로 상품준비중을 받는다
+          L(`결제완료 ${left}건 그대로 → 새로고침해서 다시 읽기`);
+          show('윙 숫자 새로 읽으려고 새로고침…');
+          sessionStorage.setItem(RECHECK, String(Date.now()));
+          sessionStorage.removeItem(ARM);
+          sessionStorage.removeItem(DIALOG_ARM);
+          if (!job) sessionStorage.setItem(AUTO_RUN, JSON.stringify({ at: Date.now(), mode: 'first' }));
+          location.reload();
+          return new Promise(() => {});
+        }
         if (left !== 0) throw new Error(`결제완료가 아직 ${left}건 남아 있어요 — 윙 화면 확인`);
       }
     }
@@ -405,6 +418,7 @@
     } finally {
       sessionStorage.removeItem(ARM);
       sessionStorage.removeItem(DIALOG_ARM);
+      sessionStorage.removeItem(RECHECK);
       running = false;
       $('first').disabled = false;
       $('next').disabled = false;
