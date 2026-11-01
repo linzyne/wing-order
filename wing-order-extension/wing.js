@@ -11,6 +11,7 @@
   const AUTO_RUN = '__wingOrderAutoRun';
   const ARM = '__wingOrderArm';
   const DIALOG_ARM = '__wingOrderDialogArm';
+  const SILENT = '__wingOrderSilent';
   const HOOK_SRC = 'wing-order-hook';
   // 윙발주에서 온 받기 요청으로 확장이 연 탭이면 { mode } — 진행 상황과 결과를 확장에 알린다
   let job = null;
@@ -223,11 +224,17 @@
     L(`발주확인 처리 클릭: "${ownText(btn)}"`);
     show('발주확인 처리 중…');
     // hook만 켠다 — 확장 ARM(파일 이름 바꾸기)은 안 보냄, 이 파일은 윙발주로 안 보냄
+    // 실제 내려받기는 막는다 — 뒤에 상품준비중 엑셀까지 두 번 내려받으면 크롬이 "여러 파일 다운로드"를 물음
     sessionStorage.setItem(ARM, String(Date.now()));
-    const popup = await clickAndPass(btn, false);
-    const got = await waitFor(() => captured || capturedUrl, popup ? 60000 : 15000);
-    L(got ? '발주확인 엑셀 내려옴 → 처리 끝' : '발주확인 엑셀 못 봄');
-    return !!got;
+    sessionStorage.setItem(SILENT, String(Date.now()));
+    try {
+      const popup = await clickAndPass(btn, false);
+      const got = await waitFor(() => captured || capturedUrl, popup ? 60000 : 15000);
+      L(got ? '발주확인 엑셀 내려옴 → 처리 끝' : '발주확인 엑셀 못 봄');
+      return !!got;
+    } finally {
+      sessionStorage.removeItem(SILENT);
+    }
   };
 
   // 1차: 결제완료가 있으면 발주확인으로 상품준비중에 모은 뒤, 상품준비중 전체를 받는다

@@ -87,18 +87,42 @@
       post({ type: 'URL', via, url: new URL(url, location.href).href });
     } catch (err) {}
   };
+  // 발주확인 엑셀처럼 확장이 내용만 보면 되는 파일은 실제로 내려받지 않는다 — 한 화면에서 두 번째 다운로드가 나면
+  // 크롬이 "여러 파일 다운로드" 허용을 물어 1차 받기가 멈추기 때문 (내용·주소는 위에서 이미 넘김)
+  const SILENT = '__wingOrderSilent';
+  const silent = () => {
+    try {
+      return armed() && Date.now() - Number(sessionStorage.getItem(SILENT) || 0) < 2 * 60 * 1000;
+    } catch (err) {
+      return false;
+    }
+  };
+  const isFileLink = (a) => a.hasAttribute('download') || /^blob:/i.test(a.getAttribute('href') || '');
   const origClick = HTMLAnchorElement.prototype.click;
   HTMLAnchorElement.prototype.click = function (...a) {
     tellUrl(this.getAttribute('href'), 'a.click');
+    if (silent() && isFileLink(this)) {
+      post({ type: 'LOG', text: '내려받기 막음(a.click) — 내용만 봄' });
+      return;
+    }
     return origClick.apply(this, a);
   };
   document.addEventListener('click', (e) => {
     const a = e.target && e.target.closest && e.target.closest('a[href]');
-    if (a) tellUrl(a.getAttribute('href'), 'a');
+    if (!a) return;
+    tellUrl(a.getAttribute('href'), 'a');
+    if (silent() && isFileLink(a)) {
+      e.preventDefault();
+      post({ type: 'LOG', text: '내려받기 막음(a) — 내용만 봄' });
+    }
   }, true);
   const origWinOpen = window.open;
   window.open = function (url, ...rest) {
     tellUrl(url, 'window.open');
+    if (silent() && url) {
+      post({ type: 'LOG', text: '내려받기 막음(window.open) — 주소만 봄' });
+      return null;
+    }
     return origWinOpen.call(window, url, ...rest);
   };
 
