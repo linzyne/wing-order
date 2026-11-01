@@ -11,8 +11,6 @@
   const AUTO_RUN = '__wingOrderAutoRun';
   const ARM = '__wingOrderArm';
   const DIALOG_ARM = '__wingOrderDialogArm';
-  // 발주확인 뒤 결제완료 숫자가 안 줄면 한 번 새로고침해서 다시 읽는다 (윙 카드 숫자는 새로고침 전까지 그대로일 때가 있음)
-  const RECHECK = '__wingOrderRecheck';
   const HOOK_SRC = 'wing-order-hook';
   // 윙발주에서 온 받기 요청으로 확장이 연 탭이면 { mode } — 진행 상황과 결과를 확장에 알린다
   let job = null;
@@ -217,43 +215,29 @@
   };
 
   // 결제완료 → 발주확인 처리 (윙 주문 상태가 상품준비중으로 바뀜)
-  const confirmPaid = async (capture) => {
+  // 윙이 처리를 끝내면 발주확인 엑셀이 내려온다 — 그걸로 끝난 걸 안다.
+  // (결제완료 카드 숫자는 처리 뒤에도 몇 분씩, 새로고침해도 그대로라 믿을 수 없음)
+  const confirmPaid = async () => {
     const btn = await findButton(/^발주확인\s*처리/);
     if (!btn) throw new Error('"발주확인 처리" 버튼을 못 찾았어요');
     L(`발주확인 처리 클릭: "${ownText(btn)}"`);
     show('발주확인 처리 중…');
-    await clickAndPass(btn, capture);
+    // hook만 켠다 — 확장 ARM(파일 이름 바꾸기)은 안 보냄, 이 파일은 윙발주로 안 보냄
+    sessionStorage.setItem(ARM, String(Date.now()));
+    const popup = await clickAndPass(btn, false);
+    const got = await waitFor(() => captured || capturedUrl, popup ? 60000 : 15000);
+    L(got ? '발주확인 엑셀 내려옴 → 처리 끝' : '발주확인 엑셀 못 봄');
+    return !!got;
   };
 
   // 1차: 결제완료가 있으면 발주확인으로 상품준비중에 모은 뒤, 상품준비중 전체를 받는다
   const runFirst = async () => {
     const paid = await openTab('결제완료');
     if (paid !== 0) {
-      await confirmPaid(false);
-      // 결제완료가 0이 될 때까지 기다린다 (건수를 못 읽는 화면이면 8초만 기다림)
+      // 엑셀이 안 내려오면 이미 다 넘어간 것(카드 숫자만 옛날 것) — 그대로 상품준비중을 받는다
+      await confirmPaid();
       show('상품준비중으로 넘어가길 기다리는 중…');
-      if (paid == null) await sleep(8000);
-      else {
-        const end = Date.now() + 40000;
-        let left = paid;
-        while (Date.now() < end) {
-          await sleep(3000);
-          left = await openTab('결제완료');
-          if (left === 0) break;
-        }
-        if (left !== 0 && Date.now() - Number(sessionStorage.getItem(RECHECK) || 0) > 2 * 60 * 1000) {
-          // 처음부터 다시 — 새로고침한 화면에서 결제완료가 0이면 바로 상품준비중을 받는다
-          L(`결제완료 ${left}건 그대로 → 새로고침해서 다시 읽기`);
-          show('윙 숫자 새로 읽으려고 새로고침…');
-          sessionStorage.setItem(RECHECK, String(Date.now()));
-          sessionStorage.removeItem(ARM);
-          sessionStorage.removeItem(DIALOG_ARM);
-          if (!job) sessionStorage.setItem(AUTO_RUN, JSON.stringify({ at: Date.now(), mode: 'first' }));
-          location.reload();
-          return new Promise(() => {});
-        }
-        if (left !== 0) throw new Error(`결제완료가 아직 ${left}건 남아 있어요 — 윙 화면 확인`);
-      }
+      await sleep(4000);
     }
     const count = await openTab('상품준비중');
     reportCount(count);
@@ -418,7 +402,6 @@
     } finally {
       sessionStorage.removeItem(ARM);
       sessionStorage.removeItem(DIALOG_ARM);
-      sessionStorage.removeItem(RECHECK);
       running = false;
       $('first').disabled = false;
       $('next').disabled = false;
