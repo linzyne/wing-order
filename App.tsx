@@ -18,7 +18,7 @@ import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
-import { resolveSenderColumns } from './types';
+import { resolveSenderColumns, resolveReturnColumns } from './types';
 
 // 400레벨 원색을 약간 어둡게 (투명도 레이어 대신 직접 혼합한 값)
 function dimThemeColor(color: string): string {
@@ -603,15 +603,12 @@ const App: React.FC = () => {
     if (files.length === 0) return;
 
     try {
-      const rm = template.returnMapping;
-      const orderColIdx = rm ? rm.orderNumber : template.mapping.orderNumber;
-      const trackingColIdx = rm ? rm.trackingNumber : template.mapping.trackingNumber;
-
       const trackingMap = new Map<string, string>();
       for (const file of files) {
         const courierData = await file.arrayBuffer();
         const courierWb = XLSX.read(courierData, { type: 'array' });
         const courierAoa: any[][] = XLSX.utils.sheet_to_json(courierWb.Sheets[courierWb.SheetNames[0]], { header: 1 });
+        const { orderCol: orderColIdx, trackingCol: trackingColIdx } = resolveReturnColumns(template, courierAoa[0]);
         for (let i = 1; i < courierAoa.length; i++) {
           const row = courierAoa[i];
           if (!row) continue;

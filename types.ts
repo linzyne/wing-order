@@ -337,6 +337,22 @@ export function resolveSenderColumns(template: CourierTemplate): number[] {
   return Array.from(new Set([...manual, ...autoDetected]));
 }
 
+// 운송장 완료 파일(택배사→우리)에서 주문번호/운송장번호 열을 찾는다.
+// 택배사가 양식을 바꾸면 열 위치가 밀려(롯데 PIDPIC: 주문번호 J열 → '예약/주문번호' I열) 0건 매칭이 났다.
+// 그래서 첫 줄 헤더 이름으로 먼저 찾고, 못 찾을 때만 저장된 returnMapping → mapping 열 위치를 쓴다.
+// (우리가 내려준 가구매 양식에 송장을 직접 채워 올려도 같은 방식으로 읽힘)
+export function resolveReturnColumns(template: CourierTemplate, headerRow: any[] | undefined): { orderCol: number; trackingCol: number } {
+  const headers = (headerRow || []).map(h => String(h ?? '').replace(/\s/g, ''));
+  const orderCandidates = headers.map((h, i) => ({ h, i })).filter(({ h }) => h.includes('주문번호') && !h.includes('원주문'));
+  const orderHit = orderCandidates.find(({ h }) => h === '주문번호') ?? orderCandidates[0];
+  const trackingHit = headers.findIndex(h => /운송장번호|송장번호/.test(h) && !/^(원|이전)/.test(h));
+  const rm = template.returnMapping;
+  return {
+    orderCol: orderHit ? orderHit.i : Number(rm ? rm.orderNumber : template.mapping.orderNumber),
+    trackingCol: trackingHit >= 0 ? trackingHit : Number(rm ? rm.trackingNumber : template.mapping.trackingNumber),
+  };
+}
+
 // ===== 멀티 플랫폼 설정 =====
 
 export interface PlatformColumnMapping {

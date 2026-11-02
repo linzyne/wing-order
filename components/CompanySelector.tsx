@@ -7,7 +7,7 @@ import AutoWatcherPanel from './AutoWatcherPanel';
 import BatchInvoicePanel from './BatchInvoicePanel';
 import RegularCustomerPanel, { type ServiceOrderDraft } from './RegularCustomerPanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
-import { getBusinessInfo, resolveSenderColumns, getOrderMethod } from '../types';
+import { getBusinessInfo, resolveSenderColumns, resolveReturnColumns, getOrderMethod } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, matchCustomGroupColCompany, getHeaderForCompany, sortRowsByProductName, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
@@ -3366,10 +3366,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const courierWs = courierWb.Sheets[courierWb.SheetNames[0]];
             const courierAoa: any[][] = XLSX.utils.sheet_to_json(courierWs, { header: 1 });
 
-            const rm = template.returnMapping;
-            const orderColIdx = rm ? rm.orderNumber : template.mapping.orderNumber;
-            const trackingColIdx = rm ? rm.trackingNumber : template.mapping.trackingNumber;
-            console.log(`[가구매송장] ${template.name} 운송장 업로드 - returnMapping: ${rm ? '있음' : '없음(기존 mapping 사용)'}, 주문번호열: ${orderColIdx}, 송장번호열: ${trackingColIdx}`);
+            const { orderCol: orderColIdx, trackingCol: trackingColIdx } = resolveReturnColumns(template, courierAoa[0]);
+            console.log(`[가구매송장] ${template.name} 운송장 업로드 - 주문번호열: ${orderColIdx}, 송장번호열: ${trackingColIdx}`);
 
             const trackingMap = new Map<string, string>();
             for (let i = 1; i < courierAoa.length; i++) {
