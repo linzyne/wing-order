@@ -155,6 +155,17 @@ async function findRequests(businessName) {
     .map((r) => r.document);
 }
 
+// 1MB 넘는 송장 파일은 윙발주가 wingRequests/{id}/parts 하위 문서로 나눠 담는다
+async function readParts(name) {
+  const res = await fetch(`https://firestore.googleapis.com/v1/${name}/parts?pageSize=100&${keyQ()}`);
+  if (!res.ok) throw new Error(`Firestore ${res.status}`);
+  return ((await res.json()).documents || [])
+    .map((d) => ({ i: Number(d.fields?.i?.integerValue || 0), data: d.fields?.data?.stringValue || '' }))
+    .sort((a, b) => a.i - b.i)
+    .map((p) => p.data)
+    .join('');
+}
+
 async function patchRequest(name, fields, updateTime) {
   const mask = Object.keys(fields).map((f) => `updateMask.fieldPaths=${f}`).join('&');
   const pre = updateTime ? `&currentDocument.updateTime=${encodeURIComponent(updateTime)}` : '';
@@ -210,7 +221,9 @@ async function pollRequests() {
       // 송장 올리기: 윙발주가 문서에 담아 보낸 송장 파일
       if (mode === 'invoice') {
         jobs[tab.id].fileName = f.fileName?.stringValue || '송장.xlsx';
-        jobs[tab.id].fileBase64 = f.fileBase64?.stringValue || '';
+        jobs[tab.id].fileBase64 = Number(f.partCount?.integerValue || 0) > 0
+          ? await readParts(doc.name)
+          : f.fileBase64?.stringValue || '';
       }
       await chrome.storage.local.set({ jobs });
     }

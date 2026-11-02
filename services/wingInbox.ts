@@ -1,4 +1,4 @@
-import { collection, onSnapshot, runTransaction, addDoc, getDocs, deleteDoc, query, where, serverTimestamp, type DocumentReference } from 'firebase/firestore';
+import { collection, onSnapshot, runTransaction, addDoc, getDocs, deleteDoc, doc, setDoc, updateDoc, query, where, serverTimestamp, type DocumentReference } from 'firebase/firestore';
 import { db } from '../firebase';
 
 declare var XLSX: any;
@@ -124,18 +124,31 @@ export async function requestWingInvoiceUpload(businessName: string, file: File,
   let bin = '';
   for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
   const fileBase64 = btoa(bin);
-  // Firestore 문서 한 개는 1MB까지
-  if (fileBase64.length > 1_000_000) throw new Error('송장 파일이 너무 커요(1MB 넘음)');
+  // Firestore 문서 한 개는 1MB까지라, 큰 파일은 parts 하위 문서로 나눠 담고 다 담은 뒤에 pending으로 바꾼다
+  const PART = 900_000;
+  const partCount = fileBase64.length > PART ? Math.ceil(fileBase64.length / PART) : 0;
   const ref = await addDoc(collection(db, 'wingRequests'), {
-    businessName, mode: 'invoice', status: 'pending', message: '', fileName: file.name, fileBase64,
-    batchId: `${Date.now()}`, createdAt: serverTimestamp(),
+    businessName, mode: 'invoice', status: partCount ? 'preparing' : 'pending', message: '', fileName: file.name,
+    fileBase64: partCount ? '' : fileBase64, partCount, batchId: `${Date.now()}`, createdAt: serverTimestamp(),
   });
+  const partRefs = Array.from({ length: partCount }, (_, i) => doc(ref, 'parts', String(i)));
+  if (partCount) {
+    try {
+      await Promise.all(partRefs.map((p, i) => setDoc(p, { i, data: fileBase64.slice(i * PART, (i + 1) * PART) })));
+      await updateDoc(ref, { status: 'pending', createdAt: serverTimestamp() });
+    } catch (err) {
+      partRefs.forEach(p => deleteDoc(p).catch(() => {}));
+      deleteDoc(ref).catch(() => {});
+      throw err;
+    }
+  }
   return new Promise<string>((resolve, reject) => {
     // 확장은 늦어도 30초마다 요청을 확인하므로, 45초 안에 안 가져가면 그 프로필이 안 열린 것 (가져간 뒤에는 5분까지 기다림)
     let claimed = false;
     const finish = (err: Error | null, msg = '') => {
       clearInterval(timer);
       unsub();
+      partRefs.forEach(p => deleteDoc(p).catch(() => {}));
       deleteDoc(ref).catch(() => {});
       err ? reject(err) : resolve(msg);
     };
