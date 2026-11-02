@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
-import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines } from '../hooks/useConsolidatedOrderConverter';
+import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines, PARCEL_SUFFIX } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
@@ -263,21 +263,45 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (mismatchCount > 0) sendNotif(`사이즈 불일치 ${mismatchCount}건`, `${companyName} 발주서 확인 필요`);
     }, [localResult]);
 
+    // 저장된 summary의 totalPrice는 발주서를 만들 때의 공급가로 굳어 있어, 그 뒤 품목/업체 탭에서
+    // 단가를 고쳐도 정산요약이 옛 단가로 나오던 것 — 지금 품목 설정 단가 × 개수로 다시 셈.
+    // 분할+택배비가 주문마다 얹히는 품목(배송지정산분리 아님)은 몇 주문에 붙었는지 몰라 그대로 둔다.
+    // 바뀐 게 없으면 같은 객체를 돌려준다(원래 정산 텍스트를 그대로 쓰기 위해).
+    const repriceSummary = <T extends Record<string, { count: number; totalPrice: number }>>(summary: T): T => {
+        const companyCfg = pricingConfig[companyName];
+        const products = companyCfg?.products || {};
+        let changed = false;
+        const out: Record<string, { count: number; totalPrice: number }> = {};
+        for (const [key, stat] of Object.entries(summary) as [string, { count: number; totalPrice: number }][]) {
+            const isParcel = isParcelEntryName(key);
+            const p = products[isParcel ? key.slice(0, -PARCEL_SUFFIX.length) : key];
+            let unit = 0;
+            if (p) {
+                if (isParcel) unit = p.shippingCost || 0;
+                else if (companyCfg?.shippingSettlementSplit || !((p.orderSplitCount || 1) > 1 && p.shippingCost)) unit = p.supplyPrice || 0;
+            }
+            const totalPrice = unit > 0 ? stat.count * unit : stat.totalPrice;
+            if (totalPrice !== stat.totalPrice) changed = true;
+            out[key] = { ...stat, totalPrice };
+        }
+        return (changed ? out : summary) as T;
+    };
+
     // 가구매 주문번호가 발주서에 포함된 경우 경고
     // 합산 헬퍼: previousRoundItems + 현재 세션 summary를 합산
     const _mergeSummaries = () => {
         const merged: Record<string, { count: number; totalPrice: number }> = {};
         for (const item of previousRoundItems) {
-            for (const [key, stat] of Object.entries(item.summary) as [string, { count: number; totalPrice: number }][]) {
+            for (const [key, stat] of Object.entries(repriceSummary(item.summary)) as [string, { count: number; totalPrice: number }][]) {
                 if (!merged[key]) merged[key] = { count: 0, totalPrice: 0 };
                 merged[key].count += stat.count;
                 merged[key].totalPrice += stat.totalPrice;
             }
         }
+        const storedSessionSummary = localResult?.summary
+            || ((!localResult && !isLocalProcessing) ? sessionResults?.[sessionId]?.itemSummary : undefined);
         let sessionSummary: Record<string, { count: number; totalPrice: number }> | null = summaryOverride
-            || localResult?.summary
-            || ((!localResult && !isLocalProcessing) ? sessionResults?.[sessionId]?.itemSummary : undefined)
-            || null;
+            || (storedSessionSummary ? repriceSummary(storedSessionSummary) : null);
         // 이전 차수가 있을 때, sessionSummary 수량이 실제 발주 수량(orderItems)보다 많으면
         // 누적 데이터가 잘못 저장된 것으로 판단 → orderItems에서 역산한 값 사용
         if (previousRoundItems.length > 0 && !localResult) {
@@ -622,6 +646,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         ? [...previousSessionIds.flatMap(id => workspace?.sessionAdjustments?.[id] || []), ...sessionAdjustments]
         : sessionAdjustments;
 
+    // 이 차수 하나의 정산 기준 summary: 손으로 고친 값 > 지금 단가로 다시 센 처리 결과
+    const storedSummary = (localResult?.summary || syncedData?.itemSummary || null) as Record<string, { count: number; totalPrice: number }> | null;
+    const repricedSummary = storedSummary ? repriceSummary(storedSummary) : null;
+    const isRepriced = !!storedSummary && repricedSummary !== storedSummary;
+    const effectiveSessionSummary: Record<string, { count: number; totalPrice: number }> = summaryOverride || repricedSummary || {};
+
     // ===== 예수금(예치금) 남은 잔액 =====
     // 마지막 차수 카드에서만 표시 (그날 그 업체 정산 총합계 = 이 카드의 총 합계와 일치).
     // 이미 오늘 "기록"했으면 원장에 확정된 잔액을, 아니면 (직전 잔액 − 현재 총 합계)를 미리보기로 보여준다.
@@ -630,7 +660,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (depositInfo.recordedToday) return depositInfo.recordedBalance;
         const base = isCumulativeView
             ? Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0)
-            : Object.values((summaryOverride || localResult?.summary || syncedData?.itemSummary || {}) as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
+            : Object.values(effectiveSessionSummary).reduce((a, b) => a + b.totalPrice, 0);
         const adj = allSessionAdjustments.reduce((a, b) => a + b.amount, 0);
         return depositInfo.balanceBeforeToday - (base + adj);
     })();
@@ -649,6 +679,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             return buildDepositTextFromSummary(summaryOverride, origText);
         }
         const base = localResult?.depositSummary || syncedData?.depositSummary || '';
+        if (isRepriced) return buildDepositTextFromSummary(repricedSummary!, base);
         // 발주서 없이 추가/차감 내역만 있는 세션도 정산 요약을 표시할 수 있어야 하므로,
         // "총 합계" 앵커가 있는 빈 템플릿을 만들어 아래 조정 내역 합산 로직이 동작하게 한다.
         if (!base && sessionAdjustments.length > 0) return buildDepositTextFromSummary({}, null);
@@ -660,7 +691,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const origExcel = localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel;
             return buildDepositExcelFromSummary(summaryOverride, origExcel);
         }
-        return localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel || '';
+        const baseExcel = localResult?.depositSummaryExcel || syncedData?.depositSummaryExcel || '';
+        if (isRepriced) return buildDepositExcelFromSummary(repricedSummary!, baseExcel);
+        return baseExcel;
     })();
 
     const onEffectiveTextChangeRef = useRef(onEffectiveTextChange);
@@ -675,7 +708,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
         const baseTotal = isCumulativeView
             ? Object.values(combinedSummary as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0)
-            : Object.values((summaryOverride || localResult?.summary || syncedData?.itemSummary || {}) as Record<string, { count: number; totalPrice: number }>).reduce((a, b) => a + b.totalPrice, 0);
+            : Object.values(effectiveSessionSummary).reduce((a, b) => a + b.totalPrice, 0);
         const adjTotal = allSessionAdjustments.reduce((a, b) => a + b.amount, 0);
         let kakaoText = effectiveDisplayText;
         if (allSessionAdjustments.length > 0) {
@@ -927,16 +960,17 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             }
             return;
         }
-        const effectiveSummary = summaryOverride || localResult.summary;
+        const repriced = repriceSummary(localResult.summary);
+        const effectiveSummary = summaryOverride || repriced;
         const orderTotal = Object.values(effectiveSummary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
         const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
         onResultUpdate(sessionId, orderTotal + adjTotal, excludedList.length, excludedList);
-        const effectiveExcel = summaryOverride ? buildDepositExcelFromSummary(summaryOverride, localResult.depositSummaryExcel) : localResult.depositSummaryExcel || '';
+        const effectiveExcel = (summaryOverride || repriced !== localResult.summary) ? buildDepositExcelFromSummary(effectiveSummary, localResult.depositSummaryExcel) : localResult.depositSummaryExcel || '';
         // 정산내역 텍스트를 역파싱해 itemSummary 도출 (공통 업로드 경로의 매칭 오류 방지)
         const parsedFromExcel = parseSummaryFromExcelText(effectiveExcel);
         const itemSummaryForUpdate = Object.keys(parsedFromExcel).length > 0 ? parsedFromExcel : effectiveSummary;
         onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, itemSummaryForUpdate, localResult.orderItems, localResult.preConsolidationByGroup, localResult.rowOrderNumbers, localResult.rowBundleNumbers, localResult.rowRecipientNames, localResult.rowPricing, mergeResults?.companyStats?.[companyName]?.failures);
-    }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments, summaryOverride]);
+    }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments, summaryOverride, pricingConfig]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
     const saveResultDebounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -945,11 +979,13 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (!localResult) return;
         if (saveResultDebounceRef.current) clearTimeout(saveResultDebounceRef.current);
         saveResultDebounceRef.current = setTimeout(() => {
-            const effectiveSummary = summaryOverride || localResult.summary;
+            const repriced = repriceSummary(localResult.summary);
+            const effectiveSummary = summaryOverride || repriced;
+            const rebuild = !!summaryOverride || repriced !== localResult.summary;
             const orderTotal = Object.values(effectiveSummary).reduce((a: number, b: any) => a + (b.totalPrice || 0), 0);
             const adjTotal = sessionAdjustments.reduce((a, b) => a + b.amount, 0);
-            const effectiveDepositText = summaryOverride ? buildDepositTextFromSummary(summaryOverride, localResult.depositSummary) : localResult.depositSummary || '';
-            const effectiveDepositExcel = summaryOverride ? buildDepositExcelFromSummary(summaryOverride, localResult.depositSummaryExcel) : localResult.depositSummaryExcel || '';
+            const effectiveDepositText = rebuild ? buildDepositTextFromSummary(effectiveSummary, localResult.depositSummary) : localResult.depositSummary || '';
+            const effectiveDepositExcel = rebuild ? buildDepositExcelFromSummary(effectiveSummary, localResult.depositSummaryExcel) : localResult.depositSummaryExcel || '';
             // mergeResults가 null이면(리셋/처리중) 마지막으로 저장된 병합 데이터 사용
             if (mergeResults) lastGoodMergeRef.current = { rows: mergeResults.rows || [], uploadRows: mergeResults.uploadRows || [], header: mergeResults.header || [] };
             const effectiveMerge = mergeResults ? lastGoodMergeRef.current! : (lastGoodMergeRef.current || { rows: [], uploadRows: [], header: [] });
@@ -983,7 +1019,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             updateField('sessionSummary', { ...(workspace?.sessionSummary || {}), [sessionId]: { orderCount: resultData.orderCount } });
         }, 500);
         return () => { if (saveResultDebounceRef.current) clearTimeout(saveResultDebounceRef.current); };
-    }, [localResult, mergeResults, excludedList, unmatchedList, sessionAdjustments, summaryOverride, sessionId]);
+    }, [localResult, mergeResults, excludedList, unmatchedList, sessionAdjustments, summaryOverride, sessionId, pricingConfig]);
 
     // Synced data → parent 콜백 (디바이스 2: Firestore에서 로드)
     const lastSyncedCallbackRef = useRef('');
@@ -2199,7 +2235,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     onClick={() => {
                                                         // summaryOverride > localResult.summary > 발주 품목 역산 > Firestore itemSummary
                                                         // effectiveDisplayExcelText는 마지막 차수에서 누적텍스트일 수 있으므로 사용 금지
-                                                        const currentSummary = summaryOverride || localResult?.summary || (() => {
+                                                        const currentSummary = summaryOverride || (localResult?.summary && repriceSummary(localResult.summary)) || (() => {
                                                             const savedItems = syncedData?.orderItems || [];
                                                             if (savedItems.length > 0) {
                                                                 const products = pricingConfig[companyName]?.products || {};
