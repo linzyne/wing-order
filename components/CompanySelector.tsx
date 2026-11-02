@@ -6074,7 +6074,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             </span>
                                         )}
                                         {fakeOrderAnalysis.duplicates.length > 0 && (
-                                            <span className="bg-pink-500 text-black text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
+                                            <span className="bg-pink-500 text-black text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black" title="같은 주문번호를 서로 다른 이름이 적음 — 누가 맞는지 몰라 매칭하지 않음">
                                                 중복번호 {fakeOrderAnalysis.duplicates.length}
                                             </span>
                                         )}
@@ -6099,6 +6099,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </button>
                         </div>
                     </div>
+
+                    {fakeOrderAnalysis.duplicates.length > 0 && (
+                        <div className="mb-3 bg-pink-950/30 border border-pink-500/30 rounded-xl px-3 py-2">
+                            <p className="text-[10px] text-pink-400 font-black mb-1">중복번호: 같은 주문번호를 다른 이름이 적었어요. 누가 맞는지 몰라 매칭 안 함 — 명단을 고쳐주세요.</p>
+                            {fakeOrderAnalysis.duplicates.map(dup => (
+                                <div key={dup.number} className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-[11px] font-black text-pink-300">{dup.names.join(', ')}</span>
+                                    <span className="text-[10px] font-mono text-pink-500/80">{dup.number}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
 
                     {showFakeDetail && fakeOrderAnalysis.inputLineCount > 0 && (
                         <div className="mb-3 bg-zinc-950/80 p-3 rounded-xl border border-zinc-800 animate-fade-in max-h-[250px] overflow-auto custom-scrollbar">

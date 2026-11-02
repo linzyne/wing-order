@@ -916,6 +916,20 @@ const App: React.FC = () => {
     });
   }, [globalFakeOrderInput, allBusinesses, isOrderMatchedForBusiness]);
 
+  // 같은 사업자에서 같은 주문번호를 서로 다른 이름이 적은 줄 (사업자 칸에서 매칭 안 하고 중복번호로 경고하는 것과 같은 기준)
+  const globalFakeDuplicates = useMemo(() => {
+    const byKey = new Map<string, { businessName: string; orderNum: string; names: string[] }>();
+    globalFakeOrderInput.split('\n').forEach(line => {
+      const parsed = parseGlobalFakeLine(line, allBusinesses);
+      if (!parsed?.businessId || !parsed.orderNum || !parsed.name) return;
+      const key = `${parsed.businessId}|${parsed.orderNum}`;
+      const entry = byKey.get(key) || { businessName: parsed.businessName, orderNum: parsed.orderNum, names: [] };
+      if (!entry.names.includes(parsed.name)) entry.names.push(parsed.name);
+      byKey.set(key, entry);
+    });
+    return Array.from(byKey.values()).filter(d => d.names.length > 1);
+  }, [globalFakeOrderInput, allBusinesses]);
+
   const globalFakeLineStats = useMemo(() => {
     const total = globalFakeOrderInput.trim() ? globalFakeOrderInput.trim().split('\n').filter(Boolean).length : 0;
     return { total, matched: total - globalFakeUnmatchedLines.length };
@@ -1040,6 +1054,7 @@ const App: React.FC = () => {
             <UserGroupIcon className="w-3.5 h-3.5 text-violet-400" />
             {hasNewMissionMemo && !showGlobalFake && <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[9px] font-black">새 메모</span>}
             <span>가구매{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}</span>
+            {globalFakeDuplicates.length > 0 && <span className="px-1 rounded bg-pink-500 text-black text-[9px] font-black">중복 {globalFakeDuplicates.length}</span>}
           </button>
 
           <div className="w-px h-5 bg-zinc-800 mx-0.5" />
@@ -1265,7 +1280,20 @@ const App: React.FC = () => {
                       {unmatchedCount > 0 && (
                         <span className="text-[10px] text-rose-400 font-black">미매칭 {unmatchedCount}</span>
                       )}
+                      {globalFakeDuplicates.length > 0 && (
+                        <span className="text-[10px] text-pink-400 font-black">중복번호 {globalFakeDuplicates.length}</span>
+                      )}
                     </div>
+                    {globalFakeDuplicates.length > 0 && (
+                      <div className="bg-pink-950/30 border border-pink-500/30 rounded-xl px-3 py-2 space-y-0.5">
+                        <p className="text-[9px] text-pink-400 font-black mb-1">중복번호: 같은 주문번호를 다른 이름이 적었어요. 누가 맞는지 몰라 매칭 안 함 — 명단을 고쳐주세요.</p>
+                        {globalFakeDuplicates.map(d => (
+                          <div key={`${d.businessName}|${d.orderNum}`} className="text-[10px] font-mono text-pink-300">
+                            {d.businessName} · <span className="font-black">{d.names.join(', ')}</span> · {d.orderNum}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {allBusinesses
                       .filter(b => perBusinessFakeStats[b.id])
                       .map(b => {
