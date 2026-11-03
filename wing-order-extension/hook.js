@@ -35,9 +35,26 @@
     }
   };
 
+  // 송장 '등록하기' 뒤 2분 동안은 윙 서버가 돌려주는 글자(JSON)를 확장에 넘긴다 — 등록 결과(성공·실패 건수)를 읽으려고
+  const RESP_ARM = '__wingOrderRespArm';
+  const respArmed = () => {
+    try {
+      return Date.now() - Number(sessionStorage.getItem(RESP_ARM) || 0) < 2 * 60 * 1000;
+    } catch (err) {
+      return false;
+    }
+  };
+  const tellResp = (url, status, text) => post({ type: 'RESP', url: String(url || '').slice(0, 200), status, body: String(text || '').slice(0, 1500) });
+
   const origFetch = window.fetch;
   window.fetch = async function (...args) {
     const res = await origFetch.apply(this, args);
+    if (respArmed()) {
+      try {
+        const url = String((args[0] && args[0].url) || args[0] || '');
+        if (/json|text\/plain/i.test(res.headers.get('content-type') || '')) res.clone().text().then((t) => tellResp(url, res.status, t)).catch(() => {});
+      } catch (err) {}
+    }
     if (armed()) {
       try {
         const url = String((args[0] && args[0].url) || args[0] || '');
@@ -56,6 +73,15 @@
     return origOpen.call(this, m, u, ...rest);
   };
   XMLHttpRequest.prototype.send = function (...args) {
+    if (respArmed()) {
+      this.addEventListener('load', () => {
+        try {
+          if (!/json|text\/plain/i.test(this.getResponseHeader('content-type') || '')) return;
+          const t = this.responseType === '' || this.responseType === 'text' ? this.responseText : this.responseType === 'json' ? JSON.stringify(this.response) : '';
+          tellResp(this.__wingU, this.status, t);
+        } catch (err) {}
+      });
+    }
     if (armed()) {
       this.addEventListener('load', () => {
         try {

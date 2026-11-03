@@ -12,6 +12,7 @@
   const ARM = '__wingOrderArm';
   const DIALOG_ARM = '__wingOrderDialogArm';
   const SILENT = '__wingOrderSilent';
+  const RESP_ARM = '__wingOrderRespArm';
   const HOOK_SRC = 'wing-order-hook';
   // 윙발주에서 온 받기 요청으로 확장이 연 탭이면 { mode } — 진행 상황과 결과를 확장에 알린다
   let job = null;
@@ -102,6 +103,7 @@
   let captured = null;
   let capturedUrl = null;
   const alerts = [];
+  const responses = [];
   window.addEventListener('message', (e) => {
     if (e.source !== window || !e.data || e.data.source !== HOOK_SRC) return;
     const d = e.data;
@@ -114,6 +116,9 @@
     } else if (d.type === 'URL') {
       L(`[hook] 파일 주소(${d.via}) ${String(d.url).slice(0, 200)}`);
       capturedUrl = capturedUrl || d.url;
+    } else if (d.type === 'RESP') {
+      L(`[윙 응답] ${d.status} ${d.url} ${d.body.replace(/\s+/g, ' ').slice(0, 400)}`);
+      responses.push(d);
     } else if (d.type === 'FILE' && !captured) {
       L(`[hook] 엑셀 받음(${d.via}) ${d.size}바이트`);
       captured = d.base64;
@@ -300,14 +305,6 @@
 
   // ── 송장 올리기 (윙발주 요청) ──
   // 상품준비중 → 엑셀 대량배송 → 파일 넣기 → 등록하기. 끝나면 화면·알림에 뜬 결과 글자를 그대로 알린다.
-  const RESULT_RE = /(성공|실패|완료|오류|등록되었|처리되었|업로드)[^\n]{0,60}/g;
-  const resultText = () => {
-    const texts = [...document.querySelectorAll('[role="dialog"],.modal,[class*="modal"],[class*="Modal"],[class*="popup"],[class*="Popup"]')]
-      .filter((el) => visible(el) && !box.contains(el))
-      .map((el) => (el.innerText || '').trim())
-      .filter(Boolean);
-    return texts.join(' / ').replace(/\s+/g, ' ').slice(0, 300);
-  };
   // 등록 결과 창을 닫고 상품준비중을 다시 눌러 건수를 읽는다
   const readReadyAfterUpload = async () => {
     const close = [...document.querySelectorAll('button,a')].find((b) => visible(b) && !box.contains(b) && /^(닫기|확인)$/.test(ownText(b)));
@@ -382,35 +379,50 @@
     L(`파일 넣음: ${name} ${bytes.length}바이트`);
     // 창에 파일 이름이 보이면 화면이 파일을 받은 것
     const shortName = name.replace(/\.xlsx?$/i, '').slice(-12);
-    const taken = await waitFor(() => (form.innerText || '').includes(shortName), 5000);
+    const taken = await waitFor(() => [...form.querySelectorAll('input')].some((el) => (el.value || '').includes(shortName)) || (form.innerText || '').includes(shortName), 5000);
     L(`창에 파일 이름 보임: ${taken ? '예' : '아니오'} · 창 글자: ${(form.innerText || '').replace(/\s+/g, ' ').slice(0, 300)}`);
+    // 엑셀 대량배송 창 — 클래스·role이 없는 div라 제목 글자로 찾는다. 등록 결과는 이 창 안에 뜬다
+    let dialog = form;
+    while (dialog.parentElement && dialog.parentElement !== document.body && !/^엑셀\s*대량\s*배송/.test((dialog.innerText || '').trim())) dialog = dialog.parentElement;
+    const dialogLines = () => (dialog.innerText || '').split('\n').map((t) => t.trim()).filter(Boolean);
+    const beforeLines = new Set(dialogLines());
+    const newLines = () => dialogLines().filter((t) => !beforeLines.has(t) && !t.includes(shortName));
     alerts.length = 0;
+    responses.length = 0;
     sessionStorage.setItem(DIALOG_ARM, String(Date.now()));
+    sessionStorage.setItem(RESP_ARM, String(Date.now()));
     L('등록하기 클릭');
     show('등록하는 중…');
     reg.click();
-    // 결과 알림창이나 결과 글자가 뜰 때까지 (최대 30초)
-    const got = await waitFor(() => alerts.length || (resultText().match(RESULT_RE) || []).length, 30000, 500);
-    await sleep(1500);
-    const shown = [alerts.join(' / '), resultText()].filter(Boolean).join(' / ');
-    L(`결과: ${shown || '(글자 없음)'}`);
+    // 결과: 알림창, 창 안에 새로 생긴 글자, 윙 서버 응답 중 하나라도 올 때까지 (최대 30초), 오면 조금 더 모은다
+    const got = await waitFor(() => alerts.length || newLines().length || responses.length, 30000, 500);
+    await sleep(2500);
+    sessionStorage.removeItem(RESP_ARM);
+    const lines = newLines();
+    const resp = responses.map((r) => `${r.status} ${r.body}`).join(' / ');
+    const shown = [alerts.join(' / '), lines.join(' · ')].filter(Boolean).join(' / ');
+    L(`결과: 알림 ${alerts.length}개 · 창 새 글자 ${lines.length}줄 · 응답 ${responses.length}개 · ${shown || '(글자 없음)'}`);
     if (!got) logScreen('등록하기 뒤 결과 없음');
-    // 안내 글자에 걸리지 않게, 알림창은 실패·오류 말만, 화면 글자는 '실패 n건'만 실패로 본다
-    if (/실패|오류|올바르지|잘못|형식/.test(alerts.join(' ')) || /실패\s*:?\s*[1-9]/.test(shown)) throw new Error(`윙: ${shown.slice(0, 200)}`);
-    // 송장이 들어간 주문은 상품준비중에서 빠지므로, 남은 건수로 실제로 들어갔는지 본다 (윙이 반영할 시간을 조금 줌)
-    show('남은 상품준비중 읽는 중…');
-    await sleep(3000);
-    let left = await readReadyAfterUpload();
-    if (left != null && readyBefore != null && left >= readyBefore) {
-      await sleep(5000);
-      left = (await readReadyAfterUpload()) ?? left;
+    const all = `${shown} ${resp}`;
+    const num = (re) => { const m = re.exec(all); return m ? Number(m[m.length - 1]) : null; };
+    const fail = num(/실패\s*:?\s*(\d+)|"(?:fail|error)\w*"\s*:\s*(\d+)/i);
+    const ok = num(/성공\s*:?\s*(\d+)|"success\w*"\s*:\s*(\d+)/i);
+    // 안내 글자에 걸리지 않게, 알림창은 실패·오류 말만, 그 밖엔 실패 건수가 1 이상일 때만 실패로 본다
+    if (/실패|오류|올바르지|잘못|형식/.test(alerts.join(' ')) || (fail != null && fail > 0) || responses.some((r) => r.status >= 400)) {
+      throw new Error(`윙: ${(shown || resp).slice(0, 200)}`);
     }
-    if (left != null) reportCount(left);
-    if (left != null && readyBefore != null && left >= readyBefore) {
-      throw new Error(`윙에 안 들어감 — 상품준비중 ${readyBefore}건 그대로${shown ? ` (윙: ${shown.slice(0, 80)})` : ''}`);
+    // 윙 화면의 상품준비중 숫자는 몇 분씩 늦게 바뀌어서 성공·실패 판단에 쓰지 않는다
+    const result = ok != null ? `윙 등록 성공 ${ok}건${fail != null ? ` · 실패 ${fail}건` : ''}`
+      : shown ? `윙: ${shown.slice(0, 150)}`
+      : responses.length ? '등록함 (윙 응답 받음)'
+      : '등록하기 누름 — 결과 못 읽음, 윙 배송지시에서 확인';
+    await sleep(2000);
+    const left = await readReadyAfterUpload();
+    if (left != null && readyBefore != null && left < readyBefore) {
+      reportCount(left);
+      return `${result} · 상품준비중 ${readyBefore} → ${left}건`;
     }
-    const result = got ? shown.slice(0, 200) || '등록함' : '등록함';
-    return left != null ? `${result} · 상품준비중 ${readyBefore ?? '?'} → ${left}건` : `${result} (남은 건수 못 읽음 — 윙에서 확인)`;
+    return result;
   };
 
   // ── 실행 ──
