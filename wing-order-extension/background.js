@@ -13,7 +13,14 @@ const onArmedStart = new Set();
 
 // 보내는 엑셀이 다운로드 폴더에도 저장될 때 윙 원래 이름 대신 윙발주에 보낸 이름으로 저장
 // (보내기가 실패해 직접 올려도 사업자·시간이 그대로 인식되게)
+// 진단 로그 이름 — 이 확장이 이름 정하기에 끼어들면 download()에 준 이름이 무시돼 '다운로드 (n).json'이 되므로 여기서 다시 준다
+let pendingLogName = '';
 chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+  if (pendingLogName && item.byExtensionId === chrome.runtime.id && /^data:application\/json/.test(item.url || '')) {
+    suggest({ filename: pendingLogName, conflictAction: 'uniquify' });
+    pendingLogName = '';
+    return;
+  }
   if (armedName && Date.now() - armedAt < 2 * 60 * 1000 && /\.xlsx?$/i.test(item.filename || '')) {
     suggest({ filename: armedName, conflictAction: 'uniquify' });
     armedName = '';
@@ -95,7 +102,8 @@ function saveLog(log, page) {
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   const json = JSON.stringify({ version: chrome.runtime.getManifest().version, page, log }, null, 2);
   const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
-  chrome.downloads.download({ url: dataUrl, filename: `윙주문서로그_${stamp}.json`, saveAs: false });
+  pendingLogName = `윙주문서로그_${stamp}.json`;
+  chrome.downloads.download({ url: dataUrl, filename: pendingLogName, saveAs: false });
 }
 
 // ── 자동 새로고침 ──

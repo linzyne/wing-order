@@ -19,6 +19,7 @@ interface MasterUploadHandlers {
   getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[];
   downloadInvoice?: (companyName: string) => void;
   downloadAllInvoices?: () => void;
+  getCompanyInvoiceWorkbookFile?: (companyName: string) => File;
 }
 
 interface Business { id: string; displayName: string; }
@@ -45,6 +46,7 @@ interface Props {
   onCourierFileRemove?: (templateId: string, index: number) => void;
   onCourierResultDownload?: (templateId: string) => void;
   onDirectCoupangUpload?: (businessId: string, onStep?: (step: string) => void) => Promise<string | void>;
+  onDirectCoupangUploadCompany?: (businessId: string, companyName: string, onStep?: (step: string) => void) => Promise<string | void>;
   onCourierDirectCoupangUpload?: (templateId: string, businessId: string, onStep?: (step: string) => void) => Promise<string | void>;
   mailWatcher?: MailInvoiceWatcher;
 }
@@ -156,7 +158,7 @@ const MailWatchSection: React.FC<{ w: MailInvoiceWatcher }> = ({ w }) => {
   );
 };
 
-const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, onReset, couriers, hasFakeOrders, onCourierFilesAdd, onCourierFileRemove, onCourierResultDownload, onDirectCoupangUpload, onCourierDirectCoupangUpload, mailWatcher }) => {
+const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, onReset, couriers, hasFakeOrders, onCourierFilesAdd, onCourierFileRemove, onCourierResultDownload, onDirectCoupangUpload, onDirectCoupangUploadCompany, onCourierDirectCoupangUpload, mailWatcher }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; uploadCount: number }[] }[]>([]);
@@ -512,8 +514,10 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
               <div className="flex flex-col gap-1.5">
                 {biz.companies.map(c => {
                   const isFake = c.name === '가구매';
+                  const ck = `${biz.businessId}::${c.name}`;
                   return (
-                    <div key={c.name} className="flex items-center gap-1.5">
+                    <div key={c.name}>
+                    <div className="flex items-center gap-1.5">
                       <span className={`text-[11px] flex-1 ${isFake ? 'text-pink-300' : 'text-white'}`}>
                         {c.name}
                       </span>
@@ -528,6 +532,24 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                       >
                         다운
                       </button>
+                      {onDirectCoupangUploadCompany && (
+                        <button
+                          onClick={() => runCoupangUpload(ck, setCoupangStates, onStep => onDirectCoupangUploadCompany(biz.businessId, c.name, onStep))}
+                          disabled={coupangStates[ck] === 'loading'}
+                          className={`px-2 py-0.5 text-[11px] font-black rounded-lg transition-colors border shrink-0 ${
+                            coupangStates[ck] === 'loading'
+                              ? 'bg-sky-900 text-zinc-400 cursor-wait border-sky-800'
+                              : coupangStates[ck] === 'success'
+                              ? 'bg-emerald-700 text-white border-emerald-600'
+                              : 'bg-sky-900/60 text-sky-200 hover:bg-sky-700 hover:text-white border-sky-700/60'
+                          }`}
+                          title={`${c.name} 송장만 쿠팡 Wing에 업로드`}
+                        >
+                          {coupangStates[ck] === 'loading' ? '…' : coupangStates[ck] === 'success' ? '✓' : '쿠팡 ↑'}
+                        </button>
+                      )}
+                    </div>
+                    <CoupangProgressLine k={ck} />
                     </div>
                   );
                 })}

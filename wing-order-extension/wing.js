@@ -316,23 +316,60 @@
     L(`등록 뒤 상품준비중: ${n ?? '못 읽음'}`);
     return n;
   };
+  // 진단: 요소 주변 모습을 로그에 남긴다 (윙 화면이 바뀌면 이걸 보고 고침)
+  const describe = (el) => {
+    if (!el) return '-';
+    const cls = typeof el.className === 'string' ? el.className.slice(0, 60) : '';
+    return `<${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls ? ' .' + cls : ''}> "${ownText(el).slice(0, 80)}"`;
+  };
+  const logScreen = (title) => {
+    const inputs = [...document.querySelectorAll('input[type="file"]')];
+    L(`${title} · 파일 칸 ${inputs.length}개`);
+    inputs.forEach((el, i) => {
+      let p = el.parentElement;
+      for (let k = 0; k < 4 && p && ownText(p).length < 10; k++) p = p.parentElement;
+      L(`  파일칸${i}: accept=${el.accept || '-'} 보임=${visible(el)} 주변=${describe(p)}`);
+    });
+    const frames = [...document.querySelectorAll('iframe')].filter(visible);
+    if (frames.length) L(`  iframe ${frames.length}개: ${frames.map((f) => (f.src || '').slice(0, 100)).join(' | ')}`);
+    const btns = [...document.querySelectorAll('button,a,[role="button"]')]
+      .filter((b) => visible(b) && !box.contains(b) && ownText(b) && ownText(b).length < 20)
+      .map((b) => ownText(b));
+    L(`  버튼: ${[...new Set(btns)].slice(0, 60).join(' | ')}`);
+    const dialogs = [...document.querySelectorAll('[role="dialog"],.modal,[class*="modal"],[class*="Modal"],[class*="popup"],[class*="Popup"],[class*="layer"],[class*="Layer"]')]
+      .filter((el) => visible(el) && !box.contains(el));
+    dialogs.slice(0, 5).forEach((d, i) => L(`  창${i}: ${describe(d)} · ${(d.innerText || '').replace(/\s+/g, ' ').slice(0, 300)}`));
+  };
+  // 파일 칸과 "등록하기"가 함께 들어 있는 가장 작은 상자 = 엑셀 대량배송 창
+  const findUploadForm = () => {
+    const regs = [...document.querySelectorAll('button,a,[role="button"]')]
+      .filter((b) => visible(b) && !box.contains(b) && /^등록하기$/.test(ownText(b)));
+    for (const reg of regs) {
+      for (let p = reg.parentElement; p && p !== document.body; p = p.parentElement) {
+        const input = p.querySelector('input[type="file"]');
+        if (input) return { reg, input, form: p };
+      }
+    }
+    return null;
+  };
   const runInvoice = async ({ fileName: name, fileBase64 }) => {
     if (!fileBase64) throw new Error('송장 파일이 비어 있어요');
-    await openTab('상품준비중');
+    const readyBefore = await openTab('상품준비중');
     const btn = await findButton(/엑셀\s*대량\s*배송/);
     if (!btn) throw new Error('"엑셀 대량배송" 버튼을 못 찾았어요');
-    const before = new Set(document.querySelectorAll('input[type="file"]'));
     sessionStorage.setItem(DIALOG_ARM, String(Date.now()));
-    L(`엑셀 대량배송 클릭: "${ownText(btn)}"`);
+    L(`엑셀 대량배송 클릭: ${describe(btn)}`);
     show('엑셀 대량배송 여는 중…');
     btn.click();
-    // 새로 생긴 파일 칸을 먼저, 없으면 화면의 마지막 파일 칸
-    const input = await waitFor(() => {
-      const all = [...document.querySelectorAll('input[type="file"]')];
-      return all.find((el) => !before.has(el)) || (all.length ? all[all.length - 1] : null);
-    }, 10000);
-    if (!input) throw new Error('송장 파일 칸을 못 찾았어요');
-    L(`파일 칸: accept=${input.accept || '-'} 새로 생김=${!before.has(input)}`);
+    await sleep(1500);
+    logScreen('엑셀 대량배송 누른 뒤');
+    const found = await waitFor(findUploadForm, 10000);
+    if (!found) {
+      logScreen('등록 창 못 찾음');
+      throw new Error('엑셀 대량배송 창(파일 칸 + 등록하기)을 못 찾았어요 — 로그 보내 주세요');
+    }
+    const { reg, input, form } = found;
+    L(`등록 창: ${describe(form)} · 파일 칸 accept=${input.accept || '-'}`);
     show('송장 파일 넣는 중…');
     const bin = atob(fileBase64);
     const bytes = new Uint8Array(bin.length);
@@ -343,28 +380,37 @@
     input.dispatchEvent(new Event('input', { bubbles: true }));
     input.dispatchEvent(new Event('change', { bubbles: true }));
     L(`파일 넣음: ${name} ${bytes.length}바이트`);
-    await sleep(1500);
-    const ok = await findButton(/^등록하기$/);
-    if (!ok) throw new Error('"등록하기" 버튼을 못 찾았어요');
+    // 창에 파일 이름이 보이면 화면이 파일을 받은 것
+    const shortName = name.replace(/\.xlsx?$/i, '').slice(-12);
+    const taken = await waitFor(() => (form.innerText || '').includes(shortName), 5000);
+    L(`창에 파일 이름 보임: ${taken ? '예' : '아니오'} · 창 글자: ${(form.innerText || '').replace(/\s+/g, ' ').slice(0, 300)}`);
     alerts.length = 0;
     sessionStorage.setItem(DIALOG_ARM, String(Date.now()));
     L('등록하기 클릭');
     show('등록하는 중…');
-    ok.click();
+    reg.click();
     // 결과 알림창이나 결과 글자가 뜰 때까지 (최대 30초)
     const got = await waitFor(() => alerts.length || (resultText().match(RESULT_RE) || []).length, 30000, 500);
     await sleep(1500);
     const shown = [alerts.join(' / '), resultText()].filter(Boolean).join(' / ');
     L(`결과: ${shown || '(글자 없음)'}`);
+    if (!got) logScreen('등록하기 뒤 결과 없음');
     // 안내 글자에 걸리지 않게, 알림창은 실패·오류 말만, 화면 글자는 '실패 n건'만 실패로 본다
     if (/실패|오류|올바르지|잘못|형식/.test(alerts.join(' ')) || /실패\s*:?\s*[1-9]/.test(shown)) throw new Error(`윙: ${shown.slice(0, 200)}`);
-    const result = got ? shown.slice(0, 200) || '등록함' : '등록하기 누름 (결과 글자 못 읽음 — 윙에서 확인)';
-    // 송장이 들어간 주문은 상품준비중에서 빠지므로, 남은 건수를 다시 읽어 알린다 (윙이 반영할 시간을 조금 줌)
+    // 송장이 들어간 주문은 상품준비중에서 빠지므로, 남은 건수로 실제로 들어갔는지 본다 (윙이 반영할 시간을 조금 줌)
     show('남은 상품준비중 읽는 중…');
     await sleep(3000);
-    const left = await readReadyAfterUpload();
+    let left = await readReadyAfterUpload();
+    if (left != null && readyBefore != null && left >= readyBefore) {
+      await sleep(5000);
+      left = (await readReadyAfterUpload()) ?? left;
+    }
     if (left != null) reportCount(left);
-    return left != null ? `${result} · 남은 상품준비중 ${left}건` : result;
+    if (left != null && readyBefore != null && left >= readyBefore) {
+      throw new Error(`윙에 안 들어감 — 상품준비중 ${readyBefore}건 그대로${shown ? ` (윙: ${shown.slice(0, 80)})` : ''}`);
+    }
+    const result = got ? shown.slice(0, 200) || '등록함' : '등록함';
+    return left != null ? `${result} · 상품준비중 ${readyBefore ?? '?'} → ${left}건` : `${result} (남은 건수 못 읽음 — 윙에서 확인)`;
   };
 
   // ── 실행 ──
