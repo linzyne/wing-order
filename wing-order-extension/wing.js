@@ -386,7 +386,9 @@
     while (dialog.parentElement && dialog.parentElement !== document.body && !/^엑셀\s*대량\s*배송/.test((dialog.innerText || '').trim())) dialog = dialog.parentElement;
     const dialogLines = () => (dialog.innerText || '').split('\n').map((t) => t.trim()).filter(Boolean);
     const beforeLines = new Set(dialogLines());
-    const newLines = () => dialogLines().filter((t) => !beforeLines.has(t) && !t.includes(shortName));
+    // 창의 안내문(※ 엑셀 파일을 업로드 하세요…)은 등록 뒤 다시 그려져도 결과가 아니라서 뺀다
+    const isGuide = (t) => /^※|업로드\s*하세요|작성\s*가이드|필수\s*정보|파일\s*선택|다운로드\s*받은/.test(t);
+    const newLines = () => dialogLines().filter((t) => !beforeLines.has(t) && !t.includes(shortName) && !isGuide(t));
     alerts.length = 0;
     responses.length = 0;
     sessionStorage.setItem(DIALOG_ARM, String(Date.now()));
