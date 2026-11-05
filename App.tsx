@@ -59,6 +59,8 @@ const sameLines = (a: string, b: string) => {
 const MISSION_CLEAR_REQ_KEY = 'missionClearRequestId';
 // 가구매 명단 창을 열어서 본 미션허브 메모 { bizId: 메모 } — 다르면 새 메모
 const MISSION_MEMO_SEEN_KEY = 'missionHubMemoSeen';
+// 가져오기로 받은 가구매 항목 id — 미션클리어 때 화면에 있는 명단만 예약완료하려고 같이 보관
+const MISSION_FAKE_ITEMS_KEY = 'missionHubImportedFakeItems';
 function loadPersistedBulkDepositPaste(): string {
   try {
     return localStorage.getItem(BULK_DEPOSIT_PASTE_KEY) || '';
@@ -329,8 +331,9 @@ const App: React.FC = () => {
     setBulkExtraRowsMap(parseBulkDepositLines(bulkPasteText).grouped);
     setShowBulkDepositModal(true);
   }, [allBusinesses, bulkPasteText, parseBulkDepositLines]);
-  // 미션허브 자동 연동 (가구매 = 윙업무 예약대기, 입금목록 = 윙업무 입금전)
-  // 두 칸은 항상 미션허브와 똑같이 맞춤 — 예전에 붙여넣은 줄이나 직접 고친 내용도 미션허브 내용으로 바뀜
+  // 미션허브 연동 (가구매 = 윙업무 예약대기, 입금목록 = 윙업무 입금전)
+  // 가구매 명단은 '가져오기' 누를 때만 미션허브 내용으로 바꿈 (작업 중에 줄이 바뀌거나 섞이지 않게),
+  // 입금목록은 항상 미션허브와 똑같이 맞춤
   const [missionFeed, setMissionFeed] = useState<MissionHubFeed | null>(null);
   useEffect(() => subscribeMissionHubFeed(setMissionFeed), []);
   // 사파리 등은 안 보는 탭을 멈춰두므로, 탭으로 돌아오는 순간 서버에서 바로 다시 받아옴 (받는 동안 "확인 중" 표시)
@@ -360,12 +363,29 @@ const App: React.FC = () => {
       window.removeEventListener('online', refresh);
     };
   }, []);
-  useEffect(() => {
-    if (!missionFeed) return;
-    if (sameLines(globalFakeOrderInput, missionFeed.fakeLines)) return;
-    setGlobalFakeOrderInput(missionFeed.fakeLines);
-    setMatchedFakeNums({});
-  }, [missionFeed, globalFakeOrderInput]);
+  const [importedFakeItems, setImportedFakeItems] = useState<MissionHubFeed['fakeItems']>(() => { try { return JSON.parse(readLs(MISSION_FAKE_ITEMS_KEY) || '[]'); } catch { return []; } });
+  useEffect(() => { writeLs(MISSION_FAKE_ITEMS_KEY, JSON.stringify(importedFakeItems)); }, [importedFakeItems]);
+  const [missionFakeImporting, setMissionFakeImporting] = useState(false);
+  const handleImportMissionFake = async () => {
+    if (missionFakeImporting) return;
+    setMissionFakeImporting(true);
+    try {
+      // 누른 순간의 미션허브 내용을 서버에서 바로 받음
+      const feed = await fetchMissionHubFeedFromServer();
+      if (!feed) { alert('미션허브 연동 내용이 없습니다. 미션허브를 열어주세요.'); return; }
+      setMissionFeed(feed);
+      setGlobalFakeOrderInput(feed.fakeLines);
+      setImportedFakeItems(feed.fakeItems);
+      setMatchedFakeNums({});
+      setIsEditingGlobalFake(false);
+    } catch (e) {
+      alert('미션허브 가구매 명단 가져오기 실패: ' + e);
+    } finally {
+      setMissionFakeImporting(false);
+    }
+  };
+  // 가져온 뒤 미션허브 쪽 명단이 바뀌었으면 알려만 줌
+  const missionFakeChanged = !!missionFeed && !sameLines(globalFakeOrderInput, missionFeed.fakeLines);
   useEffect(() => {
     if (!missionFeed) return;
     if (sameLines(bulkPasteText, missionFeed.depositText)) return;
@@ -408,12 +428,12 @@ const App: React.FC = () => {
   const missionClearPending = missionClearSending || missionClearReq?.status === 'pending';
   const handleMissionClear = async () => {
     if (!missionFeed || missionClearPending) return;
-    const fakeCount = missionFeed.fakeItems.length, depositCount = missionFeed.depositItems.length;
+    const fakeCount = importedFakeItems.length, depositCount = missionFeed.depositItems.length;
     if (fakeCount + depositCount === 0) { alert('미션허브에서 연동된 항목이 없습니다.'); return; }
     if (!window.confirm(`미션클리어\n\n가구매 ${fakeCount}건 → 예약완료\n입금 ${depositCount}건 → 입금완료\n\n처리할까요?`)) return;
     setMissionClearSending(true);
     try {
-      const id = await requestMissionClear(missionFeed.fakeItems, missionFeed.depositItems, Date.now());
+      const id = await requestMissionClear(importedFakeItems, missionFeed.depositItems, Date.now());
       writeLs(MISSION_CLEAR_REQ_KEY, id);
       setMissionClearReqId(id);
     } catch (e) {
@@ -1207,16 +1227,18 @@ const App: React.FC = () => {
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">가구매 명단</h3>
                 <div className="flex items-center gap-2">
+                  <button onClick={handleImportMissionFake} disabled={missionFakeImporting} className="px-2 py-0.5 rounded-md bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-[10px] text-white font-black transition-colors">{missionFakeImporting ? '가져오는 중…' : '가져오기'}</button>
                   {globalFakeOrderInput.trim() && !isEditingGlobalFake && (
                     <button onClick={() => setIsEditingGlobalFake(true)} className="text-[10px] text-zinc-500 hover:text-white font-black transition-colors">편집</button>
                   )}
                   {globalFakeOrderInput.trim() && (
-                    <button onClick={() => { setGlobalFakeOrderInput(''); setMatchedFakeNums({}); }} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
+                    <button onClick={() => { setGlobalFakeOrderInput(''); setImportedFakeItems([]); setMatchedFakeNums({}); }} className="text-[10px] text-zinc-500 hover:text-rose-400 font-black transition-colors">초기화</button>
                   )}
                 </div>
               </div>
               <p className="text-zinc-600 text-[10px] mb-1 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
               <p className={`text-[10px] mb-2 font-bold ${missionFeedStale ? 'text-amber-400' : 'text-emerald-500'}`}>{missionFeedStatus}</p>
+              {missionFakeChanged && <p className="text-[10px] mb-2 font-bold text-sky-400">미션허브 명단이 바뀜 — 반영하려면 가져오기</p>}
               {missionMemos.length > 0 && (
                 <div className="mb-2 space-y-1.5">
                   {missionMemos.map(m => (
@@ -1880,11 +1902,11 @@ const App: React.FC = () => {
                   </button>
                   <button
                     onClick={handleMissionClear}
-                    disabled={!missionFeed || missionFeedChecking || missionClearPending || (missionFeed.fakeItems.length + missionFeed.depositItems.length === 0)}
+                    disabled={!missionFeed || missionFeedChecking || missionClearPending || (importedFakeItems.length + missionFeed.depositItems.length === 0)}
                     className="flex items-center gap-2 px-5 py-2 text-xs font-black text-white bg-pink-600 hover:bg-pink-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all"
                     title="미션허브 윙업무: 예약완료 미처리 → 예약완료, 전체 입금전 → 입금완료"
                   >
-                    {missionClearPending ? '처리 중…' : `미션클리어${missionFeed ? ` (${missionFeed.fakeItems.length}/${missionFeed.depositItems.length})` : ''}`}
+                    {missionClearPending ? '처리 중…' : `미션클리어${missionFeed ? ` (${importedFakeItems.length}/${missionFeed.depositItems.length})` : ''}`}
                   </button>
                 </div>
               </div>
