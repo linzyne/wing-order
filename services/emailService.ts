@@ -53,7 +53,7 @@ export const DEFAULT_ORDER_MAIL_BODY =
 
 /** 업체별 본문 설정과 상관없이 모든 발주서 메일 끝에 붙는 안내. 송장 회신 메일은 첨부만 자동으로 읽기 때문. */
 export const ORDER_MAIL_NOTICE =
-  '※ 회신은 송장 파일만 확인합니다. 다른 전달사항은 전화·카톡으로 부탁드립니다.';
+  '※ 회신은 본문 확인 없이 송장 파일만 확인하오니, 다른 전달사항이 있으시면 전화 또는 카톡으로 부탁드리겠습니다.';
 
 export interface OrderMailVars {
   업체: string;
