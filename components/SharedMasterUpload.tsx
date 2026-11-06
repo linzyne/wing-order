@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { CS_SAVED_EVENT } from '../services/firestoreService';
+import { useTradingCompanies } from '../hooks/useFirestore';
 import WingFetchBar from './WingFetchBar';
 import { ORDER_METHODS } from '../types';
 import WingCountBadge from './WingCountBadge';
@@ -23,6 +24,7 @@ interface MasterUploadHandlers {
   getNextRound?: () => number;
   deleteBatchRound?: (round: number) => boolean;
   clearMaster?: () => void;
+  getCompanyInfos?: () => { name: string; orderMethod?: string; phone?: string }[];
   getOrderState?: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
@@ -118,6 +120,103 @@ const KAKAO_ICON = (
     <path d="M12 3.5c-5 0-9 3.1-9 7 0 2.5 1.7 4.7 4.2 5.9l-.9 3.4c-.1.3.3.6.6.4l4-2.7c.4 0 .7.1 1.1.1 5 0 9-3.1 9-7s-4-7.1-9-7.1Z" />
   </svg>
 );
+
+// 등록한 거래 업체 중 오늘 발주서가 없는 업체 — '오늘 발주 없음'을 알렸는지 체크한다
+const NoOrderCompanies: React.FC<{
+  businesses: Business[];
+  uploadFns: Record<string, MasterUploadHandlers>;
+  orderedNames: Set<string>;
+  hasOrders: boolean;
+  workDate: string;
+}> = ({ businesses, uploadFns, orderedNames, hasOrders, workDate }) => {
+  const { names, notified, setTrading, setNotified } = useTradingCompanies();
+  const [editing, setEditing] = useState(false);
+
+  const infos = new Map<string, { orderMethod?: string; phone?: string }>();
+  businesses.forEach(b => (uploadFns[b.id]?.getCompanyInfos?.() ?? []).forEach(({ name, orderMethod, phone }) => {
+    const prev = infos.get(name);
+    infos.set(name, { orderMethod: prev?.orderMethod || orderMethod, phone: prev?.phone || phone });
+  }));
+  // 업체 설정에서 지워진 이름도 등록을 뺄 수 있게 함께 보여준다
+  const allNames = [...new Set([...infos.keys(), ...Object.keys(names)])].sort((a, b) => a.localeCompare(b, 'ko'));
+  const registered = allNames.filter(n => names[n]);
+  const noOrder = hasOrders ? registered.filter(n => !orderedNames.has(n)) : [];
+  const todayNotified = notified[workDate] ?? {};
+  const remaining = noOrder.filter(n => !todayNotified[n]).length;
+
+  return (
+    <div className="flex flex-col gap-1.5 pb-2 border-b border-zinc-800/60">
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] font-black text-amber-400">오늘 발주 없음</span>
+        {noOrder.length > 0 && (
+          <span className="text-[10px] font-bold text-zinc-600 tabular-nums">{noOrder.length}곳</span>
+        )}
+        {noOrder.length > 0 && (
+          remaining > 0
+            ? <span className="text-[10px] font-black text-amber-300 tabular-nums">안 알림 {remaining}</span>
+            : <span className="text-[10px] font-black text-emerald-400">전부 알림</span>
+        )}
+        <div className="flex-1 border-t border-zinc-800/80" />
+        <button
+          onClick={() => setEditing(v => !v)}
+          className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-black border transition-colors ${
+            editing ? 'text-sky-300 border-sky-700/60' : 'text-zinc-500 border-zinc-700 hover:text-zinc-300 hover:border-zinc-500'
+          }`}
+        >
+          {editing ? '등록 닫기' : `거래 업체 ${registered.length}`}
+        </button>
+      </div>
+
+      {editing && (
+        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 max-h-56 overflow-y-auto custom-scrollbar rounded-lg bg-zinc-800/40 px-2 py-1.5">
+          {allNames.map(n => (
+            <label key={n} className="flex items-center gap-1.5 min-w-0 cursor-pointer text-[11px] font-bold text-zinc-300">
+              <input type="checkbox" checked={!!names[n]} onChange={e => setTrading(n, e.target.checked)} className="shrink-0 accent-sky-500" />
+              <span className="truncate" title={n}>{n}</span>
+            </label>
+          ))}
+          {allNames.length === 0 && <p className="col-span-2 text-[10px] text-zinc-600 text-center py-1">업체가 없습니다</p>}
+        </div>
+      )}
+
+      {!editing && registered.length === 0 && (
+        <p className="text-[10px] text-zinc-600">거래 업체를 등록하면 발주서가 없는 업체가 여기에 나와요</p>
+      )}
+      {!editing && registered.length > 0 && !hasOrders && (
+        <p className="text-[10px] text-zinc-600">주문서를 올리면 발주서가 없는 업체가 여기에 나와요</p>
+      )}
+
+      {noOrder.map(n => {
+        const info = infos.get(n);
+        const done = !!todayNotified[n];
+        const method = ORDER_METHODS.find(m => m.key === info?.orderMethod)?.label;
+        return (
+          <div key={n} className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <div className={`text-sm font-black tracking-tight truncate ${done ? 'text-zinc-500' : 'text-white'}`}>{n}</div>
+              {(method || info?.phone) && (
+                <div className="text-[10px] font-bold text-zinc-500 tabular-nums truncate">
+                  {[method, info?.phone].filter(Boolean).join(' · ')}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setNotified(workDate, n, !done)}
+              title={done ? '알림 표시 해제' : '오늘 발주 없다고 알렸으면 누르기'}
+              className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-black border transition-colors ${
+                done
+                  ? 'bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-400'
+                  : 'text-amber-300 border-amber-700/60 hover:bg-amber-900/40 hover:text-amber-100'
+              }`}
+            >
+              {done ? '✓ 알림완료' : '알림 완료'}
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, warningBusinessIds, warningCompanyIds, urgentNotice, companyMemos = {}, onCompanyMemoChange, onCompanyMemoDelete, incomingFiles, onIncomingTaken }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -613,6 +712,13 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
               </div>
               );
             })()}
+            <NoOrderCompanies
+              businesses={businesses}
+              uploadFns={uploadFns}
+              orderedNames={new Set(downloadSnapshot.flatMap(biz => biz.companies.map(c => c.name)))}
+              hasOrders={downloadSnapshot.length > 0}
+              workDate={globalWorkDate}
+            />
             {downloadSnapshot.length === 0 ? (
               <p className="text-[10px] text-zinc-600 text-center py-2">발주 데이터가 없습니다</p>
             ) : (() => {

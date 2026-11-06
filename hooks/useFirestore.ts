@@ -20,6 +20,10 @@ import {
   subscribeUrgentNotice,
   saveUrgentNotice,
   subscribeCompanyMemos,
+  subscribeTradingCompanies,
+  saveTradingCompany,
+  saveNoOrderNotified,
+  type TradingCompaniesData,
   saveCompanyMemo,
   deleteCompanyMemo,
   subscribeDepositLedger,
@@ -369,6 +373,23 @@ export const useCompanyMemos = () => {
   }, []);
 
   return { memos, updateMemo, removeMemo };
+};
+
+// ===== Trading Companies Hook (거래 업체 + 오늘 발주 없음 알림) =====
+export const useTradingCompanies = () => {
+  const [data, setData] = useState<TradingCompaniesData>({ names: {}, notified: {} });
+
+  useEffect(() => subscribeTradingCompanies(setData), []);
+
+  const setTrading = useCallback((companyName: string, on: boolean) => {
+    saveTradingCompany(companyName, on).catch((e) => console.error('[TradingCompanies] 저장 실패:', e));
+  }, []);
+
+  const setNotified = useCallback((date: string, companyName: string, on: boolean) => {
+    saveNoOrderNotified(date, companyName, on).catch((e) => console.error('[TradingCompanies] 알림 저장 실패:', e));
+  }, []);
+
+  return { ...data, setTrading, setNotified };
 };
 
 // ===== Todos Hook =====
