@@ -51,6 +51,10 @@ export const DEFAULT_ORDER_MAIL_SUBJECT = '({날짜}) {사업자} {업체} 발�
 export const DEFAULT_ORDER_MAIL_BODY =
   '안녕하세요, {사업자} 입니다.\n\n{날짜} {업체} {차수} 발주서를 첨부드립니다.\n총 {건수}건입니다.\n\n=================\n[정산 요약]\n{정산요약}\n=================\n\n확인 부탁드립니다. 감사합니다.';
 
+/** 업체별 본문 설정과 상관없이 모든 발주서 메일 끝에 붙는 안내. 송장 회신 메일은 첨부만 자동으로 읽기 때문. */
+export const ORDER_MAIL_NOTICE =
+  '※ 송장은 이 메일에 회신해 주세요.\n송장 외 전달사항(품절·지연 등)은 전화나 카톡으로 부탁드립니다.\n송장 회신 메일의 본문은 확인하지 않습니다.';
+
 export interface OrderMailVars {
   업체: string;
   사업자: string;

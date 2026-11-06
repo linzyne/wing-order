@@ -14,7 +14,7 @@ import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDep
 import { deleteField } from 'firebase/firestore';
 import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
-import { sendOrderEmail, renderMailTemplate, DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY } from '../services/emailService';
+import { sendOrderEmail, renderMailTemplate, DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY, ORDER_MAIL_NOTICE } from '../services/emailService';
 import { splitEmails } from '../services/invoiceMailService';
 import { sendAdminOutbox } from '../services/adminOutbox';
 import { queueWorkbookDownload } from '../services/downloadQueue';
@@ -3103,7 +3103,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const cfg = pricingConfig[companyName];
         return {
             subject: renderMailTemplate((cfg?.emailSubject || '').trim() || DEFAULT_ORDER_MAIL_SUBJECT, vars),
-            text: renderMailTemplate((cfg?.emailBody || '').trim() || DEFAULT_ORDER_MAIL_BODY, vars),
+            text: `${renderMailTemplate((cfg?.emailBody || '').trim() || DEFAULT_ORDER_MAIL_BODY, vars)}\n\n${ORDER_MAIL_NOTICE}`,
         };
     };
     // 업체 이메일 확인 (없으면 입력받고, 원하면 업체 설정에 저장)
