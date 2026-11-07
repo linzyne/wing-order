@@ -23,6 +23,7 @@ export interface OrderItem {
     recipientName: string;         // 수취인명 (누락 이름 계산용)
     orderNumber: string;           // 원본 주문번호 (autoConsolidate로 합산된 경우 콤마로 나열)
     bundleNumber: string;          // 묶음배송번호
+    orderHour?: number;            // 고객 주문 시각(0~23시, 마스터 주문일 칸) — 매출현황 판매추이 시간대 보기용
 }
 
 export type ProcessedResult = {
@@ -322,6 +323,22 @@ const parseDateFromRow = (row: any[], dateColIdx: number): string | null => {
     return null;
 };
 
+// 주문일 칸("2026-07-02 07:50:29" 또는 엑셀 날짜 숫자)에서 시(0~23)만 뽑음. 시각이 없으면 undefined
+const parseHourFromRow = (row: any[], dateColIdx: number): number | undefined => {
+    if (dateColIdx === -1) return undefined;
+    const val = row[dateColIdx];
+    if (val === null || val === undefined || val === '') return undefined;
+    if (typeof val === 'number') {
+        const frac = val % 1;
+        if (frac === 0) return undefined;
+        return Math.min(23, Math.floor(frac * 24 + 1e-6));
+    }
+    const m = String(val).match(/(\d{1,2}):\d{2}/);
+    if (!m) return undefined;
+    const h = parseInt(m[1]);
+    return h >= 0 && h <= 23 ? h : undefined;
+};
+
 const findBestMatchForProduct = async (
     ai: GoogleGenAI | null,
     cache: Map<string, [string, ProductPricing] | null>,
@@ -587,6 +604,7 @@ interface IntermediateOrder {
     regOptionValue: string;
     orderNumber: string;
     bundleNumber: string;
+    orderHour?: number;
 }
 
 /**
@@ -841,6 +859,7 @@ const generateWorkbookForCompany = async (
                         regOptionValue: String(row[regOptionColIdx] || '').trim(),
                         orderNumber,
                         bundleNumber: String(row[bundleNumberColIdx] || '').trim(),
+                        orderHour: parseHourFromRow(row, dateColIdx),
                     });
                     includedOrderNumbers.push(orderNumber);
                 } else {
@@ -925,6 +944,7 @@ const generateWorkbookForCompany = async (
                     recipientName: order.recipientName,
                     orderNumber: order.orderNumber,
                     bundleNumber: order.bundleNumber,
+                    orderHour: order.orderHour ?? parseHourFromRow(row, dateColIdx),
                 });
             }
         }

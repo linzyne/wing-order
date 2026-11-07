@@ -386,7 +386,8 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
   const [trendDays, setTrendDays] = useState(14);
   const [trendMetric, setTrendMetric] = useState<'count' | 'totalPrice' | 'margin'>('count');
   const [trendCompany, setTrendCompany] = useState<string>('');
-  const [trendViewType, setTrendViewType] = useState<'table' | 'graph'>('table');
+  const [trendViewType, setTrendViewType] = useState<'table' | 'graph' | 'hourly'>('table');
+  const [trendHourProduct, setTrendHourProduct] = useState<string>(''); // 시간대 보기 품목 ('' = 전체)
   const [trendHiddenKeys, setTrendHiddenKeys] = useState<Set<string>>(new Set());
 
   // 업체별정산 선택 업체
@@ -919,6 +920,24 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
     });
     return companyMap;
   }, [filteredHistory, trendMetric, pricingConfig]);
+
+  // 판매추이 - 시간대별 주문수량 (기록할 때 저장한 hourlyOrderCounts, 선택 업체·기간 합산)
+  const trendHourly = useMemo(() => {
+    const byProduct = new Map<string, number[]>();
+    let daysWithData = 0;
+    filteredHistory.forEach(d => {
+      const companyHours = d.hourlyOrderCounts?.[trendActiveCompany];
+      if (!companyHours) return;
+      daysWithData++;
+      Object.entries(companyHours).forEach(([product, hours]) => {
+        const name = getOrderFormName(trendActiveCompany, product);
+        const acc = byProduct.get(name) || new Array(24).fill(0);
+        (hours as number[]).forEach((q, h) => { acc[h] += q || 0; });
+        byProduct.set(name, acc);
+      });
+    });
+    return { byProduct, daysWithData };
+  }, [filteredHistory, trendActiveCompany, pricingConfig]);
 
   const groupByCompany = (records: SalesRecord[]) => {
     const map = new Map<string, SalesRecord[]>();
@@ -2527,20 +2546,66 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
       });
     };
 
+    const renderHourlyView = () => {
+      const { byProduct, daysWithData } = trendHourly;
+      const productNames = (Array.from(byProduct.keys()) as string[]).sort((a, b) => a.localeCompare(b, 'ko'));
+      const activeProduct = trendHourProduct && byProduct.has(trendHourProduct) ? trendHourProduct : '';
+      const hours = activeProduct
+        ? byProduct.get(activeProduct)!
+        : productNames.reduce((acc, n) => { byProduct.get(n)!.forEach((q, h) => { acc[h] += q; }); return acc; }, new Array(24).fill(0) as number[]);
+      const total = hours.reduce((s, q) => s + q, 0);
+      if (total === 0) {
+        return (
+          <p className="text-zinc-600 text-sm py-8 text-center">
+            이 기간엔 주문 시각 기록이 없어요. 마스터 발주서로 만든 뒤 기록하면 그날부터 쌓여요.
+          </p>
+        );
+      }
+      const max = Math.max(...hours, 1);
+      const peak = hours.indexOf(Math.max(...hours));
+      return (
+        <div className="space-y-3 max-w-md">
+          <div className="flex flex-col gap-1">
+            <select value={activeProduct} onChange={e => setTrendHourProduct(e.target.value)}
+              className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-1.5 text-xs text-zinc-200 w-fit">
+              <option value="">전체 품목</option>
+              {productNames.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+            <p className="text-xs text-zinc-500">
+              {daysWithData}일치 · 총 {total.toLocaleString()}개 · 가장 많은 때 <span className="text-violet-300 font-bold">{peak}시</span> ({hours[peak].toLocaleString()}개)
+            </p>
+          </div>
+          <div className="space-y-0.5">
+            {hours.map((q, h) => (
+              <div key={h} className="flex items-center gap-2 text-xs">
+                <span className="w-9 text-right text-zinc-500 tabular-nums">{h}시</span>
+                <div className="flex-1 h-4 bg-zinc-900 rounded">
+                  {q > 0 && <div className={`h-4 rounded ${h === peak ? 'bg-violet-400' : 'bg-violet-500/60'}`} style={{ width: `${(q / max) * 100}%` }} />}
+                </div>
+                <span className="w-20 text-right text-zinc-300 tabular-nums">
+                  {q > 0 ? <>{q.toLocaleString()}<span className="text-zinc-600 ml-1">{Math.round((q / total) * 100)}%</span></> : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
     return (
       <div className="space-y-4">
         {/* 컨트롤 */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 w-fit">
+          {trendViewType !== 'hourly' && <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 w-fit">
             {([['count', '수량'], ['totalPrice', '매출'], ['margin', '마진']] as const).map(([key, label]) => (
               <button key={key} onClick={() => setTrendMetric(key as typeof trendMetric)}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendMetric === key ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
                 {label}
               </button>
             ))}
-          </div>
+          </div>}
           <div className="flex gap-1 bg-zinc-900 rounded-xl p-1 w-fit">
-            {([['table', '테이블'], ['graph', '그래프']] as const).map(([key, label]) => (
+            {([['table', '테이블'], ['graph', '그래프'], ['hourly', '시간대']] as const).map(([key, label]) => (
               <button key={key} onClick={() => setTrendViewType(key as typeof trendViewType)}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${trendViewType === key ? 'bg-violet-500 text-white' : 'text-zinc-500 hover:text-white'}`}>
                 {label}
@@ -2559,7 +2624,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
           ))}
         </div>
 
-        {trendViewType === 'graph' ? (
+        {trendViewType === 'hourly' ? renderHourlyView() : trendViewType === 'graph' ? (
           <TrendLineChart
             series={graphSeries}
             dates={trendDates}

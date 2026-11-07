@@ -4955,6 +4955,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
         const marginRecords = Array.from(marginMap.values());
 
+        // 시간대별 주문수량 (선택된 업체만): 업체 → 품목 → 0~23시 수량. 주문 시각을 모르는 품목(수동 추가 등)은 뺌
+        const newHourlyOrderCounts: Record<string, Record<string, number[]>> = {};
+        sortedCompanyNames.forEach(name => {
+            if (!selectedCompanyNames.has(name)) return;
+            const companyConfig = pricingConfig[name];
+            if (!companyConfig) return;
+            (companySessions[name] || []).forEach(s => {
+                for (const item of (allOrderItems[s.id] || []) as { matchedProductKey: string; qty: number; orderHour?: number }[]) {
+                    if (typeof item.orderHour !== 'number') continue;
+                    const product = companyConfig.products[item.matchedProductKey] as any;
+                    if (!product) continue;
+                    const productName = product.orderFormName || product.displayName;
+                    const byProduct = newHourlyOrderCounts[name] || (newHourlyOrderCounts[name] = {});
+                    const hours = byProduct[productName] || (byProduct[productName] = new Array(24).fill(0));
+                    hours[item.orderHour] += item.qty;
+                }
+            });
+        });
+
         // summaryLines는 매출 records 생성 (선택된 업체만)
         const summaryLines: string[][] = [];
         sortedCompanyNames.forEach(name => {
@@ -5101,6 +5120,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 ...newCompanySettlementTexts,
             }
             : newCompanySettlementTexts;
+        const mergedHourlyOrderCounts: Record<string, Record<string, number[]>> = isPartialSave
+            ? {
+                ...Object.fromEntries(Object.entries(existingDailySales?.hourlyOrderCounts || {}).filter(([k]) => !selectedCompanyNames.has(k))),
+                ...newHourlyOrderCounts,
+            }
+            : newHourlyOrderCounts;
         const flatOrderRows = Object.values(mergedCompanyOrderRows).flat();
         const flatInvoiceRows = Object.values(mergedCompanyInvoiceRows).flat();
 
@@ -5121,6 +5146,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             returnTotal: returnTotal !== 0 ? returnTotal : undefined,
             fakeOrderRecords: mergedFakeOrderRecords.length > 0 ? mergedFakeOrderRecords : undefined,
             companySettlementTexts: Object.keys(mergedCompanySettlementTexts).length > 0 ? mergedCompanySettlementTexts : undefined,
+            hourlyOrderCounts: Object.keys(mergedHourlyOrderCounts).length > 0 ? mergedHourlyOrderCounts : undefined,
             // upsertDailySales는 문서 전체를 덮어쓰므로(setDoc, merge 없음), 이 화면이 모르는
             // csRecords(통합CS접수/매출현황 CS탭에서 기록)를 명시적으로 이어받지 않으면
             // 저장할 때마다 그날의 CS 접수 내역이 통째로 사라진다.

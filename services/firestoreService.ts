@@ -518,7 +518,7 @@ export interface SessionResultData {
   orderCount: number;
   itemSummary: Record<string, { count: number; totalPrice: number }>;
   registeredProductNames?: Record<string, string>;
-  orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName?: string; orderNumber?: string; bundleNumber?: string }[];
+  orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName?: string; orderNumber?: string; bundleNumber?: string; orderHour?: number }[];
   includedOrderNumbers?: string[];
   rowOrderNumbers?: string[]; // orderRows와 동일한 순서/길이의 원본 주문번호 목록
   rowBundleNumbers?: string[]; // orderRows와 동일한 순서/길이의 묶음배송번호 목록

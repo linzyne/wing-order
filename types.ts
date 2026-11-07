@@ -411,6 +411,7 @@ export interface DailySales {
   expenseRecords?: ExpenseRecord[];
   csRecords?: CsRecord[];
   fakeOrderRecords?: ExcludedOrder[]; // 가구매 명단과 매칭되어 발주서에서 제외된 주문 (매출현황 "가구매" 탭 표시용)
+  hourlyOrderCounts?: Record<string, Record<string, number[]>>; // 업체 → 품목(발주서생성용 이름) → 고객 주문 시각(0~23시)별 수량 24칸. 마스터 주문일 칸 기준, 판매추이 시간대 보기용
   companySettlementTexts?: Record<string, string>; // 업체별 그날 정산요약(카톡 복사용 텍스트, 추가/차감·예치금 반영 후) — 기록 시점 스냅샷
 }
 
