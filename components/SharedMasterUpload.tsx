@@ -129,8 +129,17 @@ const NoOrderCompanies: React.FC<{
   hasOrders: boolean;
   workDate: string;
 }> = ({ businesses, uploadFns, orderedNames, hasOrders, workDate }) => {
-  const { names, notified, setTrading, setNotified } = useTradingCompanies();
+  const { names, notified, loaded, setTrading, setNotified } = useTradingCompanies();
   const [editing, setEditing] = useState(false);
+
+  // 발주서가 온 업체는 거래 중이니 자동 등록 — 첫날 등록을 깜빡해도 목록이 채워진다.
+  // 직접 뺀 업체(false)는 다시 넣지 않는다.
+  const orderedKey = [...orderedNames].sort().join('\n');
+  useEffect(() => {
+    if (!loaded) return;
+    orderedNames.forEach(n => { if (names[n] === undefined) setTrading(n, true); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, orderedKey, names, setTrading]);
 
   const infos = new Map<string, { orderMethod?: string; phone?: string }>();
   businesses.forEach(b => (uploadFns[b.id]?.getCompanyInfos?.() ?? []).forEach(({ name, orderMethod, phone }) => {
@@ -180,7 +189,7 @@ const NoOrderCompanies: React.FC<{
       )}
 
       {!editing && registered.length === 0 && (
-        <p className="text-[10px] text-zinc-600">거래 업체를 등록하면 발주서가 없는 업체가 여기에 나와요</p>
+        <p className="text-[10px] text-zinc-600">발주서가 온 업체는 자동으로 등록돼요. 오늘 발주 없는 거래 업체는 직접 체크해 주세요</p>
       )}
       {!editing && registered.length > 0 && !hasOrders && (
         <p className="text-[10px] text-zinc-600">주문서를 올리면 발주서가 없는 업체가 여기에 나와요</p>

@@ -1473,10 +1473,12 @@ export const deleteCompanyMemo = async (companyName: string): Promise<void> => {
 // ===== Trading Companies (거래 업체 + 오늘 발주 없음 알림) =====
 // 지금 거래 중인 업체를 등록해 두면 주문서 패널이 그날 발주서가 없는 업체를 보여준다.
 // 업체는 사업자 구분 없이 이름 기준. 알림 표시는 작업날짜별로 남긴다.
+// names: true=거래 중, false=직접 뺀 업체(발주서가 와도 다시 자동 등록하지 않음)
 
 export interface TradingCompaniesData {
   names: Record<string, boolean>;
   notified: Record<string, Record<string, boolean>>; // 작업날짜 → 업체명
+  loaded?: boolean;
 }
 
 export const subscribeTradingCompanies = (
@@ -1485,7 +1487,7 @@ export const subscribeTradingCompanies = (
   const docRef = doc(db, 'config', 'tradingCompanies');
   return onSnapshot(docRef, (snapshot) => {
     const data = snapshot.data();
-    callback({ names: data?.names || {}, notified: data?.notified || {} });
+    callback({ names: data?.names || {}, notified: data?.notified || {}, loaded: true });
   }, (error) => {
     console.error('[Firestore] TradingCompanies 구독 오류:', error);
   });
@@ -1493,7 +1495,7 @@ export const subscribeTradingCompanies = (
 
 export const saveTradingCompany = async (companyName: string, on: boolean): Promise<void> => {
   const docRef = doc(db, 'config', 'tradingCompanies');
-  await setDoc(docRef, { names: { [companyName]: on ? true : deleteField() }, updatedAt: Timestamp.now() }, { merge: true });
+  await setDoc(docRef, { names: { [companyName]: on }, updatedAt: Timestamp.now() }, { merge: true });
 };
 
 export const saveNoOrderNotified = async (date: string, companyName: string, on: boolean): Promise<void> => {
