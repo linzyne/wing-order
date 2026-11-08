@@ -23,17 +23,26 @@
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   };
 
-  // 글자가 정확히 text인 가장 안쪽 요소들
-  const byText = (text) => [...document.querySelectorAll('body *')].filter(
-    (el) => el.children.length === 0 && el.textContent.trim() === text,
-  );
+  // 요소 자기 글자 — 옆에 ⓘ 아이콘 같은 자식이 붙어 있어도 읽히게 자식 요소 글자는 빼고, 입력칸은 값
+  const ownText = (el) => {
+    if (el.tagName === 'INPUT') return (el.value || '').trim();
+    let t = '';
+    for (const n of el.childNodes) if (n.nodeType === 3) t += n.textContent;
+    return t.replace(/\s+/g, ' ').trim();
+  };
+  const allOwn = () => [...document.querySelectorAll('body *')]
+    .filter((el) => !['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName))
+    .map((el) => [el, ownText(el)])
+    .filter(([, t]) => t);
+  // 자기 글자가 정확히 text인 요소들
+  const byText = (text) => allOwn().filter(([, t]) => t === text).map(([el]) => el);
 
   // '전체 집행 광고비' 카드의 숫자 (부가세 별도)
   function readSpend() {
     for (const label of byText('전체 집행 광고비')) {
       let card = label.parentElement;
       for (let i = 0; i < 4 && card; i++, card = card.parentElement) {
-        const m = card.textContent.replace(/전체 집행 광고비/, '').match(/([\d,]+)\s*원/);
+        const m = card.textContent.replace(/전체 집행 광고비/, '').match(/(\d[\d,]*)\s*원/);
         if (m) return Number(m[1].replace(/,/g, ''));
       }
     }
@@ -42,10 +51,9 @@
 
   // 오른쪽 위 날짜 칸이 '2026.11.07'처럼 하루만 보이면 그 날짜 (기간이면 null)
   function shownDate() {
-    const texts = [...document.querySelectorAll('body *')]
-      .filter((el) => el.children.length === 0)
-      .map((el) => el.textContent.trim())
-      .filter((t) => /^\d{4}\.\d{1,2}\.\d{1,2}(\s*[~-]\s*\d{4}\.\d{1,2}\.\d{1,2})?$/.test(t));
+    const texts = [...new Set(allOwn().map(([, t]) => t)
+      .filter((t) => /^\d{4}\.\s?\d{1,2}\.\s?\d{1,2}\.?(\s*[~-]\s*\d{4}\.\s?\d{1,2}\.\s?\d{1,2}\.?)?$/.test(t))
+      .map((t) => t.replace(/\s/g, '').replace(/\.$/, '').replace(/\.(?=[~-])/, '')))];
     if (texts.length !== 1) return null;
     const parts = texts[0].split(/\s*[~-]\s*(?=\d{4}\.)/);
     const [a, b] = parts.map((p) => p.split('.').map((x) => pad(Number(x))).join('-'));
@@ -55,10 +63,8 @@
   // 왼쪽 위 사업자 이름 — 확장에 적은 사업자명과 다르면 잘못 저장하지 않는다
   function pageBusiness(businessName) {
     const want = normName(businessName);
-    return [...document.querySelectorAll('body *')]
-      .filter((el) => el.children.length === 0)
-      .some((el) => {
-        const t = normName(el.textContent);
+    return allOwn().some(([, text]) => {
+        const t = normName(text);
         return t.length >= 2 && t.length <= 30 && (t === want || t.includes(want) || want.includes(t));
       });
   }
@@ -96,7 +102,12 @@
       if (!businessName) throw new Error('확장에 사업자명이 없어요 (윙 화면 왼쪽 아래 패널에서 적기)');
       // 화면이 다 뜰 때까지 기다린 뒤 '어제'를 누른다
       for (let i = 0; i < 20 && readSpend() == null; i++) await sleep(1000);
-      if (readSpend() == null) throw new Error('전체 집행 광고비 칸을 못 찾았어요');
+      if (readSpend() == null) {
+        L(`광고비 들어간 글자: ${JSON.stringify(allOwn().map(([, t]) => t).filter((t) => /광고비|원$/.test(t)).slice(0, 30))}`);
+        L(`화면 글자 일부: ${JSON.stringify(document.body.innerText.slice(0, 1500))}`);
+        throw new Error('전체 집행 광고비 칸을 못 찾았어요');
+      }
+      if (!pageBusiness(businessName)) L(`사업자명 못 찾음 — 화면 위쪽: ${JSON.stringify(document.body.innerText.slice(0, 300))}`);
       if (!pageBusiness(businessName)) throw new Error(`광고센터 사업자가 ${businessName}이 아니에요`);
       if (shownDate() !== yesterday()) {
         const btn = byText('어제')[0];
@@ -105,7 +116,10 @@
         L('어제 누름');
       }
       const spend = await waitSpend(20000);
-      if (spend == null) throw new Error('어제 광고비를 못 읽었어요');
+      if (spend == null) {
+        L(`날짜 비슷한 글자: ${JSON.stringify(allOwn().map(([, t]) => t).filter((t) => /\d{4}\.|\d{2}\.\d{2}|어제/.test(t)).slice(0, 20))}`);
+        throw new Error('어제 광고비를 못 읽었어요');
+      }
       const vat = await report(businessName, spend);
       chrome.runtime.sendMessage({ type: 'JOB_DONE', ok: true, message: `어제 광고비 ${vat.toLocaleString()}원 (부가세 포함)` });
     } catch (err) {
