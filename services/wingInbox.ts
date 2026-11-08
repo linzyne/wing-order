@@ -196,3 +196,27 @@ export async function requestWingCount(businessName: string): Promise<void> {
     businessName, mode: 'count', status: 'pending', message: '', batchId: `${Date.now()}`, createdAt: serverTimestamp(),
   });
 }
+
+// ── 어제 광고비 (adSpend) ──
+// 사업자 프로필의 확장이 쿠팡 광고센터 대시보드에서 어제 '전체 집행 광고비'를 읽어 사업자·날짜마다 남긴다.
+// 발주서 다운로드의 사업자 버튼에서 마진 − 광고비(부가세 포함) = 순마진으로 보인다.
+export interface AdSpend { businessName: string; date: string; spend: number; spendWithVat: number; at: number; }
+
+export function subscribeAdSpend(date: string, onChange: (list: AdSpend[]) => void): () => void {
+  return onSnapshot(query(collection(db, 'adSpend'), where('date', '==', date)), snap => {
+    onChange(snap.docs.map(d => {
+      const x = d.data();
+      return {
+        businessName: x.businessName || '', date: x.date || '', spend: Number(x.spend ?? 0),
+        spendWithVat: Number(x.spendWithVat ?? 0), at: x.at?.toMillis?.() ?? 0,
+      };
+    }));
+  }, err => console.error('[광고비] 구독 실패', err));
+}
+
+// 그 사업자 프로필 확장에 광고센터에서 어제 광고비를 읽어 달라고 요청
+export async function requestAdSpend(businessName: string): Promise<void> {
+  await addDoc(collection(db, 'wingRequests'), {
+    businessName, mode: 'ads', status: 'pending', message: '', batchId: `${Date.now()}`, createdAt: serverTimestamp(),
+  });
+}

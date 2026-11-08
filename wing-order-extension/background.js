@@ -97,19 +97,19 @@ async function sendInbox({ fileName, fileBase64, wingCount, businessName, source
   if (!res.ok) throw new Error(`Firestore ${res.status} ${(await res.text()).slice(0, 200)}`);
 }
 
-function saveLog(log, page) {
+function saveLog(log, page, prefix) {
   const d = new Date();
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
   const json = JSON.stringify({ version: chrome.runtime.getManifest().version, page, log }, null, 2);
   const dataUrl = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
-  pendingLogName = `윙주문서로그_${stamp}.json`;
+  pendingLogName = `${prefix || '윙주문서로그'}_${stamp}.json`;
   chrome.downloads.download({ url: dataUrl, filename: pendingLogName, saveAs: false });
 }
 
 // ── 자동 새로고침 ──
 // 확장 폴더의 파일이 바뀌면(코드 수정) 윙 화면을 열 때 스스로 다시 불러온다.
 // 프로필마다 chrome://extensions 에서 ↻ 를 누르지 않아도 되게.
-const FILES = ['manifest.json', 'background.js', 'hook.js', 'wing.js', 'config.js', 'offscreen.html', 'offscreen.js', 'listen-target.js'];
+const FILES = ['manifest.json', 'background.js', 'hook.js', 'wing.js', 'config.js', 'offscreen.html', 'offscreen.js', 'listen-target.js', 'ads.js'];
 async function diskHash() {
   const texts = await Promise.all(FILES.map((f) => fetch(chrome.runtime.getURL(f), { cache: 'no-store' }).then((r) => r.text())));
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texts.join('\n\u0000\n')));
@@ -135,6 +135,8 @@ async function checkUpdate() {
 // 윙발주의 "1차 받기 / 2차 받기"가 사업자별 요청 문서를 남기면, 그 사업자 프로필의 확장이
 // 윙 주문배송관리 탭을 뒤에서 열어 받아 보내고 결과를 문서에 적는다. 프로필 창이 열려 있기만 하면 된다.
 const MANAGE_URL = 'https://wing.coupang.com/tenants/sfl-portal/delivery/management';
+// 'ads' 요청은 광고센터 대시보드를 열어 어제 광고비를 읽는다 (ads.js)
+const ADS_URL = 'https://advertising.coupang.com/marketing/dashboard/sales';
 const docsBase = () => `https://firestore.googleapis.com/v1/projects/${self.WING_FIREBASE.projectId}/databases/(default)/documents`;
 const keyQ = () => `key=${self.WING_FIREBASE.apiKey}`;
 
@@ -205,6 +207,26 @@ async function saveReadyCount(businessName, count) {
   if (!res.ok) console.warn('[윙 건수 저장 실패]', res.status || res.statusText);
 }
 
+// 어제 광고비 — 윙발주 사업자 버튼의 '순' 마진에 쓴다 (사업자·날짜마다 문서 하나)
+async function saveAdSpend({ businessName, date, spend, spendWithVat }) {
+  if (!businessName || !date || spend == null) return;
+  const id = encodeURIComponent(`${normName(businessName)}_${date}`);
+  const res = await fetch(`${docsBase()}/adSpend/${id}?${keyQ()}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fields: {
+        businessName: { stringValue: businessName },
+        date: { stringValue: date },
+        spend: { integerValue: String(spend) },
+        spendWithVat: { integerValue: String(spendWithVat) },
+        at: { timestampValue: new Date().toISOString() },
+      },
+    }),
+  }).catch((e) => ({ ok: false, statusText: e.message }));
+  if (!res.ok) console.warn('[광고비 저장 실패]', res.status || res.statusText);
+}
+
 let polling = false;
 async function pollRequests() {
   if (polling) return;
@@ -222,10 +244,10 @@ async function pollRequests() {
       }
       // 같은 프로필 창이 둘이어도 한 번만 실행되도록 문서가 그대로일 때만 가져간다
       if (!(await patchRequest(doc.name, { status: 'running', message: '윙 여는 중' }, doc.updateTime))) continue;
-      const tab = await chrome.tabs.create({ url: MANAGE_URL, active: false });
-      const { jobs = {} } = await chrome.storage.local.get('jobs');
       const mode = f.mode?.stringValue;
-      jobs[tab.id] = { mode: ['next', 'invoice', 'count'].includes(mode) ? mode : 'first', reqName: doc.name, at: Date.now() };
+      const tab = await chrome.tabs.create({ url: mode === 'ads' ? ADS_URL : MANAGE_URL, active: false });
+      const { jobs = {} } = await chrome.storage.local.get('jobs');
+      jobs[tab.id] = { mode: ['next', 'invoice', 'count', 'ads'].includes(mode) ? mode : 'first', reqName: doc.name, at: Date.now() };
       // 송장 올리기: 윙발주가 문서에 담아 보낸 송장 파일
       if (mode === 'invoice') {
         jobs[tab.id].fileName = f.fileName?.stringValue || '송장.xlsx';
@@ -244,10 +266,11 @@ async function pollRequests() {
 
 // 요청으로 연 탭이 윙 로그인 화면으로 넘어가면(로그인 풀림) 실패로 적고 탭은 남겨 둔다
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {
-  if (!info.url || /^https:\/\/wing\.coupang\.com\//.test(info.url) || !/login|xauth/i.test(info.url)) return;
+  if (!info.url || /^https:\/\/(wing|advertising)\.coupang\.com\//.test(info.url) || !/login|xauth/i.test(info.url)) return;
   const { jobs = {} } = await chrome.storage.local.get('jobs');
   const job = jobs[tabId];
-  if (!job) return;
+  // 광고센터는 로그인 화면을 거쳐 저절로 돌아오기도 해서 ads.js가 기다렸다가 판단한다
+  if (!job || job.mode === 'ads') return;
   delete jobs[tabId];
   await chrome.storage.local.set({ jobs });
   await patchRequest(job.reqName, { status: 'error', message: '윙 로그인이 풀렸어요 — 그 프로필에서 다시 로그인' });
@@ -279,6 +302,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // 구독이 끊겼다 — 창을 닫고 다시 띄운다
     console.warn('[구독 끊김]', msg.message);
     chrome.offscreen.closeDocument().catch(() => {}).finally(() => setTimeout(ensureOffscreen, 5000));
+    return false;
+  }
+  if (msg.type === 'AD_SPEND') {
+    saveAdSpend(msg);
     return false;
   }
   if (msg.type === 'READY_COUNT') {
@@ -334,7 +361,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
   if (msg.type === 'SAVE_LOG') {
-    saveLog(msg.log, msg.page);
+    saveLog(msg.log, msg.page, msg.prefix);
     return false;
   }
   if (msg.type === 'FETCH_FILE') {

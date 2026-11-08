@@ -5,6 +5,7 @@ import { useTradingCompanies } from '../hooks/useFirestore';
 import WingFetchBar from './WingFetchBar';
 import { ORDER_METHODS } from '../types';
 import WingCountBadge from './WingCountBadge';
+import NetMarginBadge, { useAdSpends, findAdSpend } from './NetMarginBadge';
 
 export interface UploadResult {
   fileName: string;
@@ -231,6 +232,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
+  const adSpends = useAdSpends();
   const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; timeLabel?: string }[] }[] }[]>([]);
   const [nextRounds, setNextRounds] = useState<Record<string, number>>({});
   const [companyClosedMap, setCompanyClosedMap] = useState<Record<string, boolean>>({});
@@ -680,6 +682,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
             {/* 사업자별 총구매수량 버튼 */}
             {downloadSnapshot.length > 0 && (() => {
               let grandMargin = 0;
+              // 순마진 합계 — 어제 광고비를 다 읽은 사업자만 더하고, 못 읽은 사업자 수를 같이 보여 준다
+              let grandAd = 0;
+              let adMissing = 0;
               return (
               <div className="flex flex-col gap-1.5 pb-2 border-b border-zinc-800/60">
                 <div className="flex flex-wrap gap-1.5">
@@ -690,6 +695,8 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   );
                   const bizMargin = uploadFns[biz.businessId]?.getTotalMargin?.() ?? 0;
                   grandMargin += bizMargin;
+                  const ad = findAdSpend(adSpends, biz.displayName);
+                  if (bizMargin !== 0) { if (ad) grandAd += ad.spendWithVat; else adMissing++; }
                   const fakeCount = uploadFns[biz.businessId]?.getFakeCount?.() ?? 0;
                   return (
                     <button
@@ -706,6 +713,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                           마진 {bizMargin > 0 ? '+' : ''}{bizMargin.toLocaleString()}
                         </span>
                       )}
+                      {bizMargin !== 0 && <NetMarginBadge businessName={biz.displayName} margin={bizMargin} />}
                     </button>
                   );
                 })}
@@ -716,6 +724,21 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                     <span className={`tabular-nums ${grandMargin > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                       {grandMargin > 0 ? '+' : ''}{grandMargin.toLocaleString()}원
                     </span>
+                    {grandAd > 0 && (() => {
+                      const net = grandMargin - grandAd;
+                      return (
+                        <>
+                          <span className="text-zinc-500 ml-1.5">순</span>
+                          <span
+                            className={`tabular-nums ${net >= 0 ? 'text-emerald-300' : 'text-red-400'}`}
+                            title={`전체 마진 − 어제 광고비 ${grandAd.toLocaleString()}원 (부가세 포함)`}
+                          >
+                            {net > 0 ? '+' : ''}{net.toLocaleString()}원
+                          </span>
+                          {adMissing > 0 && <span className="text-zinc-600 font-bold">(광고비 못 읽은 사업자 {adMissing}곳 빠짐)</span>}
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

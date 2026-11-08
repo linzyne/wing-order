@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "윙 주문서 → 윙발주",
-  "version": "0.7.10",
-  "description": "쿠팡 윙 주문배송관리에서 주문서 엑셀을 받아 윙발주로 바로 보내고, 윙발주의 송장을 엑셀 대량배송으로 올립니다. 사업자명은 크롬 프로필마다 따로 저장합니다.",
+  "version": "0.8.0",
+  "description": "쿠팡 윙 주문배송관리에서 주문서 엑셀을 받아 윙발주로 바로 보내고, 윙발주의 송장을 엑셀 대량배송으로 올립니다. 광고센터에서 어제 광고비를 읽어 순마진에 씁니다. 사업자명은 크롬 프로필마다 따로 저장합니다.",
   "permissions": ["storage", "downloads", "alarms", "tabs", "offscreen"],
   "host_permissions": [
     "*://*.coupang.com/*",
@@ -21,6 +21,11 @@
     {
       "matches": ["*://wing.coupang.com/*"],
       "js": ["wing.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://advertising.coupang.com/*"],
+      "js": ["ads.js"],
       "run_at": "document_idle"
     }
   ]
