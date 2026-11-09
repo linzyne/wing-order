@@ -1103,6 +1103,7 @@ const App: React.FC = () => {
           >
             <BanknotesIcon className="w-3.5 h-3.5 text-emerald-400" />
             <span>입금</span>
+            {!!missionFeed?.depositItems.length && <span className="px-1 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px]" title="미션허브 입금전 건수">{missionFeed.depositItems.length}</span>}
           </button>
 
           <div className="w-px h-5 bg-zinc-800 mx-0.5" />
@@ -1706,7 +1707,7 @@ const App: React.FC = () => {
             <div className="bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
               <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
                 <div>
-                  <h3 className="text-white font-black text-sm">일괄 입금목록</h3>
+                  <h3 className="text-white font-black text-sm">일괄 입금목록{missionFeed && <span className="ml-1.5 text-emerald-400 text-xs">미션허브 입금전 {missionFeed.depositItems.length}건</span>}</h3>
                   <p className="text-zinc-500 text-[11px] mt-0.5">붙여넣기 — 열 순서: 은행 / 계좌번호 / 금액 / 이름 / 사업자명 환불 · 표의 셀을 클릭해 직접 수정</p>
                 </div>
                 <button onClick={() => setShowBulkDepositModal(false)} className="text-zinc-500 hover:text-white transition-colors p-1">
