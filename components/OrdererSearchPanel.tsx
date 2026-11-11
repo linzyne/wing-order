@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { DailySales, PricingConfig } from '../types';
-import { loadAllSalesHistory, loadPricingConfig } from '../services/firestoreService';
+import { loadAllSalesHistory, loadRecentSalesForSearch, loadPricingConfig } from '../services/firestoreService';
 import { resolveOrderRowFields, normalizeForSearch } from './CsEntryModal';
 
 interface Props {
@@ -33,8 +33,10 @@ const OrdererSearchPanel: React.FC<Props> = ({ businesses, active, onClose }) =>
   const [loading, setLoading] = useState(false);
   const [loadedAt, setLoadedAt] = useState<string | null>(null);
   const loadingRef = useRef(false);
+  // 기본은 최근 45일만 (전체 이력은 사업자마다 문서 수백 개라 느림). 못 찾으면 전체로 넓힌다.
+  const [allHistory, setAllHistory] = useState(false);
 
-  const buildIndex = async () => {
+  const buildIndex = async (all = allHistory) => {
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
@@ -43,7 +45,7 @@ const OrdererSearchPanel: React.FC<Props> = ({ businesses, active, onClose }) =>
       await Promise.all(
         businesses.map(async (biz) => {
           const [history, pricing] = await Promise.all([
-            loadAllSalesHistory(biz.id).catch(() => [] as DailySales[]),
+            (all ? loadAllSalesHistory(biz.id) : loadRecentSalesForSearch(biz.id, 45)).catch(() => [] as DailySales[]),
             loadPricingConfig(biz.id).then(r => r.config).catch(() => null as PricingConfig | null),
           ]);
           history.forEach((d) => {
@@ -147,7 +149,7 @@ const OrdererSearchPanel: React.FC<Props> = ({ businesses, active, onClose }) =>
         <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">주문자 검색</h3>
         <div className="flex items-center gap-2">
           <button
-            onClick={buildIndex}
+            onClick={() => buildIndex()}
             disabled={loading}
             className="text-[10px] text-zinc-500 hover:text-white font-black transition-colors disabled:opacity-40"
           >
@@ -159,7 +161,7 @@ const OrdererSearchPanel: React.FC<Props> = ({ businesses, active, onClose }) =>
         </div>
       </div>
       <p className="text-zinc-600 text-[10px] mb-2 font-mono">
-        주문자 이름(또는 주문번호·전화번호)으로 전체 사업자의 발주내역을 검색합니다.
+        주문자 이름(또는 주문번호·전화번호)으로 전체 사업자의 {allHistory ? '전체' : '최근 45일'} 발주내역을 검색합니다.
         {loadedAt && <span className="text-zinc-700"> · {loadedAt} 기준</span>}
       </p>
 
@@ -176,7 +178,17 @@ const OrdererSearchPanel: React.FC<Props> = ({ businesses, active, onClose }) =>
       )}
 
       {!loading && query.trim() && results.length === 0 && (
-        <p className="text-zinc-600 text-[11px] mt-3 font-bold">"{query.trim()}" 에 대한 결과가 없습니다.</p>
+        <div className="mt-3">
+          <p className="text-zinc-600 text-[11px] font-bold">"{query.trim()}" 에 대한 결과가 없습니다.{!allHistory && ' (최근 45일)'}</p>
+          {!allHistory && (
+            <button
+              onClick={() => { setAllHistory(true); buildIndex(true); }}
+              className="mt-1 text-[11px] font-black text-sky-400 hover:text-sky-300"
+            >
+              전체 기간에서 찾기 (느림)
+            </button>
+          )}
+        </div>
       )}
 
       {byBusiness.length > 0 && (

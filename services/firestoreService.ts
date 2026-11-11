@@ -2,7 +2,7 @@ import { db } from '../firebase';
 import {
   doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, orderBy, where, getDocs,
-  onSnapshot, getDocFromServer, Timestamp, deleteField, writeBatch, arrayUnion, arrayRemove,
+  onSnapshot, getDocFromServer, getDocFromCache, Timestamp, deleteField, writeBatch, arrayUnion, arrayRemove,
   type Unsubscribe
 } from 'firebase/firestore';
 import { isCsFullyCompleted } from '../types';
@@ -440,6 +440,80 @@ export const updateCsRecords = (
   csWriteChains.set(key, result);
   result.finally(() => { if (csWriteChains.get(key) === result) csWriteChains.delete(key); }).catch(() => {});
   return result;
+};
+
+// CS 접수·수정·삭제용 — csRecords·returnRecords·플래그만 고쳐 쓴다.
+// 예전엔 upsertDailySales로 매출 문서 전체(발주행 JSON 수백KB)를 다시 써서 저장에 20초씩 걸렸다.
+// updateCsRecords와 같은 줄에 세워 같은 날짜 문서에 연달아 써도 서로 덮어쓰지 않게 한다.
+type CsReturnState = { csRecords: NonNullable<DailySales['csRecords']>; returnRecords: NonNullable<DailySales['returnRecords']> };
+export const saveCsAndReturns = (
+  date: string,
+  businessId: string | undefined,
+  mutate: (current: CsReturnState) => CsReturnState | null
+): Promise<boolean> => {
+  const key = `${getSalesCollectionName(businessId)}/${date}`;
+  const run = async (): Promise<boolean> => {
+    const docRef = doc(db, getSalesCollectionName(businessId), date);
+    const snapshot = await getDoc(docRef);
+    const data = snapshot.exists() ? snapshot.data() : null;
+    const next = mutate({ csRecords: data?.csRecords || [], returnRecords: data?.returnRecords || [] });
+    if (!next) return false;
+    const returnTotal = next.returnRecords.reduce((s, r) => s + r.totalMargin, 0);
+    const hasOpenCs = hasOpenCsRecords({ csRecords: next.csRecords } as DailySales);
+    const fields: any = {
+      csRecords: next.csRecords,
+      returnRecords: next.returnRecords.length > 0 ? next.returnRecords : deleteField(),
+      returnTotal: returnTotal || deleteField(),
+      hasCs: next.csRecords.length > 0,
+      hasOpenCs,
+    };
+    const batch = writeBatch(db);
+    if (data) {
+      batch.update(docRef, fields);
+    } else {
+      // 그날 매출 문서가 아직 없으면 빈 문서로 만든다 (deleteField는 새 문서에 못 씀)
+      const created: any = { date, records: [], totalAmount: 0, savedAt: new Date().toISOString(), csRecords: next.csRecords, hasCs: fields.hasCs, hasOpenCs };
+      if (next.returnRecords.length > 0) created.returnRecords = next.returnRecords;
+      if (returnTotal) created.returnTotal = returnTotal;
+      batch.set(docRef, created);
+    }
+    batch.set(getOpenCsDatesRef(businessId), {
+      dates: hasOpenCs ? arrayUnion(date) : arrayRemove(date),
+    }, { merge: true });
+    await batch.commit();
+    invalidateSalesHistoryCache(businessId);
+    return true;
+  };
+  const prev = csWriteChains.get(key) || Promise.resolve();
+  const result = prev.catch(() => {}).then(run);
+  csWriteChains.set(key, result);
+  result.finally(() => { if (csWriteChains.get(key) === result) csWriteChains.delete(key); }).catch(() => {});
+  return result;
+};
+
+// 주문자 검색용 — 최근 며칠 매출 문서만 날짜 키로 바로 읽는다.
+// 전체 이력(loadAllSalesHistory)은 사업자마다 문서 수백 개라 검색창이 한참 걸렸다.
+// 이틀 넘게 지난 날짜의 발주행은 바뀌지 않으므로 브라우저 캐시에 있으면 서버에 안 묻는다.
+export const loadRecentSalesForSearch = async (businessId: string | undefined, days: number): Promise<DailySales[]> => {
+  const col = getSalesCollectionName(businessId);
+  const now = new Date();
+  const dates: string[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
+  }
+  const docs = await Promise.all(dates.map(async (date, i) => {
+    const ref = doc(db, col, date);
+    if (i >= 2) {
+      try {
+        const cached = await getDocFromCache(ref);
+        if (cached.exists()) return deserializeDailySales({ ...cached.data() });
+      } catch { /* 캐시에 없음 → 서버 */ }
+    }
+    const snap = await getDoc(ref);
+    return snap.exists() ? deserializeDailySales({ ...snap.data() }) : null;
+  }));
+  return docs.filter((d): d is DailySales => !!d);
 };
 
 export const appendInvoiceRows = async (

@@ -336,19 +336,12 @@ async function setManualTransferForRefund(
 
 /** CS 기록을 삭제하고, 연결된 반품기록/정산조정/수동입금 내역도 함께 정리한다 */
 export async function deleteCsRecord(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
-  const { loadDailySales, upsertDailySales } = await import('../services/firestoreService');
-  const existing = await loadDailySales(date, businessId);
-  if (!existing) return;
-
-  const returnRecords = (existing.returnRecords || []).filter(r => r.csRecordId !== record.id);
-  const returnTotal = returnRecords.reduce((s, r) => s + r.totalMargin, 0);
-
-  await upsertDailySales({
-    ...existing,
-    csRecords: (existing.csRecords || []).filter(r => r.id !== record.id),
-    returnRecords: returnRecords.length > 0 ? returnRecords : undefined,
-    returnTotal: returnTotal || undefined,
-  }, businessId);
+  const { saveCsAndReturns } = await import('../services/firestoreService');
+  const ok = await saveCsAndReturns(date, businessId, cur => ({
+    csRecords: cur.csRecords.filter(r => r.id !== record.id),
+    returnRecords: cur.returnRecords.filter(r => r.csRecordId !== record.id),
+  }));
+  if (!ok) return;
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
 
   const wasRefundDeduction = hasSettlementDeduction(record);
@@ -362,22 +355,14 @@ export async function deleteCsRecord(businessId: string | undefined, date: strin
 
 /** 확정된 CS를 다시 대기 상태로 되돌리고, 확정 시점에 반영됐던 반품기록/정산조정/수동입금 내역도 함께 취소한다 */
 export async function revertCsRecordToPending(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
-  const { loadDailySales, upsertDailySales } = await import('../services/firestoreService');
-  const existing = await loadDailySales(date, businessId);
-  if (!existing) return;
-
-  const returnRecords = (existing.returnRecords || []).filter(r => r.csRecordId !== record.id);
-  const returnTotal = returnRecords.reduce((s, r) => s + r.totalMargin, 0);
+  const { saveCsAndReturns } = await import('../services/firestoreService');
   // 발주서 초기화로 되돌릴 때(revertReshipCsRecordsForReset)와 같은 상태로 맞춘다.
   // poAdded를 남겨두면 다시 확정했을 때 "발주서생성됨"으로 굳어 재생성 버튼을 누를 수 없다.
-  const csRecords = (existing.csRecords || []).map(r => (r.id === record.id ? { ...r, pending: true, poAdded: false } : r));
-
-  await upsertDailySales({
-    ...existing,
-    csRecords,
-    returnRecords: returnRecords.length > 0 ? returnRecords : undefined,
-    returnTotal: returnTotal || undefined,
-  }, businessId);
+  const ok = await saveCsAndReturns(date, businessId, cur => ({
+    csRecords: cur.csRecords.map(r => (r.id === record.id ? { ...r, pending: true, poAdded: false } : r)),
+    returnRecords: cur.returnRecords.filter(r => r.csRecordId !== record.id),
+  }));
+  if (!ok) return;
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
 
   const wasRefundDeduction = hasSettlementDeduction(record);
@@ -445,12 +430,10 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       const supplyPrice = product?.supplyPrice || 0;
       const marginPerUnit = product?.margin || 0;
 
-      const { loadDailySales, upsertDailySales } = await import('../services/firestoreService');
+      const { saveCsAndReturns } = await import('../services/firestoreService');
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const targetDate = editing ? editing.date : todayStr;
-      const existing = await loadDailySales(targetDate, businessId);
-      const base: DailySales = existing || { date: targetDate, records: [], totalAmount: 0, savedAt: new Date().toISOString() };
 
       const id = editing ? editing.record.id : `cs-${Date.now()}`;
       const csRecord: CsRecord = {
@@ -484,34 +467,28 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         pending: asPending,
       };
 
-      const csRecords = editing
-        ? (base.csRecords || []).map(r => (r.id === id ? csRecord : r))
-        : [...(base.csRecords || []), csRecord];
-
       // 대기 저장 중엔 반품기록/정산조정/계좌이체 등 실제 재무 효과를 발생시키지 않는다 (확정 시점에만 실행)
-      let returnRecords = (base.returnRecords || []).filter(r => r.csRecordId !== id);
       const isRefundDeduction = !asPending && draft.customerMethod === '환불' && draft.deduction === 'full';
-      if (isRefundDeduction) {
-        returnRecords = [...returnRecords, {
-          company: draft.company,
-          productKey: draft.productKey,
-          productName: product?.displayName || draft.productName || '',
-          count: 1,
-          marginPerUnit,
-          totalMargin: -marginPerUnit,
-          memo: `CS환불 - ${draft.reason.trim()}`,
-          type: 'CS환불' as const,
-          csRecordId: id,
-        }];
-      }
-      const returnTotal = returnRecords.reduce((s, r) => s + r.totalMargin, 0);
-
-      await upsertDailySales({
-        ...base,
-        csRecords,
-        returnRecords: returnRecords.length > 0 ? returnRecords : undefined,
-        returnTotal: returnTotal || undefined,
-      }, businessId);
+      await saveCsAndReturns(targetDate, businessId, cur => {
+        const csRecords = editing
+          ? cur.csRecords.map(r => (r.id === id ? csRecord : r))
+          : [...cur.csRecords, csRecord];
+        let returnRecords = cur.returnRecords.filter(r => r.csRecordId !== id);
+        if (isRefundDeduction) {
+          returnRecords = [...returnRecords, {
+            company: draft.company,
+            productKey: draft.productKey,
+            productName: product?.displayName || draft.productName || '',
+            count: 1,
+            marginPerUnit,
+            totalMargin: -marginPerUnit,
+            memo: `CS환불 - ${draft.reason.trim()}`,
+            type: 'CS환불' as const,
+            csRecordId: id,
+          }];
+        }
+        return { csRecords, returnRecords };
+      });
       window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: targetDate } }));
 
       const wasRefundDeduction = editing ? (hasSettlementDeduction(editing.record) && !editing.record.pending) : false;

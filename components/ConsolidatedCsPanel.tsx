@@ -177,6 +177,8 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
   const [businessPricingConfig, setBusinessPricingConfig] = useState<PricingConfig | null>(null);
   const [loadingBusinessData, setLoadingBusinessData] = useState(false);
   const [search, setSearch] = useState('');
+  // 기본은 최근 45일 발주내역만 (전체 이력은 문서 수백 개라 느림). 못 찾으면 전체로 넓힌다.
+  const [searchAllHistory, setSearchAllHistory] = useState(false);
   const [manualCompany, setManualCompany] = useState('');
   const [csDraft, setCsDraft] = useState<CsDraft | null>(null);
   const [editing, setEditing] = useState<{ date: string; record: OpenCsItem; businessId: string } | null>(null);
@@ -213,12 +215,11 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     }
     let cancelled = false;
     setLoadingBusinessData(true);
-    setSearch('');
-    setManualCompany('');
+    if (!searchAllHistory) { setSearch(''); setManualCompany(''); }
     (async () => {
-      const { loadAllSalesHistory, loadPricingConfig } = await import('../services/firestoreService');
+      const { loadAllSalesHistory, loadRecentSalesForSearch, loadPricingConfig } = await import('../services/firestoreService');
       const [history, configResult] = await Promise.all([
-        loadAllSalesHistory(selectedBusinessId),
+        searchAllHistory ? loadAllSalesHistory(selectedBusinessId) : loadRecentSalesForSearch(selectedBusinessId, 45),
         loadPricingConfig(selectedBusinessId),
       ]);
       if (cancelled) return;
@@ -240,7 +241,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
       setLoadingBusinessData(false);
     })();
     return () => { cancelled = true; };
-  }, [selectedBusinessId]);
+  }, [selectedBusinessId, searchAllHistory]);
 
   // 검색 색인: 표시에 쓸 필드와 검색용 문자열을 한 번만 만들어 둔다 (타이핑마다 재계산 방지).
   // 이름 소스 우선순위: 저장된 수취인 이름 → 값 기반 보정 → 헤더 추측.
@@ -340,7 +341,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     const key = `${item.businessId}-${item.id}`;
     setCreatingPoId(key);
     try {
-      const { loadPricingConfig, loadDailySales, upsertDailySales } = await import('../services/firestoreService');
+      const { loadPricingConfig, updateCsRecords } = await import('../services/firestoreService');
       const { config } = await loadPricingConfig(item.businessId);
       const row = item.orderRowSnapshot || [];
       const fields = resolveOrderRowFields(item.company, row, config || undefined);
@@ -363,11 +364,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         alert('발주서 추가에 실패했습니다. 해당 사업자 탭이 열려있는지 확인해주세요.');
         return;
       }
-      const existing = await loadDailySales(item.date, item.businessId);
-      if (existing?.csRecords) {
-        const updated = existing.csRecords.map(r => r.id === item.id ? { ...r, poAdded: true } : r);
-        await upsertDailySales({ ...existing, csRecords: updated }, item.businessId);
-      }
+      await updateCsRecords(item.date, item.businessId, records => records.map(r => r.id === item.id ? { ...r, poAdded: true } : r));
       setItems(prev => prev.map(i => (i.id === item.id && i.businessId === item.businessId) ? { ...i, poAdded: true } : i));
     } finally {
       setCreatingPoId(null);
@@ -492,7 +489,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
       <div className="px-2 mb-3 space-y-2">
         <select
           value={selectedBusinessId}
-          onChange={e => setSelectedBusinessId(e.target.value)}
+          onChange={e => { setSearchAllHistory(false); setSelectedBusinessId(e.target.value); }}
           className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:ring-1 focus:ring-violet-500/30 focus:border-violet-500/30"
         >
           <option value="">CS 접수할 사업자 선택...</option>
@@ -535,7 +532,14 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         {selectedBusinessId && search.trim() && (
           <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar pr-1">
             {searchResults.length === 0 ? (
-              <p className="text-zinc-600 text-xs font-bold text-center py-3">검색 결과가 없습니다.</p>
+              <div className="text-center py-3">
+                <p className="text-zinc-600 text-xs font-bold">{searchAllHistory ? '검색 결과가 없습니다.' : '최근 45일 발주내역에 없습니다.'}</p>
+                {!searchAllHistory && !loadingBusinessData && (
+                  <button onClick={() => setSearchAllHistory(true)} className="mt-1.5 text-[11px] font-black text-violet-400 hover:text-violet-300">
+                    전체 기간에서 찾기 (느림)
+                  </button>
+                )}
+              </div>
             ) : searchResults.map(({ company, row, orderNumber, fields }, i) => {
               const displayOrderNumber = orderNumber || fields.orderNumber;
               const isOpen = (orderNumber && openOrderNumbersForBusiness.has(orderNumber))
