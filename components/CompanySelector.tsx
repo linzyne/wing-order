@@ -5605,13 +5605,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 </div>
             , document.body)}
 
-            <div>
-                <section className="glass rounded-[1.8rem] p-6 shadow-xl">
-                    <div className="flex flex-col gap-6">
-                    </div>
-                </section>
-            </div>
-
             {/* 사이드바 포탈: 수동 발주 + 발주서 업로드 + 가구매 명단 */}
             {isCurrent && document.getElementById(portalId || 'manual-order-portal') && createPortal(
                 <>
@@ -6855,7 +6848,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             </div>
 
             <div className="flex flex-col lg:flex-row gap-6">
-            <section className="flex-1 glass rounded-[1.8rem] p-6 shadow-xl">
+            <section className="flex-1 glass rounded-[1.8rem] p-6 shadow-xl hide-if-empty">
                 <div className="flex flex-col gap-4">
                         {missingOrderAnalysis && missingOrderAnalysis.missingGroups.length > 0 && (
                             <div className="bg-red-500/10 border-2 border-red-500/50 rounded-xl px-4 py-3 animate-fade-in">
