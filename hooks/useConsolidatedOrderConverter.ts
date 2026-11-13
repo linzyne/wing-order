@@ -737,7 +737,9 @@ const generateWorkbookForCompany = async (
     manualOrders: ManualOrder[] = [],
     unmatchedOrders: UnmatchedOrder[] = [],
     businessId?: string,
-    workDate?: string
+    workDate?: string,
+    sentNumbers?: Map<string, string>,
+    sentExcluded?: ExcludedOrder[]
 ): Promise<[string, ProcessedResult | null]> => {
     try {
         const companyConfig = pricingConfig[companyName];
@@ -822,6 +824,13 @@ const generateWorkbookForCompany = async (
 
                 if (fakeOrderNumbers.has(orderNumber)) {
                     excludedOrders.push({ companyName, recipientName, productName, phone, orderNumber: `${orderNumber} (제외)`, qty: validQty });
+                    continue;
+                }
+
+                // 전날 이전에 이미 발주한 주문(송장 아직 없음) — 다시 발주하지 않게 뺀다
+                const sentTag = sentNumbers?.get(orderNumber);
+                if (sentTag) {
+                    sentExcluded?.push({ companyName, recipientName, productName, phone, orderNumber: `${orderNumber} (${sentTag})`, qty: validQty });
                     continue;
                 }
 
@@ -1455,7 +1464,7 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
     // pricingConfig가 바뀌면 캐시 초기화 (구버전 품목키 캐싱 방지)
     useEffect(() => { geminiProductCache.clear(); }, [pricingConfig]);
 
-    const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = [], workDate?: string) => {
+    const processSingleCompanyFile = useCallback(async (file: File | null, targetCompanyName: string, fakeOrderNumbersInput: string, manualOrders: ManualOrder[] = [], workDate?: string, sentNumbers?: Map<string, string>) => {
         try {
             console.log(`[발주처리] ${targetCompanyName} 처리 시작`);
             const geminiKey = import.meta.env.VITE_GEMINI_API_KEY;
@@ -1546,9 +1555,10 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
 
             const localExcluded: ExcludedOrder[] = [];
             const localUnmatched: UnmatchedOrder[] = [];
-            const [, result] = await generateWorkbookForCompany(ai, geminiProductCache, pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId, workDate);
+            const localSent: ExcludedOrder[] = [];
+            const [, result] = await generateWorkbookForCompany(ai, geminiProductCache, pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId, workDate, sentNumbers, localSent);
 
-            return { result, excluded: localExcluded, unmatched: localUnmatched };
+            return { result, excluded: localExcluded, unmatched: localUnmatched, sentExcluded: localSent };
         } catch (err) {
             console.error(err);
             return null;

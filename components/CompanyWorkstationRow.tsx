@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
+import { getSentBatches, sentNumbersBefore, subscribeSentBatches } from '../services/sentOrders';
 import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, findProductNameColIdx, findQtyColIdx, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines, PARCEL_SUFFIX } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
@@ -197,6 +198,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [copiedExcelId, setCopiedExcelId] = useState<string | null>(null);
     const [localResult, setLocalResult] = useState<ProcessedResult | null>(null);
     const [excludedList, setExcludedList] = useState<ExcludedOrder[]>([]);
+    // 이미 발주한(전날 이전 기록) 주문이라 뺀 것 — 가구매 제외와 섞지 않는다
+    const [sentExcludedList, setSentExcludedList] = useState<ExcludedOrder[]>([]);
     const [unmatchedList, setUnmatchedList] = useState<UnmatchedOrder[]>([]);
     const [isLocalProcessing, setIsLocalProcessing] = useState(false);
     const [localFile, setLocalFile] = useState<File | null>(null);
@@ -628,7 +631,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const processedCount = (localResult as any)?.originalOrderCount
                 || Object.values(localResult?.summary || {}).reduce((a: number, b: any) => a + b.count, 0) as number
                 || (syncedData?.orderCount ?? 0);
-            const exQty = excludedList.reduce((s: number, e: any) => s + (e.qty || 1), 0);
+            const exQty = [...excludedList, ...sentExcludedList].reduce((s: number, e: any) => s + (e.qty || 1), 0);
             const unQty = unmatchedList.reduce((s: number, u: any) => s + (u.qty || 1), 0);
             if (masterExpectedCount > processedCount + exQty + unQty) return true;
         }
@@ -1152,10 +1155,12 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 : []);
         try {
             const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
-            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude, workDate);
+            const sentNumbers = businessId && workDate ? sentNumbersBefore(await getSentBatches(), businessId, workDate) : undefined;
+            const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude, workDate, sentNumbers);
             if (processResponse) {
                 setLocalResult(processResponse.result);
                 setExcludedList(processResponse.excluded);
+                setSentExcludedList(processResponse.sentExcluded || []);
                 setUnmatchedList(processResponse.unmatched || []);
                 if (!processResponse.result) {
                     // 실제 재매칭 결과 매칭 0건 → 구식 Firestore 세션 데이터가 남아있으면
@@ -1193,6 +1198,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         }
     };
 
+    // 발주기록을 취소하면 뺐던 주문이 다시 들어오게 지금 파일로 다시 처리
+    const reprocessRef = useRef<() => void>(() => {});
+    reprocessRef.current = () => {
+        const activeFile = localFile || batchFile || masterFile;
+        if (activeFile) handleLocalFileChange(activeFile);
+    };
+    useEffect(() => {
+        if (!businessId || !workDate || sentExcludedList.length === 0) return;
+        return subscribeSentBatches(all => {
+            const map = sentNumbersBefore(all, businessId, workDate);
+            if (sentExcludedList.some(e => !map.has(e.orderNumber.split(' ')[0]))) reprocessRef.current();
+        });
+    }, [sentExcludedList, businessId, workDate]);
+
     const handleRunMerge = () => {
         // batchFile: localFile이 아직 null일 때(첫 렌더 타이밍) masterFile 대신 batchFile 사용
         const activeFile = localFile || batchFile || masterFile;
@@ -1229,6 +1248,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         setLocalFile(null);
         setLocalResult(null);
         setExcludedList([]);
+        setSentExcludedList([]);
         setUnmatchedList([]);
         resetMerge();
         onResultUpdate(sessionId, 0, 0, []);
@@ -1256,6 +1276,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // 교체 이전 데이터가 화면에 그대로 남는다.
         setLocalResult(null);
         setExcludedList([]);
+        setSentExcludedList([]);
         setUnmatchedList([]);
         onResultUpdate(sessionId, 0, 0, []);
         onDataUpdate(sessionId, [], [], [], '', undefined, undefined, undefined);
@@ -1787,6 +1808,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                 제외({excludedList.length})
                                             </button>
                                         )}
+                                        {sentExcludedList.length > 0 && (
+                                            <span title={`이미 발주해서 뺀 주문\n${sentExcludedList.map(e => `${e.recipientName} ${e.orderNumber}`).join('\n')}`} className="text-amber-400 text-[9px] font-black whitespace-nowrap cursor-help">이미발주({sentExcludedList.length})</span>
+                                        )}
                                         <div className="ml-auto flex items-center gap-2">
                                             <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                             <div className="h-5 w-px bg-zinc-700" />
@@ -1848,7 +1872,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 {(() => {
                                     const processedCount = (localResult as any).originalOrderCount
                                         || Object.entries(localResult.summary).reduce((a:any, [k, b]:any) => isParcelEntryName(k) ? a : a + b.count, 0) as number;
-                                    const excludedQtyTotal = excludedList.reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
+                                    const excludedQtyTotal = [...excludedList, ...sentExcludedList].reduce((sum: number, e: any) => sum + (e.qty || 1), 0);
                                     const unmatchedQtyTotal = unmatchedList.reduce((sum: number, u: any) => sum + (u.qty || 1), 0);
                                     const workstationTotal = processedCount + excludedQtyTotal + unmatchedQtyTotal;
                                     if (masterExpectedCount > 0 && masterExpectedCount > workstationTotal) {
@@ -1898,6 +1922,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             <button onClick={() => setShowExcluded(!showExcluded)} className="text-pink-500 hover:text-pink-400 text-[9px] font-black uppercase flex items-center gap-1 whitespace-nowrap">
                                                 제외({excludedList.length})
                                             </button>
+                                        )}
+                                        {sentExcludedList.length > 0 && (
+                                            <span title={`이미 발주해서 뺀 주문\n${sentExcludedList.map(e => `${e.recipientName} ${e.orderNumber}`).join('\n')}`} className="text-amber-400 text-[9px] font-black whitespace-nowrap cursor-help">이미발주({sentExcludedList.length})</span>
                                         )}
                                         <button onClick={resetLocalFile} className="p-1 bg-zinc-900 rounded text-zinc-700 hover:text-pink-500 border border-zinc-800 transition-colors"><ArrowPathIcon className="w-3 h-3" /></button>
                                     </div>

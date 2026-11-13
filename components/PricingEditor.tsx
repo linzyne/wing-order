@@ -931,6 +931,13 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
         handleUpdate(newConfig);
     };
 
+    const handleUpdateInvoiceWaitDays = (companyName: string, days: number) => {
+        const newConfig = JSON.parse(JSON.stringify(configRef.current));
+        if (days > 0 && days !== 2) newConfig[companyName].invoiceWaitDays = days;
+        else delete newConfig[companyName].invoiceWaitDays;
+        handleUpdate(newConfig);
+    };
+
     const handleUpdateEmailSubject = (companyName: string, subject: string) => {
         const newConfig = JSON.parse(JSON.stringify(configRef.current));
         newConfig[companyName].emailSubject = subject;
@@ -1312,6 +1319,7 @@ const PricingEditor: React.FC<PricingEditorProps> = ({ config, onConfigChange, b
                             onUpdatePhone={(phone) => handleUpdatePhone(companyName, phone)}
                             onUpdateEmail={(email) => handleUpdateEmail(companyName, email)}
                             onUpdateOrderMethod={(method) => handleUpdateOrderMethod(companyName, method)}
+                            onUpdateInvoiceWaitDays={(days) => handleUpdateInvoiceWaitDays(companyName, days)}
                             onUpdateEmailSubject={(subject) => handleUpdateEmailSubject(companyName, subject)}
                             onUpdateEmailBody={(body) => handleUpdateEmailBody(companyName, body)}
                             onUpdateBank={(bank) => handleUpdateBank(companyName, bank)}
@@ -1464,6 +1472,7 @@ const CompanyCard: React.FC<{
     onUpdatePhone: (phone: string) => void;
     onUpdateEmail: (email: string) => void;
     onUpdateOrderMethod: (method: OrderMethod | '') => void;
+    onUpdateInvoiceWaitDays: (days: number) => void;
     onUpdateEmailSubject: (subject: string) => void;
     onUpdateEmailBody: (body: string) => void;
     onUpdateBank: (bank: string) => void;
@@ -1554,6 +1563,17 @@ const CompanyCard: React.FC<{
                             >
                                 <option value="">{companyConfig.email?.trim() ? '발주방식 (이메일)' : '발주방식 미지정'}</option>
                                 {ORDER_METHODS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner" title="발주하고 영업일로 이만큼 지나도 송장이 없으면 주문서 패널 맨 위에 빨간색으로 알려 줍니다 (주말·공휴일 뺌)">
+                            <span className="text-sm shrink-0">🚚</span>
+                            <span className="text-sm font-bold text-zinc-500 shrink-0">송장 기다림</span>
+                            <select
+                                value={companyConfig.invoiceWaitDays ?? 2}
+                                onChange={(e) => props.onUpdateInvoiceWaitDays(Number(e.target.value))}
+                                className="bg-transparent text-sm font-bold text-zinc-400 focus:outline-none w-full"
+                            >
+                                {[1, 2, 3, 4, 5, 7].map(d => <option key={d} value={d}>영업일 {d}일</option>)}
                             </select>
                         </div>
                         <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">

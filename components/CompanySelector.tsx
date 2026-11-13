@@ -17,6 +17,7 @@ import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../
 import { sendOrderEmail, renderMailTemplate, DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY, ORDER_MAIL_NOTICE } from '../services/emailService';
 import { splitEmails } from '../services/invoiceMailService';
 import { sendAdminOutbox } from '../services/adminOutbox';
+import { subscribeSentBatches, sentNumbersBefore, recordSentOrders, splitOrderNumbers, pruneShipped, type SentBatch, type SentMethod } from '../services/sentOrders';
 import { queueWorkbookDownload } from '../services/downloadQueue';
 import type { EmailInvoiceStatus } from '../hooks/useMailInvoiceWatcher';
 import {
@@ -1065,6 +1066,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allItemSummaries, setAllItemSummaries] = useState<Record<string, Record<string, { count: number; totalPrice: number }>>>({});
     const [checkedCompanies, setCheckedCompanies] = useState<Set<string>>(new Set());
     const [workDate, setWorkDate] = useState<string>(new Date().toLocaleDateString('en-CA'));
+    // 발주기록(이미 발주한 주문) — 마스터 누락 검사에서 빼려고 구독
+    const [sentBatches, setSentBatches] = useState<SentBatch[]>([]);
+    useEffect(() => subscribeSentBatches(setSentBatches), []);
     // 매출 기록 저장/조회에 실제로 쓰이는 날짜: 마스터 파일명에 날짜가 있으면 그걸 우선하고, 없으면 작업날짜(workDate)를 사용
     const resolveRecordDate = useCallback((baseDate: string, file: File | null): string => {
         if (!file) return baseDate;
@@ -1164,6 +1168,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return out;
     }, [pricingConfig, companyDeposits, depositLedger, depositRecordDate]);
     const [masterOrderData, setMasterOrderData] = useState<any[][] | null>(null);
+    // 1차 주문서(상품준비중 전체)에 없는 기록 주문 = 송장 붙음 → 발주기록에서 정리
+    useEffect(() => {
+        if (!businessId || !masterOrderData || masterOrderData.length < 2) return;
+        const nums = new Set<string>();
+        for (let i = 1; i < masterOrderData.length; i++) {
+            const n = String(masterOrderData[i]?.[2] || '').trim();
+            if (n) nums.add(n);
+        }
+        pruneShipped(businessId, workDate, nums);
+    }, [businessId, masterOrderData, workDate]);
     const [fakeMasterOrderFile, setFakeMasterOrderFile] = useState<File | null>(null);
     const [fakeMasterOrderData, setFakeMasterOrderData] = useState<any[][] | null>(null);
     const [detectedCompanies, setDetectedCompanies] = useState<Set<string>>(new Set());
@@ -1836,6 +1850,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const masterProductSummary = useMemo(() => {
         if (!masterOrderData || masterOrderData.length < 2) return null;
         const fakeNums = resolveFakeOrderNumbers(effectiveFakeInput);
+        // 전날 이전에 이미 발주한 주문 — 발주서에서 빠지므로 누락으로 세지 않는다
+        const sentNums = businessId ? sentNumbersBefore(sentBatches, businessId, workDate) : new Map<string, string>();
         // 헤더에서 수량 열 동적 탐색 (W열 = index 22가 아닐 수 있음)
         const headers = masterOrderData[0] || [];
         let qtyColIdx = headers.findIndex((h: any) => h && String(h).includes('수량'));
@@ -1848,7 +1864,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const realOrders: Record<string, number> = {};
         const fakeOrders: Record<string, number> = {};
         const unclaimedOrders: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number }[] = [];
-        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean; platform: string }[] = [];
+        const sentOrders: Record<string, number> = {};
+        const allOrderDetails: { recipientName: string; productName: string; groupName: string; orderNumber: string; qty: number; company: string; isFake: boolean; isSent?: boolean; platform: string }[] = [];
         const skippedOrders: { recipientName: string; productName: string; orderNumber: string; qty: number; reason: string }[] = [];
         let masterRawTotalQty = 0;
         let masterFileRowCount = 0; // 파일 내 비어있지 않은 데이터 행 수
@@ -1916,10 +1933,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 productToCompany[groupName] = customCompany;
             }
             const isFake = fakeNums.has(orderNum);
+            const isSent = !isFake && sentNums.has(orderNum);
             const company = customCompany || productToCompany[groupName] || '';
             const platform = rowPlatformSources[i] || '쿠팡';
-            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake, platform });
-            if (isFake) {
+            allOrderDetails.push({ recipientName, productName, groupName, orderNumber: orderNum, qty, company, isFake, isSent, platform });
+            if (isSent) {
+                sentOrders[groupName] = (sentOrders[groupName] || 0) + qty;
+            } else if (isFake) {
                 fakeOrders[groupName] = (fakeOrders[groupName] || 0) + qty;
             } else {
                 realOrders[groupName] = (realOrders[groupName] || 0) + qty;
@@ -1930,6 +1950,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         const realTotal = Object.values(realOrders).reduce((a, b) => a + b, 0);
         const fakeTotal = Object.values(fakeOrders).reduce((a, b) => a + b, 0);
+        const sentTotal = Object.values(sentOrders).reduce((a, b) => a + b, 0);
         // 업체별 마스터 주문 건수 (수량 기준)
         const companyOrderCounts: Record<string, number> = {};
         allOrderDetails.forEach(d => {
@@ -1963,8 +1984,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (unclaimedOrders.length > 0) console.log(`[마스터검증] unclaimedOrders:`, unclaimedOrders);
         if (unknownGroupNames.length > 0) console.log(`[마스터검증] unknownGroupNames:`, unknownGroupNames);
         if (skippedOrders.length > 0) console.log(`[마스터검증] skippedOrders:`, skippedOrders);
-        return { realOrders, fakeOrders, realTotal, fakeTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount, unknownGroupNames };
-    }, [masterOrderData, effectiveFakeInput, pricingConfig, rowPlatformSources]);
+        return { realOrders, fakeOrders, sentOrders, realTotal, fakeTotal, sentTotal, productToCompany, unclaimedOrders, allOrderDetails, companyOrderCounts, skippedOrders, masterRawTotalQty, masterFileRowCount, unknownGroupNames };
+    }, [masterOrderData, effectiveFakeInput, pricingConfig, rowPlatformSources, sentBatches, businessId, workDate]);
 
     // 2차+ 세션 주문 집계 (배치 업로드로 들어온 추가 차수 데이터)
     // 차수별로 분리: [2차, 3차, 4차, ...] — 데이터 없는 차수는 0으로 채움
@@ -3055,6 +3076,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         return sum;
     };
+    // 발주서가 밖으로 나가면(다운로드·메일·어드민·카톡) 그 주문번호를 발주기록에 남긴다 → 다음 날 주문서에서 빠짐
+    const recordSent = (companyName: string, sessionIds: string[], method: SentMethod, label: string) => {
+        if (!businessId) return;
+        const orderNumbers = splitOrderNumbers(sessionIds.flatMap(id =>
+            (allRowOrderNumbers[id]?.length ? allRowOrderNumbers[id] : sessionResults?.[id]?.rowOrderNumbers) || []));
+        recordSentOrders({
+            businessId, businessName: businessPrefix, company: companyName, label, method,
+            recordDate: workDate, orderNumbers, waitDays: pricingConfig[companyName]?.invoiceWaitDays || 2,
+        });
+    };
+    const sessionIdsWithRows = (companyName: string, round?: number) =>
+        ((companySessions[companyName] || []) as SessionData[])
+            .filter(s => (round === undefined || s.round === round) && (allOrderRows[s.id]?.length || 0) > 0)
+            .map(s => s.id);
     downloadCompanyMergedRef.current = (companyName: string) => {
         handleDownloadMergedOrder(companyName);
     };
@@ -3073,6 +3108,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}[발주서_${companyName}] ${round}차.xlsx`);
+        recordSent(companyName, [session.id], 'download', `${round}차`);
     };
     downloadAllCompaniesRef.current = () => {
         const allCompanies = Object.keys(companySessions).filter(name =>
@@ -3127,7 +3163,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return email;
     };
     const emailInFlightRef = useRef<Set<string>>(new Set());
-    const sendOrderMail = async (companyName: string, rows: any[][], label: string, subjectLabel: string): Promise<boolean> => {
+    const sendOrderMail = async (companyName: string, rows: any[][], label: string, subjectLabel: string, sessionIds: string[] = []): Promise<boolean> => {
         if (!rows || rows.length === 0) { alert('전송할 발주 데이터가 없습니다.'); return false; }
         const key = `${companyName}:${label}`;
         if (emailInFlightRef.current.has(key)) return false;
@@ -3140,6 +3176,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         try {
             // 성공은 아이콘의 ✓로만 알린다 — 알림창이 뜨면 다음 아이콘이 안 눌려서
             await sendOrderEmail({ to, subject, text, filename: built.filename, contentBase64: built.base64 });
+            recordSent(companyName, sessionIds, 'mail', label);
             return true;
         } catch (e: any) {
             alert(`메일 전송 실패\n${e?.message || e}`);
@@ -3150,7 +3187,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
     // 어드민 전송: 업체 양식 발주서를 adminOutbox로 넘기면 업체 어드민 탭의 크롬 확장이 대량 주문입력(엑셀)에 올린다.
     const adminInFlightRef = useRef<Set<string>>(new Set());
-    const sendOrderAdmin = async (companyName: string, rows: any[][], label: string): Promise<boolean> => {
+    const sendOrderAdmin = async (companyName: string, rows: any[][], label: string, sessionIds: string[] = []): Promise<boolean> => {
         if (!rows || rows.length === 0) { alert('전송할 발주 데이터가 없습니다.'); return false; }
         const key = `${companyName}:${label}`;
         if (adminInFlightRef.current.has(key)) return false;
@@ -3160,6 +3197,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         adminInFlightRef.current.add(key);
         try {
             await sendAdminOutbox({ company: companyName, business, fileName: built.filename, fileBase64: built.base64, rowCount: rows.length, label });
+            recordSent(companyName, sessionIds, 'admin', label);
             // 성공은 아이콘의 ✓로만 알린다 (어드민 탭이 '엑셀 내용 확인'까지 넘기면 주문 등록은 직접)
             return true;
         } catch (e: any) {
@@ -3173,18 +3211,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const sessions = (companySessions[companyName] || []) as SessionData[];
         const session = sessions.find(s => s.round === round);
         const rows = session ? allOrderRows[session.id] : undefined;
-        return sendOrderAdmin(companyName, rows || [], `${round}차`);
+        return sendOrderAdmin(companyName, rows || [], `${round}차`, session ? [session.id] : []);
     };
     adminCompanyMergedRef.current = async (companyName: string) => {
         const sessions = (companySessions[companyName] || []) as SessionData[];
         const mergedRows: any[][] = [];
         sessions.forEach(s => { if (allOrderRows[s.id]?.length) mergedRows.push(...allOrderRows[s.id]); });
-        return sendOrderAdmin(companyName, mergedRows, '합산');
+        return sendOrderAdmin(companyName, mergedRows, '합산', sessionIdsWithRows(companyName));
     };
     // 카톡 전송: 웹에서는 특정 대화방을 지정할 수 없어 OS 공유창(→ 카카오톡 → 대화방 선택)으로 파일을 넘긴다.
     // 공유창은 파일만 확실히 전달되므로 정산 요약은 클립보드에 넣어 두고 붙여넣게 한다.
     // share()·clipboard 모두 클릭 제스처 안에서 호출돼야 해서 await 없이 바로 부른다.
-    const shareOrderKakao = async (companyName: string, rows: any[][], label: string, subjectLabel: string) => {
+    const shareOrderKakao = async (companyName: string, rows: any[][], label: string, subjectLabel: string, sessionIds: string[] = []) => {
         if (!rows || rows.length === 0) { alert('전송할 발주 데이터가 없습니다.'); return; }
         const built = buildOrderWorkbook(companyName, rows, label);
         if (!built) { alert('발주서 양식 설정을 찾을 수 없습니다.'); return; }
@@ -3198,6 +3236,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (navigator.canShare?.({ files: [file] })) {
             try {
                 await navigator.share({ files: [file] });
+                recordSent(companyName, sessionIds, 'kakao', label);
                 if (await copied) alert('정산 요약이 복사되어 있습니다.\n카톡 대화방에 붙여넣기(⌘V) 하세요.');
                 return;
             } catch (e: any) {
@@ -3208,6 +3247,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         }
         // 공유창을 못 쓰는 경우: 파일 다운로드 + 본문 복사 후 안내
         XLSX.writeFile(built.wb, built.filename);
+        recordSent(companyName, sessionIds, 'kakao', label);
         const ok = await copied;
         alert(`발주서를 다운로드했습니다.\n카톡 대화방에 파일을 끌어다 놓아 주세요.${ok ? '\n정산 요약은 복사되어 있어 붙여넣기(⌘V) 하면 됩니다.' : ''}${shareError ? `\n\n(공유 실패 원인: ${shareError})` : ''}`);
     };
@@ -3215,25 +3255,25 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const sessions = (companySessions[companyName] || []) as SessionData[];
         const session = sessions.find(s => s.round === round);
         const rows = session ? allOrderRows[session.id] : undefined;
-        await shareOrderKakao(companyName, rows || [], `${round}차`, `${round}차`);
+        await shareOrderKakao(companyName, rows || [], `${round}차`, `${round}차`, session ? [session.id] : []);
     };
     kakaoCompanyMergedRef.current = async (companyName: string) => {
         const sessions = (companySessions[companyName] || []) as SessionData[];
         const mergedRows: any[][] = [];
         sessions.forEach(s => { if (allOrderRows[s.id]?.length) mergedRows.push(...allOrderRows[s.id]); });
-        await shareOrderKakao(companyName, mergedRows, '합산', '합산');
+        await shareOrderKakao(companyName, mergedRows, '합산', '합산', sessionIdsWithRows(companyName));
     };
     emailCompanyRoundRef.current = async (companyName: string, round: number) => {
         const sessions = (companySessions[companyName] || []) as SessionData[];
         const session = sessions.find(s => s.round === round);
         const rows = session ? allOrderRows[session.id] : undefined;
-        return sendOrderMail(companyName, rows || [], `${round}차`, `${round}차`);
+        return sendOrderMail(companyName, rows || [], `${round}차`, `${round}차`, session ? [session.id] : []);
     };
     emailCompanyMergedRef.current = async (companyName: string) => {
         const sessions = (companySessions[companyName] || []) as SessionData[];
         const mergedRows: any[][] = [];
         sessions.forEach(s => { if (allOrderRows[s.id]?.length) mergedRows.push(...allOrderRows[s.id]); });
-        return sendOrderMail(companyName, mergedRows, '합산', '합산');
+        return sendOrderMail(companyName, mergedRows, '합산', '합산', sessionIdsWithRows(companyName));
     };
     getCompanyClosedRef.current = (companyName: string) => closedCompanies.has(companyName);
     getCompanyRecordedRef.current = (companyName: string) => recordedCompanies.has(companyName);
@@ -3667,6 +3707,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             XLSX.utils.book_append_sheet(wb, ws, '발주서');
             const dateStr = new Date().toLocaleDateString('en-CA');
             XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}[발주서_${companyName}] 합산.xlsx`);
+            recordSent(companyName, sessionIdsWithRows(companyName), 'download', '합산');
             sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
             downloaded++;
         });
@@ -4376,6 +4417,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         XLSX.utils.book_append_sheet(wb, ws, '발주서');
         const dateStr = new Date().toLocaleDateString('en-CA');
         XLSX.writeFile(wb, `${dateStr} ${businessPrefix ? businessPrefix + ' ' : ''}[발주서_${companyName}] 합산.xlsx`);
+        recordSent(companyName, sessionIdsWithRows(companyName), 'download', '합산');
         // 합산 발주서 다운로드 시 해당 업체 모든 세션 불 끄기
         sessions.forEach(s => setOrderLitSessions(prev => { const n = new Set(prev); n.delete(s.id); return n; }));
         setMergedDownloadedCompanies(prev => { const n = new Set(prev); n.add(companyName); return n; });
@@ -5298,7 +5340,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             if (!company) {
                 // 업체 미매칭: 마스터 전체가 누락
                 const masterDetails = masterProductSummary.allOrderDetails
-                    .filter((d: any) => d.groupName === groupName && !d.isFake);
+                    .filter((d: any) => d.groupName === groupName && !d.isFake && !d.isSent);
                 const names = masterDetails.map((d: any) => d.recipientName).filter((n: string) => n);
                 missingGroups.push({ groupName, company: '', masterQty, processedQty: 0, diffQty: masterQty, reason: '업체 미매칭 (키워드 없음)', names });
             } else if (!processedCompanies.has(company)) {
@@ -5309,7 +5351,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (processedQty < masterQty) {
                     const diffQty = masterQty - processedQty;
                     const masterDetails = masterProductSummary.allOrderDetails
-                        .filter((d: any) => d.groupName === groupName && d.company === company && !d.isFake);
+                        .filter((d: any) => d.groupName === groupName && d.company === company && !d.isFake && !d.isSent);
                     const names = computeMissingNames(masterDetails, groupName);
                     missingGroups.push({
                         groupName, company, masterQty, processedQty, diffQty,
@@ -5801,7 +5843,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </div>
                             {masterProductSummary && (() => {
                                 const totalMaster = masterProductSummary.masterRawTotalQty;
-                                const totalRecognized = masterProductSummary.realTotal + masterProductSummary.fakeTotal;
+                                const totalRecognized = masterProductSummary.realTotal + masterProductSummary.fakeTotal + masterProductSummary.sentTotal;
                                 const diff = totalMaster - totalRecognized;
                                 const hasUnclaimed = masterProductSummary.unclaimedOrders.length > 0;
                                 const hasUnknown = masterProductSummary.unknownGroupNames.length > 0;
@@ -5819,6 +5861,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         <span className="text-emerald-400">실제 {masterProductSummary.realTotal}</span>
                                         <span className="text-zinc-600">+</span>
                                         <span className="text-pink-400">가구매 {masterProductSummary.fakeTotal}</span>
+                                        {masterProductSummary.sentTotal > 0 && <>
+                                            <span className="text-zinc-600">+</span>
+                                            <span className="text-amber-400" title="전날 이전에 이미 발주해서 이번 발주서에서 뺀 주문 (송장 아직 없음)">이미발주 {masterProductSummary.sentTotal}</span>
+                                        </>}
                                         {diff > 0 && <span className="text-red-400 ml-1">({diff}건 누락)</span>}
                                     </div>
                                     {diff > 0 && masterProductSummary.skippedOrders.length > 0 && (
@@ -7027,7 +7073,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         {masterProductSummary.allOrderDetails.length > 0 && (
                             <details className="mt-3">
                                 <summary className="text-[10px] font-black text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors select-none">
-                                    ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal}건` : ''})
+                                    ▶ 주문 상세 펼치기 ({masterProductSummary.masterRawTotalQty}건{masterProductSummary.masterRawTotalQty !== masterProductSummary.realTotal + masterProductSummary.fakeTotal + masterProductSummary.sentTotal ? ` / 인식 ${masterProductSummary.realTotal + masterProductSummary.fakeTotal + masterProductSummary.sentTotal}건` : ''})
                                 </summary>
                                 <div className="mt-1 max-h-[300px] overflow-auto custom-scrollbar space-y-2 bg-zinc-950/50 rounded-lg p-2 border border-zinc-800/50">
                                     {(() => {
@@ -7041,7 +7087,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         return Object.entries(grouped)
                                             .sort(([a], [b]) => a === '미매칭' ? 1 : b === '미매칭' ? -1 : b.localeCompare(a))
                                             .map(([company, orders]) => {
-                                            const realCount = orders.filter(o => !o.isFake).reduce((s, o) => s + o.qty, 0);
+                                            const realCount = orders.filter(o => !o.isFake && !o.isSent).reduce((s, o) => s + o.qty, 0);
                                             const fakeCount = orders.filter(o => o.isFake).reduce((s, o) => s + o.qty, 0);
                                             return (
                                                 <div key={company}>
@@ -7051,12 +7097,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     </div>
                                                     <div className="space-y-0.5 mt-0.5">
                                                         {orders.map((o, idx) => (
-                                                            <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isFake ? 'text-pink-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
+                                                            <div key={idx} className={`text-[10px] font-mono pl-3 flex gap-2 ${o.isSent ? 'text-amber-500/70 line-through' : o.isFake ? 'text-pink-500/70 line-through' : company === '미매칭' ? 'text-red-300/80' : 'text-zinc-400'}`}>
                                                                 <span className="min-w-[50px]">{o.recipientName}</span>
                                                                 <span className="text-zinc-600">{o.groupName}</span>
                                                                 <span className="truncate">{o.productName}</span>
                                                                 {o.qty > 1 && <span className="text-white font-bold">x{o.qty}</span>}
                                                                 {o.isFake && <span className="text-pink-500/50 text-[8px]">가구매</span>}
+                                                                {o.isSent && <span className="text-amber-500/60 text-[8px]">이미발주</span>}
                                                             </div>
                                                         ))}
                                                     </div>
@@ -7285,7 +7332,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     onDeleteSessionResult={handleDeleteSessionResult}
                                                     pendingOrderLight={sIdx === 0 && orderLitSessions.has(session.id)}
                                                     pendingInvoiceLight={sIdx === 0 && (invoiceLitSessions.has(session.id) || batchInvoiceLit.has(company))}
-                                                    onOrderDownloaded={() => setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; })}
+                                                    onOrderDownloaded={() => { setOrderLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); recordSent(company, [session.id], 'download', `${session.round}차`); }}
                                                     onInvoiceDownloaded={() => { setInvoiceLitSessions(prev => { const s = new Set(prev); s.delete(session.id); return s; }); setBatchInvoiceLit(prev => { const s = new Set(prev); s.delete(company); return s; }); }}
                                                     mergedDownloaded={mergedDownloadedCompanies.has(company)}
                                                     onWarningUpdate={(sessionId, hasWarning) => handleSessionWarningUpdate(sessionId, hasWarning, company)}

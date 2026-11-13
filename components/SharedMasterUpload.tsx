@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { CS_SAVED_EVENT } from '../services/firestoreService';
 import { useTradingCompanies } from '../hooks/useFirestore';
 import WingFetchBar from './WingFetchBar';
+import { SentOrdersBar } from './SentOrdersBar';
 import { ORDER_METHODS } from '../types';
 import WingCountBadge from './WingCountBadge';
 import NetMarginBadge, { useAdSpends, findAdSpend } from './NetMarginBadge';
@@ -605,6 +606,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
           <button onClick={onClose} className="text-zinc-500 hover:text-white text-sm font-black">×</button>
         </div>
       </div>
+
+      {/* 이미 발주한 묶음(송장 아직 없음) — 눈에 띄게 맨 위 */}
+      <SentOrdersBar />
 
       {/* 쿠팡에서 받기 — 사업자 크롬 프로필의 확장이 윙에서 받아 보냄 */}
       <WingFetchBar businesses={businesses} getNextRound={id => uploadFns[id]?.getNextRound?.() ?? 1} />

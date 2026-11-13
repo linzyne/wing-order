@@ -16,6 +16,7 @@ import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMem
 import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
+import { SentOrderToast } from './components/SentOrdersBar';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
 import { resolveSenderColumns, readCourierTrackingMap } from './types';
@@ -958,6 +959,7 @@ const App: React.FC = () => {
   return (
     // h-screen + overflow-hidden 으로 전체를 뷰포트에 가두고, 스크롤 컨텍스트를 패널별로 분리
     <div className="h-screen overflow-hidden flex flex-col bg-zinc-950">
+      <SentOrderToast />
 
       {/* 상단 네비게이션 — 항상 한 줄 (줄바꿈 금지).
           relative: 아래 드롭다운 패널 전부가 이 헤더를 기준으로 "오른쪽 아래 같은 자리"에서 열린다. */}

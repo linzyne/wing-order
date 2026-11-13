@@ -114,6 +114,7 @@ export interface CompanyConfig {
   emailSubject?: string; // 발주서 메일 제목 (비우면 기본 제목). {업체}{날짜}{차수}{건수}{사업자} 치환
   emailBody?: string;    // 발주서 메일 본문 (비우면 기본 문구). {업체}{날짜}{차수}{건수}{사업자} 치환
   orderMethod?: OrderMethod; // 발주방식 — 주문서 패널에서 업체를 이 기준으로 묶어 보여줌 (비우면 이메일 있으면 email)
+  invoiceWaitDays?: number; // 발주 후 영업일로 이만큼 지나도 송장이 없으면 주문서 패널에 빨간색 (비우면 2일)
   courierName?: string;  // 택배사명 (예: 우체국, CJ 대한통운, 롯데택배)
   deposits?: CompanyDeposit[]; // 예수금(예치금) 입금 내역 — 정산 총합계가 여기서 차감됨
   depositDisabled?: boolean; // 예치금 사용 안 함 — 정산요약 '남은 예치금'·원장 차감·입금목록 경고 모두 끔 (과거 기록은 보존)
