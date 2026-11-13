@@ -7,7 +7,7 @@ import AutoWatcherPanel from './AutoWatcherPanel';
 import BatchInvoicePanel from './BatchInvoicePanel';
 import RegularCustomerPanel, { type ServiceOrderDraft } from './RegularCustomerPanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
-import { getBusinessInfo, resolveSenderColumns, resolveReturnColumns, findReturnHeaderRow, getOrderMethod } from '../types';
+import { getBusinessInfo, resolveSenderColumns, readCourierTrackingMap, getOrderMethod } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, matchCustomGroupColCompany, getHeaderForCompany, sortRowsByProductName, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
@@ -3370,26 +3370,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setCourierResults(prev => { const n = { ...prev }; delete n[template.id]; return n; });
         setCourierMatchedRows(prev => { const n = { ...prev }; delete n[template.id]; return n; });
         try {
-            // 운송장 파일 읽기: returnMapping 우선, 없으면 기존 mapping 사용
-            const courierData = await file.arrayBuffer();
-            const courierWb = XLSX.read(courierData, { type: 'array' });
-            const courierWs = courierWb.Sheets[courierWb.SheetNames[0]];
-            const courierAoa: any[][] = XLSX.utils.sheet_to_json(courierWs, { header: 1 });
-
-            const headerRowIdx = findReturnHeaderRow(courierAoa);
-            const { orderCol: orderColIdx, trackingCol: trackingColIdx } = resolveReturnColumns(template, courierAoa[headerRowIdx]);
-            console.log(`[가구매송장] ${template.name} 운송장 업로드 - 주문번호열: ${orderColIdx}, 송장번호열: ${trackingColIdx}`);
-
-            const trackingMap = new Map<string, string>();
-            for (let i = headerRowIdx + 1; i < courierAoa.length; i++) {
-                const row = courierAoa[i];
-                if (!row) continue;
-                const orderNum = String(row[orderColIdx] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                const trackingNum = String(row[trackingColIdx] || '').trim();
-                if (orderNum && trackingNum && trackingNum.length >= 5) {
-                    trackingMap.set(orderNum, trackingNum);
-                }
-            }
+            // 운송장 파일 읽기: 양식 상관없이 제목줄·주문번호·송장번호 열을 찾음 (모든 시트)
+            const fakeOrderNums = resolveFakeOrderNumbers(effectiveFakeInput, { normalize: true });
+            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
+            const courierWb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+            const sheets = courierWb.SheetNames.map(n => XLSX.utils.sheet_to_json<any[]>(courierWb.Sheets[n], { header: 1 }));
+            const trackingMap = readCourierTrackingMap(sheets, template, fakeOrderNums);
             console.log(`[가구매송장] trackingMap: ${trackingMap.size}건`);
 
             // 원본 주문서 + 2차+ 배치 행에서 매칭
@@ -3398,8 +3384,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const masterWs = masterWb.Sheets[masterWb.SheetNames[0]];
             const masterAoa: any[][] = XLSX.utils.sheet_to_json(masterWs, { header: 1 });
 
-            const fakeOrderNums = resolveFakeOrderNumbers(effectiveFakeInput, { normalize: true });
-            if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
             console.log(`[가구매송장] 가구매 주문번호: ${fakeOrderNums.size}건`);
 
             const header = masterAoa[0] || [];

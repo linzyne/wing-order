@@ -18,7 +18,7 @@ import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
-import { resolveSenderColumns, resolveReturnColumns, findReturnHeaderRow } from './types';
+import { resolveSenderColumns, readCourierTrackingMap } from './types';
 
 // 400레벨 원색을 약간 어둡게 (투명도 레이어 대신 직접 혼합한 값)
 function dimThemeColor(color: string): string {
@@ -623,22 +623,6 @@ const App: React.FC = () => {
     if (files.length === 0) return;
 
     try {
-      const trackingMap = new Map<string, string>();
-      for (const file of files) {
-        const courierData = await file.arrayBuffer();
-        const courierWb = XLSX.read(courierData, { type: 'array' });
-        const courierAoa: any[][] = XLSX.utils.sheet_to_json(courierWb.Sheets[courierWb.SheetNames[0]], { header: 1 });
-        const headerRowIdx = findReturnHeaderRow(courierAoa);
-        const { orderCol: orderColIdx, trackingCol: trackingColIdx } = resolveReturnColumns(template, courierAoa[headerRowIdx]);
-        for (let i = headerRowIdx + 1; i < courierAoa.length; i++) {
-          const row = courierAoa[i];
-          if (!row) continue;
-          const orderNum = String(row[orderColIdx] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
-          const trackingNum = String(row[trackingColIdx] || '').trim();
-          if (orderNum && trackingNum && trackingNum.length >= 5) trackingMap.set(orderNum, trackingNum);
-        }
-      }
-
       const fakeOrderNums = new Set<string>();
       globalFakeOrderInputRef.current.split('\n').forEach(line => {
         const parts = line.trim().split('_');
@@ -648,6 +632,13 @@ const App: React.FC = () => {
         }
       });
       if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
+
+      const trackingMap = new Map<string, string>();
+      for (const file of files) {
+        const courierWb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+        const sheets = courierWb.SheetNames.map(n => XLSX.utils.sheet_to_json<any[]>(courierWb.Sheets[n], { header: 1 }));
+        readCourierTrackingMap(sheets, template, fakeOrderNums).forEach((v, k) => trackingMap.set(k, v));
+      }
 
       const header = bizEntries.find(([, b]) => b.header.length > 0)?.[1].header ?? [];
       const matchedRows: any[][] = [header];

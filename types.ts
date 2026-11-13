@@ -337,29 +337,88 @@ export function resolveSenderColumns(template: CourierTemplate): number[] {
   return Array.from(new Set([...manual, ...autoDetected]));
 }
 
-// 운송장 완료 파일(택배사→우리)에서 주문번호/운송장번호 열을 찾는다.
-// 택배사가 양식을 바꾸면 열 위치가 밀려(롯데 PIDPIC: 주문번호 J열 → '예약/주문번호' I열) 0건 매칭이 났다.
-// 그래서 첫 줄 헤더 이름으로 먼저 찾고, 못 찾을 때만 저장된 returnMapping → mapping 열 위치를 쓴다.
-// (우리가 내려준 가구매 양식에 송장을 직접 채워 올려도 같은 방식으로 읽힘)
-// 체험단 참여내역처럼 위에 캠페인 정보가 있고 제목줄이 중간에 있는 파일: 주문번호·송장번호가 같이 있는 줄을 제목줄로 본다
-export function findReturnHeaderRow(aoa: any[][]): number {
-  for (let i = 0; i < Math.min(aoa.length, 60); i++) {
-    const cells = (aoa[i] || []).map(h => String(h ?? '').replace(/\s/g, ''));
-    if (cells.some(h => h.includes('주문번호')) && cells.some(h => /운송장번호|송장번호/.test(h))) return i;
-  }
-  return 0;
-}
+// 가구매 운송장 파일을 양식 상관없이 읽어 주문번호→송장번호 맵을 만든다.
+// 체험단 참여내역처럼 제목줄이 중간에 있거나, 택배사마다 열 이름·위치가 달라도 되게:
+//  1) 모든 시트에서 '송장/운송장'이 들어간 줄을 제목줄로 찾고
+//  2) 주문번호 열은 가구매 명단 주문번호가 가장 많이 들어 있는 열(없으면 제목 이름 → 저장된 열 위치)
+//  3) 송장번호 열은 제목 이름 중 값이 실제 송장번호처럼 생긴 열(없으면 값 모양으로 찾기 → 저장된 열 위치)
+const normalizeCourierOrderNum = (v: any): string => {
+  let s = String(v ?? '').trim();
+  if (s.endsWith('.0')) s = s.slice(0, -2);
+  return s.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+};
+const isCourierTrackingValue = (v: any): boolean => {
+  const s = String(v ?? '').trim();
+  if (!s) return false;
+  if (/^\d{4}\s?[-.\/]\s?\d{1,2}\s?[-.\/]\s?\d{1,2}/.test(s)) return false; // 날짜
+  const digits = s.replace(/[^0-9]/g, '');
+  if (/^01[016789]\d{7,8}$/.test(digits)) return false; // 휴대폰번호
+  if (digits.length < 9 || digits.length > 15) return false;
+  return digits.length / s.replace(/\s/g, '').length >= 0.8;
+};
+const TRACKING_HEADER = /운송장|송장|등기번호|화물추적|tracking|invoice/i;
+const TRACKING_HEADER_EXCLUDE = /^(원|이전)|일자|일시|날짜|출력|택배사|상태|비용|요금/;
+const ORDER_HEADER = /주문번호|주문no|오더번호|order/i;
 
-export function resolveReturnColumns(template: CourierTemplate, headerRow: any[] | undefined): { orderCol: number; trackingCol: number } {
-  const headers = (headerRow || []).map(h => String(h ?? '').replace(/\s/g, ''));
-  const orderCandidates = headers.map((h, i) => ({ h, i })).filter(({ h }) => h.includes('주문번호') && !h.includes('원주문'));
-  const orderHit = orderCandidates.find(({ h }) => h === '주문번호') ?? orderCandidates[0];
-  const trackingHit = headers.findIndex(h => /운송장번호|송장번호/.test(h) && !/^(원|이전)/.test(h));
-  const rm = template.returnMapping;
-  return {
-    orderCol: orderHit ? orderHit.i : Number(rm ? rm.orderNumber : template.mapping.orderNumber),
-    trackingCol: trackingHit >= 0 ? trackingHit : Number(rm ? rm.trackingNumber : template.mapping.trackingNumber),
-  };
+export function readCourierTrackingMap(sheets: any[][][], template: CourierTemplate, knownOrders?: Set<string>): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const aoa of sheets) {
+    if (!aoa || aoa.length === 0) continue;
+    const norm = (row: any[] | undefined) => (row || []).map(h => String(h ?? '').replace(/\s/g, ''));
+    // 제목줄: 송장 제목이 있는 줄 중 주문번호 제목도 있는 줄 우선
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(aoa.length, 60); i++) {
+      const cells = norm(aoa[i]);
+      if (!cells.some(h => TRACKING_HEADER.test(h) && !TRACKING_HEADER_EXCLUDE.test(h))) continue;
+      if (headerIdx < 0) headerIdx = i;
+      if (cells.some(h => ORDER_HEADER.test(h))) { headerIdx = i; break; }
+    }
+    const headers = headerIdx >= 0 ? norm(aoa[headerIdx]) : [];
+    const dataRows = aoa.slice(headerIdx + 1).filter(r => Array.isArray(r) && r.some(v => v != null && String(v).trim() !== ''));
+    if (dataRows.length === 0) continue;
+    const width = Math.max(headers.length, ...dataRows.map(r => r.length));
+    const countCol = (c: number, test: (v: any) => boolean) => dataRows.reduce((n, r) => n + (test(r[c]) ? 1 : 0), 0);
+
+    // 주문번호 열
+    let orderCol = -1;
+    if (knownOrders && knownOrders.size > 0) {
+      let best = 0;
+      for (let c = 0; c < width; c++) {
+        const hits = countCol(c, v => knownOrders.has(normalizeCourierOrderNum(v)));
+        if (hits > best) { best = hits; orderCol = c; }
+      }
+    }
+    if (orderCol < 0) {
+      const cand = headers.map((h, i) => ({ h, i })).filter(({ h }) => ORDER_HEADER.test(h) && !h.includes('원주문'));
+      orderCol = (cand.find(({ h }) => h === '주문번호') ?? cand[0])?.i ?? -1;
+    }
+    if (orderCol < 0) { const rm = template.returnMapping; orderCol = Number(rm ? rm.orderNumber : template.mapping.orderNumber); }
+
+    // 송장번호 열: 제목이 맞고 값이 송장번호처럼 생긴 열 → 값 모양만으로 → 저장된 열
+    const looksTracking = (c: number) => {
+      const filled = countCol(c, v => String(v ?? '').trim() !== '');
+      return filled > 0 && countCol(c, isCourierTrackingValue) / filled >= 0.5;
+    };
+    let trackingCol = headers.findIndex((h, i) => i !== orderCol && TRACKING_HEADER.test(h) && !TRACKING_HEADER_EXCLUDE.test(h) && looksTracking(i));
+    if (trackingCol < 0) {
+      let best = 0;
+      for (let c = 0; c < width; c++) {
+        if (c === orderCol) continue;
+        const hits = countCol(c, isCourierTrackingValue);
+        if (hits > best) { best = hits; trackingCol = c; }
+      }
+    }
+    if (trackingCol < 0) { const rm = template.returnMapping; trackingCol = Number(rm ? rm.trackingNumber : template.mapping.trackingNumber); }
+
+    let n = 0;
+    for (const row of dataRows) {
+      const orderNum = normalizeCourierOrderNum(row[orderCol]);
+      const trackingNum = String(row[trackingCol] ?? '').trim();
+      if (orderNum && trackingNum.length >= 5 && orderNum !== normalizeCourierOrderNum(trackingNum)) { result.set(orderNum, trackingNum); n++; }
+    }
+    console.log(`[가구매송장] 제목줄 ${headerIdx + 1}행, 주문번호열 ${orderCol}, 송장번호열 ${trackingCol}, ${n}건`);
+  }
+  return result;
 }
 
 // ===== 멀티 플랫폼 설정 =====
