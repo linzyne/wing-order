@@ -6,6 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>발주서 관리</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // 밝은 화면: 원래 어두운 화면용으로 짠 색을 뒤집음 — 회색은 위아래 반전, 색은 옅은 글자색↔짙은 바탕색만 바꿈
+      tailwind.config = { theme: { extend: { colors: {"zinc":{"50":"rgb(9 9 11 / <alpha-value>)","100":"rgb(24 24 27 / <alpha-value>)","200":"rgb(39 39 42 / <alpha-value>)","300":"rgb(63 63 70 / <alpha-value>)","400":"rgb(82 82 92 / <alpha-value>)","500":"rgb(113 113 123 / <alpha-value>)","600":"rgb(159 159 169 / <alpha-value>)","700":"rgb(212 212 216 / <alpha-value>)","800":"rgb(228 228 231 / <alpha-value>)","900":"rgb(244 244 245 / <alpha-value>)","950":"rgb(255 255 255 / <alpha-value>)"},"rose":{"50":"rgb(77 2 24 / <alpha-value>)","100":"rgb(139 8 54 / <alpha-value>)","200":"rgb(165 0 54 / <alpha-value>)","300":"rgb(199 0 54 / <alpha-value>)","400":"rgb(236 0 63 / <alpha-value>)","500":"rgb(255 32 86 / <alpha-value>)","600":"rgb(236 0 63 / <alpha-value>)","700":"rgb(199 0 54 / <alpha-value>)","800":"rgb(255 204 211 / <alpha-value>)","900":"rgb(255 228 230 / <alpha-value>)","950":"rgb(255 241 242 / <alpha-value>)"},"emerald":{"50":"rgb(0 44 34 / <alpha-value>)","100":"rgb(0 79 59 / <alpha-value>)","200":"rgb(0 96 69 / <alpha-value>)","300":"rgb(0 122 85 / <alpha-value>)","400":"rgb(0 153 102 / <alpha-value>)","500":"rgb(0 188 125 / <alpha-value>)","600":"rgb(0 153 102 / <alpha-value>)","700":"rgb(0 122 85 / <alpha-value>)","800":"rgb(164 244 207 / <alpha-value>)","900":"rgb(208 250 229 / <alpha-value>)","950":"rgb(236 253 245 / <alpha-value>)"},"blue":{"50":"rgb(22 36 86 / <alpha-value>)","100":"rgb(28 57 142 / <alpha-value>)","200":"rgb(25 60 184 / <alpha-value>)","300":"rgb(20 71 230 / <alpha-value>)","400":"rgb(21 93 252 / <alpha-value>)","500":"rgb(43 127 255 / <alpha-value>)","600":"rgb(21 93 252 / <alpha-value>)","700":"rgb(20 71 230 / <alpha-value>)","800":"rgb(190 219 255 / <alpha-value>)","900":"rgb(219 234 254 / <alpha-value>)","950":"rgb(239 246 255 / <alpha-value>)"},"amber":{"50":"rgb(70 25 1 / <alpha-value>)","100":"rgb(123 51 6 / <alpha-value>)","200":"rgb(151 60 0 / <alpha-value>)","300":"rgb(187 77 0 / <alpha-value>)","400":"rgb(225 113 0 / <alpha-value>)","500":"rgb(254 154 0 / <alpha-value>)","600":"rgb(225 113 0 / <alpha-value>)","700":"rgb(187 77 0 / <alpha-value>)","800":"rgb(254 230 133 / <alpha-value>)","900":"rgb(254 243 198 / <alpha-value>)","950":"rgb(255 251 235 / <alpha-value>)"},"red":{"50":"rgb(70 8 9 / <alpha-value>)","100":"rgb(130 24 26 / <alpha-value>)","200":"rgb(159 7 18 / <alpha-value>)","300":"rgb(193 0 7 / <alpha-value>)","400":"rgb(231 0 11 / <alpha-value>)","500":"rgb(251 44 54 / <alpha-value>)","600":"rgb(231 0 11 / <alpha-value>)","700":"rgb(193 0 7 / <alpha-value>)","800":"rgb(255 201 201 / <alpha-value>)","900":"rgb(255 226 226 / <alpha-value>)","950":"rgb(254 242 242 / <alpha-value>)"},"green":{"50":"rgb(3 46 21 / <alpha-value>)","100":"rgb(13 84 43 / <alpha-value>)","200":"rgb(1 102 48 / <alpha-value>)","300":"rgb(0 130 54 / <alpha-value>)","400":"rgb(0 166 62 / <alpha-value>)","500":"rgb(0 201 80 / <alpha-value>)","600":"rgb(0 166 62 / <alpha-value>)","700":"rgb(0 130 54 / <alpha-value>)","800":"rgb(185 248 207 / <alpha-value>)","900":"rgb(220 252 231 / <alpha-value>)","950":"rgb(240 253 244 / <alpha-value>)"},"sky":{"50":"rgb(5 47 74 / <alpha-value>)","100":"rgb(2 74 112 / <alpha-value>)","200":"rgb(0 89 138 / <alpha-value>)","300":"rgb(0 105 168 / <alpha-value>)","400":"rgb(0 132 209 / <alpha-value>)","500":"rgb(0 166 244 / <alpha-value>)","600":"rgb(0 132 209 / <alpha-value>)","700":"rgb(0 105 168 / <alpha-value>)","800":"rgb(184 230 254 / <alpha-value>)","900":"rgb(223 242 254 / <alpha-value>)","950":"rgb(240 249 255 / <alpha-value>)"},"indigo":{"50":"rgb(30 26 77 / <alpha-value>)","100":"rgb(49 44 133 / <alpha-value>)","200":"rgb(55 42 172 / <alpha-value>)","300":"rgb(67 45 215 / <alpha-value>)","400":"rgb(79 57 246 / <alpha-value>)","500":"rgb(97 95 255 / <alpha-value>)","600":"rgb(79 57 246 / <alpha-value>)","700":"rgb(67 45 215 / <alpha-value>)","800":"rgb(198 210 255 / <alpha-value>)","900":"rgb(224 231 255 / <alpha-value>)","950":"rgb(238 242 255 / <alpha-value>)"},"violet":{"50":"rgb(47 13 104 / <alpha-value>)","100":"rgb(77 23 154 / <alpha-value>)","200":"rgb(93 14 192 / <alpha-value>)","300":"rgb(112 8 231 / <alpha-value>)","400":"rgb(127 34 254 / <alpha-value>)","500":"rgb(142 81 255 / <alpha-value>)","600":"rgb(127 34 254 / <alpha-value>)","700":"rgb(112 8 231 / <alpha-value>)","800":"rgb(221 214 255 / <alpha-value>)","900":"rgb(237 233 254 / <alpha-value>)","950":"rgb(245 243 255 / <alpha-value>)"},"purple":{"50":"rgb(60 3 102 / <alpha-value>)","100":"rgb(89 22 139 / <alpha-value>)","200":"rgb(110 17 176 / <alpha-value>)","300":"rgb(130 0 219 / <alpha-value>)","400":"rgb(152 16 250 / <alpha-value>)","500":"rgb(173 70 255 / <alpha-value>)","600":"rgb(152 16 250 / <alpha-value>)","700":"rgb(130 0 219 / <alpha-value>)","800":"rgb(233 212 255 / <alpha-value>)","900":"rgb(243 232 255 / <alpha-value>)","950":"rgb(250 245 255 / <alpha-value>)"},"orange":{"50":"rgb(68 19 6 / <alpha-value>)","100":"rgb(126 42 12 / <alpha-value>)","200":"rgb(159 45 0 / <alpha-value>)","300":"rgb(202 53 0 / <alpha-value>)","400":"rgb(245 73 0 / <alpha-value>)","500":"rgb(255 105 0 / <alpha-value>)","600":"rgb(245 73 0 / <alpha-value>)","700":"rgb(202 53 0 / <alpha-value>)","800":"rgb(255 214 167 / <alpha-value>)","900":"rgb(255 237 212 / <alpha-value>)","950":"rgb(255 247 237 / <alpha-value>)"},"yellow":{"50":"rgb(67 32 4 / <alpha-value>)","100":"rgb(115 62 10 / <alpha-value>)","200":"rgb(137 75 0 / <alpha-value>)","300":"rgb(166 95 0 / <alpha-value>)","400":"rgb(208 135 0 / <alpha-value>)","500":"rgb(240 177 0 / <alpha-value>)","600":"rgb(208 135 0 / <alpha-value>)","700":"rgb(166 95 0 / <alpha-value>)","800":"rgb(255 240 133 / <alpha-value>)","900":"rgb(254 249 194 / <alpha-value>)","950":"rgb(254 252 232 / <alpha-value>)"},"teal":{"50":"rgb(2 47 46 / <alpha-value>)","100":"rgb(11 79 74 / <alpha-value>)","200":"rgb(0 95 90 / <alpha-value>)","300":"rgb(0 120 111 / <alpha-value>)","400":"rgb(0 150 137 / <alpha-value>)","500":"rgb(0 187 167 / <alpha-value>)","600":"rgb(0 150 137 / <alpha-value>)","700":"rgb(0 120 111 / <alpha-value>)","800":"rgb(150 247 228 / <alpha-value>)","900":"rgb(203 251 241 / <alpha-value>)","950":"rgb(240 253 250 / <alpha-value>)"},"cyan":{"50":"rgb(5 51 69 / <alpha-value>)","100":"rgb(16 78 100 / <alpha-value>)","200":"rgb(0 95 120 / <alpha-value>)","300":"rgb(0 117 149 / <alpha-value>)","400":"rgb(0 146 184 / <alpha-value>)","500":"rgb(0 184 219 / <alpha-value>)","600":"rgb(0 146 184 / <alpha-value>)","700":"rgb(0 117 149 / <alpha-value>)","800":"rgb(162 244 253 / <alpha-value>)","900":"rgb(206 250 254 / <alpha-value>)","950":"rgb(236 254 255 / <alpha-value>)"},"pink":{"50":"rgb(81 4 36 / <alpha-value>)","100":"rgb(134 16 67 / <alpha-value>)","200":"rgb(163 0 76 / <alpha-value>)","300":"rgb(198 0 92 / <alpha-value>)","400":"rgb(230 0 118 / <alpha-value>)","500":"rgb(246 51 154 / <alpha-value>)","600":"rgb(230 0 118 / <alpha-value>)","700":"rgb(198 0 92 / <alpha-value>)","800":"rgb(252 206 232 / <alpha-value>)","900":"rgb(252 231 243 / <alpha-value>)","950":"rgb(253 242 248 / <alpha-value>)"},"fuchsia":{"50":"rgb(75 0 79 / <alpha-value>)","100":"rgb(114 19 120 / <alpha-value>)","200":"rgb(138 1 148 / <alpha-value>)","300":"rgb(168 0 183 / <alpha-value>)","400":"rgb(200 0 222 / <alpha-value>)","500":"rgb(225 42 251 / <alpha-value>)","600":"rgb(200 0 222 / <alpha-value>)","700":"rgb(168 0 183 / <alpha-value>)","800":"rgb(246 207 255 / <alpha-value>)","900":"rgb(250 232 255 / <alpha-value>)","950":"rgb(253 244 255 / <alpha-value>)"},"lime":{"50":"rgb(25 46 3 / <alpha-value>)","100":"rgb(53 83 14 / <alpha-value>)","200":"rgb(60 99 0 / <alpha-value>)","300":"rgb(73 125 0 / <alpha-value>)","400":"rgb(94 165 0 / <alpha-value>)","500":"rgb(124 207 0 / <alpha-value>)","600":"rgb(94 165 0 / <alpha-value>)","700":"rgb(73 125 0 / <alpha-value>)","800":"rgb(216 249 153 / <alpha-value>)","900":"rgb(236 252 202 / <alpha-value>)","950":"rgb(247 254 231 / <alpha-value>)"}} } } };
+    </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
@@ -15,7 +19,8 @@
       body {
         font-family: 'Pretendard', sans-serif;
         font-size: 1rem;
-        background: #09090b;
+        background: #ffffff;
+        color: #18181b;
       }
       .animate-fade-in {
         animation: fadeIn 0.6s ease-out forwards;
@@ -54,29 +59,29 @@
 
       /* Glass morphism */
       .glass {
-        background: rgba(24, 24, 27, 0.6);
+        background: rgba(255, 255, 255, 0.85);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(63, 63, 70, 0.4);
+        border: 1px solid rgba(212, 212, 216, 0.8);
       }
       .glass-light {
-        background: #27272a;
+        background: #f4f4f5;
         backdrop-filter: blur(12px);
         -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(63, 63, 70, 0.4);
+        border: 1px solid rgba(212, 212, 216, 0.8);
       }
 
       /* Gradient accent button */
       .btn-accent {
-        background: #3f3f46;
+        background: #18181b;
         color: white;
         font-weight: 900;
         transition: all 0.2s;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
       }
       .btn-accent:hover {
-        background: #52525b;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        background: #3f3f46;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
         transform: translateY(-1px);
       }
       .btn-accent:active {
@@ -163,6 +168,64 @@
         30%, 50%, 70% { transform: translateX(-3px); }
         40%, 60% { transform: translateX(3px); }
       }
+
+      /* 밝은 화면: 흰 글자는 진하게, 색 버튼 위 흰 글자만 그대로 */
+      .text-white, .hover\:text-white:hover { color: #18181b; }
+      [class~="bg-rose-500"].text-white, [class~="bg-rose-500"] .text-white,
+      [class~="bg-rose-600"].text-white, [class~="bg-rose-600"] .text-white,
+      [class~="bg-rose-700"].text-white, [class~="bg-rose-700"] .text-white,
+      [class~="bg-emerald-500"].text-white, [class~="bg-emerald-500"] .text-white,
+      [class~="bg-emerald-600"].text-white, [class~="bg-emerald-600"] .text-white,
+      [class~="bg-emerald-700"].text-white, [class~="bg-emerald-700"] .text-white,
+      [class~="bg-blue-500"].text-white, [class~="bg-blue-500"] .text-white,
+      [class~="bg-blue-600"].text-white, [class~="bg-blue-600"] .text-white,
+      [class~="bg-blue-700"].text-white, [class~="bg-blue-700"] .text-white,
+      [class~="bg-amber-500"].text-white, [class~="bg-amber-500"] .text-white,
+      [class~="bg-amber-600"].text-white, [class~="bg-amber-600"] .text-white,
+      [class~="bg-amber-700"].text-white, [class~="bg-amber-700"] .text-white,
+      [class~="bg-red-500"].text-white, [class~="bg-red-500"] .text-white,
+      [class~="bg-red-600"].text-white, [class~="bg-red-600"] .text-white,
+      [class~="bg-red-700"].text-white, [class~="bg-red-700"] .text-white,
+      [class~="bg-green-500"].text-white, [class~="bg-green-500"] .text-white,
+      [class~="bg-green-600"].text-white, [class~="bg-green-600"] .text-white,
+      [class~="bg-green-700"].text-white, [class~="bg-green-700"] .text-white,
+      [class~="bg-sky-500"].text-white, [class~="bg-sky-500"] .text-white,
+      [class~="bg-sky-600"].text-white, [class~="bg-sky-600"] .text-white,
+      [class~="bg-sky-700"].text-white, [class~="bg-sky-700"] .text-white,
+      [class~="bg-indigo-500"].text-white, [class~="bg-indigo-500"] .text-white,
+      [class~="bg-indigo-600"].text-white, [class~="bg-indigo-600"] .text-white,
+      [class~="bg-indigo-700"].text-white, [class~="bg-indigo-700"] .text-white,
+      [class~="bg-violet-500"].text-white, [class~="bg-violet-500"] .text-white,
+      [class~="bg-violet-600"].text-white, [class~="bg-violet-600"] .text-white,
+      [class~="bg-violet-700"].text-white, [class~="bg-violet-700"] .text-white,
+      [class~="bg-purple-500"].text-white, [class~="bg-purple-500"] .text-white,
+      [class~="bg-purple-600"].text-white, [class~="bg-purple-600"] .text-white,
+      [class~="bg-purple-700"].text-white, [class~="bg-purple-700"] .text-white,
+      [class~="bg-orange-500"].text-white, [class~="bg-orange-500"] .text-white,
+      [class~="bg-orange-600"].text-white, [class~="bg-orange-600"] .text-white,
+      [class~="bg-orange-700"].text-white, [class~="bg-orange-700"] .text-white,
+      [class~="bg-yellow-500"].text-white, [class~="bg-yellow-500"] .text-white,
+      [class~="bg-yellow-600"].text-white, [class~="bg-yellow-600"] .text-white,
+      [class~="bg-yellow-700"].text-white, [class~="bg-yellow-700"] .text-white,
+      [class~="bg-teal-500"].text-white, [class~="bg-teal-500"] .text-white,
+      [class~="bg-teal-600"].text-white, [class~="bg-teal-600"] .text-white,
+      [class~="bg-teal-700"].text-white, [class~="bg-teal-700"] .text-white,
+      [class~="bg-cyan-500"].text-white, [class~="bg-cyan-500"] .text-white,
+      [class~="bg-cyan-600"].text-white, [class~="bg-cyan-600"] .text-white,
+      [class~="bg-cyan-700"].text-white, [class~="bg-cyan-700"] .text-white,
+      [class~="bg-pink-500"].text-white, [class~="bg-pink-500"] .text-white,
+      [class~="bg-pink-600"].text-white, [class~="bg-pink-600"] .text-white,
+      [class~="bg-pink-700"].text-white, [class~="bg-pink-700"] .text-white,
+      [class~="bg-fuchsia-500"].text-white, [class~="bg-fuchsia-500"] .text-white,
+      [class~="bg-fuchsia-600"].text-white, [class~="bg-fuchsia-600"] .text-white,
+      [class~="bg-fuchsia-700"].text-white, [class~="bg-fuchsia-700"] .text-white,
+      [class~="bg-lime-500"].text-white, [class~="bg-lime-500"] .text-white,
+      [class~="bg-lime-600"].text-white, [class~="bg-lime-600"] .text-white,
+      [class~="bg-lime-700"].text-white, [class~="bg-lime-700"] .text-white,
+      [class*="bg-gradient"].text-white,
+      [class*="bg-gradient"] .text-white,
+      .btn-accent.text-white,
+      .btn-accent .text-white { color: #ffffff; }
     </style>
 
 <link rel="stylesheet" href="/index.css">
