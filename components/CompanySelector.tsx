@@ -7,7 +7,7 @@ import AutoWatcherPanel from './AutoWatcherPanel';
 import BatchInvoicePanel from './BatchInvoicePanel';
 import RegularCustomerPanel, { type ServiceOrderDraft } from './RegularCustomerPanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
-import { getBusinessInfo, resolveSenderColumns, resolveReturnColumns, getOrderMethod } from '../types';
+import { getBusinessInfo, resolveSenderColumns, resolveReturnColumns, findReturnHeaderRow, getOrderMethod } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, matchCustomGroupColCompany, getHeaderForCompany, sortRowsByProductName, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
@@ -3376,11 +3376,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const courierWs = courierWb.Sheets[courierWb.SheetNames[0]];
             const courierAoa: any[][] = XLSX.utils.sheet_to_json(courierWs, { header: 1 });
 
-            const { orderCol: orderColIdx, trackingCol: trackingColIdx } = resolveReturnColumns(template, courierAoa[0]);
+            const headerRowIdx = findReturnHeaderRow(courierAoa);
+            const { orderCol: orderColIdx, trackingCol: trackingColIdx } = resolveReturnColumns(template, courierAoa[headerRowIdx]);
             console.log(`[가구매송장] ${template.name} 운송장 업로드 - 주문번호열: ${orderColIdx}, 송장번호열: ${trackingColIdx}`);
 
             const trackingMap = new Map<string, string>();
-            for (let i = 1; i < courierAoa.length; i++) {
+            for (let i = headerRowIdx + 1; i < courierAoa.length; i++) {
                 const row = courierAoa[i];
                 if (!row) continue;
                 const orderNum = String(row[orderColIdx] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();

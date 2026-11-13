@@ -18,7 +18,7 @@ import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
-import { resolveSenderColumns, resolveReturnColumns } from './types';
+import { resolveSenderColumns, resolveReturnColumns, findReturnHeaderRow } from './types';
 
 // 400레벨 원색을 약간 어둡게 (투명도 레이어 대신 직접 혼합한 값)
 function dimThemeColor(color: string): string {
@@ -628,8 +628,9 @@ const App: React.FC = () => {
         const courierData = await file.arrayBuffer();
         const courierWb = XLSX.read(courierData, { type: 'array' });
         const courierAoa: any[][] = XLSX.utils.sheet_to_json(courierWb.Sheets[courierWb.SheetNames[0]], { header: 1 });
-        const { orderCol: orderColIdx, trackingCol: trackingColIdx } = resolveReturnColumns(template, courierAoa[0]);
-        for (let i = 1; i < courierAoa.length; i++) {
+        const headerRowIdx = findReturnHeaderRow(courierAoa);
+        const { orderCol: orderColIdx, trackingCol: trackingColIdx } = resolveReturnColumns(template, courierAoa[headerRowIdx]);
+        for (let i = headerRowIdx + 1; i < courierAoa.length; i++) {
           const row = courierAoa[i];
           if (!row) continue;
           const orderNum = String(row[orderColIdx] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();

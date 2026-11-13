@@ -341,6 +341,15 @@ export function resolveSenderColumns(template: CourierTemplate): number[] {
 // 택배사가 양식을 바꾸면 열 위치가 밀려(롯데 PIDPIC: 주문번호 J열 → '예약/주문번호' I열) 0건 매칭이 났다.
 // 그래서 첫 줄 헤더 이름으로 먼저 찾고, 못 찾을 때만 저장된 returnMapping → mapping 열 위치를 쓴다.
 // (우리가 내려준 가구매 양식에 송장을 직접 채워 올려도 같은 방식으로 읽힘)
+// 체험단 참여내역처럼 위에 캠페인 정보가 있고 제목줄이 중간에 있는 파일: 주문번호·송장번호가 같이 있는 줄을 제목줄로 본다
+export function findReturnHeaderRow(aoa: any[][]): number {
+  for (let i = 0; i < Math.min(aoa.length, 60); i++) {
+    const cells = (aoa[i] || []).map(h => String(h ?? '').replace(/\s/g, ''));
+    if (cells.some(h => h.includes('주문번호')) && cells.some(h => /운송장번호|송장번호/.test(h))) return i;
+  }
+  return 0;
+}
+
 export function resolveReturnColumns(template: CourierTemplate, headerRow: any[] | undefined): { orderCol: number; trackingCol: number } {
   const headers = (headerRow || []).map(h => String(h ?? '').replace(/\s/g, ''));
   const orderCandidates = headers.map((h, i) => ({ h, i })).filter(({ h }) => h.includes('주문번호') && !h.includes('원주문'));
