@@ -36,6 +36,7 @@ interface BusinessColumnProps {
   initiallyMounted?: boolean;
   refreshKey?: number;
   globalFakeOrderInput?: string;
+  realShipOrderNums?: string[]; // 실배(실제 배송되는 가구매) 주문번호 — 매출현황 마진에서 뺌
   onGlobalFakeMatch?: (matched: string[]) => void;
   globalUnsentOrderInput?: string;
   fakeOrderCourierRows?: any[][];
@@ -49,7 +50,7 @@ interface BusinessColumnProps {
   onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void;
 }
 
-const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, otherBusinesses, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, onEdit, onExposeOrderRows, onHasWarnings }) => {
+const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, otherBusinesses, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, realShipOrderNums, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, onEdit, onExposeOrderRows, onHasWarnings }) => {
   const [activeTab, setActiveTab] = useState('converter');
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
@@ -193,6 +194,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               onRegisterReset={onRegisterReset ? handleRegisterReset : undefined}
               onWorkstationReset={onWorkstationReset}
               globalFakeOrderInput={globalFakeOrderInput}
+              realShipOrderNums={realShipOrderNums}
               onGlobalFakeMatch={onGlobalFakeMatch}
               globalUnsentOrderInput={globalUnsentOrderInput}
               fakeOrderCourierRows={fakeOrderCourierRows}

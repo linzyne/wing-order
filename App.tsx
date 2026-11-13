@@ -88,11 +88,22 @@ function parseGlobalFakeLine(line: string, businesses: { id: string; displayName
   if (!rest) return null;
   const lastUnderscore = rest.lastIndexOf('_');
   // 밑줄이 하나뿐이면(이름 없이 사업자_주문번호) rest 전체가 주문번호
-  const name = lastUnderscore === -1 ? '' : rest.slice(0, lastUnderscore);
+  let name = lastUnderscore === -1 ? '' : rest.slice(0, lastUnderscore);
   const orderNum = lastUnderscore === -1 ? rest : rest.slice(lastUnderscore + 1);
   if (!orderNum) return null;
+  // 사업자_이름_주문번호_실배: 실제로 배송되는 가구매 — 발주서·정산요약엔 남기고 매출현황 마진에서만 뺀다.
+  // orderNum은 '실배' 그대로 둬서 기존 실배 처리(자동 매칭, 발주서에서 안 뺌)를 그대로 타고, 주문번호는 realShipOrderNum으로 따로 넘긴다.
+  let realShipOrderNum = '';
+  if (isSpecialMatchOrderNum(orderNum)) {
+    const i = name.lastIndexOf('_');
+    const maybeNum = i === -1 ? name : name.slice(i + 1);
+    if (/^[A-Za-z0-9-]{5,}$/.test(maybeNum)) {
+      realShipOrderNum = maybeNum;
+      name = i === -1 ? '' : name.slice(0, i);
+    }
+  }
   const business = businesses.find(b => b.displayName === businessName || b.id === businessName);
-  return { businessName, name, orderNum, businessId: business?.id ?? null };
+  return { businessName, name, orderNum, realShipOrderNum, businessId: business?.id ?? null };
 }
 
 const App: React.FC = () => {
@@ -853,6 +864,17 @@ const App: React.FC = () => {
       result[parsed.businessId] = result[parsed.businessId]
         ? `${result[parsed.businessId]}\n${entry}`
         : entry;
+    });
+    return result;
+  }, [globalFakeOrderInput, allBusinesses]);
+
+  // 사업자별 실배(실제 배송되는 가구매) 주문번호 — 매출현황 마진에서 뺄 주문
+  const perBusinessRealShipNums = useMemo(() => {
+    const result: Record<string, string[]> = {};
+    globalFakeOrderInput.split('\n').forEach(line => {
+      const parsed = parseGlobalFakeLine(line, allBusinesses);
+      if (!parsed?.businessId || !parsed.realShipOrderNum) return;
+      (result[parsed.businessId] ||= []).push(parsed.realShipOrderNum);
     });
     return result;
   }, [globalFakeOrderInput, allBusinesses]);
@@ -1638,6 +1660,7 @@ const App: React.FC = () => {
               }}
               refreshKey={refreshKeys[b.id] ?? 0}
               globalFakeOrderInput={perBusinessFakeInput[b.id] || ''}
+              realShipOrderNums={perBusinessRealShipNums[b.id]}
               onGlobalFakeMatch={(matched) => handleGlobalFakeMatch(b.id, matched)}
               globalUnsentOrderInput={perBusinessUnsentInput[b.id] || ''}
               fakeOrderCourierRows={courierRowsByBusiness[b.id] || []}

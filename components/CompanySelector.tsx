@@ -65,7 +65,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositCompanies: () => string[] }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[]; getCompanyInfos?: () => { name: string; orderMethod?: string; phone?: string }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged: (companyName: string) => Promise<boolean>; emailCompanyRound: (companyName: string, round: number) => Promise<boolean>; kakaoCompanyMerged: (companyName: string) => void; kakaoCompanyRound: (companyName: string, round: number) => void; adminCompanyMerged: (companyName: string) => Promise<boolean>; adminCompanyRound: (companyName: string, round: number) => Promise<boolean>; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; getCompanyInvoiceWorkbookFile?: (companyName: string) => File; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; getTotalMargin?: () => number; getFakeCount?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositCompanies: () => string[] }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[]; getCompanyInfos?: () => { name: string; orderMethod?: string; phone?: string }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged: (companyName: string) => Promise<boolean>; emailCompanyRound: (companyName: string, round: number) => Promise<boolean>; kakaoCompanyMerged: (companyName: string) => void; kakaoCompanyRound: (companyName: string, round: number) => void; adminCompanyMerged: (companyName: string) => Promise<boolean>; adminCompanyRound: (companyName: string, round: number) => Promise<boolean>; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; getCompanyInvoiceWorkbookFile?: (companyName: string) => File; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; getTotalMargin?: () => number; getFakeCount?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; realShipOrderNums?: string[]; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -913,7 +913,7 @@ function autoMapProducts(
 // 가구매 명단 빈 상태 알림: 여러 사업자에 동시에 발주서가 생겨도 한 번만 띄우기 위한 공용 시각
 let lastEmptyFakeAlertAt = 0;
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, realShipOrderNums, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
     const depositLedger = useDepositLedger(businessId);
@@ -1444,6 +1444,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const [fakeOrderInput, setFakeOrderInput] = useState(() => loadFakeInput(businessId));
     const effectiveFakeInput = globalFakeOrderInput?.trim() ? globalFakeOrderInput : fakeOrderInput;
+    // 실배(사업자_이름_주문번호_실배): 실제로 배송되는 가구매. 발주서·정산요약엔 그대로 두고, 매출현황 마진·마진시트·순마진에서만 뺀다.
+    // 기록/다운로드 함수가 useCallback 안에 있어도 최신 명단을 보도록 ref로 읽는다.
+    const realShipSetRef = useRef<Set<string>>(new Set());
+    realShipSetRef.current = useMemo(
+        () => new Set((realShipOrderNums || []).map(n => n.replace(/[^A-Z0-9]/gi, '').toUpperCase()).filter(Boolean)),
+        [realShipOrderNums]
+    );
+    const isRealShipItem = (item: { orderNumber?: string; bundleNumber?: string }) => {
+        const set = realShipSetRef.current;
+        if (set.size === 0) return false;
+        const norm = (v?: string) => String(v || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        return set.has(norm(item.orderNumber)) || set.has(norm(item.bundleNumber));
+    };
     const [unsentOrderInput, setUnsentOrderInput] = useState('');
     const effectiveUnsentInput = globalUnsentOrderInput?.trim() ? globalUnsentOrderInput : unsentOrderInput;
     const [showFakeDetail, setShowFakeDetail] = useState(false);
@@ -3073,6 +3086,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         let sum = 0;
         for (const [name, margin] of Object.entries(companyMarginRef.current) as [string, number][]) {
             if (activeNames.has(name)) sum += margin;
+        }
+        // 실배 주문 마진은 진짜 마진이 아니므로 뺀다
+        for (const name of activeNames) {
+            const products = pricingConfig[name]?.products;
+            if (!products) continue;
+            for (const s of (companySessions[name] || []) as SessionData[]) {
+                for (const item of allOrderItems[s.id] || []) {
+                    if (isRealShipItem(item)) sum -= ((products[item.matchedProductKey] as any)?.margin || 0) * item.qty;
+                }
+            }
         }
         return sum;
     };
@@ -4718,6 +4741,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const items = allOrderItems[s.id];
                 if (!items) return;
                 for (const item of items) {
+                    if (isRealShipItem(item)) continue; // 실배는 가구매라 마진시트에서 뺌
                     const product = companyConfig.products[item.matchedProductKey] as any;
                     if (!product) continue;
                     const regName = item.registeredProductName || name;
@@ -4959,6 +4983,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 if (!items) return;
                 for (const item of items) {
                     const product = companyConfig.products[item.matchedProductKey] as any;
+                    // 실배는 발주·정산은 그대로 나가지만 가구매라 마진에서 빼고 "가구매" 기록으로 남김
+                    if (isRealShipItem(item)) {
+                        newFakeOrderRecords.push({
+                            companyName: name, recipientName: item.recipientName || '',
+                            productName: product ? (product.orderFormName || product.displayName) : (item.registeredProductName || ''),
+                            phone: '', orderNumber: item.orderNumber || item.bundleNumber || '', qty: item.qty, realShip: true,
+                        });
+                        continue;
+                    }
                     if (!product) continue;
                     const regName = item.registeredProductName || name;
                     const productName = product.orderFormName || product.displayName;
@@ -4989,8 +5022,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             const companyConfig = pricingConfig[name];
             if (!companyConfig) return;
             (companySessions[name] || []).forEach(s => {
-                for (const item of (allOrderItems[s.id] || []) as { matchedProductKey: string; qty: number; orderHour?: number }[]) {
+                for (const item of (allOrderItems[s.id] || []) as { matchedProductKey: string; qty: number; orderHour?: number; orderNumber?: string; bundleNumber?: string }[]) {
                     if (typeof item.orderHour !== 'number') continue;
+                    if (isRealShipItem(item)) continue;
                     const product = companyConfig.products[item.matchedProductKey] as any;
                     if (!product) continue;
                     const productName = product.orderFormName || product.displayName;

@@ -159,6 +159,7 @@ export interface ExcludedOrder {
   orderNumber: string;
   qty?: number;
   groupName?: string;
+  realShip?: boolean; // 실배: 발주서에서 안 빠지고 실제 배송되는 가구매 (마진에서만 뺌)
 }
 
 export interface UnmatchedOrder {
