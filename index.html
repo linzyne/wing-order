@@ -80,6 +80,9 @@
       /* 모서리: 알약처럼 둥근 큰 카드 → 반듯하게 */
       :root .rounded-\[1\.8rem\], :root .rounded-\[2rem\], :root .rounded-3xl { border-radius: 1rem; }
       :root .tracking-widest { letter-spacing: 0.06em; }
+      /* 버튼 좌우 여백 줄임: 글자보다 여백이 더 길던 것 */
+      :root button.px-4, :root button.px-5, :root button.px-6, :root button.px-8 { padding-left: 0.625rem; padding-right: 0.625rem; }
+      :root button.px-3 { padding-left: 0.5rem; padding-right: 0.5rem; }
       /* 안이 비면 카드째 숨김 */
       .hide-if-empty:not(:has(> * > :not(:empty))) { display: none; }
 

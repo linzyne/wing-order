@@ -7394,7 +7394,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const pending = allCompanies.filter(c => !completed.includes(c));
                 if (completed.length === 0) return null;
                 return (
-                    <div className="sticky top-4 flex flex-col gap-0.5 w-20 shrink-0 pt-1">
+                    <div className="sticky top-4 flex flex-col items-start gap-0.5 max-w-[5rem] shrink-0 pt-1">
                         <span className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-1 px-1">{completed.length}/{allCompanies.length}</span>
                         {completed.map(c => {
                             const firstSession = (companySessions[c] || []).find(s => (allOrderRows[s.id]?.length || 0) > 0);
