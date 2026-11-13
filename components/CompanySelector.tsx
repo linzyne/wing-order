@@ -6165,39 +6165,17 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
                 {/* 3) 가구매 명단 설정 */}
                 <div className="glass-light p-4 rounded-2xl mb-3">
-                    <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center gap-2">
-                            <div className="bg-violet-500/10 p-1.5 rounded-lg"><BoltIcon className="w-3.5 h-3.5 text-violet-400" /></div>
-                            <h3 className="text-zinc-200 font-black text-[12px] uppercase tracking-widest flex items-center gap-1.5">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <div className="bg-violet-500/10 p-1.5 rounded-lg shrink-0"><BoltIcon className="w-3.5 h-3.5 text-violet-400" /></div>
+                            <h3 className="text-zinc-200 font-black text-[12px] tracking-widest flex items-center gap-1.5 whitespace-nowrap">
                                 가구매 명단 설정
                                 {globalFakeOrderInput?.trim() && (
                                     <span className="text-[9px] bg-violet-900/40 text-violet-400 border border-violet-500/30 px-1.5 py-0.5 rounded-full font-black">전역</span>
                                 )}
-                                {fakeOrderAnalysis.inputLineCount > 0 && (
-                                    <div className="flex gap-1 flex-wrap">
-                                        <span className="bg-zinc-800 text-zinc-400 text-[11px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700 font-black">
-                                            총 {fakeOrderAnalysis.inputLineCount}명
-                                        </span>
-                                        {(fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchLines.length) > 0 && (
-                                            <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                                매칭 {fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchLines.length}
-                                            </span>
-                                        )}
-                                        {fakeOrderAnalysis.unmatchedLines.length > 0 && (
-                                            <span className="bg-rose-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                                미매칭 {fakeOrderAnalysis.unmatchedLines.length}
-                                            </span>
-                                        )}
-                                        {fakeOrderAnalysis.duplicates.length > 0 && (
-                                            <span className="bg-pink-500 text-black text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black" title="같은 주문번호를 서로 다른 이름이 적음 — 누가 맞는지 몰라 매칭하지 않음">
-                                                중복번호 {fakeOrderAnalysis.duplicates.length}
-                                            </span>
-                                        )}
-                                    </div>
-                                )}
                             </h3>
                         </div>
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 shrink-0">
                             <input ref={fakeMasterFileInputRef} type="file" className="hidden" accept=".xlsx,.xls" onChange={(e) => { const f = e.target.files?.[0]; if (f) { handleFakeMasterUpload(f); e.target.value = ''; } }} />
                             <button onClick={() => fakeMasterFileInputRef.current?.click()} className={`p-1 transition-colors relative ${fakeMasterOrderFile ? 'text-violet-400' : 'text-zinc-600 hover:text-white'}`} title={fakeMasterOrderFile ? `가구매용 주문서: ${fakeMasterOrderFile.name}` : '가구매용 주문서 업로드'}>
                                 <DocumentArrowUpIcon className="w-3.5 h-3.5" />
@@ -6214,6 +6192,28 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             </button>
                         </div>
                     </div>
+                    {fakeOrderAnalysis.inputLineCount > 0 && (
+                        <div className="flex gap-1 flex-wrap mb-3 whitespace-nowrap">
+                            <span className="bg-zinc-800 text-zinc-400 text-[11px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700 font-black">
+                                총 {fakeOrderAnalysis.inputLineCount}명
+                            </span>
+                            {(fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchLines.length) > 0 && (
+                                <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
+                                    매칭 {fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchLines.length}
+                                </span>
+                            )}
+                            {fakeOrderAnalysis.unmatchedLines.length > 0 && (
+                                <span className="bg-rose-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
+                                    미매칭 {fakeOrderAnalysis.unmatchedLines.length}
+                                </span>
+                            )}
+                            {fakeOrderAnalysis.duplicates.length > 0 && (
+                                <span className="bg-pink-500 text-black text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black" title="같은 주문번호를 서로 다른 이름이 적음 — 누가 맞는지 몰라 매칭하지 않음">
+                                    중복번호 {fakeOrderAnalysis.duplicates.length}
+                                </span>
+                            )}
+                        </div>
+                    )}
 
                     {fakeOrderAnalysis.duplicates.length > 0 && (
                         <div className="mb-3 bg-pink-950/30 border border-pink-500/30 rounded-xl px-3 py-2">
