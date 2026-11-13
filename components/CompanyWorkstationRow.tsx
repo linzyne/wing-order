@@ -1594,7 +1594,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     return (
         <>
-            <tr id={`session-${sessionId}`} className={`transition-all duration-500 border-none ${isActive ? (isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10') : 'opacity-20'}`}>
+            <tr id={`session-${sessionId}`} className={`transition-all duration-500 border-none ${isActive ? (isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10') : 'opacity-60'}`}>
                 <td className={`px-6 min-w-[360px] ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
                     <div className="flex flex-col gap-2">
                         {isFirstSession ? (
