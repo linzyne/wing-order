@@ -629,7 +629,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
               }`}
             >
               <span>{b.displayName}</span>
-              <span className={`text-[9px] font-normal ${needsMaster ? 'text-amber-500' : 'text-emerald-500'}`}>
+              <span className={`text-[9px] font-bold ${needsMaster ? 'text-amber-200' : 'text-emerald-200'}`}>
                 {needsMaster ? '1차 필요' : `${round}차 대기`}
               </span>
               {hasWarning && (
