@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
-import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines, PARCEL_SUFFIX } from '../hooks/useConsolidatedOrderConverter';
+import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, findProductNameColIdx, findQtyColIdx, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines, PARCEL_SUFFIX } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
     ChevronDownIcon, ChevronUpIcon, ArrowPathIcon, DocumentArrowUpIcon,
@@ -212,6 +212,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [sessionAdjustments, setSessionAdjustments] = useState<SessionAdjustment[]>([]);
 
     const [summaryOverride, setSummaryOverride] = useState<Record<string, { count: number; totalPrice: number }> | null>(null);
+    const previewEditStartRef = useRef<{ ri: number; row: any[] } | null>(null);
     const [isEditingSummary, setIsEditingSummary] = useState(false);
     const [editValues, setEditValues] = useState<Record<string, { count: string; totalPrice: string }>>({});
 
@@ -2463,7 +2464,76 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             const addOrderRow = () => {
                                 setLocalResult(prev => prev ? { ...prev, rows: [...prev.rows, new Array(previewHeaders.length).fill('')] } : prev);
                             };
+                            // 미리보기에서 품목명/수량을 고치거나 행을 지우면 그 행 몫만큼 정산요약도 옮긴다.
+                            // 품목명이 등록 품목과 정확히 같을 때만 셈 — 모르는 이름이나 분할 품목(행 수 ≠ 주문 수)이 끼면 손대지 않는다.
+                            const companyCfg = pricingConfig[companyName];
+                            const prodCol = findProductNameColIdx(previewHeaders, companyCfg?.orderFormFieldMap);
+                            const qtyCol = findQtyColIdx(previewHeaders, companyCfg?.orderFormFieldMap);
+                            const rowProductCounts = (row: any[] | undefined): Record<string, number> | null => {
+                                const text = String(row?.[prodCol] ?? '').trim();
+                                if (!text) return {};
+                                const products = companyCfg?.products || {};
+                                const find = (name: string) => (Object.entries(products) as [string, ProductPricing][]).find(([, p]) => (p.orderFormName || p.displayName) === name || p.displayName === name);
+                                const parts = text.split(/\s*,\s*/);
+                                const out: Record<string, number> = {};
+                                for (const part of parts) {
+                                    let hit = find(part);
+                                    let qty = 0;
+                                    if (hit) qty = parts.length === 1 ? (parseInt(String(row?.[qtyCol] ?? ''), 10) || 1) : 1;
+                                    else {
+                                        // 행 합치기 발주서는 "3kg 4개"처럼 이름 뒤에 개수가 붙는다
+                                        const m = part.match(/^(.*\S)\s*(\d+)\s*개$/);
+                                        if (m) { hit = find(m[1]); qty = parseInt(m[2], 10); }
+                                    }
+                                    if (!hit || ((hit[1].orderSplitCount || 1) > 1)) return null;
+                                    out[hit[0]] = (out[hit[0]] || 0) + qty;
+                                }
+                                return out;
+                            };
+                            const applyRowSummaryDelta = (oldRow: any[] | undefined, newRow: any[] | undefined) => {
+                                if (prodCol === -1) return;
+                                const before = rowProductCounts(oldRow);
+                                const after = rowProductCounts(newRow);
+                                if (!before || !after) return;
+                                const products = companyCfg?.products || {};
+                                const split = !!companyCfg?.shippingSettlementSplit;
+                                const deltas: Record<string, number> = {};
+                                for (const [k, q] of Object.entries(before)) deltas[k] = (deltas[k] || 0) - q;
+                                for (const [k, q] of Object.entries(after)) deltas[k] = (deltas[k] || 0) + q;
+                                if (Object.values(deltas).every(d => d === 0)) return;
+                                setLocalResult(prev => {
+                                    if (!prev) return prev;
+                                    const summary = { ...prev.summary };
+                                    const bump = (key: string, d: number, unit: number) => {
+                                        const cur = summary[key] || { count: 0, totalPrice: 0 };
+                                        const count = cur.count + d;
+                                        if (count > 0) summary[key] = { count, totalPrice: cur.totalPrice + d * unit };
+                                        else delete summary[key];
+                                    };
+                                    for (const [k, d] of Object.entries(deltas)) {
+                                        if (d === 0) continue;
+                                        bump(k, d, products[k]?.supplyPrice || 0);
+                                        if (split) bump(`${k}${PARCEL_SUFFIX}`, d, products[k]?.shippingCost || 0);
+                                    }
+                                    return {
+                                        ...prev,
+                                        summary,
+                                        depositSummary: buildDepositTextFromSummary(summary, prev.depositSummary),
+                                        depositSummaryExcel: buildDepositExcelFromSummary(summary, prev.depositSummaryExcel),
+                                    };
+                                });
+                            };
+                            // 타자 칠 때마다 셈하면 "3kg"→"kg"→"1kg" 중간 상태에서 어긋나므로, 칸에 들어갈 때 행을 기억해 두고 나올 때 한 번 셈한다.
+                            const startCellEdit = (ri: number, ci: number) => {
+                                previewEditStartRef.current = (ci === prodCol || ci === qtyCol) ? { ri, row: [...(localResult.rows[ri] || [])] } : null;
+                            };
+                            const finishCellEdit = (ri: number) => {
+                                const start = previewEditStartRef.current;
+                                previewEditStartRef.current = null;
+                                if (start && start.ri === ri) applyRowSummaryDelta(start.row, localResult.rows[ri]);
+                            };
                             const removeOrderRow = (ri: number) => {
+                                applyRowSummaryDelta(localResult.rows[ri], undefined);
                                 setLocalResult(prev => prev ? { ...prev, rows: prev.rows.filter((_, idx) => idx !== ri) } : prev);
                             };
                             return (
@@ -2505,6 +2575,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                                 <input
                                                                     value={row[ci] ?? ''}
                                                                     onChange={e => updateOrderCell(ri, ci, e.target.value)}
+                                                                    onFocus={() => startCellEdit(ri, ci)}
+                                                                    onBlur={() => finishCellEdit(ri)}
                                                                     style={{ width:'100%', boxSizing:'border-box', background:'transparent', border:'none', outline:'none', color:'#e4e4e7', padding:'5px 10px', fontSize:'11px', fontFamily:'inherit' }}
                                                                 />
                                                             </td>

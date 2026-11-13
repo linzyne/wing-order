@@ -1086,7 +1086,7 @@ export function sortRowsByProductName(header: string[], rows: any[][], companyNa
  * 발주서에서 품목명 칸 위치. 업체 설정의 필드 매핑을 먼저 보고,
  * 없으면 헤더 이름으로 추측 ('품명'처럼 inferFieldFromHeader가 모르는 헤더도 포함).
  */
-function findProductNameColIdx(header: string[], fieldMap?: string[]): number {
+export function findProductNameColIdx(header: string[], fieldMap?: string[]): number {
     if (fieldMap && fieldMap.length === header.length) {
         const mapped = fieldMap.indexOf('productName');
         if (mapped !== -1) return mapped;
@@ -1097,7 +1097,7 @@ function findProductNameColIdx(header: string[], fieldMap?: string[]): number {
 }
 
 /** 발주서 수량 칸 위치 (없으면 -1) */
-function findQtyColIdx(header: string[], fieldMap?: string[]): number {
+export function findQtyColIdx(header: string[], fieldMap?: string[]): number {
     if (fieldMap && fieldMap.length === header.length) {
         const mapped = fieldMap.indexOf('qty');
         if (mapped !== -1) return mapped;
