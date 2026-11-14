@@ -791,8 +791,8 @@ const App: React.FC = () => {
     return out;
   }, []);
 
-  // 가구매: 그 사업자 명단의 주문을 롯데 예약
-  const handleLotteReserveFake = useCallback((businessId: string) => {
+  // 가구매: 그 사업자 명단에 있고 주문서에서 찾은 주문
+  const fakeLotteOrders = useCallback((businessId: string): LotteOrder[] => {
     const fakeNums = new Set<string>();
     globalFakeOrderInputRef.current.split('\n').forEach(line => {
       const parsed = parseGlobalFakeLine(line, allBusinesses);
@@ -801,10 +801,35 @@ const App: React.FC = () => {
         if (n) fakeNums.add(n);
       }
     });
-    const orders = lotteOrdersFromRows(businessId, k => fakeNums.has(k), 'fake');
-    if (orders.length === 0) { alert('주문서에서 이 사업자의 가구매 주문을 찾지 못했어요.'); return; }
-    runLotteReserve(businessId, orders);
-  }, [allBusinesses, lotteOrdersFromRows, runLotteReserve]);
+    return lotteOrdersFromRows(businessId, k => fakeNums.has(k), 'fake');
+  }, [allBusinesses, lotteOrdersFromRows]);
+
+  // 가구매: 그 사업자 명단의 주문을 롯데 예약
+  const handleLotteReserveFake = useCallback(async (businessId: string): Promise<boolean> => {
+    const orders = fakeLotteOrders(businessId);
+    if (orders.length === 0) { alert('주문서에서 이 사업자의 가구매 주문을 찾지 못했어요.'); return false; }
+    return runLotteReserve(businessId, orders);
+  }, [fakeLotteOrders, runLotteReserve]);
+
+  // 전체 롯데 예약: 가구매가 있는 사업자를 한 곳씩 차례로 (롯데 계정이 하나라 동시에 로그인하면 서로 튕길 수 있음).
+  // 이미 다 예약한 사업자는 건너뛰고, 한 곳이 멈추면 거기서 선다 — 다시 누르면 남은 것만 한다.
+  const [lotteAllBusy, setLotteAllBusy] = useState(false);
+  const handleLotteReserveAll = useCallback(async () => {
+    const norm = (s: string) => String(s || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const targets = allBusinesses
+      .map(b => ({ b, fresh: fakeLotteOrders(b.id).filter(o => !lotteMapRef.current.has(norm(o.orderNumber))) }))
+      .filter(t => t.fresh.length > 0);
+    if (targets.length === 0) { alert('롯데 예약할 가구매 주문이 없어요 (모두 이미 예약했거나 주문서에서 못 찾음).'); return; }
+    if (!confirm(`${targets.map(t => `${t.b.displayName} ${t.fresh.length}건`).join(', ')}\n차례로 롯데 예약할까요? 사업자 크롬들은 열어 두세요.`)) return;
+    setLotteAllBusy(true);
+    try {
+      for (const { b, fresh } of targets) {
+        if (!(await runLotteReserve(b.id, fresh))) break;
+      }
+    } finally {
+      setLotteAllBusy(false);
+    }
+  }, [allBusinesses, fakeLotteOrders, runLotteReserve]);
 
   // 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 발주서에서 뺀다)
   const handleLotteReserveOrders = useCallback(async (businessId: string, orderNumbers: string[], companyName: string, onClaimed: (sent: string[]) => void) => {
@@ -1607,6 +1632,15 @@ const App: React.FC = () => {
                           {/* 롯데 예약: 그 사업자 프로필의 윙 확장이 ALPS에 올리고 운송장번호까지 받아 와 아래 매칭에 넣는다 */}
                           {tmpl.id === lotteTemplate?.id && (
                             <div className="flex flex-col gap-1">
+                              <button
+                                onClick={handleLotteReserveAll}
+                                disabled={lotteAllBusy || Object.values(lotteStatus).some(s => (s as { state: string }).state === 'running')}
+                                title="가구매가 있는 사업자를 한 곳씩 차례로 롯데 예약해요 (이미 예약한 주문은 빼고, 한 곳이 멈추면 거기서 섬)"
+                                className={`flex items-center justify-center gap-1 px-2 py-2 rounded-lg text-[9px] font-black border transition-all ${lotteAllBusy ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-wait' : 'bg-orange-700 border-orange-500 text-white hover:bg-orange-600'}`}
+                              >
+                                <TruckIcon className="w-3 h-3 shrink-0" />
+                                {lotteAllBusy ? '전체 롯데 예약 중… (차례로)' : '전체 롯데 예약'}
+                              </button>
                               {allBusinesses.map(b => {
                                 const count = perBusinessFakeInput[b.id]?.split('\n').filter(Boolean).length ?? 0;
                                 const st = lotteStatus[b.id];
