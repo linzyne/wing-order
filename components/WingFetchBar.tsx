@@ -29,9 +29,8 @@ const WingFetchBar: React.FC<Props> = ({ businesses, getNextRound }) => {
   const [sending, setSending] = useState(false);
   const [now, setNow] = useState(Date.now());
 
-  // 지난날 받은 결과는 감춘다(1차 아직 안 했는데 어제 받은 내역이 떠서 헷갈리던 일)
-  const today = new Date(now).toDateString();
-  const reqs = allReqs.filter(r => new Date(r.createdAt).toDateString() === today);
+  // 받은 지 30분 넘은 결과는 감춘다(1차 아직 안 했는데 예전에 받은 내역이 떠서 헷갈리던 일)
+  const reqs = allReqs.filter(r => now - r.createdAt <= 30 * 60_000);
 
   const isOn = (id: string) => selected[id] !== false;
   const toggle = (id: string) => setSelected(prev => {
