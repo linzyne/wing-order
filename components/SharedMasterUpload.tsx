@@ -107,6 +107,14 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
 const SHOW_MATCH_BADGE = false;
 
 // 발주서 칩 안의 전송 아이콘 — 이모지 대신 단색 아이콘으로 칩 색을 따라가게
+// 발주방식 묶음 머리 색 (이메일·어드민·카톡·미지정)
+const METHOD_STYLE: Record<string, string> = {
+  email: 'bg-sky-900 text-sky-300',
+  admin: 'bg-indigo-900 text-indigo-300',
+  kakao: 'bg-yellow-900 text-yellow-300',
+  '': 'bg-zinc-800 text-zinc-300',
+};
+
 const MAIL_ICON = (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" />
@@ -556,11 +564,11 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   };
 
   const roundColors = (round: number) => {
-    if (round === 1) return { text: 'text-violet-400', chip: 'bg-zinc-950 text-violet-300 border-zinc-700' };
-    if (round === 2) return { text: 'text-sky-400', chip: 'bg-zinc-950 text-sky-300 border-zinc-700' };
-    if (round === 3) return { text: 'text-emerald-400', chip: 'bg-zinc-950 text-emerald-300 border-zinc-700' };
-    if (round === 4) return { text: 'text-amber-400', chip: 'bg-zinc-950 text-amber-300 border-zinc-700' };
-    return { text: 'text-rose-400', chip: 'bg-zinc-950 text-rose-300 border-zinc-700' };
+    if (round === 1) return { text: 'text-violet-400', chip: 'bg-violet-950 text-violet-300 border-violet-800' };
+    if (round === 2) return { text: 'text-sky-400', chip: 'bg-sky-950 text-sky-300 border-sky-800' };
+    if (round === 3) return { text: 'text-emerald-400', chip: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
+    if (round === 4) return { text: 'text-amber-400', chip: 'bg-amber-950 text-amber-300 border-amber-800' };
+    return { text: 'text-rose-400', chip: 'bg-rose-950 text-rose-300 border-rose-800' };
   };
 
   const roundLabel = (round: number) =>
@@ -817,42 +825,42 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                 };
 
                 return (
-                  <div key={companyName} className="py-2.5 border-b border-zinc-800/70 last:border-b-0">
-                    <div className="flex items-center gap-1 mb-1.5">
-                      <span className="text-[13px] font-black text-white tracking-tight mr-1">{companyName}</span>
+                  <div key={companyName} className="rounded-xl bg-zinc-950 border border-zinc-800 shadow-sm px-3 py-2.5">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <span className="text-[14px] font-black text-white tracking-tight mr-0.5">{companyName}</span>
                       {companyHasWarning && (
                         <span title="워크스테이션에 경고가 있습니다" className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 text-[10px] font-black border border-amber-500/40">⚠ 경고</span>
                       )}
-                      {bizEntries.length > 0 && (<>
+                      {bizEntries.length > 0 && (<div className="shrink-0 inline-flex rounded-lg border border-zinc-800 bg-zinc-900 p-0.5 gap-0.5">
                       <button
                         onClick={() => setSettlementCompany(companyName)}
-                        className="shrink-0 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-colors text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
+                        className="px-2 py-0.5 rounded-md text-[11px] font-bold transition-colors text-zinc-400 hover:text-zinc-100 hover:bg-zinc-950 hover:shadow-sm"
                       >
                         정산
                       </button>
                       <button
                         onClick={handleToggleAllClosed}
                         title={allClosedKey ? '마감 해제 (전체 사업자)' : '마감 처리 (전체 사업자)'}
-                        className={`shrink-0 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-colors ${
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-colors ${
                           allClosedKey
-                            ? 'bg-amber-900 text-amber-200'
-                            : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800'
+                            ? 'bg-amber-500 text-white shadow-sm'
+                            : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-950 hover:shadow-sm'
                         }`}
                       >
-                        마감
+                        {allClosedKey ? '마감 ✓' : '마감'}
                       </button>
                       <button
                         onClick={handleToggleAllRecorded}
                         title={allRecordedKey ? '기록 해제 (전체 사업자)' : '기록하기 (전체 사업자)'}
-                        className={`shrink-0 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-colors ${
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-colors ${
                           allRecordedKey
-                            ? 'bg-amber-900 text-amber-200'
-                            : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800'
+                            ? 'bg-emerald-500 text-white shadow-sm'
+                            : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-950 hover:shadow-sm'
                         }`}
                       >
-                        기록
+                        {allRecordedKey ? '기록 ✓' : '기록'}
                       </button>
-                      </>)}
+                      </div>)}
                       {/* 업체 메모 한 줄 — 발주 초기화/차수 변경과 무관하게 남고, ✕로 지울 때만 삭제된다 */}
                       <input
                         type="text"
@@ -860,21 +868,21 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                         onChange={(e) => onCompanyMemoChange?.(companyName, e.target.value)}
                         placeholder="메모"
                         title={companyMemos[companyName] || '이 업체 메모 (지울 때까지 유지)'}
-                        className={`flex-1 min-w-0 ml-1 bg-transparent border-b px-1 py-0.5 text-[11px] font-bold focus:outline-none transition-colors ${
+                        className={`flex-1 min-w-0 ml-1 rounded-md border px-2 py-1 text-[11px] font-bold focus:outline-none transition-colors ${
                           (companyMemos[companyName] ?? '').trim()
-                            ? 'text-amber-300 border-amber-700/50 focus:border-amber-400'
-                            : 'text-zinc-300 border-transparent placeholder:text-zinc-700 hover:border-zinc-800 focus:border-zinc-600'
+                            ? 'bg-amber-950 text-amber-200 border-amber-800 focus:border-amber-500'
+                            : 'bg-transparent text-zinc-300 border-transparent placeholder:text-zinc-700 hover:border-zinc-800 focus:border-zinc-600 focus:bg-zinc-950'
                         }`}
                       />
                       {(companyMemos[companyName] ?? '') !== '' && (
                         <button
                           onClick={() => { if (window.confirm(`${companyName} 메모를 삭제할까요?`)) onCompanyMemoDelete?.(companyName); }}
                           title="메모 삭제"
-                          className="shrink-0 text-zinc-600 hover:text-red-400 transition-colors text-[11px] leading-none px-0.5"
+                          className="shrink-0 w-5 h-5 flex items-center justify-center rounded-full text-zinc-600 hover:text-red-300 hover:bg-red-900 transition-colors text-[10px] leading-none"
                         >✕</button>
                       )}
                     </div>
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5 divide-y divide-zinc-900">
                       {bizEntries.map(({ biz, company }) => {
                         const totalCount = company.rounds.reduce((s, r) => s + (r.count ?? 0), 0);
                         const totalRealShip = company.rounds.reduce((s, r) => s + (r.realShipCount ?? 0), 0);
@@ -883,7 +891,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                         const totalUnmatched = Math.max(0, totalCount - totalMatched);
                         const hasWarning = warningCompanyIds?.has(`${biz.businessId}_${companyName}`) ?? false;
                         return (
-                          <div key={biz.businessId} className="flex items-start gap-2">
+                          <div key={biz.businessId} className="flex items-start gap-2 pt-1.5 first:pt-0">
                             {/* 다운로드 + 메일/카톡 전송을 한 덩어리(칩)로 묶어 차수별로 한눈에 구분되게 */}
                             {(() => {
                               const fns = uploadFns[biz.businessId];
@@ -896,7 +904,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     onClick={() => sendOrderMail(key, run)}
                                     disabled={sending}
                                     title={title}
-                                    className={`flex items-center justify-center w-6 border-l border-zinc-800 transition-colors ${sending ? 'opacity-40' : sent && kind !== 'kakao' ? 'bg-emerald-500 text-white hover:bg-emerald-400' : sent ? 'opacity-25 hover:opacity-60' : 'opacity-50 hover:opacity-100 hover:bg-zinc-900'}`}
+                                    className={`flex items-center justify-center w-7 border-l border-black/10 transition-colors ${sending ? 'opacity-40' : sent && kind !== 'kakao' ? 'bg-emerald-500 text-white hover:bg-emerald-400' : sent ? 'opacity-25 hover:opacity-60' : 'opacity-50 hover:opacity-100 hover:bg-black/5'}`}
                                   >
                                     {sending ? <span className="text-[10px] leading-none">…</span> : sent && kind !== 'kakao' ? <span className="text-[11px] font-black leading-none">✓</span> : kind === 'mail' ? MAIL_ICON : kind === 'admin' ? ADMIN_ICON : KAKAO_ICON}
                                   </button>
@@ -907,11 +915,11 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                 onDownload: () => void; sends: React.ReactNode[]; badge?: React.ReactNode; mailed?: boolean;
                               }) => (
                                 <div key={opts.key} className="flex flex-col items-center gap-0.5">
-                                  <div className={`inline-flex items-stretch rounded-lg border overflow-hidden transition-colors ${opts.mailed ? 'bg-emerald-900 text-emerald-200 border-emerald-700' : opts.downloaded ? 'bg-zinc-900 text-zinc-500 border-zinc-800' : opts.color}`}>
+                                  <div className={`inline-flex items-stretch rounded-lg border overflow-hidden shadow-sm transition-colors ${opts.mailed ? 'bg-emerald-900 text-emerald-200 border-emerald-700' : opts.downloaded ? 'bg-zinc-900 text-zinc-500 border-zinc-800' : opts.color}`}>
                                     <button
                                       onClick={opts.onDownload}
                                       title="발주서 다운로드"
-                                      className="flex items-baseline gap-1 px-2.5 py-1.5 text-[11px] font-black leading-none whitespace-nowrap hover:bg-zinc-900 transition-colors"
+                                      className="flex items-baseline gap-1 px-2.5 py-2 text-[12px] font-black leading-none whitespace-nowrap hover:bg-black/5 transition-colors"
                                     >
                                       <span>{opts.label}</span>
                                       {opts.sub && <span className="text-[9px] font-bold opacity-60">{opts.sub}</span>}
@@ -931,14 +939,14 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                               return (
                                 <>
                                 <div className="flex items-start gap-2 shrink-0">
-                                <span className="flex items-center gap-1 w-20 pt-1.5 text-[11px] text-zinc-500 font-bold" title={biz.displayName ?? ''}>
+                                <span className="flex items-center gap-1 w-20 pt-2 text-[11px] text-zinc-400 font-bold" title={biz.displayName ?? ''}>
                                   <span className="truncate">{biz.displayName}</span>
                                   {hasWarning && <span title="워크스테이션에 경고가 있습니다" className="text-amber-400 text-xs leading-none shrink-0">⚠</span>}
                                 </span>
                                 {renderChip({
                                   key: 'merged',
                                   downloaded: downloadedButtons.has(mergedKey),
-                                  color: 'bg-zinc-950 text-zinc-200 border-zinc-700',
+                                  color: 'bg-zinc-950 text-zinc-100 border-zinc-700',
                                   label: `합산${totalCount > 0 ? ` ${totalCount}` : ''}${totalRealShip > 0 ? ` (실${totalRealShip})` : ''}`,
                                   onDownload: () => { fns?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(mergedKey); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); },
                                   mailed: emailedButtons.has(mergedMailKey),
@@ -1024,11 +1032,13 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                 return jobs;
               };
               return groups.map(g => (
-                <div key={g.key || 'none'} className="flex flex-col">
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[11px] font-black text-sky-400">{g.label}</span>
-                    <span className="text-[10px] font-bold text-zinc-600 tabular-nums">{g.names.length}곳</span>
-                    <div className="flex-1 border-t border-zinc-800/80" />
+                <div key={g.key || 'none'} className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2 pt-2">
+                    <span className={`inline-flex items-center gap-1.5 pl-2.5 pr-1 py-0.5 rounded-full text-[11px] font-black ${METHOD_STYLE[g.key] ?? METHOD_STYLE['']}`}>
+                      {g.label}
+                      <span className="px-1.5 rounded-full bg-zinc-950/80 text-[10px] tabular-nums">{g.names.length}곳</span>
+                    </span>
+                    <div className="flex-1 border-t border-dashed border-zinc-800" />
                     {(g.key === 'email' || g.key === 'admin') && (() => {
                       const jobs = pendingMerged(g.names, g.key);
                       return (
@@ -1040,10 +1050,10 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                           }}
                           disabled={jobs.length === 0}
                           title={`아직 안 보낸 합산 발주서 ${jobs.length}개를 한꺼번에 ${g.key === 'admin' ? '어드민에 올리기' : '메일 전송'}`}
-                          className={`shrink-0 px-2 py-0.5 rounded text-[11px] font-black border transition-colors ${
+                          className={`shrink-0 px-3 py-1 rounded-lg text-[11px] font-black transition-all ${
                             jobs.length === 0
-                              ? 'text-zinc-600 border-zinc-800 cursor-default'
-                              : 'text-sky-300 border-sky-700/60 hover:bg-sky-900/40 hover:text-sky-100'
+                              ? 'text-emerald-400 bg-emerald-950 border border-emerald-800 cursor-default'
+                              : 'text-white bg-sky-500 shadow-sm hover:bg-sky-400 hover:shadow active:scale-95'
                           }`}
                         >
                           {jobs.length === 0 ? '전체 전송 ✓' : `합산 전체 전송 ${jobs.length}`}
@@ -1057,9 +1067,9 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
             })()}
             <button
               onClick={refreshDownloadSnapshot}
-              className="self-end text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors font-bold"
+              className="self-end mt-1 flex items-center gap-1 px-2.5 py-1 rounded-lg border border-zinc-800 bg-zinc-950 text-[11px] text-zinc-400 hover:text-zinc-100 hover:border-zinc-600 shadow-sm transition-colors font-bold"
             >
-              새로고침
+              <span className="text-[12px] leading-none">↻</span> 새로고침
             </button>
           </div>
         )}
