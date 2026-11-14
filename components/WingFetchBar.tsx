@@ -29,8 +29,12 @@ const WingFetchBar: React.FC<Props> = ({ businesses, getNextRound }) => {
   const [sending, setSending] = useState(false);
   const [now, setNow] = useState(Date.now());
 
-  // 받은 지 30분 넘은 결과는 감춘다(1차 아직 안 했는데 예전에 받은 내역이 떠서 헷갈리던 일)
-  const reqs = allReqs.filter(r => now - r.createdAt <= 30 * 60_000);
+  // 새로고침·창 다시 열기로 이어 온 묶음은 아직 받는 중일 때만 보인다 — 다 끝난 예전 결과가 남아 헷갈리던 일.
+  // 이 화면에서 누른 묶음은 끝나도 그대로 보인다
+  const [startedHere, setStartedHere] = useState(false);
+  const stillRunning = allReqs.some(r =>
+    (r.status === 'running' && now - r.createdAt <= 5 * 60_000) || (r.status === 'pending' && now - r.createdAt <= 45_000));
+  const reqs = startedHere || stillRunning ? allReqs : [];
 
   const isOn = (id: string) => selected[id] !== false;
   const toggle = (id: string) => setSelected(prev => {
@@ -56,6 +60,7 @@ const WingFetchBar: React.FC<Props> = ({ businesses, getNextRound }) => {
     setSending(true);
     try {
       setReqs([]);
+      setStartedHere(true);
       setBatchId(await createWingRequests(targets));
     } catch (e: any) {
       alert(`받기 요청 실패: ${e?.message ?? e}`);
