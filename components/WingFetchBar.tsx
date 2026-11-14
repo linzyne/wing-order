@@ -25,9 +25,13 @@ const WingFetchBar: React.FC<Props> = ({ businesses, getNextRound }) => {
     try { sessionStorage.setItem('wingFetchBatch', id); } catch { /* 저장 실패는 무시 */ }
     setBatchIdState(id);
   };
-  const [reqs, setReqs] = useState<WingRequest[]>([]);
+  const [allReqs, setReqs] = useState<WingRequest[]>([]);
   const [sending, setSending] = useState(false);
   const [now, setNow] = useState(Date.now());
+
+  // 지난날 받은 결과는 감춘다(1차 아직 안 했는데 어제 받은 내역이 떠서 헷갈리던 일)
+  const today = new Date(now).toDateString();
+  const reqs = allReqs.filter(r => new Date(r.createdAt).toDateString() === today);
 
   const isOn = (id: string) => selected[id] !== false;
   const toggle = (id: string) => setSelected(prev => {
