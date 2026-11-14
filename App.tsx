@@ -1037,7 +1037,8 @@ const App: React.FC = () => {
     globalFakeOrderInput.split('\n').forEach(line => {
       const parsed = parseGlobalFakeLine(line, allBusinesses);
       if (!parsed?.businessId || !parsed.orderNum) return;
-      if (isSpecialMatchOrderNum(parsed.orderNum)) {
+      // 주문번호 있는 실배는 여기서 세지 않음 — 오늘 주문서에 있을 때만 사업자 칸이 매칭 번호로 올려 보낸다
+      if (isSpecialMatchOrderNum(parsed.orderNum) && !parsed.realShipOrderNum) {
         counts[parsed.businessId] = (counts[parsed.businessId] || 0) + 1;
       }
     });
@@ -1058,12 +1059,12 @@ const App: React.FC = () => {
         if (matches) matches.forEach(m => { if (!isSpecialMatchOrderNum(m)) regularNums.add(m.trim()); });
       });
       const specialCount = perBusinessSpecialMatchCounts[b.id] ?? 0;
-      const total = regularNums.size + specialCount;
+      const total = regularNums.size + specialCount + new Set(perBusinessRealShipNums[b.id] || []).size;
       const matched = (matchedFakeNums[b.id]?.length ?? 0) + specialCount;
       if (total > 0) stats[b.id] = { total, matched };
     });
     return stats;
-  }, [perBusinessFakeInput, matchedFakeNums, perBusinessSpecialMatchCounts, allBusinesses]);
+  }, [perBusinessFakeInput, matchedFakeNums, perBusinessSpecialMatchCounts, perBusinessRealShipNums, allBusinesses]);
 
   // 특정 업체 기준으로 주문번호가 매칭됐는지 (업체 간 주문번호 우연 충돌로 오매칭되는 것 방지)
   const isOrderMatchedForBusiness = useCallback((businessId: string | null, orderNum: string) => {
@@ -1077,7 +1078,9 @@ const App: React.FC = () => {
     return lines.filter(line => {
       const parsed = parseGlobalFakeLine(line, allBusinesses);
       if (!parsed?.orderNum) return true;
-      if (isSpecialMatchOrderNum(parsed.orderNum)) return false;
+      if (isSpecialMatchOrderNum(parsed.orderNum)) {
+        return parsed.realShipOrderNum ? !isOrderMatchedForBusiness(parsed.businessId, parsed.realShipOrderNum) : false;
+      }
       return !isOrderMatchedForBusiness(parsed.businessId, parsed.orderNum);
     });
   }, [globalFakeOrderInput, allBusinesses, isOrderMatchedForBusiness]);
@@ -1420,7 +1423,10 @@ const App: React.FC = () => {
                 >
                   {globalFakeOrderInput.split('\n').map((line, i) => {
                     const parsed = parseGlobalFakeLine(line, allBusinesses);
-                    const isMatched = parsed?.orderNum ? (isOrderMatchedForBusiness(parsed.businessId, parsed.orderNum) || isSpecialMatchOrderNum(parsed.orderNum)) : false;
+                    const isMatched = !parsed?.orderNum ? false
+                      : isSpecialMatchOrderNum(parsed.orderNum)
+                        ? (parsed.realShipOrderNum ? isOrderMatchedForBusiness(parsed.businessId, parsed.realShipOrderNum) : true)
+                        : isOrderMatchedForBusiness(parsed.businessId, parsed.orderNum);
                     const isValid = !!parsed?.businessId;
                     const isEmpty = !line.trim();
                     return (

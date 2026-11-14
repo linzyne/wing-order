@@ -1785,8 +1785,24 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             (ld.nums.length === 0 || ld.nums.every(n => !matchedSet.has(n)))
         );
 
-        return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates, unmatchedLines, specialMatchLines };
-    }, [effectiveFakeInput, allExcludedDetails, fakeMasterOrderData, masterOrderData]);
+        // 실배 줄에 주문번호가 있으면(사업자_이름_주문번호_실배) 오늘 주문서(원본 + 추가 차수)에 그 번호가 있어야 매칭.
+        // 예전엔 '실배'만 보고 무조건 매칭이라, 어제 끝난 주문을 명단에 남겨 두면 오늘도 매칭으로 떴다.
+        const normNum = (v: any) => String(v ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        const todayOrderNums = new Set<string>();
+        const addRows = (rows: any[][]) => rows.forEach(r => {
+            if (!r) return;
+            [r[1], r[2]].forEach(v => { const n = normNum(v); if (n) todayOrderNums.add(n); });
+        });
+        if (masterOrderData) addRows(masterOrderData.slice(1));
+        (Object.values(batchMasterRows) as any[][][]).forEach(addRows);
+        const realShipMatched = (realShipOrderNums || []).filter(n => todayOrderNums.has(normNum(n)));
+        const realShipMissing = (realShipOrderNums || []).filter(n => !todayOrderNums.has(normNum(n)));
+        const specialMatchedCount = Math.max(0, specialMatchLines.length - realShipMissing.length);
+        // 전체 가구매 명단 박스로 올려 보내는 매칭 번호 — 실배 번호도 오늘 주문서에 있을 때만 넣는다
+        const matchedForGlobal = [...matched, ...realShipMatched];
+
+        return { inputNumbers, inputLineCount, matched, missing, foundDetails, nameMap, duplicates, unmatchedLines, specialMatchLines, specialMatchedCount, realShipMissing, matchedForGlobal };
+    }, [effectiveFakeInput, allExcludedDetails, fakeMasterOrderData, masterOrderData, batchMasterRows, realShipOrderNums]);
 
     // 미발송 명단 분석 (입력된 번호 vs 실제 발견된 번호)
     const unsentOrderAnalysis = useMemo(() => {
@@ -1829,9 +1845,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     // 전체 가구매 명단 박스에 매칭 결과 콜백
     useEffect(() => {
         if (onGlobalFakeMatch && globalFakeOrderInput) {
-            onGlobalFakeMatch(fakeOrderAnalysis.matched);
+            onGlobalFakeMatch(fakeOrderAnalysis.matchedForGlobal);
         }
-    }, [fakeOrderAnalysis.matched, onGlobalFakeMatch, globalFakeOrderInput]);
+    }, [fakeOrderAnalysis.matchedForGlobal, onGlobalFakeMatch, globalFakeOrderInput]);
 
     // 오늘 주문서 전체 데이터 행 (원본 + 추가 차수) — 공통 택배 기능 / 단골 매칭용
     const allMasterDataRows = useMemo(() => {
@@ -6196,14 +6212,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                             <span className="bg-zinc-800 text-zinc-400 text-[11px] px-2 py-0.5 rounded-full animate-pop-in border border-zinc-700 font-black">
                                 총 {fakeOrderAnalysis.inputLineCount}명
                             </span>
-                            {(fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchLines.length) > 0 && (
+                            {(fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchedCount) > 0 && (
                                 <span className="bg-emerald-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                    매칭 {fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchLines.length}
+                                    매칭 {fakeOrderAnalysis.matched.length + fakeOrderAnalysis.specialMatchedCount}
                                 </span>
                             )}
-                            {fakeOrderAnalysis.unmatchedLines.length > 0 && (
+                            {(fakeOrderAnalysis.unmatchedLines.length + fakeOrderAnalysis.realShipMissing.length) > 0 && (
                                 <span className="bg-rose-500 text-white text-[11px] px-2 py-0.5 rounded-full animate-pop-in font-black">
-                                    미매칭 {fakeOrderAnalysis.unmatchedLines.length}
+                                    미매칭 {fakeOrderAnalysis.unmatchedLines.length + fakeOrderAnalysis.realShipMissing.length}
                                 </span>
                             )}
                             {fakeOrderAnalysis.duplicates.length > 0 && (
@@ -6264,11 +6280,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         </div>
                                     </div>
                                 )}
-                                {fakeOrderAnalysis.specialMatchLines.length > 0 && (
+                                {fakeOrderAnalysis.realShipMissing.length > 0 && (
+                                    <div>
+                                        <h4 className="text-rose-500 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
+                                            <span className="w-2 h-2 bg-rose-500 rounded-full animate-pulse" />
+                                            실배 — 오늘 주문서에 없음 ({fakeOrderAnalysis.realShipMissing.length}건)
+                                        </h4>
+                                        <div className="space-y-1">
+                                            {fakeOrderAnalysis.realShipMissing.map(num => (
+                                                <div key={num} className="flex items-center gap-2 bg-rose-950/30 border border-rose-500/20 px-2.5 py-1.5 rounded-lg">
+                                                    <span className="text-[10px] font-mono text-rose-400">{num}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                                {fakeOrderAnalysis.specialMatchedCount > 0 && (
                                     <div>
                                         <h4 className="text-emerald-400 font-black text-sm mb-2 tracking-widest flex items-center gap-1.5">
                                             <span className="w-2 h-2 bg-emerald-400 rounded-full" />
-                                            실배 등 자동 매칭 ({fakeOrderAnalysis.specialMatchLines.length}건)
+                                            실배 등 매칭 ({fakeOrderAnalysis.specialMatchedCount}건)
                                         </h4>
                                         <div className="space-y-1">
                                             {fakeOrderAnalysis.specialMatchLines.map((ld, idx) => (
