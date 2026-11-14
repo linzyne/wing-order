@@ -1183,11 +1183,12 @@ const App: React.FC = () => {
         </div>
 
         {/* ── 드롭다운 패널 모음 ──
-            버튼 위치와 상관없이 전부 헤더 오른쪽 아래 같은 자리에서 열린다 (한 번에 하나만). */}
+            버튼 위치와 상관없이 전부 헤더 오른쪽 아래 같은 자리에서 열린다 (한 번에 하나만).
+            어느 창이 열렸는지 헷갈리지 않게 바탕·테두리를 그 메뉴 아이콘 색으로 깐다. */}
         <div className="contents" onMouseDown={(e) => e.stopPropagation()}>
         {/* 주문서 업로드 */}
         {showUpload && (
-          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
+          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-sky-900 border-2 border-sky-500/60 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
             <SharedMasterUpload
               businesses={businessIdNamePairs}
               uploadFns={uploadFnsRef.current}
@@ -1207,7 +1208,7 @@ const App: React.FC = () => {
         )}
 
         {/* 통합 송장 변환 */}
-        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showInvoice ? '' : 'hidden'}`}>
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-orange-900 border-2 border-orange-500/60 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showInvoice ? '' : 'hidden'}`}>
           <ConsolidatedInvoicePanel
             businesses={businessIdNamePairs}
             uploadFns={uploadFnsRef.current}
@@ -1239,7 +1240,7 @@ const App: React.FC = () => {
 
         {/* 전체 가구매 명단 */}
         {showGlobalFake && (
-          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
+          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-violet-900 border-2 border-violet-500/60 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
             <div className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">가구매 명단</h3>
@@ -1560,7 +1561,7 @@ const App: React.FC = () => {
         )}
 
         {/* 통합 CS 현황 (전체 사업자, 접수중인 건만) */}
-        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCs ? '' : 'hidden'}`}>
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-rose-900 border-2 border-rose-500/60 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCs ? '' : 'hidden'}`}>
           {showCs && (
             <ConsolidatedCsPanel
               businesses={businessIdNamePairs}
@@ -1572,7 +1573,7 @@ const App: React.FC = () => {
         </div>
 
         {/* 주문자 검색 (전체 사업자 발주내역에서 이름으로 조회) */}
-        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showOrdererSearch ? '' : 'hidden'}`}>
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] bg-cyan-900 border-2 border-cyan-500/60 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showOrdererSearch ? '' : 'hidden'}`}>
           <OrdererSearchPanel
             businesses={businessIdNamePairs}
             active={showOrdererSearch}
@@ -1587,7 +1588,7 @@ const App: React.FC = () => {
         />
 
         {/* 쿠팡 주문 */}
-        <div className={`absolute right-4 top-full mt-2 z-50 w-[480px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCoupang ? '' : 'hidden'}`}>
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[480px] bg-red-900 border-2 border-red-500/60 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showCoupang ? '' : 'hidden'}`}>
           <CoupangDownloader
             businesses={businessIdNamePairs}
             onRegisterDirectUpload={(fn) => { directCoupangUploadRef.current = fn; }}
@@ -1596,7 +1597,7 @@ const App: React.FC = () => {
 
         {/* 긴급공지 */}
         {showUrgentNotice && (
-          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
+          <div className="absolute right-4 top-full mt-2 z-50 w-[380px] bg-amber-900 border-2 border-amber-500/60 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
             <div className="p-4">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-zinc-200 font-black text-[11px] uppercase tracking-widest">긴급공지</h3>
@@ -1616,7 +1617,7 @@ const App: React.FC = () => {
         )}
 
         {/* 공급업체 라이브러리 (전체 사업자 공유) */}
-        <div className={`absolute right-4 top-full mt-2 z-50 w-[480px] bg-zinc-900 border border-zinc-700/50 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showSupplierLibrary ? '' : 'hidden'}`}>
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[480px] bg-teal-900 border-2 border-teal-500/60 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showSupplierLibrary ? '' : 'hidden'}`}>
           <PricingEditor
             config={sharedSuppliers.config}
             onConfigChange={sharedSuppliers.saveConfig}
