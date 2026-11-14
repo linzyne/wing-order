@@ -109,7 +109,7 @@ function saveLog(log, page, prefix) {
 // ── 자동 새로고침 ──
 // 확장 폴더의 파일이 바뀌면(코드 수정) 윙 화면을 열 때 스스로 다시 불러온다.
 // 프로필마다 chrome://extensions 에서 ↻ 를 누르지 않아도 되게.
-const FILES = ['manifest.json', 'background.js', 'hook.js', 'wing.js', 'config.js', 'offscreen.html', 'offscreen.js', 'listen-target.js', 'ads.js'];
+const FILES = ['manifest.json', 'background.js', 'hook.js', 'wing.js', 'config.js', 'offscreen.html', 'offscreen.js', 'listen-target.js', 'ads.js', 'lotte.js', 'lotte-hook.js', 'options.html', 'options.js'];
 async function diskHash() {
   const texts = await Promise.all(FILES.map((f) => fetch(chrome.runtime.getURL(f), { cache: 'no-store' }).then((r) => r.text())));
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(texts.join('\n\u0000\n')));
@@ -242,9 +242,13 @@ async function pollRequests() {
         await patchRequest(doc.name, { status: 'error', message: '요청이 오래돼서 건너뜀' }, doc.updateTime);
         continue;
       }
+      const mode = f.mode?.stringValue;
+      if (mode === 'lotte') {
+        await startLotte(doc);
+        continue;
+      }
       // 같은 프로필 창이 둘이어도 한 번만 실행되도록 문서가 그대로일 때만 가져간다
       if (!(await patchRequest(doc.name, { status: 'running', message: '윙 여는 중' }, doc.updateTime))) continue;
-      const mode = f.mode?.stringValue;
       const tab = await chrome.tabs.create({ url: mode === 'ads' ? ADS_URL : MANAGE_URL, active: false });
       const { jobs = {} } = await chrome.storage.local.get('jobs');
       jobs[tab.id] = { mode: ['next', 'invoice', 'count', 'ads'].includes(mode) ? mode : 'first', reqName: doc.name, at: Date.now() };
@@ -263,6 +267,121 @@ async function pollRequests() {
     polling = false;
   }
 }
+
+// ── 롯데택배 예약 (wingRequests, mode 'lotte') ──
+// 윙발주가 롯데 B-type 엑셀과 주문 목록(items: 롯데 주문번호 W…-n ↔ 쿠팡 주문번호)을 담아 보내면,
+// 작은 창으로 ALPS를 열고 lotte.js(로켓 확장에서 가져옴)가 로그인 → 일괄주문접수 → 운송장출력 → 대조까지 한다.
+// 운송장번호가 다 모이면 lotteWaybills/{batchId}에 적는다(윙발주가 구독해 그 주문들 송장에 넣음).
+// 롯데 계정은 사업자 모두 같고, 로그인 정보는 프로필마다 확장 아이콘 › 설정에 저장한다.
+const LOTTE_KEY = 'lottePending';
+const LOTTE_START_URL = 'https://partner.alps.llogis.com/main/pages/sec/authentication';
+const LOTTE_MAX_AGE_MS = 30 * 60 * 1000;
+
+// 운송장 미리보기는 새 창(window.open)인데 확장이 누른 클릭이라 크롬 팝업 차단에 걸린다 — 롯데 사이트만 허용
+async function allowLottePopups() {
+  try {
+    for (const pattern of ['https://*.llogis.com/*', 'http://*.llogis.com/*']) {
+      await chrome.contentSettings.popups.set({ primaryPattern: pattern, setting: 'allow' });
+    }
+  } catch (err) {
+    console.warn('[롯데] 팝업 허용 설정 실패', err);
+  }
+}
+
+async function startLotte(doc) {
+  const f = doc.fields || {};
+  const { [LOTTE_KEY]: cur } = await chrome.storage.local.get(LOTTE_KEY);
+  if (cur && !['waybills', 'error'].includes(cur.step) && Date.now() - (cur.savedAt || 0) < LOTTE_MAX_AGE_MS) {
+    await patchRequest(doc.name, { status: 'error', message: '이 프로필에서 롯데 예약이 아직 진행 중이에요 — 롯데 창이 끝난 뒤 다시 눌러 주세요' }, doc.updateTime);
+    return;
+  }
+  let items = [];
+  try { items = JSON.parse(f.items?.stringValue || '[]'); } catch (e) { items = []; }
+  const ordNos = items.map((it) => String(it.ordNo || '')).filter(Boolean);
+  const fileBase64 = f.fileBase64?.stringValue || '';
+  const batchId = f.batchId?.stringValue || '';
+  if (!ordNos.length || !fileBase64 || !batchId) {
+    await patchRequest(doc.name, { status: 'error', message: '예약할 주문이나 엑셀이 비어 있어요' }, doc.updateTime);
+    return;
+  }
+  if (!(await patchRequest(doc.name, { status: 'running', message: '롯데 여는 중…' }, doc.updateTime))) return;
+  await allowLottePopups();
+  const win = await chrome.windows.create({ url: LOTTE_START_URL, type: 'popup', width: 1000, height: 680, focused: true });
+  await chrome.storage.local.set({
+    [LOTTE_KEY]: {
+      file: { name: f.fileName?.stringValue || '롯데택배.xlsx', dataUrl: `data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${fileBase64}` },
+      ordNos,
+      boxCount: ordNos.length,
+      batchId,
+      items,
+      businessName: f.businessName?.stringValue || '',
+      reqName: doc.name,
+      savedAt: Date.now(),
+      step: 'start',
+      status: '',
+      windowId: win.id,
+    },
+  });
+}
+
+const localYMD = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+// 받은 운송장번호를 lotteWaybills/{batchId}에 적는다 (윙발주 요청 문서는 1시간 뒤 지워지므로 따로 남김)
+async function saveLotteWaybills(p) {
+  const byOrd = new Map((p.waybills || []).map((w) => [String(w.ordNo), w]));
+  const items = (p.items || []).map((it) => ({ ...it, waybill: (byOrd.get(String(it.ordNo)) || {}).waybill || '' }));
+  const id = encodeURIComponent(p.batchId);
+  const res = await fetch(`${docsBase()}/lotteWaybills/${id}?${keyQ()}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fields: {
+        businessName: { stringValue: p.businessName || '' },
+        batchId: { stringValue: p.batchId },
+        date: { stringValue: localYMD() },
+        items: { stringValue: JSON.stringify(items) },
+        at: { timestampValue: new Date().toISOString() },
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Firestore ${res.status}`);
+  return items.filter((it) => it.waybill).length;
+}
+
+// lotte.js가 단계를 바꿀 때마다 윙발주 요청 문서에 알리고, 끝나면 결과를 적고 창을 닫는다.
+// 멈춘 단계(manual)는 사람이 롯데 창에서 이어 할 수 있어 running으로 둔다.
+chrome.storage.onChanged.addListener(async (changes, area) => {
+  if (area !== 'local' || !changes[LOTTE_KEY]) return;
+  const now = changes[LOTTE_KEY].newValue;
+  const before = changes[LOTTE_KEY].oldValue;
+  // 롯데 창의 [멈춤]은 기록을 지운다
+  if (!now) {
+    if (before && before.reqName && !['waybills', 'error'].includes(before.step)) {
+      await patchRequest(before.reqName, { status: 'error', message: '롯데 창에서 멈췄어요' });
+    }
+    return;
+  }
+  if (!now.reqName || (before && before.step === now.step && before.status === now.status)) return;
+  if (now.step === 'waybills' && (!before || before.step !== 'waybills')) {
+    try {
+      const n = await saveLotteWaybills(now);
+      await patchRequest(now.reqName, { status: 'done', message: `운송장번호 ${n}건 받음` });
+    } catch (err) {
+      await patchRequest(now.reqName, { status: 'error', message: `운송장번호는 받았는데 윙발주에 못 적었어요: ${err.message}` });
+      return;
+    }
+    if (now.windowId) setTimeout(() => chrome.windows.remove(now.windowId).catch(() => {}), 1500);
+    return;
+  }
+  if (now.step === 'error') {
+    await patchRequest(now.reqName, { status: 'error', message: now.status || '롯데에서 멈췄어요' });
+    return;
+  }
+  if (now.status) await patchRequest(now.reqName, { message: now.status });
+});
 
 // 요청으로 연 탭이 윙 로그인 화면으로 넘어가면(로그인 풀림) 실패로 적고 탭은 남겨 둔다
 chrome.tabs.onUpdated.addListener(async (tabId, info) => {
@@ -302,6 +421,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     // 구독이 끊겼다 — 창을 닫고 다시 띄운다
     console.warn('[구독 끊김]', msg.message);
     chrome.offscreen.closeDocument().catch(() => {}).finally(() => setTimeout(ensureOffscreen, 5000));
+    return false;
+  }
+  // lotte.js: 확장이 연 롯데 창에서만 자동 진행하려고 자기 창 번호를 묻는다(미리보기 창이면 연 창도)
+  if (msg.type === 'MY_WINDOW') {
+    (async () => {
+      const tab = sender && sender.tab;
+      let openerWindowId = null;
+      try {
+        if (tab && tab.openerTabId) openerWindowId = (await chrome.tabs.get(tab.openerTabId)).windowId || null;
+      } catch (err) {}
+      sendResponse({ windowId: (tab && tab.windowId) || null, tabId: (tab && tab.id) || null, openerWindowId });
+    })();
+    return true;
+  }
+  if (msg.type === 'FOCUS_MY_WINDOW') {
+    const id = sender && sender.tab && sender.tab.windowId;
+    if (id) chrome.windows.update(id, { focused: true }).catch(() => {});
     return false;
   }
   if (msg.type === 'AD_SPEND') {

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>윙 주문서 확장 설정</title>
+  <style>
+    body { font: 14px/1.5 -apple-system, 'Apple SD Gothic Neo', sans-serif; color: #1f2937; margin: 0; padding: 20px; width: 320px; }
+    h1 { font-size: 16px; margin: 0 0 4px; }
+    p { color: #64748b; font-size: 12px; margin: 0 0 14px; }
+    label { display: block; font-size: 12px; color: #475569; margin: 10px 0 4px; }
+    input { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #d0d7e2; border-radius: 8px; font-size: 14px; }
+    .row { display: flex; gap: 8px; margin-top: 14px; }
+    button { flex: 1; padding: 8px; border-radius: 8px; border: 1px solid #d0d7e2; background: #f8fafc; cursor: pointer; font-size: 13px; }
+    button.primary { background: #2563eb; border-color: #2563eb; color: #fff; font-weight: 600; }
+    .msg { margin-top: 10px; font-size: 12px; min-height: 16px; }
+  </style>
+</head>
+<body>
+  <h1>🚚 롯데택배(ALPS) 자동 로그인</h1>
+  <p>윙발주의 "롯데 예약"으로 롯데 창이 뜨면 확장이 이 정보로 대신 로그인해요. 롯데 계정은 사업자 모두 같아도, 크롬 프로필마다 한 번씩 저장해 주세요. 이 컴퓨터의 크롬 안에만 저장돼요.</p>
+  <label for="id">아이디</label>
+  <input id="id" autocomplete="off" />
+  <label for="pw">비밀번호</label>
+  <input id="pw" type="password" autocomplete="off" />
+  <div class="row">
+    <button id="clear">지우기</button>
+    <button id="save" class="primary">저장</button>
+  </div>
+  <div class="msg" id="msg"></div>
+  <script src="options.js"></script>
+</body>
+</html>

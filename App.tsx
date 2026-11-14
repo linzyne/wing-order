@@ -16,6 +16,7 @@ import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMem
 import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
+import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder } from './services/lotteReserve';
 import { SentOrderToast } from './components/SentOrdersBar';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
@@ -498,9 +499,26 @@ const App: React.FC = () => {
     return result;
   }, [globalCourierRowsByBiz]);
 
+  // 주문서가 바뀌면 롯데 운송장 매칭을 다시 센다(운송장번호가 주문서보다 먼저 와 있을 수 있음)
+  const [orderRowsTick, setOrderRowsTick] = useState(0);
   const handleExposeOrderRows = useCallback((businessId: string, header: any[] | null, dataRows: any[][]) => {
+    // 사업자 화면은 렌더마다 이걸 부르므로 행이 실제로 바뀐 때만 다시 센다 (안 그러면 렌더가 끝없이 돈다)
+    const changed = globalMasterRowsRef.current[businessId]?.dataRows !== dataRows;
     globalMasterRowsRef.current[businessId] = { header: header ?? [], dataRows };
+    if (changed) setOrderRowsTick(n => n + 1);
   }, []);
+
+  // 롯데 예약: 사업자 프로필의 윙 확장이 ALPS에 예약하고 받아 온 운송장번호(오늘 것)를 구독해
+  // '사무실(롯데)' 택배 양식의 운송장 매칭에 합친다 — 가구매 주문 + 발주서 미리보기에서 고른 주문.
+  const lotteTemplate = useMemo(() => findLotteTemplate(courierTemplates), [courierTemplates]);
+  const lotteTemplateIdRef = useRef<string | null>(null);
+  lotteTemplateIdRef.current = lotteTemplate?.id ?? null;
+  const [lotteBatches, setLotteBatches] = useState<LotteBatch[]>([]);
+  useEffect(() => subscribeLotteWaybills(localYMD(), setLotteBatches), []);
+  const lotteMapRef = useRef<Map<string, string>>(new Map());
+  // 예약 중인 주문번호 — 같은 주문을 두 번 예약하지 않게
+  const lotteInFlightRef = useRef<Set<string>>(new Set());
+  const [lotteStatus, setLotteStatus] = useState<Record<string, { state: 'running' | 'done' | 'error'; message: string }>>({});
 
   const handleGlobalCourierDownload = useCallback(async (template: CourierTemplate) => {
     const bizEntries = Object.entries(globalMasterRowsRef.current as Record<string, { header: any[]; dataRows: any[][] }>);
@@ -622,17 +640,20 @@ const App: React.FC = () => {
     if (notFoundOrders.length > 0) alert(`${template.name} ${matchedCount}건 다운로드!\n배송정보 누락 ${notFoundOrders.length}건: ${notFoundOrders.join(', ')}`);
   }, [allBusinesses]);
 
-  const processGlobalCourierFiles = useCallback(async (template: CourierTemplate, files: File[]) => {
+  // silent: 롯데 운송장 구독으로 저절로 다시 셀 때 — 주문서가 아직 없어도 알림창을 띄우지 않는다
+  const processGlobalCourierFiles = useCallback(async (template: CourierTemplate, files: File[], silent = false) => {
     const allBusiness = globalMasterRowsRef.current as Record<string, { header: any[]; dataRows: any[][] }>;
     const bizEntries = Object.entries(allBusiness);
     const allDataRows = bizEntries.flatMap(([, b]) => b.dataRows);
-    if (allDataRows.length === 0) { alert('각 사업자 탭에 주문서를 먼저 업로드해주세요.'); return; }
+    if (allDataRows.length === 0) { if (!silent) alert('각 사업자 탭에 주문서를 먼저 업로드해주세요.'); return; }
 
     setGlobalCourierResults(prev => { const n = { ...prev }; delete n[template.id]; return n; });
     setGlobalCourierMatchedRows(prev => { const n = { ...prev }; delete n[template.id]; return n; });
     setGlobalCourierRowsByBiz(prev => { const n = { ...prev }; delete n[template.id]; return n; });
 
-    if (files.length === 0) return;
+    // 사무실 롯데 양식이면 확장이 받아 온 롯데 운송장번호도 쓴다 (발주서에서 고른 주문은 가구매 명단에 없어도 넣음)
+    const lotteMap = template.id === lotteTemplateIdRef.current ? lotteMapRef.current : new Map<string, string>();
+    if (files.length === 0 && lotteMap.size === 0) return;
 
     try {
       const fakeOrderNums = new Set<string>();
@@ -643,7 +664,7 @@ const App: React.FC = () => {
           if (orderNum) fakeOrderNums.add(orderNum);
         }
       });
-      if (fakeOrderNums.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
+      if (fakeOrderNums.size === 0 && lotteMap.size === 0) { alert('가구매 명단에 주문번호가 없습니다.'); return; }
 
       const trackingMap = new Map<string, string>();
       for (const file of files) {
@@ -658,16 +679,19 @@ const App: React.FC = () => {
       const notFoundOrders: string[] = [];
       const seenOrderNums = new Set<string>();
       const matchedBizIds = new Set<string>();
+      let lotteOnly = 0; // 가구매 명단엔 없고 롯데 예약만 한 주문(발주서에서 고른 것)
 
       for (const [bizId, { dataRows }] of bizEntries) {
         for (const row of dataRows) {
           if (!row) continue;
           const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
-          if (!fakeOrderNums.has(orderNum)) continue;
+          const isFake = fakeOrderNums.has(orderNum);
+          if (!isFake && !lotteMap.has(orderNum)) continue;
           if (seenOrderNums.has(orderNum)) continue;
           seenOrderNums.add(orderNum);
           matchedBizIds.add(bizId);
-          const tracking = trackingMap.get(orderNum);
+          if (!isFake) lotteOnly++;
+          const tracking = trackingMap.get(orderNum) || lotteMap.get(orderNum);
           if (tracking) {
             const newRow = [...row];
             while (newRow.length <= 4) newRow.push('');
@@ -682,7 +706,7 @@ const App: React.FC = () => {
       }
 
       const matchedCount = matchedRows.length - 1;
-      setGlobalCourierResults(prev => ({ ...prev, [template.id]: { matched: matchedCount, total: fakeOrderNums.size, notFound: notFoundOrders, bizIds: [...matchedBizIds] } }));
+      setGlobalCourierResults(prev => ({ ...prev, [template.id]: { matched: matchedCount, total: fakeOrderNums.size + lotteOnly, notFound: notFoundOrders, bizIds: [...matchedBizIds] } }));
       if (matchedCount > 0) {
         setGlobalCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
         setGlobalCourierRowsByBiz(prev => ({ ...prev, [template.id]: rowsByBiz }));
@@ -707,6 +731,88 @@ const App: React.FC = () => {
     setGlobalCourierFiles(prev => ({ ...prev, [template.id]: updated }));
     await processGlobalCourierFiles(template, updated);
   }, [processGlobalCourierFiles]);
+
+  // 롯데 운송장번호가 오거나 주문서가 바뀌면 사무실 롯데 양식 매칭을 다시 센다
+  useEffect(() => {
+    lotteMapRef.current = lotteTrackingMap(lotteBatches);
+    if (!lotteTemplate) return;
+    const files = globalCourierFilesRef.current[lotteTemplate.id] || [];
+    if (lotteMapRef.current.size === 0 && files.length === 0) return;
+    processGlobalCourierFiles(lotteTemplate, files, true);
+  }, [lotteBatches, lotteTemplate, orderRowsTick, globalFakeOrderInput, processGlobalCourierFiles]);
+
+  // 그 사업자 프로필의 윙 확장에 롯데 예약을 맡긴다. 이미 예약했거나 예약 중인 주문은 빼고 보낸다.
+  // onClaimed: 확장이 요청을 가져갔을 때(발주서 미리보기는 이때 그 줄들을 발주서에서 뺀다)
+  const runLotteReserve = useCallback(async (businessId: string, orders: LotteOrder[], onClaimed?: (sent: string[]) => void): Promise<boolean> => {
+    const bizName = allBusinesses.find(b => b.id === businessId)?.displayName || businessId;
+    if (!lotteTemplate) { alert('택배 양식에 롯데 양식이 없어요. 가구매 택배 설정에서 사무실(롯데) 양식을 먼저 등록해 주세요.'); return false; }
+    const norm = (s: string) => String(s || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const fresh = orders.filter(o => !lotteMapRef.current.has(norm(o.orderNumber)) && !lotteInFlightRef.current.has(norm(o.orderNumber)));
+    const skipped = orders.length - fresh.length;
+    if (fresh.length === 0) { alert(`${bizName}: 고른 주문은 모두 이미 롯데 예약했어요.`); return false; }
+    const missing = fresh.filter(o => !o.recipientName || !o.address);
+    if (missing.length > 0) { alert(`${bizName}: 받는사람·주소가 없는 주문이 있어 예약하지 않았어요.\n${missing.map(o => o.orderNumber).join(', ')}`); return false; }
+    const keys = fresh.map(o => norm(o.orderNumber));
+    keys.forEach(k => lotteInFlightRef.current.add(k));
+    const setStatus = (state: 'running' | 'done' | 'error', message: string) => setLotteStatus(prev => ({ ...prev, [businessId]: { state, message } }));
+    setStatus('running', `${fresh.length}건 요청 보냄…${skipped ? ` (이미 예약한 ${skipped}건 뺌)` : ''}`);
+    try {
+      const msg = await requestLotteReserve(bizName, lotteTemplate, fresh, m => setStatus('running', m), () => onClaimed?.(fresh.map(o => o.orderNumber)));
+      setStatus('done', `✅ ${msg || '예약 완료'}`);
+      return true;
+    } catch (err: any) {
+      setStatus('error', `⛔ ${err?.message || err}`);
+      alert(`${bizName} 롯데 예약: ${err?.message || err}`);
+      return false;
+    } finally {
+      keys.forEach(k => lotteInFlightRef.current.delete(k));
+    }
+  }, [allBusinesses, lotteTemplate]);
+
+  // 주문서(원본·2차) 행에서 주문번호로 받는사람·연락처·주소를 찾는다
+  const lotteOrdersFromRows = useCallback((businessId: string, pick: (orderNum: string) => boolean, source: 'fake' | 'order', companyName?: string): LotteOrder[] => {
+    const dataRows = (globalMasterRowsRef.current as Record<string, { header: any[]; dataRows: any[][] }>)[businessId]?.dataRows || [];
+    const out: LotteOrder[] = [];
+    const seen = new Set<string>();
+    for (const row of dataRows) {
+      if (!row) continue;
+      const key = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (!key || seen.has(key) || !pick(key)) continue;
+      seen.add(key);
+      out.push({
+        orderNumber: String(row[2] || '').trim(),
+        recipientName: String(row[26] || '').trim(),
+        phone: String(row[27] || '').trim(),
+        address: String(row[29] || '').trim(),
+        source,
+        ...(companyName ? { companyName } : {}),
+      });
+    }
+    return out;
+  }, []);
+
+  // 가구매: 그 사업자 명단의 주문을 롯데 예약
+  const handleLotteReserveFake = useCallback((businessId: string) => {
+    const fakeNums = new Set<string>();
+    globalFakeOrderInputRef.current.split('\n').forEach(line => {
+      const parsed = parseGlobalFakeLine(line, allBusinesses);
+      if (parsed?.businessId === businessId) {
+        const n = parsed.orderNum.replace(/[^A-Z0-9]/gi, '').toUpperCase();
+        if (n) fakeNums.add(n);
+      }
+    });
+    const orders = lotteOrdersFromRows(businessId, k => fakeNums.has(k), 'fake');
+    if (orders.length === 0) { alert('주문서에서 이 사업자의 가구매 주문을 찾지 못했어요.'); return; }
+    runLotteReserve(businessId, orders);
+  }, [allBusinesses, lotteOrdersFromRows, runLotteReserve]);
+
+  // 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 발주서에서 뺀다)
+  const handleLotteReserveOrders = useCallback(async (businessId: string, orderNumbers: string[], companyName: string, onClaimed: (sent: string[]) => void) => {
+    const want = new Set(orderNumbers.map(n => String(n).replace(/[^A-Z0-9]/gi, '').toUpperCase()).filter(Boolean));
+    const orders = lotteOrdersFromRows(businessId, k => want.has(k), 'order', companyName);
+    if (orders.length < want.size) { alert(`주문서에서 ${want.size - orders.length}건의 받는사람 정보를 못 찾았어요. 주문서를 확인해 주세요.`); return false; }
+    return runLotteReserve(businessId, orders, onClaimed);
+  }, [lotteOrdersFromRows, runLotteReserve]);
 
   // 통합 송장 변환 패널 "초기화": 화면 목록뿐 아니라 실제 매칭 데이터(업체송장/가구매 택배)까지 전부 비움
   // 업체 송장 메일 자동 가져오기 → 통합 송장 변환 목록에 바로 추가
@@ -1218,7 +1324,7 @@ const App: React.FC = () => {
             onReset={handleResetInvoicePanel}
             mailWatcher={mailWatcher}
             couriers={courierItemsForPanel}
-            hasFakeOrders={globalFakeOrderInput.trim().length > 0}
+            hasFakeOrders={globalFakeOrderInput.trim().length > 0 || lotteBatches.length > 0}
             onCourierFilesAdd={handleCourierFilesAddForPanel}
             onCourierFileRemove={handleCourierFileRemoveForPanel}
             onCourierResultDownload={handleGlobalCourierResultDownload}
@@ -1498,6 +1604,36 @@ const App: React.FC = () => {
                               })}
                             </div>
                           )}
+                          {/* 롯데 예약: 그 사업자 프로필의 윙 확장이 ALPS에 올리고 운송장번호까지 받아 와 아래 매칭에 넣는다 */}
+                          {tmpl.id === lotteTemplate?.id && (
+                            <div className="flex flex-col gap-1">
+                              {allBusinesses.map(b => {
+                                const count = perBusinessFakeInput[b.id]?.split('\n').filter(Boolean).length ?? 0;
+                                const st = lotteStatus[b.id];
+                                if (count === 0 && !st) return null;
+                                return (
+                                  <div key={b.id} className="flex flex-col gap-0.5">
+                                    {count > 0 && (
+                                      <button
+                                        onClick={() => handleLotteReserveFake(b.id)}
+                                        disabled={st?.state === 'running'}
+                                        title="그 사업자 크롬 프로필의 윙 확장이 롯데택배에 예약하고 운송장번호를 받아 와요 (이미 예약한 주문은 빼고)"
+                                        className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[8px] font-black border transition-all ${st?.state === 'running' ? 'bg-zinc-900 border-zinc-700 text-zinc-500 cursor-wait' : 'bg-orange-600 border-orange-500 text-white hover:bg-orange-500'}`}
+                                      >
+                                        <TruckIcon className="w-2.5 h-2.5 shrink-0" />
+                                        {b.displayName} 롯데 예약 ({count}건)
+                                      </button>
+                                    )}
+                                    {st && (
+                                      <span className={`text-[8px] font-bold break-all ${st.state === 'error' ? 'text-rose-400' : st.state === 'done' ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                                        {b.displayName}: {st.message}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                           {/* 업로드된 파일 목록 */}
                           {files.length > 0 && (
                             <div className="flex flex-col gap-1">
@@ -1667,6 +1803,7 @@ const App: React.FC = () => {
               fakeOrderCourierRows={courierRowsByBusiness[b.id] || []}
               onEdit={b.isDynamic ? () => setEditingBusiness(b) : undefined}
               onExposeOrderRows={(header, dataRows) => handleExposeOrderRows(b.id, header, dataRows)}
+              onLotteReserve={lotteTemplate ? (orderNumbers, companyName, onClaimed) => handleLotteReserveOrders(b.id, orderNumbers, companyName, onClaimed) : undefined}
               onHasWarnings={(has, companies) => {
                 setBusinessWarnings(prev => prev[b.id] === has ? prev : { ...prev, [b.id]: has });
                 setBusinessWarningCompanies(prev => {

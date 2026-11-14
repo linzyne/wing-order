@@ -158,6 +158,8 @@ interface CompanyWorkstationRowProps {
     /** CS 되돌리기 시 그 CS로 덧붙인 재배송 행을 이 세션에서 제거 (기록이 있을 때만 true) */
     registerRemoveReshipRow?: (fn: (csRecordId: string) => boolean) => void;
     registerGenerateManual?: (fn: (orderId: string) => void) => void; // 수동발주 칩의 '발주서 생성' 아이콘
+    /** 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 발주서에서 뺀다) */
+    onLotteReserve?: (orderNumbers: string[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
@@ -190,8 +192,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     registerAddAdjustment,
     registerRemoveReshipRow,
     registerGenerateManual,
+    onLotteReserve,
 }) => {
     const dragHandle = useContext(DragHandleContext);
+    // 발주서 미리보기 롯데 예약: 체크한 주문번호, 진행 중 여부·안내, 확장이 가져갔을 때 그 줄들을 빼는 함수(미리보기 렌더에서 채움)
+    const [lottePicked, setLottePicked] = useState<Set<string>>(new Set());
+    const [lotteBusy, setLotteBusy] = useState(false);
+    const [lotteMsg, setLotteMsg] = useState('');
+    const lotteRemoveRef = useRef<((sent: string[]) => void) | null>(null);
     const [showSummary, setShowSummary] = useState(false);
     const [showExcluded, setShowExcluded] = useState(false);
     const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -2517,19 +2525,18 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 }
                                 return out;
                             };
-                            const applyRowSummaryDelta = (oldRow: any[] | undefined, newRow: any[] | undefined) => {
-                                if (prodCol === -1) return;
-                                const before = rowProductCounts(oldRow);
-                                const after = rowProductCounts(newRow);
-                                if (!before || !after) return;
-                                const products = companyCfg?.products || {};
-                                const split = !!companyCfg?.shippingSettlementSplit;
-                                const deltas: Record<string, number> = {};
-                                for (const [k, q] of Object.entries(before)) deltas[k] = (deltas[k] || 0) - q;
-                                for (const [k, q] of Object.entries(after)) deltas[k] = (deltas[k] || 0) + q;
-                                if (Object.values(deltas).every(d => d === 0)) return;
-                                setLocalResult(prev => {
-                                    if (!prev) return prev;
+                            // 행 하나가 oldRow → newRow로 바뀐 만큼 정산요약을 옮긴 결과 (셀 수 없으면 그대로)
+                            const withRowDelta = (prev: ProcessedResult, oldRow: any[] | undefined, newRow: any[] | undefined): ProcessedResult => {
+                                    if (prodCol === -1) return prev;
+                                    const before = rowProductCounts(oldRow);
+                                    const after = rowProductCounts(newRow);
+                                    if (!before || !after) return prev;
+                                    const products = companyCfg?.products || {};
+                                    const split = !!companyCfg?.shippingSettlementSplit;
+                                    const deltas: Record<string, number> = {};
+                                    for (const [k, q] of Object.entries(before)) deltas[k] = (deltas[k] || 0) - q;
+                                    for (const [k, q] of Object.entries(after)) deltas[k] = (deltas[k] || 0) + q;
+                                    if (Object.values(deltas).every(d => d === 0)) return prev;
                                     const summary = { ...prev.summary };
                                     const bump = (key: string, d: number, unit: number) => {
                                         const cur = summary[key] || { count: 0, totalPrice: 0 };
@@ -2548,7 +2555,55 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         depositSummary: buildDepositTextFromSummary(summary, prev.depositSummary),
                                         depositSummaryExcel: buildDepositExcelFromSummary(summary, prev.depositSummaryExcel),
                                     };
+                            };
+                            const applyRowSummaryDelta = (oldRow: any[] | undefined, newRow: any[] | undefined) => {
+                                setLocalResult(prev => prev ? withRowDelta(prev, oldRow, newRow) : prev);
+                            };
+                            // 행을 빼면 행과 나란한 목록(주문번호·묶음번호·받는사람·가격)도 같이 빼야 줄이 안 어긋난다
+                            const dropRows = (prev: ProcessedResult, drop: (idx: number) => boolean): ProcessedResult => {
+                                const keep = <T,>(arr?: T[]) => arr ? arr.filter((_, idx) => !drop(idx)) : arr;
+                                return {
+                                    ...prev,
+                                    rows: prev.rows.filter((_, idx) => !drop(idx)),
+                                    rowOrderNumbers: keep(prev.rowOrderNumbers),
+                                    rowBundleNumbers: keep(prev.rowBundleNumbers),
+                                    rowRecipientNames: keep(prev.rowRecipientNames),
+                                    rowPricing: keep(prev.rowPricing),
+                                };
+                            };
+                            const normOrd = (s: any) => String(s ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                            // 롯데 예약을 확장이 가져가면 그 주문의 줄을 모두 발주서에서 빼고 정산요약도 그만큼 줄인다
+                            lotteRemoveRef.current = (sent: string[]) => {
+                                const want = new Set(sent.map(normOrd));
+                                setLocalResult(prev => {
+                                    if (!prev) return prev;
+                                    const ons = prev.rowOrderNumbers || [];
+                                    const hit = (idx: number) => want.has(normOrd(ons[idx]));
+                                    let next = prev;
+                                    prev.rows.forEach((row, idx) => { if (hit(idx)) next = withRowDelta(next, row, undefined); });
+                                    return dropRows(next, hit);
                                 });
+                            };
+                            const lotteOrderOf = (ri: number) => normOrd(localResult.rowOrderNumbers?.[ri]);
+                            const canLotte = !!onLotteReserve && (localResult.rowOrderNumbers?.length ?? 0) > 0;
+                            const toggleLotte = (ri: number) => {
+                                const key = lotteOrderOf(ri);
+                                if (!key) return;
+                                setLottePicked(prev => { const n = new Set(prev); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+                            };
+                            const handleLotteReserve = async () => {
+                                if (!onLotteReserve || lottePicked.size === 0) return;
+                                const nums = [...lottePicked];
+                                if (!confirm(`${nums.length}건을 사무실에서 롯데택배로 보내도록 예약하고, 이 발주서에서 뺄까요?\n(송장번호는 받아 오면 통합송장의 사무실(롯데)에 저절로 들어가요)`)) return;
+                                setLotteBusy(true);
+                                setLotteMsg('롯데 예약 요청 중… (그 사업자 크롬 프로필이 열려 있어야 해요)');
+                                const ok = await onLotteReserve(nums, companyName, sent => {
+                                    lotteRemoveRef.current?.(sent);
+                                    setLotteMsg(`롯데 예약 진행 중 — ${sent.length}건을 발주서에서 뺐어요`);
+                                });
+                                setLotteBusy(false);
+                                setLottePicked(new Set());
+                                setLotteMsg(ok ? '✅ 롯데 예약 완료 — 송장번호는 통합송장의 사무실(롯데)에 들어갔어요' : '⛔ 롯데 예약이 안 됐어요 (알림창 내용 확인)');
                             };
                             // 타자 칠 때마다 셈하면 "3kg"→"kg"→"1kg" 중간 상태에서 어긋나므로, 칸에 들어갈 때 행을 기억해 두고 나올 때 한 번 셈한다.
                             const startCellEdit = (ri: number, ci: number) => {
@@ -2561,7 +2616,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             };
                             const removeOrderRow = (ri: number) => {
                                 applyRowSummaryDelta(localResult.rows[ri], undefined);
-                                setLocalResult(prev => prev ? { ...prev, rows: prev.rows.filter((_, idx) => idx !== ri) } : prev);
+                                setLocalResult(prev => prev ? dropRows(prev, idx => idx === ri) : prev);
                             };
                             return (
                                 <>
@@ -2569,8 +2624,19 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <div>
                                             <div style={{ color:'#fff', fontWeight:800, fontSize:'14px' }}>{companyName} 발주서 미리보기</div>
                                             <div style={{ color:'#71717a', fontSize:'11px', marginTop:'2px' }}>{localResult.fileName} · {localResult.rows.length}건 · 셀을 클릭해 직접 수정할 수 있습니다</div>
+                                            {lotteMsg && <div style={{ color: lotteMsg.startsWith('⛔') ? '#f87171' : lotteMsg.startsWith('✅') ? '#34d399' : '#fb923c', fontSize:'11px', marginTop:'2px', fontWeight:700 }}>{lotteMsg}</div>}
                                         </div>
                                         <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                                            {canLotte && (
+                                                <button
+                                                    onClick={handleLotteReserve}
+                                                    disabled={lotteBusy || lottePicked.size === 0}
+                                                    title="체크한 주문을 사무실에서 롯데택배로 보내요: 그 사업자 프로필의 윙 확장이 롯데에 예약하고 송장번호를 받아 와요"
+                                                    style={{ background: lotteBusy || lottePicked.size === 0 ? '#3f3f46' : '#ea580c', color: lotteBusy || lottePicked.size === 0 ? '#a1a1aa' : '#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor: lotteBusy ? 'wait' : lottePicked.size === 0 ? 'not-allowed' : 'pointer' }}
+                                                >
+                                                    {lotteBusy ? '롯데 예약 중…' : `🚚 롯데 예약 (${lottePicked.size})`}
+                                                </button>
+                                            )}
                                             <button onClick={addOrderRow} style={{ background:'#16a34a', color:'#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:'4px' }}>
                                                 <PlusCircleIcon className="w-3.5 h-3.5" /> 행 추가
                                             </button>
@@ -2586,6 +2652,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                         <table style={{ borderCollapse:'collapse', fontSize:'11px', whiteSpace:'nowrap', width:'100%' }}>
                                             <thead>
                                                 <tr style={{ background:'#27272a', position:'sticky', top:0 }}>
+                                                    {canLotte && <th title="롯데 예약할 주문 체크 (같은 주문의 줄은 함께)" style={{ padding:'6px 8px', color:'#fb923c', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center' }}>롯데</th>}
                                                     <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center', minWidth:'32px' }}>#</th>
                                                     {previewHeaders.map((h, i) => (
                                                         <th key={i} style={{ padding:'6px 10px', color:'#a1a1aa', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'left' }}>{h}</th>
@@ -2595,7 +2662,14 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </thead>
                                             <tbody>
                                                 {localResult.rows.map((row, ri) => (
-                                                    <tr key={ri} style={{ borderBottom:'1px solid #27272a', background: ri % 2 === 0 ? 'transparent' : 'rgba(39,39,42,0.4)' }}>
+                                                    <tr key={ri} style={{ borderBottom:'1px solid #27272a', background: lottePicked.has(lotteOrderOf(ri)) ? 'rgba(234,88,12,0.15)' : ri % 2 === 0 ? 'transparent' : 'rgba(39,39,42,0.4)' }}>
+                                                        {canLotte && (
+                                                            <td style={{ padding:'5px 8px', textAlign:'center', borderRight:'1px solid #27272a' }}>
+                                                                {lotteOrderOf(ri) && (
+                                                                    <input type="checkbox" checked={lottePicked.has(lotteOrderOf(ri))} disabled={lotteBusy} onChange={() => toggleLotte(ri)} style={{ accentColor:'#ea580c', cursor:'pointer' }} />
+                                                                )}
+                                                            </td>
+                                                        )}
                                                         <td style={{ padding:'5px 10px', color:'#52525b', textAlign:'center', borderRight:'1px solid #27272a' }}>{ri + 1}</td>
                                                         {previewHeaders.map((_, ci) => (
                                                             <td key={ci} style={{ padding:0, borderRight:'1px solid #27272a', maxWidth:'220px' }}>
