@@ -1091,8 +1091,11 @@ const App: React.FC = () => {
     globalFakeOrderInput.split('\n').forEach(line => {
       const parsed = parseGlobalFakeLine(line, allBusinesses);
       if (!parsed?.businessId || !parsed.orderNum || !parsed.name) return;
-      const key = `${parsed.businessId}|${parsed.orderNum}`;
-      const entry = byKey.get(key) || { businessName: parsed.businessName, orderNum: parsed.orderNum, names: [] };
+      // 실배 줄은 orderNum이 '실배'라 다 같은 번호로 보임 — 진짜 주문번호(realShipOrderNum)로 비교하고, 번호 없으면 안 봄
+      const orderNum = isSpecialMatchOrderNum(parsed.orderNum) ? parsed.realShipOrderNum : parsed.orderNum;
+      if (!orderNum) return;
+      const key = `${parsed.businessId}|${orderNum}`;
+      const entry = byKey.get(key) || { businessName: parsed.businessName, orderNum, names: [] };
       if (!entry.names.includes(parsed.name)) entry.names.push(parsed.name);
       byKey.set(key, entry);
     });
