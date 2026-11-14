@@ -2572,7 +2572,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 };
                             };
                             const normOrd = (s: any) => String(s ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                            // 롯데 예약을 확장이 가져가면 그 주문의 줄을 모두 발주서에서 빼고 정산요약도 그만큼 줄인다
+                            // [빼기]: 체크한 주문의 줄을 모두 발주서에서 빼고 정산요약도 그만큼 줄인다 (롯데 예약만으로는 안 뺌)
                             lotteRemoveRef.current = (sent: string[]) => {
                                 const want = new Set(sent.map(normOrd));
                                 setLocalResult(prev => {
@@ -2594,16 +2594,21 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             const handleLotteReserve = async () => {
                                 if (!onLotteReserve || lottePicked.size === 0) return;
                                 const nums = [...lottePicked];
-                                if (!confirm(`${nums.length}건을 사무실에서 롯데택배로 보내도록 예약하고, 이 발주서에서 뺄까요?\n(송장번호는 받아 오면 통합송장의 사무실(롯데)에 저절로 들어가요)`)) return;
+                                if (!confirm(`${nums.length}건을 사무실에서 롯데택배로 보내도록 예약할까요?\n(발주서에서는 빼지 않아요 — 빼려면 [빼기]를 눌러 주세요. 송장번호는 받아 오면 통합송장의 사무실(롯데)에 저절로 들어가요)`)) return;
                                 setLotteBusy(true);
                                 setLotteMsg('롯데 예약 요청 중… (그 사업자 크롬 프로필이 열려 있어야 해요)');
-                                const ok = await onLotteReserve(nums, companyName, sent => {
-                                    lotteRemoveRef.current?.(sent);
-                                    setLotteMsg(`롯데 예약 진행 중 — ${sent.length}건을 발주서에서 뺐어요`);
-                                });
+                                const ok = await onLotteReserve(nums, companyName, sent => setLotteMsg(`롯데 예약 진행 중 (${sent.length}건)…`));
                                 setLotteBusy(false);
+                                // 체크는 남겨 둔다 — 바로 [빼기]를 누를 수 있게
+                                setLotteMsg(ok ? '✅ 롯데 예약 완료 — 송장번호는 통합송장의 사무실(롯데)에 들어갔어요. 발주서에서 빼려면 [빼기]' : '⛔ 롯데 예약이 안 됐어요 (알림창 내용 확인)');
+                            };
+                            const handleLotteDrop = () => {
+                                const n = lottePicked.size;
+                                if (n === 0) return;
+                                if (!confirm(`체크한 ${n}건을 이 발주서에서 뺄까요? (정산요약도 그만큼 줄어요)`)) return;
+                                lotteRemoveRef.current?.([...lottePicked]);
                                 setLottePicked(new Set());
-                                setLotteMsg(ok ? '✅ 롯데 예약 완료 — 송장번호는 통합송장의 사무실(롯데)에 들어갔어요' : '⛔ 롯데 예약이 안 됐어요 (알림창 내용 확인)');
+                                setLotteMsg(`체크한 ${n}건을 발주서에서 뺐어요`);
                             };
                             // 타자 칠 때마다 셈하면 "3kg"→"kg"→"1kg" 중간 상태에서 어긋나므로, 칸에 들어갈 때 행을 기억해 두고 나올 때 한 번 셈한다.
                             const startCellEdit = (ri: number, ci: number) => {
@@ -2635,6 +2640,16 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     style={{ background: lotteBusy || lottePicked.size === 0 ? '#3f3f46' : '#ea580c', color: lotteBusy || lottePicked.size === 0 ? '#a1a1aa' : '#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor: lotteBusy ? 'wait' : lottePicked.size === 0 ? 'not-allowed' : 'pointer' }}
                                                 >
                                                     {lotteBusy ? '롯데 예약 중…' : `🚚 롯데 예약 (${lottePicked.size})`}
+                                                </button>
+                                            )}
+                                            {canLotte && (
+                                                <button
+                                                    onClick={handleLotteDrop}
+                                                    disabled={lottePicked.size === 0}
+                                                    title="체크한 주문을 이 발주서에서 빼요 (정산요약도 그만큼 줄어요)"
+                                                    style={{ background:'#27272a', color: lottePicked.size === 0 ? '#52525b' : '#fb923c', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:`1px solid ${lottePicked.size === 0 ? '#3f3f46' : '#ea580c'}`, cursor: lottePicked.size === 0 ? 'not-allowed' : 'pointer' }}
+                                                >
+                                                    빼기 ({lottePicked.size})
                                                 </button>
                                             )}
                                             <button onClick={addOrderRow} style={{ background:'#16a34a', color:'#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:'4px' }}>
