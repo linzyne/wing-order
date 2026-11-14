@@ -27,7 +27,7 @@ interface MasterUploadHandlers {
   deleteBatchRound?: (round: number) => boolean;
   clearMaster?: () => void;
   getCompanyInfos?: () => { name: string; orderMethod?: string; phone?: string }[];
-  getOrderState?: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; timeLabel?: string }[] }[];
+  getOrderState?: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; realShipCount?: number; timeLabel?: string }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
   emailCompanyMerged?: (companyName: string) => Promise<boolean> | void;
@@ -877,6 +877,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                     <div className="flex flex-col gap-1.5">
                       {bizEntries.map(({ biz, company }) => {
                         const totalCount = company.rounds.reduce((s, r) => s + (r.count ?? 0), 0);
+                        const totalRealShip = company.rounds.reduce((s, r) => s + (r.realShipCount ?? 0), 0);
                         const hasMatchData = company.rounds.some(r => r.matchedCount !== undefined);
                         const totalMatched = company.rounds.reduce((s, r) => s + (r.matchedCount ?? 0), 0);
                         const totalUnmatched = Math.max(0, totalCount - totalMatched);
@@ -938,7 +939,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                   key: 'merged',
                                   downloaded: downloadedButtons.has(mergedKey),
                                   color: 'bg-zinc-950 text-zinc-200 border-zinc-700',
-                                  label: `합산${totalCount > 0 ? ` ${totalCount}` : ''}`,
+                                  label: `합산${totalCount > 0 ? ` ${totalCount}` : ''}${totalRealShip > 0 ? ` (실${totalRealShip})` : ''}`,
                                   onDownload: () => { fns?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(mergedKey); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); },
                                   mailed: emailedButtons.has(mergedMailKey),
                                   sends: totalCount > 0 ? [
@@ -964,7 +965,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     key: `r${r.round}`,
                                     downloaded: downloadedButtons.has(roundKey),
                                     color: roundColors(r.round).chip,
-                                    label: `${r.round}차${r.count > 0 ? ` ${r.count}` : ''}`,
+                                    label: `${r.round}차${r.count > 0 ? ` ${r.count}` : ''}${(r.realShipCount ?? 0) > 0 ? ` (실${r.realShipCount})` : ''}`,
                                     sub: r.timeLabel,
                                     onDownload: () => { fns?.downloadCompanyRound?.(companyName, r.round); setDownloadedButtons(prev => new Set(prev).add(roundKey)); },
                                     mailed: emailedButtons.has(roundMailKey),

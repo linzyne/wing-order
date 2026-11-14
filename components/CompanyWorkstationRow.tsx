@@ -160,10 +160,12 @@ interface CompanyWorkstationRowProps {
     registerGenerateManual?: (fn: (orderId: string) => void) => void; // 수동발주 칩의 '발주서 생성' 아이콘
     /** 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 발주서에서 뺀다) */
     onLotteReserve?: (orderNumbers: string[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>;
+    /** 실배(실제 배송되는 가구매) 주문번호 — 영숫자만 대문자로. 미리보기에서 그 줄에 '실' 배지·색 표시 */
+    realShipSet?: Set<string>;
 }
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
-    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [],
+    sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [], realShipSet,
     isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
     companySummaryBar,
     previousRoundItems = [],
@@ -2586,6 +2588,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             };
                             const lotteOrderOf = (ri: number) => normOrd(localResult.rowOrderNumbers?.[ri]);
                             const canLotte = !!onLotteReserve && (localResult.rowOrderNumbers?.length ?? 0) > 0;
+                            // 실배 줄: 합산 줄은 주문번호가 콤마로 이어져 있어 하나라도 실배면 표시
+                            const isRealShipRow = (ri: number) => !!realShipSet?.size &&
+                                String(localResult.rowOrderNumbers?.[ri] ?? '').split(/[,\s]+/).some(n => realShipSet.has(normOrd(n)));
                             const toggleLotte = (ri: number) => {
                                 const key = lotteOrderOf(ri);
                                 if (!key) return;
@@ -2677,7 +2682,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </thead>
                                             <tbody>
                                                 {localResult.rows.map((row, ri) => (
-                                                    <tr key={ri} style={{ borderBottom:'1px solid #27272a', background: lottePicked.has(lotteOrderOf(ri)) ? 'rgba(234,88,12,0.15)' : ri % 2 === 0 ? 'transparent' : 'rgba(39,39,42,0.4)' }}>
+                                                    <tr key={ri} style={{ borderBottom:'1px solid #27272a', background: lottePicked.has(lotteOrderOf(ri)) ? 'rgba(234,88,12,0.15)' : isRealShipRow(ri) ? 'rgba(168,85,247,0.18)' : ri % 2 === 0 ? 'transparent' : 'rgba(39,39,42,0.4)' }}>
                                                         {canLotte && (
                                                             <td style={{ padding:'5px 8px', textAlign:'center', borderRight:'1px solid #27272a' }}>
                                                                 {lotteOrderOf(ri) && (
@@ -2685,7 +2690,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                                 )}
                                                             </td>
                                                         )}
-                                                        <td style={{ padding:'5px 10px', color:'#52525b', textAlign:'center', borderRight:'1px solid #27272a' }}>{ri + 1}</td>
+                                                        <td style={{ padding:'5px 10px', color:'#52525b', textAlign:'center', borderRight:'1px solid #27272a' }}>
+                                                            {ri + 1}
+                                                            {isRealShipRow(ri) && <span title="실배: 실제로 배송되는 가구매" style={{ marginLeft:'4px', background:'#a855f7', color:'#fff', fontWeight:900, fontSize:'9px', padding:'1px 4px', borderRadius:'4px' }}>실</span>}
+                                                        </td>
                                                         {previewHeaders.map((_, ci) => (
                                                             <td key={ci} style={{ padding:0, borderRight:'1px solid #27272a', maxWidth:'220px' }}>
                                                                 <input
