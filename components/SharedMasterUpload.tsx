@@ -109,9 +109,9 @@ const SHOW_MATCH_BADGE = false;
 // 발주서 칩 안의 전송 아이콘 — 이모지 대신 단색 아이콘으로 칩 색을 따라가게
 // 발주방식 묶음 머리 색 (이메일·어드민·카톡·미지정)
 const METHOD_STYLE: Record<string, string> = {
-  email: 'bg-sky-900 text-sky-300',
-  admin: 'bg-indigo-900 text-indigo-300',
-  kakao: 'bg-yellow-900 text-yellow-300',
+  email: 'bg-zinc-800 text-zinc-300',
+  admin: 'bg-zinc-800 text-zinc-300',
+  kakao: 'bg-zinc-800 text-zinc-300',
   '': 'bg-zinc-800 text-zinc-300',
 };
 
@@ -947,7 +947,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                 {renderChip({
                                   key: 'merged',
                                   downloaded: downloadedButtons.has(mergedKey),
-                                  color: 'bg-zinc-950 text-zinc-100 border-zinc-700',
+                                  color: 'bg-zinc-800 text-zinc-100 border-zinc-700',
                                   label: `합산${totalCount > 0 ? ` ${totalCount}` : ''}`,
                                   real: totalRealShip,
                                   onDownload: () => { fns?.downloadCompanyMerged?.(companyName); setDownloadedButtons(prev => { const next = new Set(prev); next.add(mergedKey); company.rounds.forEach(r => next.add(`${biz.businessId}_${companyName}_${r.round}`)); return next; }); },
@@ -973,7 +973,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                   return renderChip({
                                     key: `r${r.round}`,
                                     downloaded: downloadedButtons.has(roundKey),
-                                    color: roundColors(r.round).chip,
+                                    color: 'bg-zinc-950 text-zinc-200 border-zinc-800',
                                     label: `${r.round}차${r.count > 0 ? ` ${r.count}` : ''}`,
                                     real: r.realShipCount,
                                     sub: r.timeLabel,
@@ -1054,7 +1054,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                           className={`shrink-0 px-3 py-1 rounded-lg text-[11px] font-black transition-all ${
                             jobs.length === 0
                               ? 'text-emerald-400 bg-emerald-950 border border-emerald-800 cursor-default'
-                              : 'text-white bg-sky-500 shadow-sm hover:bg-sky-400 hover:shadow active:scale-95'
+                              : 'text-zinc-100 bg-zinc-950 border border-zinc-700 shadow-sm hover:bg-zinc-800 active:scale-95'
                           }`}
                         >
                           {jobs.length === 0 ? '전체 전송 ✓' : `합산 전체 전송 ${jobs.length}`}
