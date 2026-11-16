@@ -736,7 +736,8 @@
       const w = asWaybill(v);
       if (w) return w;
     }
-    for (const v of Object.values(r)) {
+    for (const [k, v] of Object.entries(r)) {
+      if (/tel|phone|hp|mobile/i.test(k)) continue; // 안심번호도 12자리
       const w = asWaybill(v);
       if (w) return w;
     }
@@ -748,6 +749,8 @@
   const waybillCandidates = (raw) => {
     const out = [];
     for (const [k, v] of Object.entries(raw || {})) {
+      // 안심번호(0502-1234-5678)도 12자리라 운송장번호 모양이다. 전화 칸은 빼야 발급 전 줄을 "번호 없음"으로 본다(11/16 한나푸드 -23).
+      if (/tel|phone|hp|mobile/i.test(k)) continue;
       const w = asWaybill(v);
       if (w && !out.some((c) => c.w.replace(/-/g, '') === w.replace(/-/g, ''))) out.push({ k, w });
     }
