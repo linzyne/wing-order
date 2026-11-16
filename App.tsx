@@ -78,6 +78,9 @@ function loadPersistedBulkDepositPaste(): string {
 // "사업자_이름_주문번호" 또는 이름 없이 "사업자_주문번호" 형식 파싱 (이름에 _가 있어도 마지막 _로 분리)
 const SPECIAL_MATCH_KEYWORDS = ['실배'];
 const isSpecialMatchOrderNum = (orderNum: string) => SPECIAL_MATCH_KEYWORDS.some(kw => orderNum.includes(kw));
+// 택배로 보낼 가구매 줄 수 — 실배(사업자_이름_주문번호_실배)는 진짜로 배송되는 거라 택배 양식에 안 들어가니 뺀다
+const courierFakeLineCount = (text: string | undefined) =>
+  String(text || '').split('\n').filter(l => l.trim() && !isSpecialMatchOrderNum(l.trim().slice(l.trim().lastIndexOf('_') + 1))).length;
 
 function parseGlobalFakeLine(line: string, businesses: { id: string; displayName: string }[]) {
   const trimmed = line.trim();
@@ -1606,7 +1609,7 @@ const App: React.FC = () => {
                         : isAgent
                         ? { border: 'border-cyan-500/30', bg: 'bg-cyan-950/30', text: 'text-cyan-400', hoverBg: 'hover:bg-cyan-900/40', hoverBorder: 'hover:border-cyan-500/50', activeBg: 'bg-cyan-950/30 border-cyan-500/30 text-cyan-400', inactiveBorder: 'hover:border-cyan-500/40 hover:text-cyan-400' }
                         : { border: 'border-indigo-500/30', bg: 'bg-indigo-950/30', text: 'text-indigo-400', hoverBg: 'hover:bg-indigo-900/40', hoverBorder: 'hover:border-indigo-500/50', activeBg: 'bg-indigo-950/30 border-indigo-500/30 text-indigo-400', inactiveBorder: 'hover:border-indigo-500/40 hover:text-indigo-400' };
-                      const totalFake = globalFakeOrderInput.trim().split('\n').filter(Boolean).length;
+                      const totalFake = courierFakeLineCount(globalFakeOrderInput);
                       return (
                         <div key={tmpl.id} className={`space-y-1.5 p-2 rounded-xl border ${cs.border} bg-zinc-950/40`}>
                           <button
@@ -1623,7 +1626,7 @@ const App: React.FC = () => {
                           {allBusinesses.length > 1 && (
                             <div className="flex gap-1">
                               {allBusinesses.map(b => {
-                                const count = perBusinessFakeInput[b.id]?.split('\n').filter(Boolean).length ?? 0;
+                                const count = courierFakeLineCount(perBusinessFakeInput[b.id]);
                                 if (count === 0) return null;
                                 return (
                                   <button
