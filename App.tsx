@@ -1615,7 +1615,7 @@ const App: React.FC = () => {
                               <span className="text-[10px] text-zinc-500 text-right pr-1.5 py-0.5">후보</span>
                               <div className="flex items-center gap-1.5 py-0.5 min-w-0">
                                 <span className="text-[10px] font-mono text-emerald-300">{c.orderNum}</span>
-                                <span className="text-[10px] text-zinc-400 truncate">{c.buyer === c.recipient || !c.recipient ? c.buyer : `${c.buyer}→${c.recipient}`}</span>
+                                <span className="text-[10px] text-zinc-400 truncate">{c.buyer === c.recipient || !c.recipient ? c.buyer : `구매자 ${c.buyer} · 수취인 ${c.recipient}`}</span>
                                 <button
                                   onClick={() => fixGlobalFakeOrderNum(line, c.orderNum)}
                                   className="ml-auto shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
