@@ -253,6 +253,17 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
     return () => clearTimeout(t);
   }, [results.length, refreshInvoiceCounts, refreshDownloadSnapshot, refreshMatchSnapshot]);
 
+  // 가구매 택배 매칭이 바뀌면(롯데 예약 운송장번호가 나중에 들어옴) 송장 다운로드 목록도 다시 센다 — 새로고침 없이 보이게.
+  // 사업자 화면이 새 매칭 행을 받은 뒤에 세도록 조금 기다린다.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      refreshInvoiceCounts();
+      refreshDownloadSnapshot();
+      refreshMatchSnapshot();
+    }, 800);
+    return () => clearTimeout(t);
+  }, [couriers, refreshInvoiceCounts, refreshDownloadSnapshot, refreshMatchSnapshot]);
+
   const detectCourier = (filename: string): CourierItem | null => {
     if (!couriers || couriers.length === 0) return null;
     const lower = filename.normalize('NFC').toLowerCase().replace(/\s/g, '');
