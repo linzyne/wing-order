@@ -1512,6 +1512,32 @@ export const subscribeMissionClearRequest = (
   });
 };
 
+// ===== 가구매 주문번호 고침 요청 (미매칭 줄을 후보 주문으로 고칠 때 — 미션허브가 'pending'을 받아 그 항목 주문번호를 바꾸고 'done') =====
+export type MissionOrderFixRequest = {
+  status: 'pending' | 'done' | 'error';
+  bizId: string;
+  id: string;
+  oldOrderNumber: string;
+  newOrderNumber: string;
+  requestedAt: number;
+  error?: string;
+};
+export const requestMissionOrderFix = async (item: MissionHubItem, oldOrderNumber: string, newOrderNumber: string): Promise<string> => {
+  const docRef = doc(collection(db, 'missionHubOrderFixes'));
+  await setDoc(docRef, { status: 'pending', bizId: item.bizId, id: item.id, oldOrderNumber, newOrderNumber, requestedAt: Date.now() });
+  return docRef.id;
+};
+export const subscribeMissionOrderFix = (
+  id: string,
+  callback: (req: MissionOrderFixRequest | null) => void
+): Unsubscribe => {
+  return onSnapshot(doc(db, 'missionHubOrderFixes', id), (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data() as MissionOrderFixRequest) : null);
+  }, (error) => {
+    console.error('[Firestore] MissionOrderFix 구독 오류:', error);
+  });
+};
+
 export const saveUrgentNotice = async (text: string): Promise<void> => {
   const docRef = doc(db, 'config', 'urgentNotice');
   await setDoc(docRef, { text, updatedAt: Timestamp.now() });

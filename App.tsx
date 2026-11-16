@@ -10,10 +10,11 @@ import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from '
 import { useMailInvoiceWatcher, type EmailInvoiceStatus } from './hooks/useMailInvoiceWatcher';
 import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
 import OrdererSearchPanel from './components/OrdererSearchPanel';
+import { normalizeForSearch } from './components/CsEntryModal';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon, EllipsisHorizontalIcon, DocumentArrowUpIcon, UserGroupIcon, PhoneIcon, BanknotesIcon, ClipboardDocumentListIcon, MegaphoneIcon, MagnifyingGlassIcon, CalculatorIcon, BuildingStorefrontIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
-import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, type SettlementUploadRecord } from './services/firestoreService';
+import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, requestMissionOrderFix, subscribeMissionOrderFix, type MissionOrderFixRequest, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
 import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder, type LotteReservePick } from './services/lotteReserve';
@@ -1119,6 +1120,86 @@ const App: React.FC = () => {
     return { total, matched: total - globalFakeUnmatchedLines.length };
   }, [globalFakeOrderInput, globalFakeUnmatchedLines]);
 
+  // 미매칭 줄마다 오늘 윙 주문서에서 맞을 법한 주문 — 같은 사업자, 명단에 아직 없는 주문번호 중
+  // 이름(구매자·수취인)이 같은 것 우선, 이름이 달라도 번호가 1~2자리만 다르면 후보
+  const globalFakeCandidates = useMemo(() => {
+    const result: Record<string, { orderNum: string; buyer: string; recipient: string; nameMatch: boolean; dist: number }[]> = {};
+    if (globalFakeUnmatchedLines.length === 0) return result;
+    const normName = (v: any) => normalizeForSearch(v).replace(/\s/g, '');
+    const normNum = (v: any) => String(v ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const editDist = (a: string, b: string) => {
+      let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+      for (let i = 1; i <= a.length; i++) {
+        const cur = [i];
+        for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+        prev = cur;
+      }
+      return prev[b.length];
+    };
+    // 사업자별 명단에 이미 적힌 번호 (다른 사람 주문을 후보로 내지 않게)
+    const claimed: Record<string, Set<string>> = {};
+    globalFakeOrderInput.split('\n').forEach(l => {
+      const p = parseGlobalFakeLine(l, allBusinesses);
+      if (!p?.businessId) return;
+      (claimed[p.businessId] ||= new Set()).add(normNum(p.realShipOrderNum || p.orderNum));
+    });
+    globalFakeUnmatchedLines.forEach(line => {
+      const p = parseGlobalFakeLine(line, allBusinesses);
+      if (!p?.businessId) return;
+      const oldNum = normNum(p.realShipOrderNum || (isSpecialMatchOrderNum(p.orderNum) ? '' : p.orderNum));
+      const name = normName(p.name);
+      if (!oldNum && !name) return;
+      const src = globalMasterRowsRef.current[p.businessId];
+      if (!src?.dataRows.length) return;
+      // 윙 주문서 칸: 헤더로 찾고 없으면 기본 위치 (주문번호 2, 구매자 24, 수취인이름 26)
+      const col = (label: string, fallback: number) => { const i = src.header.findIndex(h => String(h ?? '').replace(/\s/g, '') === label); return i >= 0 ? i : fallback; };
+      const cOrder = col('주문번호', 2), cBuyer = col('구매자', 24), cRecipient = col('수취인이름', 26);
+      const seen = new Set<string>();
+      const cands: typeof result[string] = [];
+      src.dataRows.forEach(row => {
+        const num = normNum(row?.[cOrder]);
+        if (!num || seen.has(num) || claimed[p.businessId!]?.has(num)) return;
+        seen.add(num);
+        const buyer = String(row[cBuyer] ?? '').trim(), recipient = String(row[cRecipient] ?? '').trim();
+        const nameMatch = !!name && (normName(buyer) === name || normName(recipient) === name);
+        const dist = oldNum ? editDist(oldNum, num) : 99;
+        if (nameMatch || dist <= 2) cands.push({ orderNum: String(row[cOrder]).trim(), buyer, recipient, nameMatch, dist });
+      });
+      cands.sort((a, b) => Number(b.nameMatch) - Number(a.nameMatch) || a.dist - b.dist);
+      if (cands.length) result[line] = cands.slice(0, 3);
+    });
+    return result;
+  }, [globalFakeUnmatchedLines, globalFakeOrderInput, allBusinesses, orderRowsTick]);
+
+  // 후보로 고치기: 명단 줄의 번호를 바꾸고, 미션허브 항목이면 미션허브 주문번호도 고쳐 달라고 요청
+  const [orderFixReqs, setOrderFixReqs] = useState<{ reqId: string; label: string }[]>([]);
+  const [orderFixStates, setOrderFixStates] = useState<Record<string, MissionOrderFixRequest | null>>({});
+  useEffect(() => {
+    const unsubs = orderFixReqs.map(r => subscribeMissionOrderFix(r.reqId, req => setOrderFixStates(prev => ({ ...prev, [r.reqId]: req }))));
+    return () => unsubs.forEach(u => u());
+  }, [orderFixReqs]);
+  const fixGlobalFakeOrderNum = async (line: string, newNum: string) => {
+    const p = parseGlobalFakeLine(line, allBusinesses);
+    if (!p) return;
+    const oldNum = p.realShipOrderNum || p.orderNum;
+    const target = line.trim();
+    const cut = target.lastIndexOf(oldNum);
+    if (cut < 0) return;
+    const newLine = target.slice(0, cut) + newNum + target.slice(cut + oldNum.length);
+    // 미션허브 명단은 줄과 항목 순서가 같음 — 지금 미션허브 내용에서 이 줄의 항목을 찾음
+    const feedLines = missionFeed ? missionFeed.fakeLines.split('\n').map(l => l.trim()) : [];
+    const idx = feedLines.indexOf(target);
+    const item = idx >= 0 ? missionFeed?.fakeItems[idx] : undefined;
+    setGlobalFakeOrderInput(prev => prev.split('\n').map(l => l.trim() === target ? newLine : l).join('\n'));
+    if (!item) { alert('명단 줄만 고쳤어요. 미션허브에서 이 줄을 못 찾아 미션허브 주문번호는 그대로예요 — 미션허브에서 직접 고쳐주세요.'); return; }
+    try {
+      const reqId = await requestMissionOrderFix(item, oldNum, newNum);
+      setOrderFixReqs(prev => [...prev, { reqId, label: `${p.businessName} ${p.name} ${oldNum} → ${newNum}` }]);
+    } catch (e) {
+      alert('미션허브 주문번호 고침 요청 실패 (명단 줄은 고쳐짐): ' + e);
+    }
+  };
+
   const handleGlobalFakeMatch = useCallback((businessId: string, matched: string[]) => {
     setMatchedFakeNums(prev => {
       const prev_ = prev[businessId];
@@ -1516,8 +1597,36 @@ const App: React.FC = () => {
                       <div className="mt-1 bg-rose-950/30 border border-rose-500/20 rounded-xl px-3 py-2 space-y-0.5">
                         <p className="text-[9px] text-rose-400 font-black uppercase tracking-widest mb-1">미매칭 명단</p>
                         {unmatchedLines.map((line, i) => (
-                          <div key={i} className="text-[10px] font-mono text-rose-300">{line}</div>
+                          <div key={i}>
+                            <div className="text-[10px] font-mono text-rose-300">{line}</div>
+                            {(globalFakeCandidates[line] || []).map(c => (
+                              <div key={c.orderNum} className="flex items-center gap-1.5 pl-3 py-0.5">
+                                <span className="text-[10px] text-zinc-500">후보</span>
+                                <span className="text-[10px] font-mono text-emerald-300">{c.orderNum}</span>
+                                <span className="text-[10px] text-zinc-400 truncate">{c.buyer === c.recipient || !c.recipient ? c.buyer : `${c.buyer}→${c.recipient}`}</span>
+                                <button
+                                  onClick={() => fixGlobalFakeOrderNum(line, c.orderNum)}
+                                  className="ml-auto shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
+                                >이걸로 수정</button>
+                              </div>
+                            ))}
+                          </div>
                         ))}
+                      </div>
+                    )}
+                    {orderFixReqs.length > 0 && (
+                      <div className="mt-1 px-1 space-y-0.5">
+                        {orderFixReqs.map(r => {
+                          const st = orderFixStates[r.reqId];
+                          const msg = !st || st.status === 'pending'
+                            ? (missionFeedStale ? '대기 중 — 미션허브를 열면 고쳐져요' : '미션허브 고치는 중…')
+                            : st.status === 'done' ? '미션허브 고침' : `미션허브 못 고침: ${st.error || ''}`;
+                          return (
+                            <div key={r.reqId} className={`text-[10px] ${st?.status === 'error' ? 'text-rose-400' : st?.status === 'done' ? 'text-emerald-400' : 'text-sky-400'}`}>
+                              {r.label} · {msg}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
