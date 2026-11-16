@@ -2410,10 +2410,25 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             const rawKey = `${item.registeredProductName} ${item.registeredOptionName}`.trim();
                                             grouped[mk][rawKey] = (grouped[mk][rawKey] || 0) + item.qty;
                                         });
+                                        // 실배(실제 배송되는 가구매) 개수 — 품목별로 세서 마진에서 뺀 값으로 보여줌(기록·순마진과 같은 기준).
+                                        // 누적 보기면 앞 차수 주문까지 같이 셈
+                                        const realShipByKey: Record<string, number> = {};
+                                        if (realShipSet?.size) {
+                                            const normOrd = (v: any) => String(v ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                                            const scanItems = isCumulative
+                                                ? [...previousSessionIds.flatMap(id => sessionResults?.[id]?.orderItems || []), ...items]
+                                                : items;
+                                            scanItems.forEach(item => {
+                                                if (!realShipSet.has(normOrd(item.orderNumber)) && !realShipSet.has(normOrd(item.bundleNumber))) return;
+                                                const mk = item.matchedProductKey || 'unknown';
+                                                realShipByKey[mk] = (realShipByKey[mk] || 0) + item.qty;
+                                            });
+                                        }
                                         // 택배(배송비) 라인은 원본 주문(orderItems)과 1:1 대조 대상이 아니므로 검증 목록에서 제외
                                         const summaryKeys = Object.keys(summary).filter(k => !isParcelEntryName(k));
                                         let totalItems = 0;
                                         let grandTotalMargin = 0;
+                                        let grandRealShip = 0;
                                         return (
                                             <div className="space-y-2">
                                                 {summaryKeys.map((key, idx) => {
@@ -2427,14 +2442,19 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     const unitSupply = summary[key]?.totalPrice ? Math.round(summary[key].totalPrice / summary[key].count) : 0;
                                                     const unitMargin = (productConfig as any)?.margin || 0;
                                                     const manualCount = localResult?.manualOrderCounts?.[key] || 0;
-                                                    const marginCount = expectedCount - manualCount;
+                                                    const realShipCount = Math.min(realShipByKey[key] || 0, Math.max(0, expectedCount - manualCount));
+                                                    const marginCount = expectedCount - manualCount - realShipCount;
                                                     const totalMargin = unitMargin * marginCount;
                                                     grandTotalMargin += totalMargin;
+                                                    grandRealShip += realShipCount;
                                                     return (
                                                         <div key={idx}>
                                                             <div className="flex justify-between text-[12px] font-mono text-zinc-200 font-bold gap-2">
                                                                 <span className="shrink-0">{resolveProductDisplayName(key)}{unitSupply ? ` (${unitSupply.toLocaleString()})` : ''}</span>
                                                                 <div className="flex items-center gap-2 shrink-0">
+                                                                    {realShipCount > 0 && (
+                                                                        <span className="text-violet-400 text-[10px] font-black" title="실배: 실제로 배송되는 가구매 — 마진에서 뺌">실배 {realShipCount}</span>
+                                                                    )}
                                                                     {unitMargin > 0 && marginCount > 0 && (
                                                                         <span className="text-emerald-400 text-[10px] font-black">+{unitMargin.toLocaleString()} × {marginCount} = {totalMargin.toLocaleString()}</span>
                                                                     )}
@@ -2462,9 +2482,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                         <span>총 주문수</span>
                                                         <span>{totalItems}개</span>
                                                     </div>
-                                                    {grandTotalMargin !== 0 && (
+                                                    {(grandTotalMargin !== 0 || grandRealShip > 0) && (
                                                         <div className="flex justify-between text-[12px] font-mono font-bold">
-                                                            <span className="text-emerald-400">총 마진</span>
+                                                            <span className="text-emerald-400">총 마진{grandRealShip > 0 && <span className="text-violet-400 text-[10px] ml-1">(실배 {grandRealShip}개 뺌)</span>}</span>
                                                             <span className={grandTotalMargin > 0 ? 'text-emerald-400' : 'text-red-400'}>{grandTotalMargin > 0 ? '+' : ''}{grandTotalMargin.toLocaleString()}원</span>
                                                         </div>
                                                     )}

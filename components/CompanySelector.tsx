@@ -5448,6 +5448,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const calculatedMargin = sessions.reduce((sum, s) => {
                     const items = allOrderItems[s.id] || [];
                     return sum + items.reduce((itemSum, item) => {
+                        if (isRealShipItem(item)) return itemSum; // 실배는 마진에서 뺌
                         const product = (pricingConfig[c]?.products as any)?.[item.matchedProductKey];
                         return itemSum + ((product?.margin || 0) * item.qty);
                     }, 0);
@@ -5463,7 +5464,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 };
             })
             .filter(r => r.orderCount > 0);
-    }, [pricingConfig, companySessions, allOrderRows, totalsMap, allOrderItems, companyOverrides, sortCompanies]);
+    }, [pricingConfig, companySessions, allOrderRows, totalsMap, allOrderItems, companyOverrides, sortCompanies, realShipOrderNums]);
 
     const isAllSelected = selectedSessionIds.size > 0 && selectedSessionIds.size === (Object.values(companySessions).flat() as SessionData[]).length;
 
@@ -7287,6 +7288,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         const companyCalcMargin = sessions.reduce((sum, s) => {
                                             const items = allOrderItems[s.id] || [];
                                             return sum + items.reduce((acc, item) => {
+                                                if (isRealShipItem(item)) return acc; // 실배는 가구매라 마진에서 뺌(기록과 같은 기준)
                                                 const product = (pricingConfig[company]?.products as any)?.[item.matchedProductKey];
                                                 return acc + ((product?.margin || 0) * item.qty);
                                             }, 0);
