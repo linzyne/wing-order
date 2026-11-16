@@ -19,7 +19,7 @@ export interface LotteOrder {
 }
 
 export interface LotteItem {
-  ordNo: string;          // 롯데에 올린 주문번호 (W…-n)
+  ordNo: string;          // 롯데에 올린 주문번호 (W…-001)
   orderNumber: string;
   recipient: string;
   source: 'fake' | 'order';
@@ -54,7 +54,8 @@ function buildLotteFile(template: CourierTemplate, orders: LotteOrder[], senderN
     const key = normOrderNum(o.orderNumber);
     if (!key || seen.has(key)) continue; // 한 주문 = 한 상자
     seen.add(key);
-    const ordNo = `${batchId}-${items.length + 1}`;
+    // 롯데 주문번호 검색은 앞부분 일치라 -1로 찾으면 -10~-19도 같이 나온다. 3자리(-001)로 맞춰 서로 겹치지 않게 한다.
+    const ordNo = `${batchId}-${String(items.length + 1).padStart(3, '0')}`;
     const row = new Array(template.headers.length).fill('');
     row[mapping.orderNumber] = ordNo;
     row[mapping.recipientName] = o.recipientName;
