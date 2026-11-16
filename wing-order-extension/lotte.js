@@ -1404,6 +1404,8 @@
               await patch({
                 step: 'manual',
                 status: `${ordNo}로 조회했더니 ${shownCount() >= 0 ? shownCount() : gridRows.length}줄이 나와서 출력하지 않았어요(다른 송장을 출력하지 않으려고). 이 창 아래 [다시 조회]를 눌러 주세요. 계속 이러면 롯데에 같은 주문번호 예약이 두 번 들어간 거라, 겹친 예약을 지워 주세요.`,
+                // 왜 멈췄는지 보려고 목록 순서·화면 건수를 남긴다(맨 위 줄이 우리 것이어야 첫 줄을 찍는다).
+                diag: `화면 ${shownCount()}건 · 목록 순서 ${gridRows.map(ordOf).map((o) => o || '?').slice(0, 15).join(', ')}`,
               });
               return;
             }
