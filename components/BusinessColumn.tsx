@@ -1,3 +1,4 @@
+import type { LotteReservePick } from '../services/lotteReserve';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import CompanySelector from './CompanySelector';
 import PricingEditor from './PricingEditor';
@@ -48,7 +49,7 @@ interface BusinessColumnProps {
   onEdit?: () => void;
   onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void;
   // 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 뺀다)
-  onLotteReserve?: (orderNumbers: string[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>;
+  onLotteReserve?: (picks: LotteReservePick[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>;
   onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void;
 }
 

@@ -16,6 +16,15 @@ export interface LotteOrder {
   address: string;
   source: 'fake' | 'order'; // 가구매 / 발주서 미리보기에서 고른 주문
   companyName?: string;
+  orderNumbers?: string[]; // 발주서 합산 줄: 한 상자에 든 쿠팡 주문번호 전부
+  productName?: string;    // 발주서 미리보기 품목명 → 롯데 상품명 칸
+}
+
+/** 발주서 미리보기에서 체크한 줄 하나 (key: 체크 표시용 정규화 주문번호) */
+export interface LotteReservePick {
+  key: string;
+  orderNumbers: string[];
+  productName: string;
 }
 
 export interface LotteItem {
@@ -24,6 +33,7 @@ export interface LotteItem {
   recipient: string;
   source: 'fake' | 'order';
   companyName?: string;
+  orderNumbers?: string[];
   waybill?: string;
 }
 
@@ -45,8 +55,12 @@ export function findLotteTemplate(templates: CourierTemplate[]): CourierTemplate
   return lotte.find(t => full(t).includes('사무실')) || lotte[0] || null;
 }
 
+// 롯데 양식의 상품명 칸 (B-type은 '상품명1')
+const findProductCol = (headers: string[]) => headers.findIndex(h => /상품명|품목|물품/.test(String(h || '')));
+
 function buildLotteFile(template: CourierTemplate, orders: LotteOrder[], senderName: string, batchId: string) {
   const { mapping, fixedValues } = template;
+  const productCol = findProductCol(template.headers);
   const rows: any[][] = [[...template.headers]];
   const items: LotteItem[] = [];
   const seen = new Set<string>();
@@ -63,8 +77,13 @@ function buildLotteFile(template: CourierTemplate, orders: LotteOrder[], senderN
     row[mapping.recipientAddress] = o.address;
     Object.entries(fixedValues).forEach(([colIdx, value]) => { row[Number(colIdx)] = value; });
     resolveSenderColumns(template).forEach(idx => { row[idx] = senderName; });
+    if (productCol >= 0 && o.productName) row[productCol] = o.productName;
     rows.push(row);
-    items.push({ ordNo, orderNumber: String(o.orderNumber).trim(), recipient: o.recipientName, source: o.source, ...(o.companyName ? { companyName: o.companyName } : {}) });
+    items.push({
+      ordNo, orderNumber: String(o.orderNumber).trim(), recipient: o.recipientName, source: o.source,
+      ...(o.companyName ? { companyName: o.companyName } : {}),
+      ...(o.orderNumbers && o.orderNumbers.length > 1 ? { orderNumbers: o.orderNumbers.map(n => String(n).trim()) } : {}),
+    });
   }
   const ws = XLSX.utils.aoa_to_sheet(rows);
   const wb = XLSX.utils.book_new();
@@ -135,7 +154,9 @@ export function subscribeLotteWaybills(date: string, onChange: (batches: LotteBa
 export function lotteTrackingMap(batches: LotteBatch[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const b of batches) for (const it of b.items) {
-    if (it.waybill) map.set(normOrderNum(it.orderNumber), it.waybill);
+    if (!it.waybill) continue;
+    map.set(normOrderNum(it.orderNumber), it.waybill);
+    (it.orderNumbers || []).forEach(n => map.set(normOrderNum(n), it.waybill!));
   }
   return map;
 }

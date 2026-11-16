@@ -1,3 +1,4 @@
+import type { LotteReservePick } from '../services/lotteReserve';
 
 import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
@@ -159,7 +160,7 @@ interface CompanyWorkstationRowProps {
     registerRemoveReshipRow?: (fn: (csRecordId: string) => boolean) => void;
     registerGenerateManual?: (fn: (orderId: string) => void) => void; // 수동발주 칩의 '발주서 생성' 아이콘
     /** 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 발주서에서 뺀다) */
-    onLotteReserve?: (orderNumbers: string[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>;
+    onLotteReserve?: (picks: LotteReservePick[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>;
     /** 실배(실제 배송되는 가구매) 주문번호 — 영숫자만 대문자로. 미리보기에서 그 줄에 '실' 배지·색 표시 */
     realShipSet?: Set<string>;
 }
@@ -2618,11 +2619,20 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             };
                             const handleLotteReserve = async () => {
                                 if (!onLotteReserve || lottePicked.size === 0) return;
+                                const rowsOrd = localResult.rowOrderNumbers || [];
                                 const nums = [...lottePicked];
+                                const picks = nums.map(key => {
+                                    const ri = rowsOrd.findIndex(n => normOrd(n) === key);
+                                    return {
+                                        key,
+                                        orderNumbers: String(rowsOrd[ri] ?? key).split(/[,\s]+/).filter(Boolean),
+                                        productName: ri >= 0 && prodCol >= 0 ? String(localResult.rows[ri]?.[prodCol] ?? '').trim() : '',
+                                    };
+                                });
                                 if (!confirm(`${nums.length}건을 사무실에서 롯데택배로 보내도록 예약할까요?\n(발주서에서는 빼지 않아요 — 빼려면 [빼기]를 눌러 주세요. 송장번호는 받아 오면 통합송장의 사무실(롯데)에 저절로 들어가요)`)) return;
                                 setLotteBusy(true);
                                 setLotteMsg('롯데 예약 요청 중… (그 사업자 크롬 프로필이 열려 있어야 해요)');
-                                const ok = await onLotteReserve(nums, companyName, sent => setLotteMsg(`롯데 예약 진행 중 (${sent.length}건)…`));
+                                const ok = await onLotteReserve(picks, companyName, sent => setLotteMsg(`롯데 예약 진행 중 (${sent.length}건)…`));
                                 setLotteBusy(false);
                                 // 체크는 남겨 둔다 — 바로 [빼기]를 누를 수 있게
                                 setLotteMsg(ok ? '✅ 롯데 예약 완료 — 송장번호는 통합송장의 사무실(롯데)에 들어갔어요. 발주서에서 빼려면 [빼기]' : '⛔ 롯데 예약이 안 됐어요 (알림창 내용 확인)');

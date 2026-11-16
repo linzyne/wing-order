@@ -16,7 +16,7 @@ import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMem
 import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
-import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder } from './services/lotteReserve';
+import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder, type LotteReservePick } from './services/lotteReserve';
 import { SentOrderToast } from './components/SentOrdersBar';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
@@ -749,12 +749,13 @@ const App: React.FC = () => {
     const bizName = allBusinesses.find(b => b.id === businessId)?.displayName || businessId;
     if (!lotteTemplate) { alert('택배 양식에 롯데 양식이 없어요. 가구매 택배 설정에서 사무실(롯데) 양식을 먼저 등록해 주세요.'); return false; }
     const norm = (s: string) => String(s || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-    const fresh = orders.filter(o => !lotteMapRef.current.has(norm(o.orderNumber)) && !lotteInFlightRef.current.has(norm(o.orderNumber)));
+    const numsOf = (o: LotteOrder) => (o.orderNumbers?.length ? o.orderNumbers : [o.orderNumber]).map(norm);
+    const fresh = orders.filter(o => numsOf(o).every(k => !lotteMapRef.current.has(k) && !lotteInFlightRef.current.has(k)));
     const skipped = orders.length - fresh.length;
     if (fresh.length === 0) { alert(`${bizName}: 고른 주문은 모두 이미 롯데 예약했어요.`); return false; }
     const missing = fresh.filter(o => !o.recipientName || !o.address);
     if (missing.length > 0) { alert(`${bizName}: 받는사람·주소가 없는 주문이 있어 예약하지 않았어요.\n${missing.map(o => o.orderNumber).join(', ')}`); return false; }
-    const keys = fresh.map(o => norm(o.orderNumber));
+    const keys = fresh.flatMap(numsOf);
     keys.forEach(k => lotteInFlightRef.current.add(k));
     const setStatus = (state: 'running' | 'done' | 'error', message: string) => setLotteStatus(prev => ({ ...prev, [businessId]: { state, message } }));
     setStatus('running', `${fresh.length}건 요청 보냄…${skipped ? ` (이미 예약한 ${skipped}건 뺌)` : ''}`);
@@ -834,10 +835,19 @@ const App: React.FC = () => {
   }, [allBusinesses, fakeLotteOrders, runLotteReserve]);
 
   // 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 발주서에서 뺀다)
-  const handleLotteReserveOrders = useCallback(async (businessId: string, orderNumbers: string[], companyName: string, onClaimed: (sent: string[]) => void) => {
-    const want = new Set(orderNumbers.map(n => String(n).replace(/[^A-Z0-9]/gi, '').toUpperCase()).filter(Boolean));
-    const orders = lotteOrdersFromRows(businessId, k => want.has(k), 'order', companyName);
-    if (orders.length < want.size) { alert(`주문서에서 ${want.size - orders.length}건의 받는사람 정보를 못 찾았어요. 주문서를 확인해 주세요.`); return false; }
+  // 합산 줄은 주문번호가 여럿이라 한 상자로 묶고, 품목명은 미리보기 줄 그대로 롯데 상품명 칸에 넣는다.
+  const handleLotteReserveOrders = useCallback(async (businessId: string, picks: LotteReservePick[], companyName: string, onClaimed: (sent: string[]) => void) => {
+    const norm = (n: string) => String(n).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const want = new Set(picks.flatMap(p => p.orderNumbers.map(norm)).filter(Boolean));
+    const found = new Map<string, LotteOrder>(lotteOrdersFromRows(businessId, k => want.has(k), 'order', companyName).map(o => [norm(o.orderNumber), o] as [string, LotteOrder]));
+    const orders: LotteOrder[] = [];
+    let missing = 0;
+    for (const p of picks) {
+      const o = p.orderNumbers.map(n => found.get(norm(n))).find((x): x is LotteOrder => !!x);
+      if (!o) { missing++; continue; }
+      orders.push({ ...o, orderNumbers: p.orderNumbers, ...(p.productName ? { productName: p.productName } : {}) });
+    }
+    if (missing > 0) { alert(`주문서에서 ${missing}건의 받는사람 정보를 못 찾았어요. 주문서를 확인해 주세요.`); return false; }
     return runLotteReserve(businessId, orders, onClaimed);
   }, [lotteOrdersFromRows, runLotteReserve]);
 
@@ -1849,7 +1859,7 @@ const App: React.FC = () => {
               fakeOrderCourierRows={courierRowsByBusiness[b.id] || []}
               onEdit={b.isDynamic ? () => setEditingBusiness(b) : undefined}
               onExposeOrderRows={(header, dataRows) => handleExposeOrderRows(b.id, header, dataRows)}
-              onLotteReserve={lotteTemplate ? (orderNumbers, companyName, onClaimed) => handleLotteReserveOrders(b.id, orderNumbers, companyName, onClaimed) : undefined}
+              onLotteReserve={lotteTemplate ? (picks, companyName, onClaimed) => handleLotteReserveOrders(b.id, picks, companyName, onClaimed) : undefined}
               onHasWarnings={(has, companies) => {
                 setBusinessWarnings(prev => prev[b.id] === has ? prev : { ...prev, [b.id]: has });
                 setBusinessWarningCompanies(prev => {
