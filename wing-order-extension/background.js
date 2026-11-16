@@ -324,6 +324,25 @@ async function startLotte(doc) {
   });
 }
 
+// 예약은 올라갔는데 롯데 창을 닫아 운송장 출력이 안 끝난 건: 남은 기록으로 창을 다시 열어 운송장 출력부터 한다(다시 올리지 않음).
+async function resumeLotte() {
+  const { [LOTTE_KEY]: p } = await chrome.storage.local.get(LOTTE_KEY);
+  if (!p || !p.batchId || !p.uploadedAt || p.step === 'waybills') return { ok: false, error: '이어서 할 롯데 예약이 없어요.' };
+  if (p.windowId) await chrome.windows.remove(p.windowId).catch(() => {});
+  await allowLottePopups();
+  const win = await chrome.windows.create({ url: LOTTE_START_URL, type: 'popup', width: 1000, height: 680, focused: true });
+  await chrome.storage.local.set({
+    [LOTTE_KEY]: {
+      ...p,
+      step: 'uploaded', resumed: true, savedAt: Date.now(), windowId: win.id,
+      status: '운송장 출력 이어서 하는 중…', diag: '',
+      boxIdx: 1, collected: [], printedAt: null, previewPrintedAt: null, searchedAt2: 0,
+      reprintTries: 0, verifyIdx: 0, verifySearchedAt: 0, manualAt: 0,
+    },
+  });
+  return { ok: true };
+}
+
 const localYMD = () => {
   const d = new Date();
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -424,6 +443,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
   // lotte.js: 확장이 연 롯데 창에서만 자동 진행하려고 자기 창 번호를 묻는다(미리보기 창이면 연 창도)
+  if (msg.type === 'RESUME_LOTTE') {
+    resumeLotte().then(sendResponse, (err) => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
   if (msg.type === 'MY_WINDOW') {
     (async () => {
       const tab = sender && sender.tab;
