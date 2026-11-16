@@ -32,6 +32,8 @@ $('clear').addEventListener('click', () => {
 
 // 예약은 올라갔는데 롯데 창이 닫혀 운송장 출력이 끝나지 않은 건을 다시 연다(background.js RESUME_LOTTE).
 const UPLOADED = ['uploading', 'uploaded', 'waybillMenu', 'waybillPage', 'preview', 'waybillDone', 'verify', 'manual', 'error'];
+// 아이콘을 누를 때도 확장 새 코드를 확인한다(바뀌었으면 확장이 다시 불러오며 이 창이 닫힌다 — 다시 누르면 새 코드).
+chrome.runtime.sendMessage({ type: 'CHECK_UPDATE' }).catch(() => {});
 chrome.storage.local.get('lottePending', (r) => {
   const p = r && r.lottePending;
   if (!p || !p.batchId) return ($('lotteInfo').textContent = '이어서 할 롯데 예약이 없어요.');

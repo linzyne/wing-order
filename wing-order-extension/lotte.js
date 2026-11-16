@@ -22,6 +22,13 @@
   // 운송장 미리보기는 사이트가 새로 연 창(PIDPIC…)이다. 일괄주문접수 화면도 같은 pid.alps.llogis.com에 뜨므로
   // 주소만 보고 판단하면 안 되고, "새로 열린 창인지"로 가린다.
   const IS_PREVIEW = IS_TOP && (!!window.opener || /PIDPIC/i.test(location.href));
+  // 확장 새 코드 확인은 윙 화면에서만 하고 있어서, 롯데 창만 쓰는 프로필은 예전 코드로 돌았다(11/16 한나푸드).
+  // 롯데 창이 뜰 때도 확인하고, 바뀌었으면 확장이 다시 불러온 뒤 이 화면을 새로고침한다(진행 상태는 저장돼 있어 이어서 한다).
+  if (IS_TOP && !IS_PREVIEW) {
+    chrome.runtime.sendMessage({ type: 'CHECK_UPDATE' }).then((r) => {
+      if (r && r.reloading) setTimeout(() => location.reload(), 1500);
+    }, () => {});
+  }
   // 이 창(프레임)만의 번호. 파일을 올린 창과 그 뒤 새로 뜬 창을 구분하는 데 씁니다.
   const FRAME_ID = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const TEXT = {
