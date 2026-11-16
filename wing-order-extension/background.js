@@ -328,6 +328,9 @@ async function startLotte(doc) {
 async function resumeLotte() {
   const { [LOTTE_KEY]: p } = await chrome.storage.local.get(LOTTE_KEY);
   if (!p || !p.batchId || !p.uploadedAt || p.step === 'waybills') return { ok: false, error: '이어서 할 롯데 예약이 없어요.' };
+  const ordNos = Array.isArray(p.ordNos) ? p.ordNos : [];
+  const kept = (p.collected || []).filter((c) => c && c.waybill && ordNos.includes(c.ordNo));
+  const firstLeft = Math.max(1, ordNos.findIndex((o) => !kept.some((c) => c.ordNo === o)) + 1);
   if (p.windowId) await chrome.windows.remove(p.windowId).catch(() => {});
   await allowLottePopups();
   const win = await chrome.windows.create({ url: LOTTE_START_URL, type: 'popup', width: 1000, height: 680, focused: true });
@@ -336,7 +339,8 @@ async function resumeLotte() {
       ...p,
       step: 'uploaded', resumed: true, savedAt: Date.now(), windowId: win.id,
       status: '운송장 출력 이어서 하는 중…', diag: '',
-      boxIdx: 1, collected: [], printedAt: null, previewPrintedAt: null, searchedAt2: 0,
+      // 이미 받은 번호는 두고, 아직 못 받은 첫 박스부터 한다.
+      boxIdx: firstLeft, collected: kept, printedAt: null, previewPrintedAt: null, searchedAt2: 0,
       reprintTries: 0, verifyIdx: 0, verifySearchedAt: 0, manualAt: 0,
     },
   });
