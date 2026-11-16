@@ -1313,14 +1313,15 @@
               return ords.size === 1 && ords.has(ordNo) && (n === 1 || (n === -1 && gridRows.length === 1));
             };
             // 롯데 주문번호 검색은 앞부분 일치라, 예전 번호(-1)로 찾으면 같은 예약의 -10~-19도 같이 나온다.
-            // 같이 나온 줄이 모두 이번 예약의 아직 발급 안 된 박스면 남의 송장이 아니니, 전체선택으로 한꺼번에 출력한다.
-            // (송장번호는 박스마다 주문번호가 똑같은 줄에서만 읽고, 먼저 발급된 박스는 차례가 오면 다시 출력하지 않는다.)
+            // 같이 나온 줄이 모두 이번 예약 박스이고 맨 위 줄이 우리 주문번호면, 평소처럼 첫 줄만 체크해 출력한다.
+            // (머리줄 전체선택은 잘 안 먹어서 쓰지 않는다. 혹시 다른 박스가 찍혀도 이번 예약 것이라 남의 송장이 아니고,
+            //  송장번호는 주문번호가 똑같은 줄에서만 읽으며, 먼저 발급된 박스는 차례가 오면 다시 출력하지 않는다.)
             const mineAll = () => {
               const ours = new Set(ordList(p));
               const ords = new Set(gridRows.map(ordOf).filter(Boolean));
               const n = shownCount();
-              return ords.has(ordNo) && ords.size > 1 && (n === -1 || n === ords.size)
-                && [...ords].every((o) => ours.has(o) && o.startsWith(ordNo) && !(byOrder.get(o) && byOrder.get(o).waybill.w));
+              return ords.has(ordNo) && ords.size > 1 && (n === -1 || n === ords.size) && ordOf(gridRows[0]) === ordNo
+                && [...ords].every((o) => ours.has(o) && o.startsWith(ordNo));
             };
             for (let again = 0; again < 3 && !onlyOurs() && !mineAll(); again++) {
               await patch({ status: `${ordNo} 조회 결과가 ${shownCount() >= 0 ? shownCount() : gridRows.length}건이라 다시 조회해요… (${again + 1})` });
@@ -1368,8 +1369,8 @@
               { x: 49, y: 41, label: '첫 줄 49' },
               { x: 21, y: 41, label: '첫 줄 21' },
               { x: 53, y: 41, label: '첫 줄 53' },
-            ].filter((tr) => !together || /머리줄/.test(tr.label));
-            if (together) await patch({ status: `${ordNo}로 찾으니 이번 예약 박스 ${new Set(gridRows.map(ordOf).filter(Boolean)).size}개가 같이 나와서 한꺼번에 출력해요…` });
+            ].filter((tr) => !together || !/머리줄/.test(tr.label));
+            if (together) await patch({ status: `${ordNo}로 찾으니 이번 예약 박스 ${new Set(gridRows.map(ordOf).filter(Boolean)).size}개가 같이 나왔어요. 맨 위 ${ordNo} 줄만 체크해 출력해요…` });
             for (let t = 0; t < TRIES.length; t++) {
               const tr = TRIES[t];
               await patch({ status: `체크 시도 ${t + 1}/${TRIES.length} · ${tr.label} (${ordNo})` });
