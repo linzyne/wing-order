@@ -1596,12 +1596,24 @@ const App: React.FC = () => {
                     {unmatchedLines.length > 0 && (
                       <div className="mt-1 bg-rose-950/30 border border-rose-500/20 rounded-xl px-3 py-2 space-y-0.5">
                         <p className="text-[9px] text-rose-400 font-black uppercase tracking-widest mb-1">미매칭 명단</p>
-                        {unmatchedLines.map((line, i) => (
-                          <div key={i}>
-                            <div className="text-[10px] font-mono text-rose-300">{line}</div>
-                            {(globalFakeCandidates[line] || []).map(c => (
-                              <div key={c.orderNum} className="flex items-center gap-1.5 pl-3 py-0.5">
-                                <span className="text-[10px] text-zinc-500">후보</span>
+                        {unmatchedLines.map((line, i) => {
+                          const cands = globalFakeCandidates[line] || [];
+                          if (cands.length === 0) return <div key={i} className="text-[10px] font-mono text-rose-300">{line}</div>;
+                          // 후보 번호가 줄의 주문번호 바로 밑에 오게: 앞부분(사업자_이름_)과 번호를 두 칸으로 나눔
+                          const p = parseGlobalFakeLine(line, allBusinesses);
+                          const num = p ? (p.realShipOrderNum || p.orderNum) : '';
+                          const t = line.trim();
+                          const cut = num ? t.lastIndexOf(num) : -1;
+                          const head = cut >= 0 ? t.slice(0, cut) : t;
+                          const tail = cut >= 0 ? t.slice(cut) : '';
+                          return (
+                          <div key={i} className="grid grid-cols-[auto_1fr] items-center">
+                            <div className="text-[10px] font-mono text-rose-300">{head}</div>
+                            <div className="text-[10px] font-mono text-rose-300">{tail}</div>
+                            {cands.map(c => (
+                              <React.Fragment key={c.orderNum}>
+                              <span className="text-[10px] text-zinc-500 text-right pr-1.5 py-0.5">후보</span>
+                              <div className="flex items-center gap-1.5 py-0.5 min-w-0">
                                 <span className="text-[10px] font-mono text-emerald-300">{c.orderNum}</span>
                                 <span className="text-[10px] text-zinc-400 truncate">{c.buyer === c.recipient || !c.recipient ? c.buyer : `${c.buyer}→${c.recipient}`}</span>
                                 <button
@@ -1609,9 +1621,11 @@ const App: React.FC = () => {
                                   className="ml-auto shrink-0 text-[9px] font-black px-1.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white"
                                 >이걸로 수정</button>
                               </div>
+                              </React.Fragment>
                             ))}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                     {orderFixReqs.length > 0 && (
