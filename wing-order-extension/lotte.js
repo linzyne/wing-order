@@ -1058,6 +1058,86 @@
     return true;
   };
 
+  // 10개씩 묶어 출력(waybillPage에서 부름). 출력을 눌렀거나 이미 다 발급돼 번호 읽기로 넘겼으면 true,
+  // 묶음으로 못 하면 false(한 박스씩 하기로).
+  const ordOfRow = (r) => Object.values(r.raw || {}).map((v) => String(v == null ? '' : v).trim()).find((v) => ORD_RE.test(v)) || '';
+  const printGroup = async (p, ordNo, box) => {
+    const prefix = ordNo.slice(0, -1);
+    const all = ordList(p);
+    const have = new Set((p.collected || []).map((c) => c.ordNo));
+    const mates = all.filter((o) => o.length === ordNo.length && o.startsWith(prefix) && !have.has(o));
+    if (mates.length < 2) return false;
+    setVal(box, prefix);
+    gridRows = [];
+    await patch({ status: `${prefix}○ 박스 ${mates.length}개 한 번에 조회 중…` });
+    const search = find(TEXT.search);
+    if (search) realClick(search);
+    for (let t = 0; t < 30 && !gridRows.some((r) => ordOfRow(r).startsWith(prefix)); t++) {
+      await sleep(500);
+      if (closeNotice(/거래처\s*코드/)) return false;
+    }
+    // 나온 줄이 모두 이번 예약 박스이고, 화면 건수가 주문번호 수와 같아야 한다(남의 송장이 섞이면 안 된다).
+    const order = [];
+    for (const r of gridRows) {
+      const o = ordOfRow(r);
+      if (o && !order.includes(o)) order.push(o);
+    }
+    const n = (() => {
+      const el = document.getElementById('spTotCnt');
+      const v = el ? Number(String(el.textContent || '').replace(/[^0-9]/g, '')) : NaN;
+      return Number.isFinite(v) ? v : -1;
+    })();
+    const ours = new Set(all);
+    if (!order.length || order.some((o) => !ours.has(o)) || (n !== -1 && n !== order.length)) return false;
+    const targets = order.map((o, i) => ({ o, i })).filter((t) => mates.includes(t.o) && !(byOrder.get(t.o) && byOrder.get(t.o).waybill.w));
+    if (!targets.length) {
+      await patch({ step: 'waybillDone', printedAt: Date.now(), searchedAt2: 0, status: `${prefix}○ 박스는 이미 발급돼 있어요. 번호를 가져와요…` });
+      return true;
+    }
+    // 줄 높이: 캔버스의 가로 줄금 간격 중 가장 흔한 값. 첫 줄 가운데는 y=41(한 줄만 찍을 때 쓰던 자리).
+    const g = gridCanvas();
+    if (!g) return false;
+    const dpr = g.c.width / Math.max(1, g.r.width);
+    const lines = (rowLines(g.c) || []).map((y) => y / dpr);
+    const gaps = [];
+    for (let i = 1; i < lines.length; i++) gaps.push(lines[i] - lines[i - 1]);
+    const ok = gaps.filter((x) => x >= 18 && x <= 40).sort((a, b) => a - b);
+    const rowH = ok[Math.floor(ok.length / 2)] || 0;
+    if (!rowH) return false;
+    const FIRST_Y = 41;
+    const reach = targets.filter((t) => FIRST_Y + rowH * t.i < g.r.height - rowH / 2);
+    if (!reach.length || reach[0].o !== ordNo) return false;
+    const label = reach.map((t) => t.o.slice(-3)).join(',');
+    for (const x of [37, 33, 41, 29, 45]) {
+      await patch({ status: `${reach.length}개 체크 중(x ${x}, 줄높이 ${Math.round(rowH)}) · ${label}` });
+      for (const t of reach) await clickAt(x, FIRST_Y + rowH * t.i);
+      const at = Date.now();
+      lastAlert = null;
+      const printBtn = findAll(TEXT.print).find((el) => el.closest('button, a, [role="button"], span')) || find(TEXT.print);
+      if (!printBtn) return false;
+      lastOpen = null;
+      realClick(printBtn);
+      await sleep(3000);
+      if (await handleSuspect()) await patch({ status: '출력의심목록 창이 떠서 "출력 안 됨(다시 출력)"으로 적용했어요…' });
+      if (lastOpen && lastOpen.blocked) {
+        await patch({ step: 'manual', status: '크롬이 롯데 미리보기 창을 막았어요. 주소창 오른쪽 팝업 차단 아이콘에서 "항상 허용"을 고른 뒤 이 창 아래 [다시 조회]를 눌러 주세요' });
+        return true;
+      }
+      const notice = closeNotice(EMPTY_MSG);
+      const failed = notice || (lastAlert && lastAlert.at >= at && /없|선택/.test(lastAlert.text));
+      if (!failed) {
+        const diag = await printDiagText();
+        await patch({
+          step: 'preview', printedAt: Date.now(), groupPrinted: reach.map((t) => t.o),
+          status: `${reach.length}개 한 번에 출력 중… (${label})`,
+          diag: `묶음 x ${x} · 줄높이 ${Math.round(rowH)} · ${diag}`,
+        });
+        return true;
+      }
+    }
+    return false;
+  };
+
   const tick = async () => {
     if (busy) return;
     rpOwnsCache = await reprintOwnsThisWindow();
@@ -1144,7 +1224,7 @@
             const tries = Number(p.reprintTries) || 0;
             if (tries < 2) {
               await patch({
-                step: 'waybillPage', reprintTries: tries + 1, printedAt: null, previewPrintedAt: null, searchedAt2: 0,
+                step: 'waybillPage', reprintTries: tries + 1, noGroup: true, printedAt: null, previewPrintedAt: null, searchedAt2: 0,
                 status: `${ordNo} 운송장이 발급되지 않아서 다시 출력해요… (${tries + 1}/2)`,
               });
               return;
@@ -1167,17 +1247,27 @@
           const own = seen.waybill;
           const row = { waybill: own.w, receiver: seen.receiver };
           const collected = [...(p.collected || []).filter((c) => c.ordNo !== ordNo), { ordNo, waybill: row.waybill, receiver: row.receiver || '', from: own.why }];
+          // 묶음으로 같이 출력된 박스도 이번 조회에 주문번호가 똑같은 줄의 번호가 있으면 같이 모은다(번호가 겹치면 안 넣음).
+          for (const o of ordList(p)) {
+            if (collected.some((c) => c.ordNo === o)) continue;
+            const s2 = byOrder.get(o);
+            if (!s2 || s2.at < (p.searchedAt2 || 0) || !s2.waybill.w) continue;
+            const d = s2.waybill.w.replace(/-/g, '');
+            if (collected.some((c) => String(c.waybill).replace(/-/g, '') === d)) continue;
+            collected.push({ ordNo: o, waybill: s2.waybill.w, receiver: s2.receiver || '', from: s2.waybill.why });
+          }
+          const left = ordList(p).findIndex((o) => !collected.some((c) => c.ordNo === o));
 
-          // 아직 남은 박스가 있으면 다음 박스로. 없으면 끝.
-          if (idx < need) {
+          // 아직 남은 박스가 있으면 못 받은 첫 박스로. 없으면 끝.
+          if (left >= 0) {
             await patch({
               step: 'waybillPage',
-              boxIdx: idx + 1,
+              boxIdx: left + 1, noGroup: false, reprintTries: 0,
               collected,
               previewPrintedAt: null,
               printedAt: null,
               searchedAt2: 0,
-              status: `박스 ${idx}/${need} 완료(${row.waybill} · ${own.why}). 다음 박스 시작…`,
+              status: `박스 ${collected.length}/${need} 받음(${ordNo}=${row.waybill}). 다음 박스 시작…`,
             });
             return;
           }
@@ -1348,10 +1438,18 @@
             // 2) 지금 차례인 박스의 주문번호로 조회 → 목록에 우리 1건만 남는다.
             const boxIdx = Number(p.boxIdx) || 1;
             const ordNo = ordAt(p, boxIdx);
-            const box = document.querySelector('input[name="edtSrchCondVal"]');
+            let box = document.querySelector('input[name="edtSrchCondVal"]');
             if (!box) {
               await patch({ step: 'manual', status: '롯데 화면의 검색칸을 못 찾았어요. 이 창 아래 [다시 조회]를 눌러 주세요.' });
               return;
+            }
+            // 2-1) 10개씩 묶어 한 번에 출력: 주문번호가 3자리(…-001)면 끝자리를 뺀 앞부분(…-00)으로 찾으면
+            //      001~009처럼 이번 예약 박스만 10개 안팎이 나온다. 그 줄들을 한 줄씩 찍어 체크하고 한 번 출력한다.
+            //      (머리줄 전체선택은 잘 안 먹는다.) 안 되면 아래 한 박스씩 하기로 넘어간다.
+            if (!p.noGroup && /-\d{3}$/.test(ordNo)) {
+              const done = await printGroup(p, ordNo, box);
+              if (done) return;
+              box = document.querySelector('input[name="edtSrchCondVal"]') || box;
             }
             setVal(box, ordNo);
             gridRows = [];
