@@ -2708,21 +2708,21 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                             {isRealShipRow(ri) && <span title="실배: 실제로 배송되는 가구매" style={{ marginLeft:'4px', background:'#a855f7', color:'#fff', fontWeight:900, fontSize:'9px', padding:'1px 4px', borderRadius:'4px' }}>실</span>}
                                                         </td>
                                                         {previewHeaders.map((_, ci) => (
-                                                            <td key={ci} style={{ padding:0, borderRight:'1px solid #27272a', maxWidth:'220px' }}>
+                                                            <td key={ci} style={{ padding:0, borderRight:'1px solid #27272a', maxWidth: ci === prodCol ? undefined : '220px', minWidth: ci === prodCol ? '240px' : undefined }}>
                                                                 <div style={{ display:'flex', alignItems:'stretch' }}>
                                                                 <input
                                                                     value={row[ci] ?? ''}
                                                                     onChange={e => updateOrderCell(ri, ci, e.target.value)}
                                                                     onFocus={() => startCellEdit(ri, ci)}
                                                                     onBlur={() => finishCellEdit(ri)}
-                                                                    style={{ width:'100%', boxSizing:'border-box', background:'transparent', border:'none', outline:'none', color:'#e4e4e7', padding:'5px 10px', fontSize:'11px', fontFamily:'inherit' }}
+                                                                    style={{ flex:1, minWidth:0, width:'100%', boxSizing:'border-box', background:'transparent', border:'none', outline:'none', color:'#e4e4e7', padding:'5px 10px', fontSize:'11px', fontFamily:'inherit' }}
                                                                 />
                                                                 {ci === prodCol && productOptions.length > 0 && (
                                                                     <select
                                                                         value=""
                                                                         onChange={e => pickProduct(ri, e.target.value)}
                                                                         title="등록 품목에서 골라 바꾸기"
-                                                                        style={{ flexShrink:0, width:'22px', background:'#27272a', border:'none', borderLeft:'1px solid #3f3f46', color:'#a1a1aa', fontSize:'11px', cursor:'pointer', padding:0 }}
+                                                                        style={{ flexShrink:0, width:'28px', background:'#27272a', border:'none', borderLeft:'1px solid #3f3f46', color:'#a1a1aa', fontSize:'11px', cursor:'pointer', padding:0 }}
                                                                     >
                                                                         <option value="" disabled>등록 품목에서 고르기</option>
                                                                         {productOptions.map(name => <option key={name} value={name}>{name}</option>)}
