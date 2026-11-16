@@ -2624,6 +2624,19 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 previewEditStartRef.current = null;
                                 if (start && start.ri === ri) applyRowSummaryDelta(start.row, localResult.rows[ri]);
                             };
+                            // 품목명 칸 ▾: 등록 품목 목록에서 골라 바꾸고 정산요약도 바로 옮긴다
+                            const productOptions = [...new Set((Object.values(companyCfg?.products || {}) as ProductPricing[])
+                                .map(p => (p.orderFormName || p.displayName || '').trim()).filter(Boolean))]
+                                .sort((x, y) => x.localeCompare(y, 'ko'));
+                            const pickProduct = (ri: number, name: string) => {
+                                if (!name) return;
+                                setLocalResult(prev => {
+                                    if (!prev) return prev;
+                                    const oldRow = prev.rows[ri];
+                                    const newRow = oldRow.map((cell, cidx) => cidx === prodCol ? name : cell);
+                                    return withRowDelta({ ...prev, rows: prev.rows.map((r, idx) => idx === ri ? newRow : r) }, oldRow, newRow);
+                                });
+                            };
                             const removeOrderRow = (ri: number) => {
                                 applyRowSummaryDelta(localResult.rows[ri], undefined);
                                 setLocalResult(prev => prev ? dropRows(prev, idx => idx === ri) : prev);
@@ -2696,6 +2709,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                         </td>
                                                         {previewHeaders.map((_, ci) => (
                                                             <td key={ci} style={{ padding:0, borderRight:'1px solid #27272a', maxWidth:'220px' }}>
+                                                                <div style={{ display:'flex', alignItems:'stretch' }}>
                                                                 <input
                                                                     value={row[ci] ?? ''}
                                                                     onChange={e => updateOrderCell(ri, ci, e.target.value)}
@@ -2703,6 +2717,18 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                                     onBlur={() => finishCellEdit(ri)}
                                                                     style={{ width:'100%', boxSizing:'border-box', background:'transparent', border:'none', outline:'none', color:'#e4e4e7', padding:'5px 10px', fontSize:'11px', fontFamily:'inherit' }}
                                                                 />
+                                                                {ci === prodCol && productOptions.length > 0 && (
+                                                                    <select
+                                                                        value=""
+                                                                        onChange={e => pickProduct(ri, e.target.value)}
+                                                                        title="등록 품목에서 골라 바꾸기"
+                                                                        style={{ flexShrink:0, width:'22px', background:'#27272a', border:'none', borderLeft:'1px solid #3f3f46', color:'#a1a1aa', fontSize:'11px', cursor:'pointer', padding:0 }}
+                                                                    >
+                                                                        <option value="" disabled>등록 품목에서 고르기</option>
+                                                                        {productOptions.map(name => <option key={name} value={name}>{name}</option>)}
+                                                                    </select>
+                                                                )}
+                                                                </div>
                                                             </td>
                                                         ))}
                                                         <td style={{ padding:'5px 6px', textAlign:'center' }}>
