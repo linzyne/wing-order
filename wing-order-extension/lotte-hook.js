@@ -1,5 +1,5 @@
 // 롯데 ALPS 화면과 같은 세계(MAIN world)에서 도는 작은 스크립트.
-// 운송장 출력 중에 뜨는 "설치가 필요 합니다…" 같은 브라우저 알림창(confirm/alert)을 자동으로 확인 처리합니다.
+// 운송장 출력 중에 뜨는 브라우저 알림창(confirm/alert)을 자동으로 확인 처리합니다(프로그램 설치 묻는 창만 취소).
 // 자동 진행 중일 때만 동작하도록, lotte.js가 <html data-rocket-auto-confirm="1">을 켰을 때만 가로챕니다.
 (() => {
   if (window.__rocketLotteHookInjected) return;
@@ -12,6 +12,8 @@
   window.confirm = function (...args) {
     if (on()) {
       window.postMessage({ source: 'rocket-lotte-hook', type: 'AUTO_CONFIRM', text: String(args[0] || '') }, '*');
+      // "설치가 필요 합니다" 프로그램 설치 묻는 창은 취소해도 출력된다. 설치 파일을 받지 않게 취소한다.
+      if (/설치|다운로드|프로그램/.test(String(args[0] || ''))) return false;
       return true;
     }
     return origConfirm.apply(this, args);

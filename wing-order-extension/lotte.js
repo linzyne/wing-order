@@ -1074,7 +1074,8 @@
     if (!p || DONE_STEPS.includes(p.step)) return;
     // 자동 진행 중에는 "설치가 필요합니다" 같은 알림창을 lotte-hook.js가 자동으로 확인 처리합니다.
     document.documentElement.setAttribute('data-rocket-auto-confirm', '1');
-    if (Date.now() - (p.savedAt || 0) > MAX_AGE_MS) {
+    // 운송장은 박스마다 하나씩 출력해 박스당 1분 가까이 걸린다. 박스가 많으면 10분으론 모자라 박스 수만큼 늘린다.
+    if (Date.now() - (p.savedAt || 0) > MAX_AGE_MS + needOf(p) * 90 * 1000) {
       if (IS_TOP) await patch({ step: 'error', status: '시간이 너무 오래 걸려 멈췄어요. 앱에서 다시 눌러주세요.' });
       return;
     }
