@@ -275,7 +275,7 @@
           get().then((cur) => {
             if (!cur) return;
             const all = needOf(cur) && ordList(cur).every((no) => (cur.collected || []).some((c) => c.ordNo === no));
-            if (all) patch({ step: 'verify', verifyIdx: 1, verifySearchedAt: 0, verifyStartedAt: Date.now(), status: '롯데 목록과 다시 대조하는 중…' });
+            if (all) patch({ step: 'verify', verifyIdx: 1, verifyBatchDone: false, verifiedOk: [], verifySearchedAt: 0, verifyStartedAt: Date.now(), status: '롯데 목록과 다시 대조하는 중…' });
             else patch({ step: 'waybillPage', status: '롯데 다시 조회하는 중…', searchedAt2: 0, verifySearchedAt: 0, printedAt: null, previewPrintedAt: null });
           });
         }
@@ -1173,7 +1173,7 @@
           }
           // 다 모았으면 바로 넘기지 않고, 주문번호마다 목록을 한 번 더 조회해 같은 번호인지 스스로 대조한다.
           await patch({
-            step: 'verify', verifyIdx: 1, verifySearchedAt: 0, verifyStartedAt: Date.now(), collected,
+            step: 'verify', verifyIdx: 1, verifyBatchDone: false, verifiedOk: [], verifySearchedAt: 0, verifyStartedAt: Date.now(), collected,
             status: `운송장번호 ${collected.length}건을 모았어요. 롯데 목록과 한 번 더 대조하는 중…`,
           });
           return;
@@ -1187,6 +1187,75 @@
           const ordNo = ordAt(p, vIdx);
           const mine = collected.find((c) => c.ordNo === ordNo);
           const digitsOf = (w) => String(w || '').replace(/\D/g, '');
+          const finish = () => patch({
+            step: 'waybills', waybills: collected, collected,
+            status: `✅ 운송장번호 ${collected.length}건을 가져와 롯데 목록과 대조까지 마쳤어요. ${collected.map((c) => `${c.ordNo}=${c.waybill}`).join(' / ')}`,
+          });
+          // 1) 예약 번호 앞부분(W…- / S…-)으로 한 번 조회해 모은 박스를 한꺼번에 대조한다. 롯데 검색이 앞부분 일치라
+          //    이번 예약 박스가 다 나온다. 박스마다 조회하면 박스 수만큼 오래 걸려서다.
+          //    목록에 안 보인 박스만 2)에서 하나씩 대조한다.
+          if (!p.verifyBatchDone && p.batchId) {
+            const toEach = (ok, why) => patch({
+              verifyBatchDone: true, verifiedOk: ok, verifyIdx: 1, verifySearchedAt: 0, verifyStartedAt: Date.now(),
+              status: `${why} 나머지는 하나씩 대조해요…`,
+            });
+            if (Date.now() - (p.verifyStartedAt || 0) > 30000) {
+              await toEach([], '예약 번호로 한 번에 조회했는데 목록이 안 떠요.');
+              return;
+            }
+            if (!p.verifySearchedAt) {
+              const box = document.querySelector('input[name="edtSrchCondVal"]');
+              const search = find(TEXT.search);
+              if (!box || !search) return;
+              if (!(await pickOrderNoCond())) {
+                await patch({ step: 'manual', status: '롯데 화면의 검색조건을 "주문번호"로 바꾸지 못했어요. 이 창 아래 [다시 조회]를 눌러 주세요.', diag: condWhy });
+                return;
+              }
+              setVal(box, `${p.batchId}-`);
+              await sleep(300);
+              realClick(search);
+              await patch({ verifySearchedAt: Date.now(), status: `대조 중 · ${p.batchId} 박스 ${collected.length}개 한 번에 조회…` });
+              return;
+            }
+            const got = collected.map((c) => {
+              const s = byOrder.get(c.ordNo);
+              return { c, s: s && s.at >= p.verifySearchedAt ? s : null };
+            });
+            if (!got.some((g) => g.s)) {
+              if (Date.now() - p.verifySearchedAt > 6000) await patch({ verifySearchedAt: 0 });
+              return;
+            }
+            // 목록 데이터가 다 들어오도록 조금 더 기다린다.
+            if (Date.now() - p.verifySearchedAt < 3000) return;
+            for (const { c, s } of got) {
+              if (!s) continue;
+              if (!s.waybill.w && /칸 이름 불확실/.test(s.waybill.why)) {
+                await patch({ step: 'manual', status: `⛔ 롯데 ${c.ordNo} 줄에서 송장번호 칸을 정확히 못 찾아 넣지 않았어요. 롯데 화면 구조가 바뀐 것 같아요. [화면 구조 저장]을 눌러 파일을 보내 주세요.`, diag: s.waybill.why });
+                return;
+              }
+              if (!s.waybill.w && /같은 주문번호 줄/.test(s.waybill.why)) {
+                await patch({ step: 'manual', status: `⛔ 롯데에 ${c.ordNo} 줄이 여러 개(같은 주문번호로 예약이 두 번)라 어느 송장번호인지 몰라서 넣지 않았어요. 롯데에서 겹친 예약을 지운 뒤 앱에서 "이어서 하기"를 눌러 주세요.`, diag: s.waybill.why });
+                return;
+              }
+              if (s.waybill.w && digitsOf(s.waybill.w) !== digitsOf(c.waybill)) {
+                await patch({ step: 'manual', status: `${c.ordNo}의 송장번호가 조회할 때마다 달라서(${c.waybill} / ${s.waybill.w}) 넣지 않았어요. 이 창 아래 [다시 조회]를 눌러 주세요.` });
+                return;
+              }
+            }
+            const ok = got.filter((g) => g.s && g.s.waybill.w).map((g) => g.c.ordNo);
+            if (ok.length === collected.length && ok.length >= need) {
+              await finish();
+              return;
+            }
+            await toEach(ok, `한 번에 ${ok.length}/${collected.length}건 일치.`);
+            return;
+          }
+          // 2) 한 번에 조회해서 이미 맞춰 본 박스는 건너뛴다.
+          if ((p.verifiedOk || []).includes(ordNo)) {
+            if (vIdx < need) await patch({ verifyIdx: vIdx + 1, verifySearchedAt: 0 });
+            else await finish();
+            return;
+          }
           if (!mine) {
             await patch({ step: 'manual', status: `${ordNo}의 송장번호를 아직 못 받았어요. 이 창 아래 [다시 조회]를 눌러 주세요.` });
             return;
@@ -1235,10 +1304,7 @@
             await patch({ verifyIdx: vIdx + 1, verifySearchedAt: 0, status: `대조 ${vIdx}/${need} 일치(${ordNo}=${mine.waybill}). 다음…` });
             return;
           }
-          await patch({
-            step: 'waybills', waybills: collected, collected,
-            status: `✅ 운송장번호 ${collected.length}건을 가져와 롯데 목록과 대조까지 마쳤어요. ${collected.map((c) => `${c.ordNo}=${c.waybill}`).join(' / ')}`,
-          });
+          await finish();
           return;
         }
 
@@ -1441,7 +1507,7 @@
           }
           // 바로 넘기지 않고 주문번호마다 한 번 더 조회해 같은 번호인지 대조한 뒤에만 앱으로 보낸다.
           await patch({
-            step: 'verify', verifyIdx: 1, verifySearchedAt: 0, verifyStartedAt: Date.now(), collected: done,
+            step: 'verify', verifyIdx: 1, verifyBatchDone: false, verifiedOk: [], verifySearchedAt: 0, verifyStartedAt: Date.now(), collected: done,
             status: `송장번호 ${done.length}건을 찾았어요. 롯데 목록과 한 번 더 대조하는 중…`,
           });
           return;
