@@ -4834,8 +4834,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
         if (allReturns.length > 0) {
             const returnSheetData: any[][] = [['구분', '날짜', '사유', '업체', '등록상품명', '품목명', '수량', '개당마진', '금액']];
+            // CS환불 줄은 미션허브가 업무일지 날짜·등록상품명으로 맞춰 읽으므로 날짜는 업무일지 날짜로, 등록상품명은
+            // 비어 있으면 그날 마진시트의 같은 업체·품목 등록상품명(없으면 업체명 — 마진시트와 같은 대체값)으로 채운다
+            const csRegName = (r: ReturnRecord) => marginGroups.find(g => g.company === r.company && g.key.endsWith(`::${r.productKey}`))?.data.regName || r.company;
             allReturns.forEach(r => {
-                returnSheetData.push([r.type || '반품', r.orderDate || '', r.memo || '', r.company, r.registeredName || '', r.productName, r.count, r.marginPerUnit, r.totalMargin]);
+                const isCs = r.type === 'CS환불';
+                returnSheetData.push([r.type || '반품', isCs ? workDate : (r.orderDate || ''), r.memo || '', r.company, r.registeredName || (isCs ? csRegName(r) : ''), r.productName, r.count, r.marginPerUnit, r.totalMargin]);
             });
             returnSheetData.push([]);
             returnSheetData.push(['', '', '', '', '', '', '', '총 금액', allReturns.reduce((s, r) => s + r.totalMargin, 0)]);
