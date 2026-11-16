@@ -2688,7 +2688,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                     {canLotte && <th title="롯데 예약할 주문 체크 (같은 주문의 줄은 함께)" style={{ padding:'6px 8px', color:'#fb923c', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center' }}>롯데</th>}
                                                     <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center', minWidth:'32px' }}>#</th>
                                                     {previewHeaders.map((h, i) => (
-                                                        <th key={i} style={{ padding:'6px 10px', color:'#a1a1aa', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'left' }}>{h}</th>
+                                                        <th key={i} style={{ padding:'6px 10px', color:'#a1a1aa', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'left', minWidth: i === prodCol ? '280px' : undefined }}>{h}</th>
                                                     ))}
                                                     <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, textAlign:'center', minWidth:'32px' }}></th>
                                                 </tr>
@@ -2708,8 +2708,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                                             {isRealShipRow(ri) && <span title="실배: 실제로 배송되는 가구매" style={{ marginLeft:'4px', background:'#a855f7', color:'#fff', fontWeight:900, fontSize:'9px', padding:'1px 4px', borderRadius:'4px' }}>실</span>}
                                                         </td>
                                                         {previewHeaders.map((_, ci) => (
-                                                            <td key={ci} style={{ padding:0, borderRight:'1px solid #27272a', maxWidth: ci === prodCol ? undefined : '220px', minWidth: ci === prodCol ? '240px' : undefined }}>
-                                                                <div style={{ display:'flex', alignItems:'stretch' }}>
+                                                            <td key={ci} style={{ padding:0, borderRight:'1px solid #27272a', maxWidth: ci === prodCol ? undefined : '220px', minWidth: ci === prodCol ? '280px' : undefined }}>
+                                                                <div style={{ display:'flex', alignItems:'stretch', minWidth: ci === prodCol ? '280px' : undefined }}>
                                                                 <input
                                                                     value={row[ci] ?? ''}
                                                                     onChange={e => updateOrderCell(ri, ci, e.target.value)}
