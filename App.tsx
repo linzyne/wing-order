@@ -59,7 +59,7 @@ const sameLines = (a: string, b: string) => {
   return norm(a) === norm(b);
 };
 const MISSION_CLEAR_REQ_KEY = 'missionClearRequestId';
-// 가구매 명단 창을 열어서 본 미션허브 메모 { bizId: 메모 } — 다르면 새 메모
+// 가구매 명단에서 확인 누른 미션허브 메모 { bizId: 메모 } — 다르면 새 메모
 const MISSION_MEMO_SEEN_KEY = 'missionHubMemoSeen';
 // 가져오기로 받은 가구매 항목 id — 미션클리어 때 화면에 있는 명단만 예약완료하려고 같이 보관
 const MISSION_FAKE_ITEMS_KEY = 'missionHubImportedFakeItems';
@@ -417,18 +417,17 @@ const App: React.FC = () => {
     : missionFeedStale
       ? `미션허브 연동 멈춤 (${new Date(missionFeed.checkedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 내용) — 미션허브를 열어주세요`
       : `미션허브 연동 중 · ${new Date(missionFeed.checkedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 확인`;
-  // 미션허브 메모: 가구매 명단 창이 닫혀 있을 때 새로 들어오거나 바뀐 메모가 있으면 "새 메모" 표시
+  // 미션허브 메모: '확인' 누른 메모는 명단 위에서 사라지고, 확인 안 한 메모가 있으면 가구매 버튼에 N
   const missionMemos = missionFeed?.memos ?? [];
   const [memoSeen, setMemoSeen] = useState<Record<string, string>>(() => { try { return JSON.parse(readLs(MISSION_MEMO_SEEN_KEY) || '{}'); } catch { return {}; } });
-  const [memoSeenAtOpen, setMemoSeenAtOpen] = useState<Record<string, string>>({});
-  const hasNewMissionMemo = missionMemos.some(m => memoSeen[m.bizId] !== m.memo);
-  useEffect(() => { if (showGlobalFake) setMemoSeenAtOpen(memoSeen); }, [showGlobalFake]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!showGlobalFake || !missionFeed || !hasNewMissionMemo) return;
-    const seen = Object.fromEntries(missionMemos.map(m => [m.bizId, m.memo]));
-    setMemoSeen(seen);
-    writeLs(MISSION_MEMO_SEEN_KEY, JSON.stringify(seen));
-  }, [showGlobalFake, missionFeed, hasNewMissionMemo]); // eslint-disable-line react-hooks/exhaustive-deps
+  const unseenMissionMemos = missionMemos.filter(m => memoSeen[m.bizId] !== m.memo);
+  const confirmMissionMemo = (bizId: string, memo: string) => {
+    setMemoSeen(prev => {
+      const next = { ...prev, [bizId]: memo };
+      writeLs(MISSION_MEMO_SEEN_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
 
   // 미션클리어: 지금 연동된 가구매 → 예약완료, 입금목록 → 입금완료 (처리는 미션허브가 함, 시각은 누른 순간)
   const [missionClearReqId, setMissionClearReqId] = useState(() => readLs(MISSION_CLEAR_REQ_KEY));
@@ -1225,7 +1224,7 @@ const App: React.FC = () => {
             }`}
           >
             <UserGroupIcon className="w-3.5 h-3.5 text-violet-400" />
-            {hasNewMissionMemo && !showGlobalFake && <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[9px] font-black">새 메모</span>}
+            {unseenMissionMemos.length > 0 && <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[9px] font-black">N</span>}
             <span>가구매{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}</span>
             {globalFakeDuplicates.length > 0 && <span className="px-1 rounded bg-pink-500 text-black text-[9px] font-black">중복 {globalFakeDuplicates.length}</span>}
           </button>
@@ -1394,13 +1393,14 @@ const App: React.FC = () => {
               <p className="text-zinc-600 text-[10px] mb-1 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
               <p className={`text-[10px] mb-2 font-bold ${missionFeedStale ? 'text-amber-400' : 'text-emerald-500'}`}>{missionFeedStatus}</p>
               {missionFakeChanged && <p className="text-[10px] mb-2 font-bold text-sky-400">미션허브 명단이 바뀜 — 반영하려면 가져오기</p>}
-              {missionMemos.length > 0 && (
+              {unseenMissionMemos.length > 0 && (
                 <div className="mb-2 space-y-1.5">
-                  {missionMemos.map(m => (
+                  {unseenMissionMemos.map(m => (
                     <div key={m.bizId} className="rounded-lg border border-amber-500/30 bg-amber-950/30 px-2.5 py-1.5">
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <span className="text-[10px] font-black text-amber-300">{m.bizName} 메모</span>
-                        {memoSeenAtOpen[m.bizId] !== m.memo && <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[8px] font-black">NEW</span>}
+                        <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[8px] font-black">N</span>
+                        <button onClick={() => confirmMissionMemo(m.bizId, m.memo)} className="ml-auto px-1.5 py-0.5 rounded border border-amber-500/50 text-[9px] font-bold text-amber-300 hover:bg-amber-900/40">확인</button>
                       </div>
                       <p className="text-[11px] text-zinc-200 whitespace-pre-wrap break-words">{m.memo}</p>
                     </div>
