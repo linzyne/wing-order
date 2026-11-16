@@ -713,7 +713,7 @@
   const ORD_RE = /^(S\d{6}-\d{2}|W\d{6}-\d{6})-\d+$/;
   const byOrder = new Map();
   // 몇 번째 박스의 주문번호·박스 수. 앱의 "이어서 하기"는 남은 박스의 주문번호(ordNos)만 넘긴다(S…-2만 남을 수도 있다).
-  const ordAt = (p, i) => (Array.isArray(p.ordNos) && p.ordNos.length ? String(p.ordNos[i - 1] || '') : `${p.batchId || ''}-${i}`);
+  const ordAt = (p, i) => (Array.isArray(p.ordNos) && p.ordNos.length ? String(p.ordNos[i - 1] || '') : `${p.batchId || ''}-${String(i).padStart(3, '0')}`);
   const ordList = (p) => Array.from({ length: needOf(p) }, (_, i) => ordAt(p, i + 1));
   const needOf = (p) => (Array.isArray(p.ordNos) && p.ordNos.length ? p.ordNos.length : Number(p.boxCount) || 0);
   // 운송장번호는 12자리(2617-2863-6993). 관리번호(8083607009, 10자리)와 헷갈리지 않게 12자리만 인정한다.
