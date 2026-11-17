@@ -263,10 +263,90 @@
       poll();
     }
   }
-  // 발주서가 오면 확장 뒤편이 알려 준다 (계속 물어보지 않음)
+  // 발주서·송장 요청이 오면 확장 뒤편이 알려 준다 (계속 물어보지 않음)
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg.type === 'OUTBOX_CHANGED') poll();
+    if (msg.type === 'OUTBOX_CHANGED') { poll(); checkInvoiceRequests(); }
   });
+
+  // ── 윙발주 '송장 가져오기': 배송중 목록 엑셀을 받아 윙발주로 돌려준다 ──
+  // 엑셀 파일은 admin-main.js(화면 쪽)가 어드민의 파일 주소를 가로채 읽어 넘겨준다.
+  const doneKey = `invoiceDone:${host}`;
+  let invoiceBusy = false;
+  const waitXlsx = (ms) => new Promise((resolve, reject) => {
+    const t = setTimeout(() => { window.removeEventListener('message', on); reject(new Error('엑셀 파일을 못 받음')); }, ms);
+    function on(e) {
+      if (e.source !== window || e.data?.source !== 'wing-admin-main') return;
+      clearTimeout(t);
+      window.removeEventListener('message', on);
+      if (e.data.type === 'WING_XLSX') resolve(e.data);
+      else reject(new Error(e.data.message || '엑셀 파일 받기 실패'));
+    }
+    window.addEventListener('message', on);
+  });
+
+  async function fetchShippingExcel() {
+    // 주문리스트 - 배송중
+    if (location.hash !== '#/order?status=5') {
+      L(`화면 이동: ${location.hash} → 배송중`);
+      location.hash = '#/order?status=5';
+      await sleep(1500);
+    }
+    const allBtn = await waitFor(() => findButton('전체주문 엑셀다운로드'), 15000);
+    if (!allBtn) throw new Error("'전체주문 엑셀다운로드' 버튼을 못 찾음");
+    // 목록이 다 뜰 때까지 (맨 아래 '1 - 13 / 13건' 또는 빈 목록)
+    const count = await waitFor(() => {
+      const m = document.body.innerText.match(/\d+\s*-\s*\d+\s*\/\s*([\d,]+)\s*건/);
+      if (m) return Number(m[1].replace(/,/g, ''));
+      return /조회된|데이터가 없|내역이 없/.test(document.body.innerText) ? -1 : 0;
+    }, 10000);
+    if (count === -1) return { rowCount: 0 };
+    L(`배송중 ${count || '?'}건`);
+
+    window.postMessage({ source: 'wing-admin', type: 'WING_CAPTURE' }, location.origin);
+    const got = waitXlsx(20000);
+    allBtn.click();
+    const dlBtn = await waitFor(() => findButton('엑셀다운로드'), 8000);
+    if (!dlBtn) throw new Error("엑셀 항목 창의 '엑셀다운로드' 버튼을 못 찾음");
+    dlBtn.click();
+    const file = await got;
+    // 항목 창이 남아 있으면 닫기
+    const close = [...document.querySelectorAll('button')].find((b) => visible(b) && !box.contains(b) && /닫기|close/i.test(b.getAttribute('aria-label') || b.title || ''));
+    if (findButton('엑셀다운로드') && close) close.click();
+    L(`엑셀 받음: ${file.fileName}`);
+    return { rowCount: count || 1, fileName: file.fileName, fileBase64: file.fileBase64 };
+  }
+
+  async function checkInvoiceRequests() {
+    if (invoiceBusy || busy || !names.company || !names.business) return;
+    invoiceBusy = true;
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'INVOICE_REQS' }).catch(() => null);
+      if (!res || res.error) { if (res?.error) L(`송장 요청 목록 실패: ${res.error}`); return; }
+      const done = (await chrome.storage.local.get(doneKey))[doneKey] || [];
+      const todo = res.items.filter((r) => !done.includes(r.requestId));
+      if (todo.length === 0) return;
+      // 같이 온 요청은 한 번만 받아 다 같이 답한다
+      const ids = todo.map((r) => r.requestId);
+      await chrome.storage.local.set({ [doneKey]: [...done, ...ids].slice(-50) });
+      L(`송장 요청 받음 (${ids.length})`);
+      show('송장 가져오는 중…', '#2563eb');
+      let out;
+      try {
+        out = await fetchShippingExcel();
+        show(`송장 ${out.rowCount}건 보냄`, '#16a34a');
+      } catch (e) {
+        L(`송장 실패: ${e.message}`);
+        show(`송장 실패: ${e.message}`, '#dc2626');
+        out = { error: e.message };
+      }
+      for (const requestId of ids) {
+        const put = await chrome.runtime.sendMessage({ type: 'INVOICE_PUT', item: { requestId, company: names.company, business: names.business, ...out } }).catch((e) => ({ error: e.message }));
+        if (put?.error) L(`송장 보내기 실패: ${put.error}`);
+      }
+    } finally {
+      invoiceBusy = false;
+    }
+  }
 
   if (pickOnly) {
     show('옵션 골라 시트 복사');
@@ -279,5 +359,6 @@
     showNames();
     L(`시작: ${host} ${names.company} · ${names.business}`);
     poll();
+    checkInvoiceRequests();
   });
 })();

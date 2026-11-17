@@ -2,6 +2,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import WingCountBadge from './WingCountBadge';
 import type { MailInvoiceWatcher } from '../hooks/useMailInvoiceWatcher';
+import type { AdminInvoiceFetcher } from '../hooks/useAdminInvoiceFetcher';
 import { getInvoiceMailToken, setInvoiceMailToken } from '../services/invoiceMailService';
 
 export interface InvoiceResult {
@@ -49,6 +50,7 @@ interface Props {
   onDirectCoupangUploadCompany?: (businessId: string, companyName: string, onStep?: (step: string) => void) => Promise<string | void>;
   onCourierDirectCoupangUpload?: (templateId: string, businessId: string, onStep?: (step: string) => void) => Promise<string | void>;
   mailWatcher?: MailInvoiceWatcher;
+  adminInvoiceFetcher?: AdminInvoiceFetcher;
 }
 
 function detectBusiness(filename: string, businesses: Business[]): Business | null {
@@ -158,7 +160,42 @@ const MailWatchSection: React.FC<{ w: MailInvoiceWatcher }> = ({ w }) => {
   );
 };
 
-const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, onReset, couriers, hasFakeOrders, onCourierFilesAdd, onCourierFileRemove, onCourierResultDownload, onDirectCoupangUpload, onDirectCoupangUploadCompany, onCourierDirectCoupangUpload, mailWatcher }) => {
+/** 어드민 송장 가져오기 — 업체 어드민(adminplus) 탭의 확장이 배송중 엑셀을 받아 그 업체 줄로 */
+const AdminInvoiceSection: React.FC<{ f: AdminInvoiceFetcher }> = ({ f }) => {
+  const [showLog, setShowLog] = useState(false);
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 flex flex-col gap-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-black text-zinc-300 whitespace-nowrap">어드민 송장</span>
+        <button onClick={f.fetchNow} disabled={f.fetching} className="text-[10px] font-black bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg px-2.5 py-1 disabled:opacity-40">
+          {f.fetching ? '가져오는 중…' : '송장 가져오기'}
+        </button>
+      </div>
+      {f.log[0] && (
+        <p className={`text-[10px] leading-snug ${f.log[0].status === 'success' ? 'text-emerald-400' : f.log[0].status === 'pending' ? 'text-amber-400' : 'text-rose-400'}`}>{f.log[0].message}</p>
+      )}
+      {f.log.length > 1 && (
+        <>
+          <button onClick={() => setShowLog(v => !v)} className="self-start text-[10px] text-zinc-500 hover:text-zinc-300 font-black">
+            {showLog ? '▾' : '▸'} 내역 {f.log.length}건
+          </button>
+          {showLog && (
+            <div className="max-h-32 overflow-y-auto space-y-1">
+              {f.log.map(l => (
+                <div key={l.id} className="flex gap-1.5 text-[10px] leading-snug">
+                  <span className="text-zinc-600 font-mono shrink-0">{l.time}</span>
+                  <span className={l.status === 'success' ? 'text-emerald-400' : l.status === 'pending' ? 'text-amber-400' : 'text-zinc-500'}>{l.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, onReset, couriers, hasFakeOrders, onCourierFilesAdd, onCourierFileRemove, onCourierResultDownload, onDirectCoupangUpload, onDirectCoupangUploadCompany, onCourierDirectCoupangUpload, mailWatcher, adminInvoiceFetcher }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; uploadCount: number }[] }[]>([]);
@@ -400,6 +437,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
       </div>
 
       {mailWatcher && <MailWatchSection w={mailWatcher} />}
+      {adminInvoiceFetcher && <AdminInvoiceSection f={adminInvoiceFetcher} />}
 
       {/* 사업자별 상태 배지 */}
       <div className="flex flex-wrap gap-1.5">
