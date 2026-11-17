@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getHeaderForCompany, inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
 import { CS_SAVED_EVENT, WORKSPACE_ADJUSTMENT_EVENT } from '../services/firestoreService';
-import type { CompanyConfig, CsRecord, DailySales, PricingConfig } from '../types';
+import type { CompanyConfig, CsRecord, DailySales, PricingConfig, ReturnRecord } from '../types';
 
 export interface CsDraft {
   company: string;
@@ -334,6 +334,17 @@ async function setManualTransferForRefund(
   await updateDailyWorkspaceField('manualTransfers', next, businessId);
 }
 
+/** 확정한 날 문서에 따로 들어간 반품기록(record.returnDate)을 걷어낸다 */
+async function removeReturnOnReturnDate(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
+  if (!record.returnDate || record.returnDate === date) return;
+  const { saveCsAndReturns } = await import('../services/firestoreService');
+  const ok = await saveCsAndReturns(record.returnDate, businessId, cur => ({
+    csRecords: cur.csRecords,
+    returnRecords: cur.returnRecords.filter(r => r.csRecordId !== record.id),
+  }));
+  if (ok) window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: record.returnDate } }));
+}
+
 /** CS 기록을 삭제하고, 연결된 반품기록/정산조정/수동입금 내역도 함께 정리한다 */
 export async function deleteCsRecord(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
   const { saveCsAndReturns } = await import('../services/firestoreService');
@@ -343,6 +354,7 @@ export async function deleteCsRecord(businessId: string | undefined, date: strin
   }));
   if (!ok) return;
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
+  await removeReturnOnReturnDate(businessId, date, record);
 
   const wasRefundDeduction = hasSettlementDeduction(record);
   const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
@@ -359,11 +371,12 @@ export async function revertCsRecordToPending(businessId: string | undefined, da
   // 발주서 초기화로 되돌릴 때(revertReshipCsRecordsForReset)와 같은 상태로 맞춘다.
   // poAdded를 남겨두면 다시 확정했을 때 "발주서생성됨"으로 굳어 재생성 버튼을 누를 수 없다.
   const ok = await saveCsAndReturns(date, businessId, cur => ({
-    csRecords: cur.csRecords.map(r => (r.id === record.id ? { ...r, pending: true, poAdded: false } : r)),
+    csRecords: cur.csRecords.map(r => (r.id === record.id ? { ...r, pending: true, poAdded: false, returnDate: undefined } : r)),
     returnRecords: cur.returnRecords.filter(r => r.csRecordId !== record.id),
   }));
   if (!ok) return;
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
+  await removeReturnOnReturnDate(businessId, date, record);
 
   const wasRefundDeduction = hasSettlementDeduction(record);
   const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
@@ -469,27 +482,38 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
 
       // 대기 저장 중엔 반품기록/정산조정/계좌이체 등 실제 재무 효과를 발생시키지 않는다 (확정 시점에만 실행)
       const isRefundDeduction = !asPending && draft.customerMethod === '환불' && draft.deduction === 'full';
+      // 반품기록은 확정한 날 문서에 넣는다 — 대기 저장한 날 업무일지는 이미 받았을 수 있어서, 그날로 넣으면 어느 업무일지에도 안 들어간다.
+      // 이미 확정된 CS를 고칠 땐 반품이 있던 날 그대로
+      const prevReturnDate = editing && !editing.record.pending ? (editing.record.returnDate || editing.date) : undefined;
+      const returnDate = prevReturnDate || todayStr;
+      if (isRefundDeduction) csRecord.returnDate = returnDate;
+      const returnRecord: ReturnRecord | null = isRefundDeduction ? {
+        company: draft.company,
+        productKey: draft.productKey,
+        productName: product?.displayName || draft.productName || '',
+        count: 1,
+        marginPerUnit,
+        totalMargin: -marginPerUnit,
+        memo: `CS환불 - ${draft.reason.trim()}`,
+        type: 'CS환불' as const,
+        csRecordId: id,
+      } : null;
+      const withReturn = (date: string, list: ReturnRecord[]) => {
+        const rest = list.filter(r => r.csRecordId !== id);
+        return returnRecord && date === returnDate ? [...rest, returnRecord] : rest;
+      };
       await saveCsAndReturns(targetDate, businessId, cur => {
         const csRecords = editing
           ? cur.csRecords.map(r => (r.id === id ? csRecord : r))
           : [...cur.csRecords, csRecord];
-        let returnRecords = cur.returnRecords.filter(r => r.csRecordId !== id);
-        if (isRefundDeduction) {
-          returnRecords = [...returnRecords, {
-            company: draft.company,
-            productKey: draft.productKey,
-            productName: product?.displayName || draft.productName || '',
-            count: 1,
-            marginPerUnit,
-            totalMargin: -marginPerUnit,
-            memo: `CS환불 - ${draft.reason.trim()}`,
-            type: 'CS환불' as const,
-            csRecordId: id,
-          }];
-        }
-        return { csRecords, returnRecords };
+        return { csRecords, returnRecords: withReturn(targetDate, cur.returnRecords) };
       });
       window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: targetDate } }));
+      for (const date of new Set([returnRecord ? returnDate : '', prevReturnDate || ''])) {
+        if (!date || date === targetDate) continue;
+        await saveCsAndReturns(date, businessId, cur => ({ csRecords: cur.csRecords, returnRecords: withReturn(date, cur.returnRecords) }));
+        window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
+      }
 
       const wasRefundDeduction = editing ? (hasSettlementDeduction(editing.record) && !editing.record.pending) : false;
       const wasAccountRefund = editing ? (editing.record.customerMethod === '환불' && editing.record.refundMethod === '계좌환불' && !editing.record.pending) : false;
