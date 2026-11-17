@@ -405,9 +405,23 @@
     const shown = [alerts.join(' / '), lines.join(' · ')].filter(Boolean).join(' / ');
     L(`결과: 알림 ${alerts.length}개 · 창 새 글자 ${lines.length}줄 · 응답 ${responses.length}개 · ${shown || '(글자 없음)'}`);
     if (!got) logScreen('등록하기 뒤 결과 없음');
+    // 송장 등록 결과(update/upload) — 주문마다 success true/false, 사유는 errorMessage(splitItems 안에 있기도 함)
+    const upload = responses.filter((r) => /\/update\/upload/.test(r.url)).map((r) => { try { return JSON.parse(r.body); } catch (e) { return null; } }).find(Array.isArray);
+    if (upload) {
+      L(`[등록 결과 전체] ${JSON.stringify(upload)}`);
+      const bad = upload.filter((o) => !o.success);
+      const okN = upload.length - bad.length;
+      const why = (o) => o.errorMessage || o.errorKey || (o.splitItems || []).map((s) => s.errorMessage || s.errorKey || (s.failedItemId ? `옵션 ${s.failedItemId} 실패` : '')).find(Boolean) || '사유 없음';
+      const summary = `윙 등록 성공 ${okN}건 · 실패 ${bad.length}건`;
+      if (bad.length) throw new Error(`${summary} — ${bad.slice(0, 5).map((o) => `${o.orderId} ${why(o)}`).join(', ')}${bad.length > 5 ? ' …' : ''}`);
+      await sleep(2000);
+      const left = await readReadyAfterUpload();
+      if (left != null) reportCount(left);
+      return summary;
+    }
     const all = `${shown} ${resp}`;
     const num = (re) => { const m = re.exec(all); return m ? Number(m[m.length - 1]) : null; };
-    const fail = num(/실패\s*:?\s*(\d+)|"(?:fail|error)\w*"\s*:\s*(\d+)/i);
+    const fail = num(/실패\s*:?\s*(\d+)|"(?:fail|error)(?:ed)?(?:Count|Cnt)?"\s*:\s*(\d+)/i);
     const ok = num(/성공\s*:?\s*(\d+)|"success\w*"\s*:\s*(\d+)/i);
     // 안내 글자에 걸리지 않게, 알림창은 실패·오류 말만, 그 밖엔 실패 건수가 1 이상일 때만 실패로 본다
     if (/실패|오류|올바르지|잘못|형식/.test(alerts.join(' ')) || (fail != null && fail > 0) || responses.some((r) => r.status >= 400)) {

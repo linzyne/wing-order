@@ -44,7 +44,7 @@
       return false;
     }
   };
-  const tellResp = (url, status, text) => post({ type: 'RESP', url: String(url || '').slice(0, 200), status, body: String(text || '').slice(0, 1500) });
+  const tellResp = (url, status, text) => post({ type: 'RESP', url: String(url || '').slice(0, 200), status, body: String(text || '').slice(0, /\/update\/upload/.test(String(url)) ? 200000 : 1500) });
 
   const origFetch = window.fetch;
   window.fetch = async function (...args) {
