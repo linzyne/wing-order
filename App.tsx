@@ -15,7 +15,7 @@ import { normalizeForSearch } from './components/CsEntryModal';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon, EllipsisHorizontalIcon, DocumentArrowUpIcon, UserGroupIcon, PhoneIcon, BanknotesIcon, ClipboardDocumentListIcon, MegaphoneIcon, MagnifyingGlassIcon, CalculatorIcon, BuildingStorefrontIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
-import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, requestMissionOrderFix, subscribeMissionOrderFix, type MissionOrderFixRequest, type SettlementUploadRecord } from './services/firestoreService';
+import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, requestMissionOrderFix, subscribeMissionOrderFix, type MissionOrderFixRequest, requestMissionMemoAction, subscribeMissionMemoRequest, type MissionMemoAction, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
 import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder, type LotteReservePick } from './services/lotteReserve';
@@ -61,8 +61,6 @@ const sameLines = (a: string, b: string) => {
   return norm(a) === norm(b);
 };
 const MISSION_CLEAR_REQ_KEY = 'missionClearRequestId';
-// 가구매 명단에서 확인 누른 미션허브 메모 { bizId: 메모 } — 다르면 새 메모
-const MISSION_MEMO_SEEN_KEY = 'missionHubMemoSeen';
 // 가져오기로 받은 가구매 항목 id — 미션클리어 때 화면에 있는 명단만 예약완료하려고 같이 보관
 const MISSION_FAKE_ITEMS_KEY = 'missionHubImportedFakeItems';
 function loadPersistedBulkDepositPaste(): string {
@@ -422,16 +420,29 @@ const App: React.FC = () => {
     : missionFeedStale
       ? `미션허브 연동 멈춤 (${new Date(missionFeed.checkedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 내용) — 미션허브를 열어주세요`
       : `미션허브 연동 중 · ${new Date(missionFeed.checkedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 확인`;
-  // 미션허브 메모: '확인' 누른 메모는 명단 위에서 사라지고, 확인 안 한 메모가 있으면 가구매 버튼에 N
+  // 미션허브 메모: '확인완료' 누르면 미션허브에 확인완료로 뜨고 메모 칸이 잠김, '삭제'는 미션허브 메모를 지움.
+  // 확인완료 안 한 메모가 있으면 가구매 버튼에 N
   const missionMemos = missionFeed?.memos ?? [];
-  const [memoSeen, setMemoSeen] = useState<Record<string, string>>(() => { try { return JSON.parse(readLs(MISSION_MEMO_SEEN_KEY) || '{}'); } catch { return {}; } });
-  const unseenMissionMemos = missionMemos.filter(m => memoSeen[m.bizId] !== m.memo);
-  const confirmMissionMemo = (bizId: string, memo: string) => {
-    setMemoSeen(prev => {
-      const next = { ...prev, [bizId]: memo };
-      writeLs(MISSION_MEMO_SEEN_KEY, JSON.stringify(next));
-      return next;
-    });
+  const unseenMissionMemos = missionMemos.filter(m => !m.confirmedAt);
+  // 처리 중인 요청 { bizId: 동작 } — 미션허브가 처리하면 피드가 바뀌어 저절로 맞게 보임
+  const [memoActionPending, setMemoActionPending] = useState<Record<string, MissionMemoAction>>({});
+  const sendMissionMemoAction = async (bizId: string, bizName: string, memo: string, action: MissionMemoAction) => {
+    if (memoActionPending[bizId]) return;
+    if (action === 'delete' && !window.confirm(`${bizName} 메모를 미션허브에서 삭제할까요?`)) return;
+    setMemoActionPending(prev => ({ ...prev, [bizId]: action }));
+    const done = () => setMemoActionPending(prev => { const next = { ...prev }; delete next[bizId]; return next; });
+    try {
+      const id = await requestMissionMemoAction(bizId, memo, action);
+      const unsub = subscribeMissionMemoRequest(id, req => {
+        if (!req || req.status === 'pending') return;
+        unsub();
+        done();
+        if (req.status === 'error') alert(`${bizName} 메모 ${action === 'confirm' ? '확인완료' : '삭제'} 실패: ${req.error || ''}`);
+      });
+    } catch (e) {
+      done();
+      alert(`${bizName} 메모 요청 실패: ${e instanceof Error ? e.message : String(e)}`);
+    }
   };
 
   // 미션클리어: 지금 연동된 가구매 → 예약완료, 입금목록 → 입금완료 (처리는 미션허브가 함, 시각은 누른 순간)
@@ -1490,18 +1501,28 @@ const App: React.FC = () => {
               <p className="text-zinc-600 text-[10px] mb-1 font-mono">형식: 사업자_이름_주문번호 (이름 생략 시 사업자_주문번호)</p>
               <p className={`text-[10px] mb-2 font-bold ${missionFeedStale ? 'text-amber-400' : 'text-emerald-500'}`}>{missionFeedStatus}</p>
               {missionFakeChanged && <p className="text-[10px] mb-2 font-bold text-sky-400">미션허브 명단이 바뀜 — 반영하려면 가져오기</p>}
-              {unseenMissionMemos.length > 0 && (
+              {missionMemos.length > 0 && (
                 <div className="mb-2 space-y-1.5">
-                  {unseenMissionMemos.map(m => (
-                    <div key={m.bizId} className="rounded-lg border border-amber-500/30 bg-amber-950/30 px-2.5 py-1.5">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className="text-[10px] font-black text-amber-300">{m.bizName} 메모</span>
-                        <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[8px] font-black">N</span>
-                        <button onClick={() => confirmMissionMemo(m.bizId, m.memo)} className="ml-auto px-1.5 py-0.5 rounded border border-amber-500/50 text-[9px] font-bold text-amber-300 hover:bg-amber-900/40">확인</button>
+                  {missionMemos.map(m => {
+                    const pending = memoActionPending[m.bizId];
+                    return (
+                      <div key={m.bizId} className={`rounded-lg border px-2.5 py-1.5 ${m.confirmedAt ? 'border-zinc-700 bg-zinc-900/40 opacity-60' : 'border-amber-500/30 bg-amber-950/30'}`}>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className={`text-[10px] font-black ${m.confirmedAt ? 'text-zinc-400' : 'text-amber-300'}`}>{m.bizName} 메모</span>
+                          {m.confirmedAt
+                            ? <span className="text-[9px] font-bold text-emerald-400">✓ 확인완료</span>
+                            : <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[8px] font-black">N</span>}
+                          <div className="ml-auto flex gap-1">
+                            {!m.confirmedAt && (
+                              <button disabled={!!pending} onClick={() => sendMissionMemoAction(m.bizId, m.bizName, m.memo, 'confirm')} className="px-1.5 py-0.5 rounded border border-amber-500/50 text-[9px] font-bold text-amber-300 hover:bg-amber-900/40 disabled:opacity-50">{pending === 'confirm' ? '처리 중…' : '확인완료'}</button>
+                            )}
+                            <button disabled={!!pending} onClick={() => sendMissionMemoAction(m.bizId, m.bizName, m.memo, 'delete')} className="px-1.5 py-0.5 rounded border border-red-500/40 text-[9px] font-bold text-red-300 hover:bg-red-900/40 disabled:opacity-50">{pending === 'delete' ? '삭제 중…' : '삭제'}</button>
+                          </div>
+                        </div>
+                        <p className={`text-[11px] whitespace-pre-wrap break-words ${m.confirmedAt ? 'text-zinc-500' : 'text-zinc-200'}`}>{m.memo}</p>
                       </div>
-                      <p className="text-[11px] text-zinc-200 whitespace-pre-wrap break-words">{m.memo}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 

@@ -1455,10 +1455,10 @@ export const subscribeUrgentNotice = (
 
 // ===== 미션허브 연동 (가구매 미션허브가 config/missionHubFeed에 올림) =====
 // fakeLines: "사업자_이름_주문번호" 줄 목록, depositText: 일괄 입금목록 붙여넣기용 TSV
-// memos: 사업자별 구매 탭 상단 메모 (내용 있는 것만)
+// memos: 사업자별 구매 탭 상단 메모 (내용 있는 것만, 윙에서 확인완료 누른 건 confirmedAt 있음)
 // checkedAt: 미션허브가 마지막으로 확인한 시각 (미션허브가 열려 있으면 5분마다 갱신)
 export type MissionHubItem = { bizId: string; id: string };
-export type MissionHubMemo = { bizId: string; bizName: string; memo: string; updatedAt: number };
+export type MissionHubMemo = { bizId: string; bizName: string; memo: string; updatedAt: number; confirmedAt?: number };
 export type MissionHubFeed = { fakeLines: string; depositText: string; fakeItems: MissionHubItem[]; depositItems: MissionHubItem[]; memos: MissionHubMemo[]; checkedAt: number };
 const toMissionHubFeed = (data: any): MissionHubFeed => ({
       fakeLines: (data.fakeLines as string) || '',
@@ -1535,6 +1535,33 @@ export const subscribeMissionOrderFix = (
     callback(snapshot.exists() ? (snapshot.data() as MissionOrderFixRequest) : null);
   }, (error) => {
     console.error('[Firestore] MissionOrderFix 구독 오류:', error);
+  });
+};
+
+// ===== 미션허브 메모 확인완료·삭제 요청 (미션허브가 'pending'을 받아 그 메모를 확인완료로 표시하거나 지우고 'done') =====
+// 메모 내용이 요청 때와 같을 때만 처리 — 그새 미션허브에서 고쳤으면 안 건드림
+export type MissionMemoAction = 'confirm' | 'delete';
+export type MissionMemoRequest = {
+  status: 'pending' | 'done' | 'error';
+  action: MissionMemoAction;
+  bizId: string;
+  memo: string;
+  clickedAt: number;
+  error?: string;
+};
+export const requestMissionMemoAction = async (bizId: string, memo: string, action: MissionMemoAction): Promise<string> => {
+  const docRef = doc(collection(db, 'missionHubMemoRequests'));
+  await setDoc(docRef, { status: 'pending', action, bizId, memo, clickedAt: Date.now() });
+  return docRef.id;
+};
+export const subscribeMissionMemoRequest = (
+  id: string,
+  callback: (req: MissionMemoRequest | null) => void
+): Unsubscribe => {
+  return onSnapshot(doc(db, 'missionHubMemoRequests', id), (snapshot) => {
+    callback(snapshot.exists() ? (snapshot.data() as MissionMemoRequest) : null);
+  }, (error) => {
+    console.error('[Firestore] MissionMemoRequest 구독 오류:', error);
   });
 };
 
