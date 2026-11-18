@@ -284,6 +284,31 @@
     window.addEventListener('message', on);
   });
 
+  // 목록 맨 아래 건수 선택(20건 ▾)을 500건으로 — 기본 select 이든 직접 만든 드롭다운이든
+  async function setPageSize500() {
+    const sel = [...document.querySelectorAll('select')].find((s) => [...s.options].some((o) => /^\s*500\s*건/.test(o.text)));
+    if (sel) {
+      const opt = [...sel.options].find((o) => /^\s*500\s*건/.test(o.text));
+      sel.value = opt.value;
+      sel.dispatchEvent(new Event('input', { bubbles: true }));
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      L('건수: 500건 (select)');
+      await sleep(500);
+      return;
+    }
+    const leaf = (re) => [...document.querySelectorAll('button, div, span, li')]
+      .filter((el) => visible(el) && !box.contains(el) && re.test(text(el)) && [...el.children].every((c) => !re.test(text(c))));
+    const opener = leaf(/^\d+\s*건$/).pop();
+    if (!opener) { L('건수 선택 못 찾음'); return; }
+    if (/^500\s*건$/.test(text(opener))) return;
+    opener.click();
+    const opt = await waitFor(() => leaf(/^500\s*건$/)[0], 3000);
+    if (!opt) { L('500건 항목 못 찾음'); return; }
+    opt.click();
+    L('건수: 500건');
+    await sleep(800);
+  }
+
   async function fetchShippingExcel() {
     // 주문리스트 - 배송중
     if (location.hash !== '#/order?status=5') {
@@ -300,6 +325,7 @@
     if (period && searchBtn) {
       period.click();
       await sleep(300);
+      await setPageSize500();
       searchBtn.click();
       await sleep(1500);
       const range = document.body.innerText.match(/\d{4}-\d{2}-\d{2}\s*~\s*\d{4}-\d{2}-\d{2}/);

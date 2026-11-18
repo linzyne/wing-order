@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "윙발주 → 업체 어드민",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "윙발주에서 보낸 업체 양식 발주서를 업체 어드민(adminplus) 대량 주문입력(엑셀)에 올리고, 윙발주의 송장 가져오기에 배송중 엑셀을 돌려줍니다. 어드민·오더플로 상품 화면에서 고른 옵션을 견적 시트용으로 복사합니다.",
   "permissions": [
     "storage",
