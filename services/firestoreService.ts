@@ -2,7 +2,7 @@ import { db } from '../firebase';
 import {
   doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, orderBy, where, getDocs,
-  onSnapshot, getDocFromServer, getDocFromCache, Timestamp, deleteField, writeBatch,
+  onSnapshot, getDocFromServer, getDocFromCache, Timestamp, deleteField, writeBatch, runTransaction,
   type Unsubscribe
 } from 'firebase/firestore';
 import { isCsFullyCompleted } from '../types';
@@ -1167,12 +1167,23 @@ export const saveQuickRecipients = async (recipients: QuickRecipientData[], busi
 
 // ===== Regular Customers (단골 리스트, 사업자 공통) =====
 
+/** 단골이 다른 사업자에서 주문하면, 그 주문을 빼고 지정한 사업자·업체 품목으로 대신 보낸다 */
+export interface RegularRedirect {
+  businessId: string;      // 대신 보낼 사업자 (예: 안군농원)
+  companyName: string;     // 그 사업자의 업체 (예: 나리찬)
+  productKey: string;
+  productName: string;
+  qty: number;             // 주문 1개당 보낼 수량
+  keyword?: string;        // 주문 상품명에 이 말이 있을 때만 (비우면 그 단골 주문 전부)
+}
+
 export interface RegularCustomer {
   id: string;
   name: string;
   address: string;
   phone?: string;
   memo?: string;
+  redirect?: RegularRedirect;
 }
 
 export const subscribeRegularCustomers = (
@@ -1221,6 +1232,36 @@ export const loadManualOrders = async (businessId?: string): Promise<any[]> => {
 export const saveManualOrders = async (orders: any[], businessId?: string): Promise<void> => {
   const docRef = doc(db, 'config', getManualOrdersDocId(businessId));
   await setDoc(docRef, { orders, updatedAt: Timestamp.now() });
+};
+
+/**
+ * 단골 대신 보내기: 다른 사업자의 수동발주에 주문을 넣는다. 한 번 넣은 주문(redirectKey)은
+ * config/regularRedirectsDone에 적어 두어, 그쪽에서 발주 후 지워도 다시 들어가지 않는다.
+ * 돌려준 값 = 새로 넣은 건수.
+ */
+export const appendRedirectedManualOrders = async (
+  targetBusinessId: string,
+  orders: (Record<string, any> & { id: string; redirectKey: string })[]
+): Promise<number> => {
+  if (orders.length === 0) return 0;
+  const ordersRef = doc(db, 'config', getManualOrdersDocId(targetBusinessId));
+  const doneRef = doc(db, 'config', 'regularRedirectsDone');
+  return runTransaction(db, async (tx) => {
+    const [ordersSnap, doneSnap] = await Promise.all([tx.get(ordersRef), tx.get(doneRef)]);
+    const existing: any[] = ordersSnap.exists() ? (ordersSnap.data().orders || []) : [];
+    const done: Record<string, string> = doneSnap.exists() ? (doneSnap.data().keys || {}) : {};
+    const fresh = orders.filter(o => !done[o.redirectKey] && !existing.some(e => e.id === o.id));
+    if (fresh.length === 0) return 0;
+    const now = new Date().toISOString();
+    const nextDone = { ...done };
+    fresh.forEach(o => { nextDone[o.redirectKey] = now; });
+    // 오래된 기록(60일 지남)은 정리
+    const cutoff = Date.now() - 60 * 86400000;
+    Object.keys(nextDone).forEach(k => { if (Date.parse(nextDone[k]) < cutoff) delete nextDone[k]; });
+    tx.set(ordersRef, { orders: [...existing, ...fresh], updatedAt: Timestamp.now() });
+    tx.set(doneRef, { keys: nextDone, updatedAt: Timestamp.now() });
+    return fresh.length;
+  });
 };
 
 // ===== Company Order (업체 순서) =====

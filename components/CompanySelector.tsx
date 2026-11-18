@@ -1460,6 +1460,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     };
     const [unsentOrderInput, setUnsentOrderInput] = useState('');
     const effectiveUnsentInput = globalUnsentOrderInput?.trim() ? globalUnsentOrderInput : unsentOrderInput;
+    // 단골 대신 보내기로 다른 사업자가 보낼 주문 — 미발송처럼 이 사업자 발주서에서 뺀다
+    const [regularRedirectedInput, setRegularRedirectedInput] = useState('');
     const [showFakeDetail, setShowFakeDetail] = useState(false);
     const [showUnmatchedFakeAlert, setShowUnmatchedFakeAlert] = useState(false);
     const [showEmptyFakeAlert, setShowEmptyFakeAlert] = useState(false);
@@ -5791,6 +5793,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                 return (
                                 <div key={o.id} className={`px-2.5 py-1 rounded-lg border flex items-center gap-1.5 group animate-pop-in cursor-pointer transition-all ${isEditing ? 'bg-amber-900/30 border-amber-600/50' : isSelected ? 'bg-zinc-900 border-zinc-800' : 'bg-zinc-950 border-zinc-900 opacity-40'}`} onClick={() => handleToggleManualOrderSelection(o.id)}>
                                     <input type="checkbox" checked={isSelected} onChange={() => handleToggleManualOrderSelection(o.id)} onClick={e => e.stopPropagation()} className="w-3 h-3 accent-rose-500 cursor-pointer" />
+                                    {o.redirectFrom && <span className="text-[8px] font-black text-white bg-sky-600 px-1 rounded" title="단골 대신 보내기로 넘어온 주문">{o.redirectFrom}→</span>}
                                     <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
                                     <span className="text-[10px] font-bold text-zinc-300">{o.recipientName}</span>
                                     <span className="text-[9px] text-zinc-600 truncate max-w-[60px]">{o.productName}</span>
@@ -5822,6 +5825,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     pricingConfig={pricingConfig}
                     manualOrders={manualOrders}
                     onAddOrders={handleAddServiceOrders}
+                    onRedirectedOrdersChange={setRegularRedirectedInput}
                 />
 
                 {/* 1-2) 수동 입금 추가 */}
@@ -7396,7 +7400,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                             </div>
                                                         </div>
                                                     ) : undefined}
-                                                    vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={[effectiveFakeInput, effectiveUnsentInput].filter(s => s.trim()).join('\n')}
+                                                    vendorFiles={vendorFiles[company] || []} masterFile={masterOrderFile} batchFile={batchFiles[session.id] || null} isDetected={detectedCompanies.has(company)} fakeOrderNumbers={[effectiveFakeInput, effectiveUnsentInput, regularRedirectedInput].filter(s => s.trim()).join('\n')}
                                                     manualOrders={sIdx === 0 ? manualOrders.filter(o => o.companyName === company) : []} isSelected={selectedSessionIds.has(session.id)} onSelectToggle={handleToggleSessionSelection}
                                                     onVendorFileChange={(files) => handleVendorFileChange(company, files)} onResultUpdate={handleResultUpdate} onDataUpdate={handleDataUpdate}
                                                     onAddSession={() => handleAddSession(company)} onRemoveSession={() => handleRemoveSession(company, session.id)} onAddAdjustment={handleAddCompanyAdjustment}

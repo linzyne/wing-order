@@ -183,6 +183,8 @@ export interface ManualOrder {
   productKey?: string; // 이미 매칭된 품목 키가 있으면 이름 재매칭 없이 바로 사용 (예: CS 재배송 발주 추가)
   csRecordId?: string; // 통합CS접수에서 재배송 발주로 추가된 경우, 원본 CS 기록 id (발주서 초기화 시 CS를 대기로 되돌리기 위한 역추적용)
   regularCustomerId?: string; // 단골 서비스로 추가된 경우, 해당 단골 id (알림창에 '서비스 추가됨' 표시용)
+  redirectKey?: string; // 단골 대신 보내기로 다른 사업자에서 넘어온 주문 (보낸사업자|주문번호)
+  redirectFrom?: string; // 넘겨 준 사업자 표시명
 }
 
 export type ProcessingStatus = 'idle' | 'processing' | 'success' | 'error';

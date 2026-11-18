@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ManualOrder, PricingConfig } from '../types';
-import { subscribeRegularCustomers, saveRegularCustomers, type RegularCustomer } from '../services/firestoreService';
+import { subscribeRegularCustomers, saveRegularCustomers, loadPricingConfig, loadDynamicBusinesses, appendRedirectedManualOrders, type RegularCustomer, type RegularRedirect } from '../services/firestoreService';
+import { getBusinessInfo } from '../types';
 import { TrashIcon, PencilIcon, UserGroupIcon } from './icons';
 
 export type ServiceOrderDraft = Omit<ManualOrder, 'id'>;
@@ -14,6 +15,8 @@ interface Props {
     pricingConfig: PricingConfig;
     manualOrders: ManualOrder[];
     onAddOrders: (orders: ServiceOrderDraft[]) => void;
+    /** 대신 보내기로 이 사업자 발주서에서 뺄 주문 ("이름 주문번호" 줄들) */
+    onRedirectedOrdersChange?: (text: string) => void;
 }
 
 interface RegularMatch {
@@ -23,8 +26,23 @@ interface RegularMatch {
     recipientName: string;
     phone: string;
     address: string;
+    deliveryMessage: string;
     products: { name: string; qty: number }[];
 }
+
+/** 이 사업자에서 들어온 단골 주문 중, 다른 사업자로 대신 보낼 것 */
+interface RedirectPlan {
+    match: RegularMatch;
+    redirect: RegularRedirect;
+    qty: number;
+    redirectKey: string;
+}
+
+const keywordHit = (keyword: string | undefined, text: string) => {
+    const k = String(keyword || '').normalize('NFC').replace(/\s+/g, '').toLowerCase();
+    if (!k) return true;
+    return String(text || '').normalize('NFC').replace(/\s+/g, '').toLowerCase().includes(k);
+};
 
 interface ServiceTarget {
     customerId: string;
@@ -83,7 +101,8 @@ export const findRegularMatches = (customers: RegularCustomer[], rows: any[][]):
         const productName = String(row[10] ?? '').trim() || String(row[11] ?? '').trim();
         const option = String(row[10] ?? '').trim() ? String(row[11] ?? '').trim() : '';
         const qty = parseInt(String(row[22] ?? '1'), 10) || 1;
-        const existing = result.get(key) || { key, customer, orderNumber, recipientName, phone, address, products: [] };
+        const deliveryMessage = String(row[30] ?? '').trim();
+        const existing = result.get(key) || { key, customer, orderNumber, recipientName, phone, address, deliveryMessage, products: [] };
         existing.products.push({ name: option ? `${productName} / ${option}` : productName, qty });
         result.set(key, existing);
     }
@@ -108,7 +127,10 @@ const saveAlerted = (businessId: string | undefined, keys: Set<string>) => {
 
 const inputCls = 'bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-amber-500/30 outline-none';
 
-const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, orderRows, pricingConfig, manualOrders, onAddOrders }) => {
+const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, orderRows, pricingConfig, manualOrders, onAddOrders, onRedirectedOrdersChange }) => {
+    const fromBizId = businessId || '안군농원';
+    const bizName = (id: string) => getBusinessInfo(id)?.displayName || id;
+    const [businesses, setBusinesses] = useState<{ id: string; displayName: string }[]>([]);
     const [customers, setCustomers] = useState<RegularCustomer[]>([]);
     const [form, setForm] = useState({ name: '', address: '', phone: '', memo: '' });
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -129,6 +151,112 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
     };
 
     const matches = useMemo(() => findRegularMatches(customers, orderRows), [customers, orderRows]);
+
+    // ===== 대신 보내기 =====
+    const redirectPlans = useMemo<RedirectPlan[]>(() => matches.flatMap(m => {
+        const r = m.customer.redirect;
+        if (!r || r.businessId === fromBizId || !m.orderNumber) return [];
+        const hit = m.products.filter(p => keywordHit(r.keyword, p.name));
+        if (hit.length === 0) return [];
+        const orderQty = hit.reduce((sum, p) => sum + p.qty, 0);
+        return [{ match: m, redirect: r, qty: orderQty * (r.qty || 1), redirectKey: `${fromBizId}|${m.orderNumber}` }];
+    }), [matches, fromBizId]);
+    const redirectByKey = useMemo(() => new Map(redirectPlans.map(p => [p.match.key, p])), [redirectPlans]);
+
+    // 이 사업자 발주서에서 뺄 주문 (미발송 명단과 같은 방식)
+    const redirectedText = useMemo(() => redirectPlans.map(p => `${p.match.recipientName} ${p.match.orderNumber}`).join('\n'), [redirectPlans]);
+    useEffect(() => { onRedirectedOrdersChange?.(redirectedText); }, [redirectedText, onRedirectedOrdersChange]);
+
+    // 대신 보낼 사업자의 수동발주에 넣기 (한 번 넣은 주문은 다시 안 넣음)
+    const [redirectStatus, setRedirectStatus] = useState<Record<string, 'done' | 'error'>>({});
+    const triedRedirectRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const todo = redirectPlans.filter(p => !triedRedirectRef.current.has(p.redirectKey));
+        if (todo.length === 0) return;
+        todo.forEach(p => triedRedirectRef.current.add(p.redirectKey));
+        const byTarget = new Map<string, RedirectPlan[]>();
+        todo.forEach(p => byTarget.set(p.redirect.businessId, [...(byTarget.get(p.redirect.businessId) || []), p]));
+        byTarget.forEach((plans, target) => {
+            const orders = plans.map(p => ({
+                id: `mo-rd-${fromBizId}-${p.match.orderNumber}`,
+                redirectKey: p.redirectKey,
+                redirectFrom: businessName || fromBizId,
+                companyName: p.redirect.companyName,
+                recipientName: p.match.recipientName,
+                phone: p.match.phone,
+                address: p.match.address,
+                productName: p.redirect.productName,
+                productKey: p.redirect.productKey,
+                qty: p.qty,
+                memo: p.match.deliveryMessage,
+            }));
+            appendRedirectedManualOrders(target, orders)
+                .then(() => setRedirectStatus(prev => { const n = { ...prev }; plans.forEach(p => { n[p.redirectKey] = 'done'; }); return n; }))
+                .catch(e => {
+                    console.error('[단골 대신 보내기] 실패:', e);
+                    plans.forEach(p => triedRedirectRef.current.delete(p.redirectKey));
+                    setRedirectStatus(prev => { const n = { ...prev }; plans.forEach(p => { n[p.redirectKey] = 'error'; }); return n; });
+                    alert(`단골 대신 보내기 실패 — ${bizName(target)} 수동발주에 넣지 못했습니다. 새로고침 후 다시 확인해 주세요.`);
+                });
+        });
+    }, [redirectPlans, fromBizId, businessName]);
+
+    // 대신 보내기 설정창
+    const [redirectEdit, setRedirectEdit] = useState<RegularCustomer | null>(null);
+    const [rdBiz, setRdBiz] = useState('');
+    const [rdConfig, setRdConfig] = useState<PricingConfig | null>(null);
+    const [rdSel, setRdSel] = useState<{ company: string; key: string } | null>(null);
+    const [rdQty, setRdQty] = useState('1');
+    const [rdKeyword, setRdKeyword] = useState('');
+    const [rdSearch, setRdSearch] = useState('');
+
+    const openRedirect = (c: RegularCustomer) => {
+        setRedirectEdit(c);
+        setRdBiz(c.redirect?.businessId || '');
+        setRdSel(c.redirect ? { company: c.redirect.companyName, key: c.redirect.productKey } : null);
+        setRdQty(String(c.redirect?.qty || 1));
+        setRdKeyword(c.redirect?.keyword || '');
+        setRdSearch('');
+        loadDynamicBusinesses().then(list => {
+            const ids = [...new Set(['안군농원', '조에', ...list.map(b => b.id)])];
+            setBusinesses(ids.map(id => ({ id, displayName: bizName(id) })));
+        }).catch(() => setBusinesses([{ id: '안군농원', displayName: '안군농원' }, { id: '조에', displayName: '조에농원' }]));
+    };
+    useEffect(() => {
+        if (!rdBiz) { setRdConfig(null); return; }
+        let cancelled = false;
+        setRdConfig(null);
+        loadPricingConfig(rdBiz).then(({ config }) => { if (!cancelled) setRdConfig(config || {}); });
+        return () => { cancelled = true; };
+    }, [rdBiz]);
+    const rdProducts = useMemo(() => {
+        if (!rdConfig) return [] as { company: string; key: string; label: string }[];
+        const q = rdSearch.trim().normalize('NFC').toLowerCase().replace(/\s+/g, '');
+        return Object.keys(rdConfig).sort().flatMap(company =>
+            Object.entries(rdConfig[company]?.products || {}).map(([key, p]: [string, any]) => ({ company, key, label: p?.orderFormName || p?.displayName || key })))
+            .filter(x => !q || `${x.company}${x.label}${x.key}`.normalize('NFC').toLowerCase().replace(/\s+/g, '').includes(q));
+    }, [rdConfig, rdSearch]);
+    const saveRedirect = () => {
+        if (!redirectEdit || !rdBiz || !rdSel || !rdConfig) return;
+        const p = rdConfig[rdSel.company]?.products?.[rdSel.key] as any;
+        const redirect: RegularRedirect = {
+            businessId: rdBiz, companyName: rdSel.company, productKey: rdSel.key,
+            productName: p?.orderFormName || p?.displayName || rdSel.key,
+            qty: Math.max(1, parseInt(rdQty, 10) || 1),
+            ...(rdKeyword.trim() ? { keyword: rdKeyword.trim() } : {}),
+        };
+        persist(customers.map(c => c.id === redirectEdit.id ? { ...c, redirect } : c));
+        setRedirectEdit(null);
+    };
+    const clearRedirect = () => {
+        if (!redirectEdit) return;
+        persist(customers.map(c => {
+            if (c.id !== redirectEdit.id) return c;
+            const { redirect: _drop, ...rest } = c;
+            return rest;
+        }));
+        setRedirectEdit(null);
+    };
 
     // 새로 발견된 단골 주문이 있으면 알림
     useEffect(() => {
@@ -279,9 +407,13 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
                                                 {svc > 0 && <span className="text-[8px] font-black text-emerald-300 bg-emerald-500/15 px-1 rounded">서비스 {svc}건</span>}
                                                 {c.memo && <span className="text-[9px] text-zinc-500 truncate">{c.memo}</span>}
                                             </div>
+                                            {c.redirect && (
+                                                <div className="text-[9px] font-bold text-sky-300 truncate">↪ {bizName(c.redirect.businessId)} · {c.redirect.companyName} {c.redirect.productName} x{c.redirect.qty}{c.redirect.keyword ? ` ('${c.redirect.keyword}' 주문만)` : ''}</div>
+                                            )}
                                             <div className="text-[9px] text-zinc-500 truncate" title={c.address}>{c.address}{c.phone ? ` · ${c.phone}` : ''}</div>
                                         </div>
                                         <button type="button" title="서비스 추가" onClick={() => openService({ customerId: c.id, recipientName: c.name, phone: c.phone || '', address: c.address })} className="px-1.5 py-0.5 rounded-md text-[9px] font-black text-amber-300 border border-amber-500/40 hover:bg-amber-500 hover:text-white transition-all whitespace-nowrap">서비스</button>
+                                        <button type="button" title="다른 사업자에서 주문하면 이 사업자·품목으로 대신 보내기" onClick={() => openRedirect(c)} className={`px-1.5 py-0.5 rounded-md text-[9px] font-black border transition-all whitespace-nowrap ${c.redirect ? 'text-white bg-sky-600 border-sky-500' : 'text-sky-300 border-sky-500/40 hover:bg-sky-600 hover:text-white'}`}>대신</button>
                                         <button type="button" onClick={() => startEdit(c)} className="text-amber-500 hover:text-amber-300 transition-colors"><PencilIcon className="w-3 h-3" /></button>
                                         <button type="button" onClick={() => remove(c)} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>
                                     </div>
@@ -310,6 +442,17 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
                                             <button type="button" onClick={() => openService({ customerId: m.customer.id, recipientName: m.recipientName, phone: m.phone, address: m.address })} className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-white text-[11px] font-black transition-all">서비스 추가</button>
                                         </div>
                                         {m.customer.memo && <div className="text-[10px] text-amber-200/70 mt-1">메모: {m.customer.memo}</div>}
+                                        {(() => {
+                                            const plan = redirectByKey.get(m.key);
+                                            if (!plan) return null;
+                                            const st = redirectStatus[plan.redirectKey];
+                                            return (
+                                                <div className="mt-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-200">
+                                                    ↪ 이 사업자 발주서에서 빼고 <b>{bizName(plan.redirect.businessId)}</b> {plan.redirect.companyName} {plan.redirect.productName} x{plan.qty}로 대신 보냄
+                                                    <span className={`ml-1 ${st === 'error' ? 'text-rose-400' : 'text-sky-400'}`}>{st === 'error' ? '(넘기기 실패)' : st === 'done' ? '(수동발주에 넣음)' : '(넣는 중…)'}</span>
+                                                </div>
+                                            );
+                                        })()}
                                         <div className="text-[10px] text-zinc-500 mt-1">{m.address}{m.orderNumber ? ` · 주문번호 ${m.orderNumber}` : ''}</div>
                                         <div className="mt-1.5 flex flex-col gap-0.5">
                                             {m.products.map((p, i) => <div key={i} className="text-[11px] text-zinc-300">· {p.name} <span className="text-zinc-500">x{p.qty}</span></div>)}
@@ -372,6 +515,46 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
                                 서비스 추가{selectedEntries.length > 0 ? ` (${selectedEntries.length}건)` : ''}
                             </button>
                             <button type="button" onClick={() => setServiceTarget(null)} className="px-4 text-zinc-400 hover:text-zinc-200 text-xs font-black">취소</button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {redirectEdit && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.65)' }} onClick={() => setRedirectEdit(null)}>
+                    <div className="w-full max-w-md bg-zinc-950 border border-sky-700/60 rounded-2xl p-5 shadow-2xl max-h-[90vh] flex flex-col gap-2" onClick={e => e.stopPropagation()}>
+                        <div className="text-white font-black text-base">대신 보내기 — {redirectEdit.name}</div>
+                        <div className="text-zinc-500 text-[11px]">이 단골이 <b>다른 사업자</b>에서 주문하면, 그 발주서에서 빼고 아래 사업자의 수동발주에 넣습니다.</div>
+                        <select value={rdBiz} onChange={e => { setRdBiz(e.target.value); setRdSel(null); }} className={inputCls}>
+                            <option value="">보낼 사업자 선택</option>
+                            {businesses.map(b => <option key={b.id} value={b.id}>{b.displayName}</option>)}
+                        </select>
+                        {rdBiz && (
+                            <>
+                                <input placeholder="업체/품목 검색 (예: 나리찬)" value={rdSearch} onChange={e => setRdSearch(e.target.value)} className={inputCls} />
+                                <div className="flex-1 overflow-y-auto min-h-[160px] max-h-[40vh] flex flex-col gap-1 rounded-xl border border-zinc-800 bg-zinc-900 p-1.5">
+                                    {!rdConfig && <div className="text-zinc-600 text-xs p-2">불러오는 중…</div>}
+                                    {rdConfig && rdProducts.length === 0 && <div className="text-zinc-600 text-xs p-2">품목이 없습니다.</div>}
+                                    {rdProducts.map(x => {
+                                        const on = rdSel?.company === x.company && rdSel?.key === x.key;
+                                        return (
+                                            <button type="button" key={`${x.company}\u0000${x.key}`} onClick={() => setRdSel({ company: x.company, key: x.key })} className={`text-left px-2 py-1 rounded-lg text-[11px] font-bold ${on ? 'bg-sky-600 text-white' : 'text-zinc-300 hover:bg-zinc-800'}`}>
+                                                <span className={on ? 'text-sky-100' : 'text-sky-400'}>{x.company}</span> · {x.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        )}
+                        <div className="flex gap-2">
+                            <input type="number" min={1} value={rdQty} onChange={e => setRdQty(e.target.value)} title="주문 1개당 보낼 수량" className={`${inputCls} w-20`} />
+                            <input placeholder="이 말이 든 주문만 (예: 김치, 비우면 전부)" value={rdKeyword} onChange={e => setRdKeyword(e.target.value)} className={`${inputCls} flex-1`} />
+                        </div>
+                        <div className="flex gap-2 mt-1">
+                            <button type="button" disabled={!rdBiz || !rdSel || !rdConfig} onClick={saveRedirect} className="flex-1 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-white text-xs font-black transition-all">저장</button>
+                            {redirectEdit.redirect && <button type="button" onClick={clearRedirect} className="px-3 text-rose-400 hover:text-rose-300 text-xs font-black">해제</button>}
+                            <button type="button" onClick={() => setRedirectEdit(null)} className="px-3 text-zinc-400 hover:text-zinc-200 text-xs font-black">취소</button>
                         </div>
                     </div>
                 </div>,
