@@ -318,9 +318,9 @@
     }
     const allBtn = await waitFor(() => findButton('전체주문 엑셀다운로드'), 15000);
     if (!allBtn) throw new Error("'전체주문 엑셀다운로드' 버튼을 못 찾음");
-    // 기본 기간에는 오늘 주문이 빠질 수 있어서 '지난일주일'로 넓혀 다시 검색 (주문번호로 맞추니 더 많아도 됨)
+    // 기본 기간에는 오늘 주문이 빠질 수 있어서 '오늘'로 바꿔 다시 검색
     const period = [...document.querySelectorAll('button, a, label, span, li')]
-      .find((el) => visible(el) && !box.contains(el) && text(el) === '지난일주일' && el.children.length === 0);
+      .find((el) => visible(el) && !box.contains(el) && text(el) === '오늘' && el.children.length === 0);
     const searchBtn = findButton('검색하기');
     if (period && searchBtn) {
       period.click();
@@ -329,9 +329,9 @@
       searchBtn.click();
       await sleep(1500);
       const range = document.body.innerText.match(/\d{4}-\d{2}-\d{2}\s*~\s*\d{4}-\d{2}-\d{2}/);
-      L(`기간: 지난일주일 ${range ? range[0] : ''}`);
+      L(`기간: 오늘 ${range ? range[0] : ''}`);
     } else {
-      L(`기간 바꾸기 못 함 (지난일주일 ${!!period}, 검색하기 ${!!searchBtn}) — 기본 기간으로 받음`);
+      L(`기간 바꾸기 못 함 (오늘 ${!!period}, 검색하기 ${!!searchBtn}) — 기본 기간으로 받음`);
     }
     // 목록이 다 뜰 때까지 (맨 아래 '1 - 13 / 13건' 또는 빈 목록)
     const count = await waitFor(() => {
