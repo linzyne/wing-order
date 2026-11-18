@@ -409,10 +409,12 @@
     const upload = responses.filter((r) => /\/update\/upload/.test(r.url)).map((r) => { try { return JSON.parse(r.body); } catch (e) { return null; } }).find(Array.isArray);
     if (upload) {
       L(`[등록 결과 전체] ${JSON.stringify(upload)}`);
-      const bad = upload.filter((o) => !o.success);
-      const okN = upload.length - bad.length;
       const why = (o) => o.errorMessage || o.errorKey || (o.splitItems || []).map((s) => s.errorMessage || s.errorKey || (s.failedItemId ? `옵션 ${s.failedItemId} 실패` : '')).find(Boolean) || '사유 없음';
-      const summary = `윙 등록 성공 ${okN}건 · 실패 ${bad.length}건`;
+      // INVALID_STATUS = 상품준비중이 아닌 주문(이미 송장 들어감·취소) — 실패로 세지 않고 따로 알린다
+      const already = upload.filter((o) => !o.success && why(o) === 'INVALID_STATUS');
+      const bad = upload.filter((o) => !o.success && why(o) !== 'INVALID_STATUS');
+      const okN = upload.length - bad.length - already.length;
+      const summary = `윙 등록 성공 ${okN}건${already.length ? ` · 이미 송장 입력(또는 취소)돼 건너뜀 ${already.length}건` : ''}${bad.length ? ` · 실패 ${bad.length}건` : ''}`;
       if (bad.length) throw new Error(`${summary} — ${bad.slice(0, 5).map((o) => `${o.orderId} ${why(o)}`).join(', ')}${bad.length > 5 ? ' …' : ''}`);
       await sleep(2000);
       const left = await readReadyAfterUpload();
