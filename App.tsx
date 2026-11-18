@@ -1811,7 +1811,7 @@ const App: React.FC = () => {
                                 {lotteAllBusy ? '전체 롯데 예약 중… (차례로)' : '전체 롯데 예약'}
                               </button>
                               {allBusinesses.map(b => {
-                                const count = perBusinessFakeInput[b.id]?.split('\n').filter(Boolean).length ?? 0;
+                                const count = courierFakeLineCount(perBusinessFakeInput[b.id]);
                                 const st = lotteStatus[b.id];
                                 if (count === 0 && !st) return null;
                                 return (
