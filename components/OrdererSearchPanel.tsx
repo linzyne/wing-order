@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { DailySales, PricingConfig } from '../types';
-import { loadAllSalesHistory, loadRecentSalesForSearch, loadPricingConfig } from '../services/firestoreService';
+import { loadAllOrderSearch, loadRecentSalesForSearch, loadPricingConfig } from '../services/firestoreService';
 import { resolveOrderRowFields, normalizeForSearch } from './CsEntryModal';
 
 interface Props {
@@ -45,7 +45,7 @@ const OrdererSearchPanel: React.FC<Props> = ({ businesses, active, onClose }) =>
       await Promise.all(
         businesses.map(async (biz) => {
           const [history, pricing] = await Promise.all([
-            (all ? loadAllSalesHistory(biz.id) : loadRecentSalesForSearch(biz.id, 45)).catch(() => [] as DailySales[]),
+            (all ? loadAllOrderSearch(biz.id) : loadRecentSalesForSearch(biz.id, 45)).catch(() => [] as DailySales[]),
             loadPricingConfig(biz.id).then(r => r.config).catch(() => null as PricingConfig | null),
           ]);
           history.forEach((d) => {

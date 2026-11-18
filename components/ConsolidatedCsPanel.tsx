@@ -88,9 +88,9 @@ const OrderDetailModal: React.FC<{ item: OpenCsItem; onClose: () => void }> = ({
     let cancelled = false;
     (async () => {
       setLoading(true);
-      const { loadAllSalesHistory, loadPricingConfig } = await import('../services/firestoreService');
+      const { loadAllOrderSearch, loadPricingConfig } = await import('../services/firestoreService');
       const [history, configResult] = await Promise.all([
-        loadAllSalesHistory(item.businessId),
+        loadAllOrderSearch(item.businessId),
         loadPricingConfig(item.businessId),
       ]);
       if (cancelled) return;
@@ -217,9 +217,9 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     setLoadingBusinessData(true);
     if (!searchAllHistory) { setSearch(''); setManualCompany(''); }
     (async () => {
-      const { loadAllSalesHistory, loadRecentSalesForSearch, loadPricingConfig } = await import('../services/firestoreService');
+      const { loadAllOrderSearch, loadRecentSalesForSearch, loadPricingConfig } = await import('../services/firestoreService');
       const [history, configResult] = await Promise.all([
-        searchAllHistory ? loadAllSalesHistory(selectedBusinessId) : loadRecentSalesForSearch(selectedBusinessId, 45),
+        searchAllHistory ? loadAllOrderSearch(selectedBusinessId) : loadRecentSalesForSearch(selectedBusinessId, 45),
         loadPricingConfig(selectedBusinessId),
       ]);
       if (cancelled) return;

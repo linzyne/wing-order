@@ -1242,13 +1242,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (reshipIds.length === 0) return;
         setSessionAdjustments(prev => prev.filter(a => !a.id.startsWith('cs-reship-')));
         (async () => {
-            const { loadDailySales, upsertDailySales, CS_SAVED_EVENT } = await import('../services/firestoreService');
+            const { updateCsRecords, CS_SAVED_EVENT } = await import('../services/firestoreService');
             const date = workDate || new Date().toLocaleDateString('en-CA');
-            const existing = await loadDailySales(date, businessId);
-            if (!existing?.csRecords) return;
             const idSet = new Set(reshipIds);
-            const updated = existing.csRecords.map(r => idSet.has(r.id) ? { ...r, pending: true, poAdded: false } : r);
-            await upsertDailySales({ ...existing, csRecords: updated }, businessId);
+            const ok = await updateCsRecords(date, businessId, records => records.map(r => idSet.has(r.id) ? { ...r, pending: true, poAdded: false } : r));
+            if (!ok) return;
             window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
         })();
     };

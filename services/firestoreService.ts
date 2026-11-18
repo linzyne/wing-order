@@ -2,7 +2,7 @@ import { db } from '../firebase';
 import {
   doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, orderBy, where, getDocs,
-  onSnapshot, getDocFromServer, getDocFromCache, Timestamp, deleteField, writeBatch, arrayUnion, arrayRemove,
+  onSnapshot, getDocFromServer, getDocFromCache, Timestamp, deleteField, writeBatch,
   type Unsubscribe
 } from 'firebase/firestore';
 import { isCsFullyCompleted } from '../types';
@@ -233,81 +233,66 @@ const invalidateSalesHistoryCache = (businessId?: string): void => {
   csHistoryCache.delete(getSalesCollectionName(businessId));
 };
 
-// ===== CS 전용 조회 =====
-// 통합CS접수/대기CS는 csRecords만 필요한데, 전체 매출 문서(발주·송장 행 포함)를 다 받으면 너무 느리다.
-// upsertDailySales가 문서에 hasCs / hasOpenCs 플래그를 같이 써두고, 미완료·대기 CS가 있는 날짜 문서만 쿼리한다.
-// (hasCs만 쓰면 완료된 CS가 쌓일수록 읽는 문서가 계속 늘어나서 다시 느려짐)
-// 플래그가 생기기 전 문서는 사업자별 1회 스캔으로 플래그를 채운 뒤 config에 완료 표시를 남긴다.
-// 단, where 쿼리는 브라우저 로컬 캐시(IndexedDB)에 쌓인 매출 문서 전체를 훑어서 사파리에서 매우 느리다.
-// 그래서 미완료 CS가 있는 날짜 목록을 config/openCsDates_{컬렉션} 작은 문서에 따로 두고, 그 날짜 문서만 키로 바로 읽는다.
+// ===== CS 전용 저장소 =====
+// CS 기록은 매출 문서(발주·송장 행 등 수십KB)와 따로 csHistory[_사업자]/{날짜} 작은 문서에 둔다.
+// 예전엔 CS 몇 줄을 보려고 매출 문서를 통째로 받아서 대기·접수 목록과 저장이 느렸다.
+// 문서: { date, records: CsRecord[], hasOpen } — hasOpen은 미완료·대기 CS가 하나라도 있으면 true
+type CsRecords = NonNullable<DailySales['csRecords']>;
+type ReturnRecords = NonNullable<DailySales['returnRecords']>;
 const csHistoryCache = new Map<string, { at: number; promise: Promise<DailySales[]> }>();
+const getCsCollectionName = (businessId?: string): string =>
+  getSalesCollectionName(businessId).replace(/^salesHistory/, 'csHistory');
 const getCsIndexMarkerDocId = (businessId?: string): string => `csIndex_v1_${getSalesCollectionName(businessId)}`;
-const getOpenCsIndexMarkerDocId = (businessId?: string): string => `csIndex_v2_${getSalesCollectionName(businessId)}`;
-const getOpenCsDatesRef = (businessId?: string) => doc(db, 'config', `openCsDates_${getSalesCollectionName(businessId)}`);
 
 const hasOpenCsRecords = (d: DailySales): boolean =>
   (d.csRecords || []).some(r => r.pending || !isCsFullyCompleted(r));
 
-const commitCsFlags = async (businessId: string | undefined, targets: DailySales[], fields: (d: DailySales) => Record<string, boolean>): Promise<void> => {
-  for (let i = 0; i < targets.length; i += 400) {
-    const batch = writeBatch(db);
-    targets.slice(i, i + 400).forEach(d => {
-      batch.update(doc(db, getSalesCollectionName(businessId), d.date), fields(d));
-    });
-    await batch.commit();
+const csDocFields = (date: string, records: CsRecords) => ({
+  date,
+  records,
+  hasOpen: hasOpenCsRecords({ csRecords: records } as DailySales),
+});
+
+// 매출 문서에 들어 있던 CS를 사업자별로 1회 csHistory로 옮긴다.
+// 옮기기 전엔 CS 읽기·쓰기와 매출 문서 저장을 기다리게 해서(upsertDailySales는 csRecords를 빼고 덮어씀)
+// 옮기기 전에 CS가 지워지는 일이 없게 한다. 매출 문서의 옛 csRecords는 남겨두지만 더는 읽지 않는다.
+const csSplitReady = new Map<string, Promise<void>>();
+const ensureCsSplit = (businessId?: string): Promise<void> => {
+  const key = getSalesCollectionName(businessId);
+  let ready = csSplitReady.get(key);
+  if (!ready) {
+    ready = (async () => {
+      const markerRef = doc(db, 'config', `csSplit_v1_${key}`);
+      if ((await getDoc(markerRef)).exists()) return;
+      // hasCs 플래그가 다 채워진 사업자는 CS 있는 문서만, 아니면 전체를 훑는다
+      const flagged = (await getDoc(doc(db, 'config', getCsIndexMarkerDocId(businessId)))).exists();
+      const snapshot = await getDocs(flagged ? query(collection(db, key), where('hasCs', '==', true)) : collection(db, key));
+      const withCs = snapshot.docs
+        .map(d => ({ date: d.id, records: (d.data().csRecords || []) as CsRecords }))
+        .filter(d => d.records.length > 0);
+      for (let i = 0; i < withCs.length; i += 400) {
+        const batch = writeBatch(db);
+        withCs.slice(i, i + 400).forEach(d => batch.set(doc(db, getCsCollectionName(businessId), d.date), csDocFields(d.date, d.records)));
+        await batch.commit();
+      }
+      await setDoc(markerRef, { doneAt: Timestamp.now(), count: withCs.length });
+    })();
+    csSplitReady.set(key, ready);
+    ready.catch(() => csSplitReady.delete(key));
   }
+  return ready;
 };
 
-const backfillCsFlags = async (businessId?: string): Promise<void> => {
-  const v2Ref = doc(db, 'config', getOpenCsIndexMarkerDocId(businessId));
-  if ((await getDoc(v2Ref)).exists()) return;
-  const v1Ref = doc(db, 'config', getCsIndexMarkerDocId(businessId));
-  let csDocs: DailySales[];
-  if ((await getDoc(v1Ref)).exists()) {
-    // hasCs 플래그는 이미 채워져 있으니 CS 있는 문서만 읽어서 hasOpenCs를 채운다
-    const snapshot = await getDocs(query(collection(db, getSalesCollectionName(businessId)), where('hasCs', '==', true)));
-    csDocs = snapshot.docs.map(d => deserializeDailySales({ ...d.data() }));
-  } else {
-    const history = await loadAllSalesHistory(businessId);
-    csDocs = history.filter(d => (d.csRecords?.length ?? 0) > 0);
-  }
-  await commitCsFlags(businessId, csDocs, d => ({ hasCs: true, hasOpenCs: hasOpenCsRecords(d) }));
-  await setDoc(v1Ref, { doneAt: Timestamp.now(), count: csDocs.length });
-  await setDoc(v2Ref, { doneAt: Timestamp.now(), count: csDocs.filter(hasOpenCsRecords).length });
-};
-
-// 날짜 목록이 아직 완성 안 됐으면(처음 1회) 플래그 쿼리로 채운다.
-// upsertDailySales가 먼저 문서를 만들 수 있으므로 문서 존재가 아니라 built 표시로 완성 여부를 판단한다.
-const ensureOpenCsDates = async (businessId?: string): Promise<string[]> => {
-  const ref = getOpenCsDatesRef(businessId);
-  const existing = await getDoc(ref);
-  if (existing.exists() && existing.data().built) return (existing.data().dates || []) as string[];
-  await backfillCsFlags(businessId);
-  const snapshot = await getDocs(query(collection(db, getSalesCollectionName(businessId)), where('hasOpenCs', '==', true)));
-  const dates = snapshot.docs.map(d => d.id);
-  // 그사이 upsertDailySales가 넣은 날짜를 덮어쓰지 않도록 arrayUnion으로 합친다
-  await setDoc(ref, { dates: arrayUnion(...dates), built: true }, { merge: true });
-  return Array.from(new Set([...dates, ...((existing.data()?.dates || []) as string[])]));
-};
-
-// 미완료(접수 중) 또는 대기저장 CS가 하나라도 있는 날짜 문서만 반환한다
+// 미완료(접수 중) 또는 대기저장 CS가 하나라도 있는 날짜만 { date, csRecords }로 반환한다
 export const loadOpenCsHistory = async (businessId?: string): Promise<DailySales[]> => {
   const key = getSalesCollectionName(businessId);
   const cached = csHistoryCache.get(key);
   if (cached && Date.now() - cached.at < SALES_HISTORY_TTL_MS) return cached.promise;
   const promise = (async () => {
-    let dates: string[];
-    try {
-      dates = await ensureOpenCsDates(businessId);
-    } catch (e) {
-      // 날짜 목록 준비에 실패하면 이번엔 예전처럼 전체 문서에서 CS만 걸러 쓴다 (다음에 다시 시도)
-      console.warn('[CS] 미완료 CS 날짜 목록 준비 실패, 전체 조회로 대체', e);
-      const history = await loadAllSalesHistory(businessId);
-      return history.filter(hasOpenCsRecords);
-    }
-    const docs = await Promise.all(dates.map(date => loadDailySales(date, businessId)));
-    return docs
-      .filter((d): d is DailySales => !!d && hasOpenCsRecords(d))
+    await ensureCsSplit(businessId);
+    const snapshot = await getDocs(query(collection(db, getCsCollectionName(businessId)), where('hasOpen', '==', true)));
+    return snapshot.docs
+      .map(d => ({ date: d.id, csRecords: (d.data().records || []) as CsRecords } as DailySales))
       .sort((a, b) => b.date.localeCompare(a.date));
   })();
   csHistoryCache.set(key, { at: Date.now(), promise });
@@ -377,9 +362,12 @@ export const upsertDailySales = async (
   dailySales: DailySales,
   businessId?: string
 ): Promise<void> => {
+  // CS는 csHistory에 따로 있다. 옮기기 전에 덮어써서 매출 문서의 CS가 사라지지 않게 먼저 옮긴다
+  await ensureCsSplit(businessId);
   const docRef = doc(db, getSalesCollectionName(businessId), dailySales.date);
   // Firestore는 중첩 배열을 지원하지 않으므로 JSON 문자열로 직렬화
   const serialized: any = { ...dailySales };
+  delete serialized.csRecords;
   if (serialized.orderRows) serialized.orderRows = JSON.stringify(serialized.orderRows);
   if (serialized.invoiceRows) serialized.invoiceRows = JSON.stringify(serialized.invoiceRows);
   if (serialized.companyOrderRows) {
@@ -392,96 +380,67 @@ export const upsertDailySales = async (
       Object.entries(serialized.companyInvoiceRows).map(([k, v]) => [k, JSON.stringify(v)])
     );
   }
-  // CS 전용 조회(loadOpenCsHistory)용 플래그 — 미완료·대기 CS가 있는 날짜 문서만 골라 읽기 위함
-  serialized.hasCs = (dailySales.csRecords?.length ?? 0) > 0;
-  serialized.hasOpenCs = hasOpenCsRecords(dailySales);
   // Firestore는 undefined 값을 허용하지 않으므로 제거
   Object.keys(serialized).forEach(key => {
     if (serialized[key] === undefined) delete serialized[key];
   });
-  // 매출 문서와 미완료 CS 날짜 목록을 함께 저장 (통합CS접수가 이 목록만 보고 날짜 문서를 읽음)
+  // 매출 문서와 주문 검색 색인을 함께 저장
   const batch = writeBatch(db);
   batch.set(docRef, serialized);
-  batch.set(getOpenCsDatesRef(businessId), {
-    dates: serialized.hasOpenCs ? arrayUnion(dailySales.date) : arrayRemove(dailySales.date),
-  }, { merge: true });
+  batch.set(doc(db, getOrderSearchCollectionName(businessId), dailySales.date), orderSearchFields(dailySales));
   await batch.commit();
   invalidateSalesHistoryCache(businessId);
 };
 
-// CS 기록만 고쳐 쓰기 — 매출 문서 전체(발주행 등 수백KB)를 다시 쓰지 않고 csRecords·플래그만 갱신한다.
-// 같은 날짜 문서에 연달아 누를 때 읽기-수정-쓰기가 서로 덮어쓰지 않도록 문서별로 순서대로 실행.
+// CS·반품기록 저장 — CS는 csHistory 작은 문서만 고쳐 쓴다. 반품기록은 업무일지 마진에 들어가서 매출 문서에 있으므로
+// mutateReturns를 줄 때(반품을 넣거나 뺄 때)만 매출 문서를 읽고 고친다.
+// 같은 날짜에 연달아 눌러도 읽기-수정-쓰기가 서로 덮어쓰지 않도록 날짜별로 순서대로 실행.
 const csWriteChains = new Map<string, Promise<unknown>>();
-export const updateCsRecords = (
-  date: string,
-  businessId: string | undefined,
-  mutate: (records: NonNullable<DailySales['csRecords']>) => NonNullable<DailySales['csRecords']> | null
-): Promise<boolean> => {
-  const key = `${getSalesCollectionName(businessId)}/${date}`;
-  const run = async (): Promise<boolean> => {
-    const docRef = doc(db, getSalesCollectionName(businessId), date);
-    const snapshot = await getDoc(docRef);
-    if (!snapshot.exists()) return false;
-    const current = (snapshot.data().csRecords || []) as NonNullable<DailySales['csRecords']>;
-    const next = mutate(current);
-    if (!next) return false;
-    const hasOpenCs = hasOpenCsRecords({ csRecords: next } as DailySales);
-    const batch = writeBatch(db);
-    batch.update(docRef, { csRecords: next, hasCs: next.length > 0, hasOpenCs });
-    batch.set(getOpenCsDatesRef(businessId), {
-      dates: hasOpenCs ? arrayUnion(date) : arrayRemove(date),
-    }, { merge: true });
-    await batch.commit();
-    invalidateSalesHistoryCache(businessId);
-    return true;
-  };
-  const prev = csWriteChains.get(key) || Promise.resolve();
-  const result = prev.catch(() => {}).then(run);
-  csWriteChains.set(key, result);
-  result.finally(() => { if (csWriteChains.get(key) === result) csWriteChains.delete(key); }).catch(() => {});
-  return result;
-};
-
-// CS 접수·수정·삭제용 — csRecords·returnRecords·플래그만 고쳐 쓴다.
-// 예전엔 upsertDailySales로 매출 문서 전체(발주행 JSON 수백KB)를 다시 써서 저장에 20초씩 걸렸다.
-// updateCsRecords와 같은 줄에 세워 같은 날짜 문서에 연달아 써도 서로 덮어쓰지 않게 한다.
-type CsReturnState = { csRecords: NonNullable<DailySales['csRecords']>; returnRecords: NonNullable<DailySales['returnRecords']> };
 export const saveCsAndReturns = (
   date: string,
   businessId: string | undefined,
-  mutate: (current: CsReturnState) => CsReturnState | null
+  mutateCs: ((records: CsRecords) => CsRecords | null) | null,
+  mutateReturns?: ((records: ReturnRecords) => ReturnRecords) | null
 ): Promise<boolean> => {
   const key = `${getSalesCollectionName(businessId)}/${date}`;
   const run = async (): Promise<boolean> => {
-    const docRef = doc(db, getSalesCollectionName(businessId), date);
-    const snapshot = await getDoc(docRef);
-    const data = snapshot.exists() ? snapshot.data() : null;
-    const next = mutate({ csRecords: data?.csRecords || [], returnRecords: data?.returnRecords || [] });
-    if (!next) return false;
-    const returnTotal = next.returnRecords.reduce((s, r) => s + r.totalMargin, 0);
-    const hasOpenCs = hasOpenCsRecords({ csRecords: next.csRecords } as DailySales);
-    const fields: any = {
-      csRecords: next.csRecords,
-      returnRecords: next.returnRecords.length > 0 ? next.returnRecords : deleteField(),
-      returnTotal: returnTotal || deleteField(),
-      hasCs: next.csRecords.length > 0,
-      hasOpenCs,
-    };
+    await ensureCsSplit(businessId);
     const batch = writeBatch(db);
-    if (data) {
-      batch.update(docRef, fields);
-    } else {
-      // 그날 매출 문서가 아직 없으면 빈 문서로 만든다 (deleteField는 새 문서에 못 씀)
-      const created: any = { date, records: [], totalAmount: 0, savedAt: new Date().toISOString(), csRecords: next.csRecords, hasCs: fields.hasCs, hasOpenCs };
-      if (next.returnRecords.length > 0) created.returnRecords = next.returnRecords;
-      if (returnTotal) created.returnTotal = returnTotal;
-      batch.set(docRef, created);
+    let changed = false;
+    if (mutateCs) {
+      const csRef = doc(db, getCsCollectionName(businessId), date);
+      const snapshot = await getDoc(csRef);
+      const next = mutateCs(snapshot.exists() ? (snapshot.data().records || []) as CsRecords : []);
+      if (!next) return false;
+      if (next.length > 0) { batch.set(csRef, csDocFields(date, next)); changed = true; }
+      else if (snapshot.exists()) { batch.delete(csRef); changed = true; }
     }
-    batch.set(getOpenCsDatesRef(businessId), {
-      dates: hasOpenCs ? arrayUnion(date) : arrayRemove(date),
-    }, { merge: true });
-    await batch.commit();
-    invalidateSalesHistoryCache(businessId);
+    if (mutateReturns) {
+      const salesRef = doc(db, getSalesCollectionName(businessId), date);
+      const snapshot = await getDoc(salesRef);
+      const data = snapshot.exists() ? snapshot.data() : null;
+      const current = (data?.returnRecords || []) as ReturnRecords;
+      const next = mutateReturns(current);
+      if (JSON.stringify(next) !== JSON.stringify(current)) {
+        const returnTotal = next.reduce((s, r) => s + r.totalMargin, 0);
+        if (data) {
+          batch.update(salesRef, {
+            returnRecords: next.length > 0 ? next : deleteField(),
+            returnTotal: returnTotal || deleteField(),
+          });
+        } else {
+          // 그날 매출 문서가 아직 없으면 빈 문서로 만든다 (deleteField는 새 문서에 못 씀)
+          const created: any = { date, records: [], totalAmount: 0, savedAt: new Date().toISOString(), returnRecords: next };
+          if (returnTotal) created.returnTotal = returnTotal;
+          batch.set(salesRef, created);
+        }
+        changed = true;
+      }
+    }
+    if (changed) {
+      await batch.commit();
+      invalidateSalesHistoryCache(businessId);
+    }
     return true;
   };
   const prev = csWriteChains.get(key) || Promise.resolve();
@@ -491,29 +450,80 @@ export const saveCsAndReturns = (
   return result;
 };
 
-// 주문자 검색용 — 최근 며칠 매출 문서만 날짜 키로 바로 읽는다.
-// 전체 이력(loadAllSalesHistory)은 사업자마다 문서 수백 개라 검색창이 한참 걸렸다.
+// CS 기록만 고쳐 쓰기 (상태 변경 등). 그날 CS가 없으면 false
+export const updateCsRecords = (
+  date: string,
+  businessId: string | undefined,
+  mutate: (records: CsRecords) => CsRecords | null
+): Promise<boolean> => saveCsAndReturns(date, businessId, records => (records.length > 0 ? mutate(records) : null));
+
+// ===== 주문 검색 색인 =====
+// CS 접수·주문자 검색은 발주행·주문번호·수취인·가구매만 필요하다. 매출 문서(송장행·시간대 집계 등 포함)의 1/6 정도라
+// orderSearch[_사업자]/{날짜}에 따로 두고 upsertDailySales가 같이 쓴다.
+// 색인이 생기기 전 날짜는 처음 볼 때 매출 문서로 만들어 둔다. 매출이 없는 날은 빈 색인(empty)을 남겨 다시 묻지 않는다.
+const getOrderSearchCollectionName = (businessId?: string): string =>
+  getSalesCollectionName(businessId).replace(/^salesHistory/, 'orderSearch');
+
+const orderSearchFields = (d: DailySales): Record<string, unknown> => {
+  const fields: Record<string, unknown> = { date: d.date };
+  if (d.companyOrderRows) {
+    fields.companyOrderRows = Object.fromEntries(Object.entries(d.companyOrderRows).map(([k, v]) => [k, JSON.stringify(v)]));
+  } else if (d.orderRows) {
+    fields.orderRows = JSON.stringify(d.orderRows);
+  }
+  if (d.companyOrderNumbers) fields.companyOrderNumbers = d.companyOrderNumbers;
+  if (d.companyRecipientNames) fields.companyRecipientNames = d.companyRecipientNames;
+  if (d.fakeOrderRecords?.length) fields.fakeOrderRecords = d.fakeOrderRecords;
+  return fields;
+};
+
+const loadOrderSearchDoc = async (businessId: string | undefined, date: string, useCache: boolean): Promise<DailySales | null> => {
+  const ref = doc(db, getOrderSearchCollectionName(businessId), date);
+  let data: any = null;
+  if (useCache) {
+    try {
+      const cached = await getDocFromCache(ref);
+      if (cached.exists()) data = cached.data();
+    } catch { /* 캐시에 없음 → 서버 */ }
+  }
+  if (!data) {
+    const snap = await getDoc(ref);
+    if (snap.exists()) data = snap.data();
+  }
+  if (data) return data.empty ? null : deserializeDailySales({ ...data });
+  const sales = await loadDailySales(date, businessId);
+  await setDoc(ref, sales ? orderSearchFields(sales) : { date, empty: true });
+  return sales || null;
+};
+
+// 주문자 검색·CS 접수용 — 최근 며칠 색인만 날짜 키로 바로 읽는다.
 // 이틀 넘게 지난 날짜의 발주행은 바뀌지 않으므로 브라우저 캐시에 있으면 서버에 안 묻는다.
 export const loadRecentSalesForSearch = async (businessId: string | undefined, days: number): Promise<DailySales[]> => {
-  const col = getSalesCollectionName(businessId);
   const now = new Date();
   const dates: string[] = [];
   for (let i = 0; i < days; i++) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
     dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
   }
-  const docs = await Promise.all(dates.map(async (date, i) => {
-    const ref = doc(db, col, date);
-    if (i >= 2) {
-      try {
-        const cached = await getDocFromCache(ref);
-        if (cached.exists()) return deserializeDailySales({ ...cached.data() });
-      } catch { /* 캐시에 없음 → 서버 */ }
-    }
-    const snap = await getDoc(ref);
-    return snap.exists() ? deserializeDailySales({ ...snap.data() }) : null;
-  }));
+  const docs = await Promise.all(dates.map((date, i) => loadOrderSearchDoc(businessId, date, i >= 2)));
   return docs.filter((d): d is DailySales => !!d);
+};
+
+// 전체 기간 주문 검색 — 처음 1회는 매출 문서 전체로 색인을 다 만들고, 그다음부터는 색인만 읽는다
+export const loadAllOrderSearch = async (businessId?: string): Promise<DailySales[]> => {
+  const markerRef = doc(db, 'config', `orderSearch_v1_${getSalesCollectionName(businessId)}`);
+  if (!(await getDoc(markerRef)).exists()) {
+    const history = await loadAllSalesHistory(businessId, { fresh: true });
+    for (let i = 0; i < history.length; i += 400) {
+      const batch = writeBatch(db);
+      history.slice(i, i + 400).forEach(d => batch.set(doc(db, getOrderSearchCollectionName(businessId), d.date), orderSearchFields(d)));
+      await batch.commit();
+    }
+    await setDoc(markerRef, { doneAt: Timestamp.now(), count: history.length });
+    return history;
+  }
+  const snapshot = await getDocs(query(collection(db, getOrderSearchCollectionName(businessId)), orderBy('date', 'desc')));
+  return snapshot.docs.filter(d => !d.data().empty).map(d => deserializeDailySales({ ...d.data() }));
 };
 
 export const appendInvoiceRows = async (
@@ -533,10 +543,11 @@ export const deleteDailySalesFromFirestore = async (
   date: string,
   businessId?: string
 ): Promise<void> => {
-  const docRef = doc(db, getSalesCollectionName(businessId), date);
+  // CS는 csHistory에 따로 남는다 (매출 기록을 지웠다 다시 저장해도 CS는 그대로)
+  await ensureCsSplit(businessId);
   const batch = writeBatch(db);
-  batch.delete(docRef);
-  batch.set(getOpenCsDatesRef(businessId), { dates: arrayRemove(date) }, { merge: true });
+  batch.delete(doc(db, getSalesCollectionName(businessId), date));
+  batch.delete(doc(db, getOrderSearchCollectionName(businessId), date));
   await batch.commit();
   invalidateSalesHistoryCache(businessId);
 };

@@ -5245,10 +5245,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             fakeOrderRecords: mergedFakeOrderRecords.length > 0 ? mergedFakeOrderRecords : undefined,
             companySettlementTexts: Object.keys(mergedCompanySettlementTexts).length > 0 ? mergedCompanySettlementTexts : undefined,
             hourlyOrderCounts: Object.keys(mergedHourlyOrderCounts).length > 0 ? mergedHourlyOrderCounts : undefined,
-            // upsertDailySales는 문서 전체를 덮어쓰므로(setDoc, merge 없음), 이 화면이 모르는
-            // csRecords(통합CS접수/매출현황 CS탭에서 기록)를 명시적으로 이어받지 않으면
-            // 저장할 때마다 그날의 CS 접수 내역이 통째로 사라진다.
-            csRecords: existingDailySales?.csRecords,
         };
 
         setSaveStatus('saving');

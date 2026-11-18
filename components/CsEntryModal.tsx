@@ -334,24 +334,26 @@ async function setManualTransferForRefund(
   await updateDailyWorkspaceField('manualTransfers', next, businessId);
 }
 
+/** 확정된 고객환불·전액차감 CS만 반품기록(CS환불)이 있다 — 아니면 반품을 건드릴 일이 없어 매출 문서를 안 읽는다 */
+const hadReturnRecord = (record: CsRecord): boolean =>
+  !record.pending && record.customerMethod === '환불' && record.deduction === 'full';
+
 /** 확정한 날 문서에 따로 들어간 반품기록(record.returnDate)을 걷어낸다 */
 async function removeReturnOnReturnDate(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
   if (!record.returnDate || record.returnDate === date) return;
   const { saveCsAndReturns } = await import('../services/firestoreService');
-  const ok = await saveCsAndReturns(record.returnDate, businessId, cur => ({
-    csRecords: cur.csRecords,
-    returnRecords: cur.returnRecords.filter(r => r.csRecordId !== record.id),
-  }));
+  const ok = await saveCsAndReturns(record.returnDate, businessId, null, returns => returns.filter(r => r.csRecordId !== record.id));
   if (ok) window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: record.returnDate } }));
 }
 
 /** CS 기록을 삭제하고, 연결된 반품기록/정산조정/수동입금 내역도 함께 정리한다 */
 export async function deleteCsRecord(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
   const { saveCsAndReturns } = await import('../services/firestoreService');
-  const ok = await saveCsAndReturns(date, businessId, cur => ({
-    csRecords: cur.csRecords.filter(r => r.id !== record.id),
-    returnRecords: cur.returnRecords.filter(r => r.csRecordId !== record.id),
-  }));
+  const ok = await saveCsAndReturns(
+    date, businessId,
+    records => records.filter(r => r.id !== record.id),
+    hadReturnRecord(record) ? returns => returns.filter(r => r.csRecordId !== record.id) : null,
+  );
   if (!ok) return;
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
   await removeReturnOnReturnDate(businessId, date, record);
@@ -370,10 +372,11 @@ export async function revertCsRecordToPending(businessId: string | undefined, da
   const { saveCsAndReturns } = await import('../services/firestoreService');
   // 발주서 초기화로 되돌릴 때(revertReshipCsRecordsForReset)와 같은 상태로 맞춘다.
   // poAdded를 남겨두면 다시 확정했을 때 "발주서생성됨"으로 굳어 재생성 버튼을 누를 수 없다.
-  const ok = await saveCsAndReturns(date, businessId, cur => ({
-    csRecords: cur.csRecords.map(r => (r.id === record.id ? { ...r, pending: true, poAdded: false, returnDate: undefined } : r)),
-    returnRecords: cur.returnRecords.filter(r => r.csRecordId !== record.id),
-  }));
+  const ok = await saveCsAndReturns(
+    date, businessId,
+    records => records.map(r => (r.id === record.id ? { ...r, pending: true, poAdded: false, returnDate: undefined } : r)),
+    hadReturnRecord(record) ? returns => returns.filter(r => r.csRecordId !== record.id) : null,
+  );
   if (!ok) return;
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
   await removeReturnOnReturnDate(businessId, date, record);
@@ -502,16 +505,17 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
         const rest = list.filter(r => r.csRecordId !== id);
         return returnRecord && date === returnDate ? [...rest, returnRecord] : rest;
       };
-      await saveCsAndReturns(targetDate, businessId, cur => {
-        const csRecords = editing
-          ? cur.csRecords.map(r => (r.id === id ? csRecord : r))
-          : [...cur.csRecords, csRecord];
-        return { csRecords, returnRecords: withReturn(targetDate, cur.returnRecords) };
-      });
+      // 반품을 넣거나(이번 확정) 빼야 할 때(예전에 반품이 있던 건 수정)만 매출 문서를 건드린다
+      const touchesReturns = !!returnRecord || (!!editing && hadReturnRecord(editing.record));
+      await saveCsAndReturns(
+        targetDate, businessId,
+        records => (editing ? records.map(r => (r.id === id ? csRecord : r)) : [...records, csRecord]),
+        touchesReturns ? returns => withReturn(targetDate, returns) : null,
+      );
       window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: targetDate } }));
       for (const date of new Set([returnRecord ? returnDate : '', prevReturnDate || ''])) {
         if (!date || date === targetDate) continue;
-        await saveCsAndReturns(date, businessId, cur => ({ csRecords: cur.csRecords, returnRecords: withReturn(date, cur.returnRecords) }));
+        await saveCsAndReturns(date, businessId, null, returns => withReturn(date, returns));
         window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
       }
 
