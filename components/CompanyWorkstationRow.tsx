@@ -920,10 +920,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         setModalSelectedIds(new Set(manualOrders.map(o => o.id)));
                         setShowManualOrderModal(true);
                     } else {
-                        const ordersToUse = confirmedManualOrderIdsRef.current !== null
-                            ? manualOrders.filter(o => confirmedManualOrderIdsRef.current!.has(o.id))
-                            : [];
-                        handleLocalFileChange(masterFile, ordersToUse);
+                        handleLocalFileChange(masterFile, pickManualOrders(manualOrders));
                     }
                 } else {
                     // 처리 중 파일 교체 → 완료 후 handleLocalFileChange에서 직접 재실행
@@ -940,7 +937,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // 수동주문 변경: 이미 팝업으로 확인한 경우에만 재처리 (확인 전이면 무시)
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
-            if (confirmedManualOrderIdsRef.current !== null && (lastProcessedMasterRef.current || manualOnlyProcessedRef.current)) {
+            // 단골 대신 보내기로 넘어온 주문은 확인 없이도 반영 (원래 주문 대신 나가는 것이라 빠지면 안 됨)
+            const hasRedirected = manualOrders.some(o => o.redirectKey) || lastManualOrdersRef.current.includes('"redirectKey"');
+            if ((confirmedManualOrderIdsRef.current !== null || hasRedirected) && (lastProcessedMasterRef.current || manualOnlyProcessedRef.current)) {
                 handleLocalFileChange(lastProcessedMasterRef.current);
             }
         } else if (hasFileChangedButEvicted) {
@@ -1128,6 +1127,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [modalSelectedIds, setModalSelectedIds] = useState<Set<string>>(new Set());
     const pendingFileRef = useRef<File | null>(null);
     const confirmedManualOrderIdsRef = useRef<Set<string> | null>(null); // null = 아직 확인 안 함
+    /** 발주서에 넣을 수동발주: 확인창에서 고른 것 + 단골 대신 보내기로 넘어온 것(항상) */
+    const pickManualOrders = (list: ManualOrder[]) => list.filter(o =>
+        !!o.redirectKey || (confirmedManualOrderIdsRef.current !== null && confirmedManualOrderIdsRef.current.has(o.id)));
     const manualOnlyProcessedRef = useRef(false); // 원본 주문서 없이 수동발주만으로 생성한 경우
 
     // 원본 주문서 없이 수동발주만으로 발주서 생성
@@ -1161,9 +1163,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // overrideManualOrders가 주어지면 사용, 아니면 확인된 선택 기준으로 필터
         const ordersToInclude = overrideManualOrders !== undefined
             ? overrideManualOrders
-            : (confirmedManualOrderIdsRef.current !== null
-                ? manualOrders.filter(o => confirmedManualOrderIdsRef.current!.has(o.id))
-                : []);
+            : pickManualOrders(manualOrders);
         try {
             const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
             const sentNumbers = businessId && workDate ? sentNumbersBefore(await getSentBatches(), businessId, workDate) : undefined;
