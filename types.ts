@@ -42,6 +42,11 @@ export function unregisterDynamicBusiness(id: string): void {
   delete _dynamicBusinessRegistry[id];
 }
 
+/** 지금 앱에 올라와 있는 사업자 id 전부 (하드코딩 + 동적) */
+export function getRegisteredBusinessIds(): string[] {
+  return [...new Set([...Object.keys(BUSINESS_INFO), ...Object.keys(_dynamicBusinessRegistry)])];
+}
+
 /** 하드코딩 + 동적 사업자 통합 조회. 못 찾으면 undefined */
 export function getBusinessInfo(id: string): BusinessInfo | undefined {
   return (BUSINESS_INFO as Record<string, BusinessInfo>)[id] || _dynamicBusinessRegistry[id];

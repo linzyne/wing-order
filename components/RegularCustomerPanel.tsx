@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ManualOrder, PricingConfig } from '../types';
-import { subscribeRegularCustomers, saveRegularCustomers, loadPricingConfig, loadDynamicBusinesses, appendRedirectedManualOrders, type RegularCustomer, type RegularRedirect } from '../services/firestoreService';
-import { getBusinessInfo } from '../types';
+import { subscribeRegularCustomers, saveRegularCustomers, loadPricingConfig, appendRedirectedManualOrders, type RegularCustomer, type RegularRedirect } from '../services/firestoreService';
+import { getBusinessInfo, getRegisteredBusinessIds } from '../types';
 import { TrashIcon, PencilIcon, UserGroupIcon } from './icons';
 
 export type ServiceOrderDraft = Omit<ManualOrder, 'id'>;
@@ -34,9 +34,37 @@ interface RegularMatch {
 interface RedirectPlan {
     match: RegularMatch;
     redirect: RegularRedirect;
-    qty: number;
+    items: { name: string; qty: number }[]; // 조건에 맞는 주문 상품들
     redirectKey: string;
 }
+
+/** 상품명에서 무게를 g 단위로 뽑는다 (3kg, 2.5키로, 500g → 3000, 2500, 500) */
+const weightsOf = (text: string): number[] => {
+    const out: number[] = [];
+    const re = /(\d+(?:\.\d+)?)\s*(kg|키로|킬로|g|그램)(?![a-z])/gi;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(String(text || '').normalize('NFC')))) {
+        const n = parseFloat(m[1]);
+        const unit = m[2].toLowerCase();
+        out.push(Math.round(unit === 'g' || unit === '그램' ? n : n * 1000));
+    }
+    return out;
+};
+
+/** 주문 상품 무게와 같은 무게의 품목을 업체에서 찾는다. 딱 하나일 때만 */
+const pickProductByWeight = (config: PricingConfig | null, company: string, orderName: string): { key: string; name: string } | null => {
+    const products = Object.entries(config?.[company]?.products || {}) as [string, any][];
+    const want = weightsOf(orderName);
+    if (products.length === 1) return { key: products[0][0], name: products[0][1]?.orderFormName || products[0][1]?.displayName || products[0][0] };
+    if (want.length === 0) return null;
+    const hits = products.filter(([key, p]) => {
+        const have = weightsOf([key, p?.displayName, p?.orderFormName].join(' '));
+        return have.length > 0 && want.some(w => have.includes(w));
+    });
+    if (hits.length !== 1) return null;
+    const [key, p] = hits[0];
+    return { key, name: p?.orderFormName || p?.displayName || key };
+};
 
 const keywordHit = (keyword: string | undefined, text: string) => {
     const k = String(keyword || '').normalize('NFC').replace(/\s+/g, '').toLowerCase();
@@ -158,8 +186,7 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
         if (!r || r.businessId === fromBizId || !m.orderNumber) return [];
         const hit = m.products.filter(p => keywordHit(r.keyword, p.name));
         if (hit.length === 0) return [];
-        const orderQty = hit.reduce((sum, p) => sum + p.qty, 0);
-        return [{ match: m, redirect: r, qty: orderQty * (r.qty || 1), redirectKey: `${fromBizId}|${m.orderNumber}` }];
+        return [{ match: m, redirect: r, items: hit, redirectKey: `${fromBizId}|${m.orderNumber}` }];
     }), [matches, fromBizId]);
     const redirectByKey = useMemo(() => new Map(redirectPlans.map(p => [p.match.key, p])), [redirectPlans]);
 
@@ -168,7 +195,9 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
     useEffect(() => { onRedirectedOrdersChange?.(redirectedText); }, [redirectedText, onRedirectedOrdersChange]);
 
     // 대신 보낼 사업자의 수동발주에 넣기 (한 번 넣은 주문은 다시 안 넣음)
+    // 품목을 정해 두지 않았으면 주문 상품 무게로 그 업체 품목을 맞춘다. 못 맞추면 주문 상품명 그대로 넣고 '품목 확인' 표시
     const [redirectStatus, setRedirectStatus] = useState<Record<string, 'done' | 'error'>>({});
+    const [redirectLines, setRedirectLines] = useState<Record<string, { name: string; qty: number; unmatched: boolean }[]>>({});
     const triedRedirectRef = useRef<Set<string>>(new Set());
     useEffect(() => {
         const todo = redirectPlans.filter(p => !triedRedirectRef.current.has(p.redirectKey));
@@ -176,28 +205,43 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
         todo.forEach(p => triedRedirectRef.current.add(p.redirectKey));
         const byTarget = new Map<string, RedirectPlan[]>();
         todo.forEach(p => byTarget.set(p.redirect.businessId, [...(byTarget.get(p.redirect.businessId) || []), p]));
-        byTarget.forEach((plans, target) => {
-            const orders = plans.map(p => ({
-                id: `mo-rd-${fromBizId}-${p.match.orderNumber}`,
-                redirectKey: p.redirectKey,
-                redirectFrom: businessName || fromBizId,
-                companyName: p.redirect.companyName,
-                recipientName: p.match.recipientName,
-                phone: p.match.phone,
-                address: p.match.address,
-                productName: p.redirect.productName,
-                productKey: p.redirect.productKey,
-                qty: p.qty,
-                memo: p.match.deliveryMessage,
-            }));
-            appendRedirectedManualOrders(target, orders)
-                .then(() => setRedirectStatus(prev => { const n = { ...prev }; plans.forEach(p => { n[p.redirectKey] = 'done'; }); return n; }))
-                .catch(e => {
-                    console.error('[단골 대신 보내기] 실패:', e);
-                    plans.forEach(p => triedRedirectRef.current.delete(p.redirectKey));
-                    setRedirectStatus(prev => { const n = { ...prev }; plans.forEach(p => { n[p.redirectKey] = 'error'; }); return n; });
-                    alert(`단골 대신 보내기 실패 — ${bizName(target)} 수동발주에 넣지 못했습니다. 새로고침 후 다시 확인해 주세요.`);
+        byTarget.forEach(async (plans, target) => {
+            try {
+                const needConfig = plans.some(p => !p.redirect.productKey);
+                const targetConfig = needConfig ? (await loadPricingConfig(target)).config : null;
+                const lines: Record<string, { name: string; qty: number; unmatched: boolean }[]> = {};
+                const orders = plans.flatMap(p => {
+                    const r = p.redirect;
+                    const rows = r.productKey
+                        ? [{ key: r.productKey, name: r.productName || r.productKey, qty: p.items.reduce((s, it) => s + it.qty, 0) * (r.qty || 1), unmatched: false }]
+                        : p.items.map(it => {
+                            const pick = pickProductByWeight(targetConfig, r.companyName, it.name);
+                            return pick ? { key: pick.key, name: pick.name, qty: it.qty, unmatched: false } : { key: '', name: it.name, qty: it.qty, unmatched: true };
+                        });
+                    lines[p.redirectKey] = rows.map(x => ({ name: x.name, qty: x.qty, unmatched: x.unmatched }));
+                    return rows.map((x, i) => ({
+                        id: `mo-rd-${fromBizId}-${p.match.orderNumber}-${i}`,
+                        redirectKey: p.redirectKey,
+                        redirectFrom: businessName || fromBizId,
+                        companyName: r.companyName,
+                        recipientName: p.match.recipientName,
+                        phone: p.match.phone,
+                        address: p.match.address,
+                        productName: x.name,
+                        ...(x.key ? { productKey: x.key } : {}),
+                        qty: x.qty,
+                        memo: x.unmatched ? `[품목 확인] ${p.match.deliveryMessage}`.trim() : p.match.deliveryMessage,
+                    }));
                 });
+                await appendRedirectedManualOrders(target, orders);
+                setRedirectLines(prev => ({ ...prev, ...lines }));
+                setRedirectStatus(prev => { const n = { ...prev }; plans.forEach(p => { n[p.redirectKey] = 'done'; }); return n; });
+            } catch (e) {
+                console.error('[단골 대신 보내기] 실패:', e);
+                plans.forEach(p => triedRedirectRef.current.delete(p.redirectKey));
+                setRedirectStatus(prev => { const n = { ...prev }; plans.forEach(p => { n[p.redirectKey] = 'error'; }); return n; });
+                alert(`단골 대신 보내기 실패 — ${bizName(target)} 수동발주에 넣지 못했습니다. 새로고침 후 다시 확인해 주세요.`);
+            }
         });
     }, [redirectPlans, fromBizId, businessName]);
 
@@ -213,14 +257,11 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
     const openRedirect = (c: RegularCustomer) => {
         setRedirectEdit(c);
         setRdBiz(c.redirect?.businessId || '');
-        setRdSel(c.redirect ? { company: c.redirect.companyName, key: c.redirect.productKey } : null);
+        setRdSel(c.redirect ? { company: c.redirect.companyName, key: c.redirect.productKey || '' } : null);
         setRdQty(String(c.redirect?.qty || 1));
         setRdKeyword(c.redirect?.keyword || '');
         setRdSearch('');
-        loadDynamicBusinesses().then(list => {
-            const ids = [...new Set(['안군농원', '조에', ...list.map(b => b.id)])];
-            setBusinesses(ids.map(id => ({ id, displayName: bizName(id) })));
-        }).catch(() => setBusinesses([{ id: '안군농원', displayName: '안군농원' }, { id: '조에', displayName: '조에농원' }]));
+        setBusinesses(getRegisteredBusinessIds().filter(id => id !== fromBizId).map(id => ({ id, displayName: bizName(id) })));
     };
     useEffect(() => {
         if (!rdBiz) { setRdConfig(null); return; }
@@ -232,16 +273,18 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
     const rdProducts = useMemo(() => {
         if (!rdConfig) return [] as { company: string; key: string; label: string }[];
         const q = rdSearch.trim().normalize('NFC').toLowerCase().replace(/\s+/g, '');
-        return Object.keys(rdConfig).sort().flatMap(company =>
-            Object.entries(rdConfig[company]?.products || {}).map(([key, p]: [string, any]) => ({ company, key, label: p?.orderFormName || p?.displayName || key })))
+        return Object.keys(rdConfig).sort().flatMap(company => [
+            { company, key: '', label: '무게로 자동 (주문 상품 kg에 맞춤)' },
+            ...Object.entries(rdConfig[company]?.products || {}).map(([key, p]: [string, any]) => ({ company, key, label: p?.orderFormName || p?.displayName || key })),
+        ])
             .filter(x => !q || `${x.company}${x.label}${x.key}`.normalize('NFC').toLowerCase().replace(/\s+/g, '').includes(q));
     }, [rdConfig, rdSearch]);
     const saveRedirect = () => {
         if (!redirectEdit || !rdBiz || !rdSel || !rdConfig) return;
-        const p = rdConfig[rdSel.company]?.products?.[rdSel.key] as any;
+        const p = rdSel.key ? rdConfig[rdSel.company]?.products?.[rdSel.key] as any : null;
         const redirect: RegularRedirect = {
-            businessId: rdBiz, companyName: rdSel.company, productKey: rdSel.key,
-            productName: p?.orderFormName || p?.displayName || rdSel.key,
+            businessId: rdBiz, companyName: rdSel.company,
+            ...(rdSel.key ? { productKey: rdSel.key, productName: p?.orderFormName || p?.displayName || rdSel.key } : {}),
             qty: Math.max(1, parseInt(rdQty, 10) || 1),
             ...(rdKeyword.trim() ? { keyword: rdKeyword.trim() } : {}),
         };
@@ -408,7 +451,7 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
                                                 {c.memo && <span className="text-[9px] text-zinc-500 truncate">{c.memo}</span>}
                                             </div>
                                             {c.redirect && (
-                                                <div className="text-[9px] font-bold text-sky-300 truncate">↪ {bizName(c.redirect.businessId)} · {c.redirect.companyName} {c.redirect.productName} x{c.redirect.qty}{c.redirect.keyword ? ` ('${c.redirect.keyword}' 주문만)` : ''}</div>
+                                                <div className="text-[9px] font-bold text-sky-300 truncate">↪ {bizName(c.redirect.businessId)} · {c.redirect.companyName} {c.redirect.productKey ? `${c.redirect.productName} x${c.redirect.qty}` : '무게로 자동'}{c.redirect.keyword ? ` ('${c.redirect.keyword}' 주문만)` : ''}</div>
                                             )}
                                             <div className="text-[9px] text-zinc-500 truncate" title={c.address}>{c.address}{c.phone ? ` · ${c.phone}` : ''}</div>
                                         </div>
@@ -448,8 +491,11 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
                                             const st = redirectStatus[plan.redirectKey];
                                             return (
                                                 <div className="mt-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2 py-1 text-[10px] font-bold text-sky-200">
-                                                    ↪ 이 사업자 발주서에서 빼고 <b>{bizName(plan.redirect.businessId)}</b> {plan.redirect.companyName} {plan.redirect.productName} x{plan.qty}로 대신 보냄
+                                                    ↪ 이 사업자 발주서에서 빼고 <b>{bizName(plan.redirect.businessId)}</b> {plan.redirect.companyName}(으)로 대신 보냄
                                                     <span className={`ml-1 ${st === 'error' ? 'text-rose-400' : 'text-sky-400'}`}>{st === 'error' ? '(넘기기 실패)' : st === 'done' ? '(수동발주에 넣음)' : '(넣는 중…)'}</span>
+                                                    {(redirectLines[plan.redirectKey] || []).map((l, i) => (
+                                                        <div key={i} className={l.unmatched ? 'text-rose-300' : 'text-sky-100'}>· {l.name} x{l.qty}{l.unmatched ? ' — 품목 못 맞춤, 그 사업자 수동발주에서 품목 고쳐 주세요' : ''}</div>
+                                                    ))}
                                                 </div>
                                             );
                                         })()}
@@ -548,7 +594,7 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
                             </>
                         )}
                         <div className="flex gap-2">
-                            <input type="number" min={1} value={rdQty} onChange={e => setRdQty(e.target.value)} title="주문 1개당 보낼 수량" className={`${inputCls} w-20`} />
+                            {!!rdSel?.key && <input type="number" min={1} value={rdQty} onChange={e => setRdQty(e.target.value)} title="주문 1개당 보낼 수량" className={`${inputCls} w-20`} />}
                             <input placeholder="이 말이 든 주문만 (예: 김치, 비우면 전부)" value={rdKeyword} onChange={e => setRdKeyword(e.target.value)} className={`${inputCls} flex-1`} />
                         </div>
                         <div className="flex gap-2 mt-1">

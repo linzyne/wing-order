@@ -1171,9 +1171,9 @@ export const saveQuickRecipients = async (recipients: QuickRecipientData[], busi
 export interface RegularRedirect {
   businessId: string;      // 대신 보낼 사업자 (예: 안군농원)
   companyName: string;     // 그 사업자의 업체 (예: 나리찬)
-  productKey: string;
-  productName: string;
-  qty: number;             // 주문 1개당 보낼 수량
+  productKey?: string;     // 비우면 주문 상품의 무게(3kg 등)로 그 업체 품목을 자동으로 맞춤
+  productName?: string;
+  qty: number;             // 품목을 정해 둔 경우: 주문 1개당 보낼 수량
   keyword?: string;        // 주문 상품명에 이 말이 있을 때만 (비우면 그 단골 주문 전부)
 }
 
