@@ -36,6 +36,8 @@ interface MasterUploadHandlers {
   kakaoCompanyRound?: (companyName: string, round: number) => void;
   adminCompanyMerged?: (companyName: string) => Promise<boolean> | void;
   adminCompanyRound?: (companyName: string, round: number) => Promise<boolean> | void;
+  /** 합산 발주서를 사무실 롯데택배로 예약 (사업자 프로필의 윙 확장이 ALPS 예약·송장번호까지) */
+  lotteCompanyMerged?: (companyName: string) => Promise<boolean>;
   downloadAllCompanies?: () => void;
   getCompanyClosed?: (companyName: string) => boolean;
   getCompanyRecorded?: (companyName: string) => boolean;
@@ -123,6 +125,11 @@ const MAIL_ICON = (
 const ADMIN_ICON = (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 16V4" /><path d="m7 9 5-5 5 5" /><path d="M4 20h16" />
+  </svg>
+);
+const LOTTE_ICON = (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h11v10H3z" /><path d="M14 9h4l3 3v4h-7" /><circle cx="7" cy="18" r="1.8" /><circle cx="17" cy="18" r="1.8" />
   </svg>
 );
 const KAKAO_ICON = (
@@ -895,7 +902,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                             {/* 다운로드 + 메일/카톡 전송을 한 덩어리(칩)로 묶어 차수별로 한눈에 구분되게 */}
                             {(() => {
                               const fns = uploadFns[biz.businessId];
-                              const renderSend = (key: string, kind: 'mail' | 'kakao' | 'admin', title: string, run: () => Promise<void> | void) => {
+                              const renderSend = (key: string, kind: 'mail' | 'kakao' | 'admin' | 'lotte', title: string, run: () => Promise<void> | void) => {
                                 const sending = emailingButtons.has(key);
                                 const sent = emailedButtons.has(key);
                                 return (
@@ -906,7 +913,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     title={title}
                                     className={`flex items-center justify-center w-5 border-l border-black/10 transition-colors ${sending ? 'opacity-40' : sent && kind !== 'kakao' ? 'bg-emerald-500 text-white hover:bg-emerald-400' : sent ? 'opacity-25 hover:opacity-60' : 'opacity-50 hover:opacity-100 hover:bg-black/5'}`}
                                   >
-                                    {sending ? <span className="text-[10px] leading-none">…</span> : sent && kind !== 'kakao' ? <span className="text-[11px] font-black leading-none">✓</span> : kind === 'mail' ? MAIL_ICON : kind === 'admin' ? ADMIN_ICON : KAKAO_ICON}
+                                    {sending ? <span className="text-[10px] leading-none">…</span> : sent && kind !== 'kakao' ? <span className="text-[11px] font-black leading-none">✓</span> : kind === 'mail' ? MAIL_ICON : kind === 'admin' ? ADMIN_ICON : kind === 'lotte' ? LOTTE_ICON : KAKAO_ICON}
                                   </button>
                                 );
                               };
@@ -956,6 +963,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     isAdmin
                                       ? fns?.adminCompanyMerged && renderSend(mergedMailKey, 'admin', '합산 발주서 어드민에 올리기 (크롬 어드민 탭의 확장이 엑셀 내용 확인까지 진행)', () => fns?.adminCompanyMerged?.(companyName))
                                       : fns?.emailCompanyMerged && renderSend(mergedMailKey, 'mail', '합산 발주서 메일 전송', () => fns?.emailCompanyMerged?.(companyName)),
+                                    fns?.lotteCompanyMerged && renderSend(`${mergedKey}_lotte_${totalCount}`, 'lotte', '합산 발주서를 사무실 롯데택배로 예약 (그 사업자 크롬 프로필의 윙 확장이 롯데에 올리고 송장번호까지 받아 와 통합송장 사무실(롯데)에 넣음)', () => fns?.lotteCompanyMerged?.(companyName)),
                                   ] : [],
                                   badge: SHOW_MATCH_BADGE && hasMatchData && totalCount > 0 && (
                                     <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${totalUnmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
