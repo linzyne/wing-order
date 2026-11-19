@@ -1535,7 +1535,7 @@ const CompanyCard: React.FC<{
             </div>
             {isExpanded && (
                 <div className="px-6 pb-4 pt-0 space-y-2 animate-fade-in bg-gradient-to-b from-transparent to-rose-950/5">
-                    <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
                         <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">
                             <PhoneIcon className="w-4 h-4 text-zinc-600 shrink-0" />
                             <EditableField
@@ -1585,7 +1585,7 @@ const CompanyCard: React.FC<{
                                 className="text-sm font-bold text-zinc-400 focus:outline-none w-full"
                             />
                         </div>
-                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner col-span-2 md:col-span-2">
+                        <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner">
                             <span className="text-sm shrink-0">💳</span>
                             <EditableField
                                 value={companyConfig.accountNumber || ''}
