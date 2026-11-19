@@ -531,6 +531,16 @@ const App: React.FC = () => {
   const [lotteBatches, setLotteBatches] = useState<LotteBatch[]>([]);
   useEffect(() => subscribeLotteWaybills(localYMD(), setLotteBatches), []);
   const lotteMapRef = useRef<Map<string, string>>(new Map());
+  // 발주서(업체)에서 롯데 예약한 주문: 쿠팡 주문번호(정규화) → 업체명. 업체 송장 줄·업로드 파일에 롯데 송장을 넣는 데 씀
+  const lotteCompanyByOrder = useMemo(() => {
+    const m: Record<string, string> = {};
+    const norm = (s: string) => String(s || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    for (const b of lotteBatches) for (const it of b.items) {
+      if (it.source !== 'order' || !it.companyName) continue;
+      [it.orderNumber, ...(it.orderNumbers || [])].forEach(n => { const k = norm(n); if (k) m[k] = it.companyName!; });
+    }
+    return m;
+  }, [lotteBatches]);
   // 예약 중인 주문번호 — 같은 주문을 두 번 예약하지 않게
   const lotteInFlightRef = useRef<Set<string>>(new Set());
   const [lotteStatus, setLotteStatus] = useState<Record<string, { state: 'running' | 'done' | 'error'; message: string }>>({});
@@ -2004,6 +2014,7 @@ const App: React.FC = () => {
               onGlobalFakeMatch={(matched) => handleGlobalFakeMatch(b.id, matched)}
               globalUnsentOrderInput={perBusinessUnsentInput[b.id] || ''}
               fakeOrderCourierRows={courierRowsByBusiness[b.id] || []}
+              lotteCompanyByOrder={lotteCompanyByOrder}
               onEdit={b.isDynamic ? () => setEditingBusiness(b) : undefined}
               onExposeOrderRows={(header, dataRows) => handleExposeOrderRows(b.id, header, dataRows)}
               onLotteReserve={lotteTemplate ? (picks, companyName, onClaimed) => handleLotteReserveOrders(b.id, picks, companyName, onClaimed) : undefined}

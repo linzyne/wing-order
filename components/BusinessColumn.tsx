@@ -48,12 +48,13 @@ interface BusinessColumnProps {
   onWorkstationReset?: () => void;
   onEdit?: () => void;
   onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void;
+  lotteCompanyByOrder?: Record<string, string>;
   // 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 뺀다)
   onLotteReserve?: (picks: LotteReservePick[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>;
   onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void;
 }
 
-const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, otherBusinesses, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, realShipOrderNums, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, onEdit, onExposeOrderRows, onLotteReserve, onHasWarnings }) => {
+const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, displayName, portalId, themeColor, bank, sharedSuppliers, otherBusinesses, onSendToLibrary, onStatusUpdate, onRegisterMasterUpload, onRegisterReset, onRegisterDownloadActions, onWorkstationReset, globalFakeOrderInput, realShipOrderNums, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, lotteCompanyByOrder, onEdit, onExposeOrderRows, onLotteReserve, onHasWarnings }) => {
   const [activeTab, setActiveTab] = useState('converter');
   const { config, saveConfig, isLoading, configSource } = usePricingConfig(businessId);
   const { platformConfigs, savePlatformConfig } = usePlatformConfigs(businessId);
@@ -201,6 +202,7 @@ const BusinessColumnContent: React.FC<BusinessColumnProps> = ({ businessId, disp
               onGlobalFakeMatch={onGlobalFakeMatch}
               globalUnsentOrderInput={globalUnsentOrderInput}
               fakeOrderCourierRows={fakeOrderCourierRows}
+              lotteCompanyByOrder={lotteCompanyByOrder}
               isPricingConfigLoaded={!isLoading}
               onExposeOrderRows={onExposeOrderRows}
               onLotteReserve={onLotteReserve}

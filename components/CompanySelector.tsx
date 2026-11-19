@@ -66,7 +66,7 @@ interface SessionData {
     round: number;
 }
 
-interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositCompanies: () => string[] }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; realShipCount?: number; timeLabel?: string }[] }[]; getCompanyInfos?: () => { name: string; orderMethod?: string; phone?: string }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged: (companyName: string) => Promise<boolean>; emailCompanyRound: (companyName: string, round: number) => Promise<boolean>; kakaoCompanyMerged: (companyName: string) => void; kakaoCompanyRound: (companyName: string, round: number) => void; adminCompanyMerged: (companyName: string) => Promise<boolean>; adminCompanyRound: (companyName: string, round: number) => Promise<boolean>; lotteCompanyMerged?: (companyName: string) => Promise<boolean>; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; uploadVendorInvoiceFromAdmin?: (company: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; getCompanyInvoiceWorkbookFile?: (companyName: string) => File; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; getTotalMargin?: () => number; getFakeCount?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; realShipOrderNums?: string[]; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onLotteReserve?: (picks: LotteReservePick[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
+interface CompanySelectorProps { pricingConfig: PricingConfig; onConfigChange: (newConfig: PricingConfig) => void; businessId?: string; businessDisplayName?: string; otherBusinesses?: { id: string; displayName: string }[]; platformConfigs?: PlatformConfigs; isActive?: boolean; isCurrent?: boolean; onSaved?: (date: string) => void; onStatusUpdate?: (status: { litCount: number; downloadAll: () => void }) => void; portalId?: string; onRegisterActions?: (actions: { downloadDepositList: () => void; downloadWorkLog: () => void; downloadDepositListWithExtra: (extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositBaseRows: () => any[][]; downloadDepositListDirect: (baseRows: any[][], extraRows: { bankName: string; accountNumber: string; amount: string; label: string }[]) => void; getDepositCompanies: () => string[] }) => void; onRegisterMasterUpload?: (handlers: { uploadMaster: (file: File) => Promise<void>; uploadBatch: (file: File) => Promise<void>; getNextRound: () => number; deleteBatchRound: (round: number) => boolean; clearMaster: () => void; getOrderState: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; realShipCount?: number; timeLabel?: string }[] }[]; getCompanyInfos?: () => { name: string; orderMethod?: string; phone?: string }[]; downloadCompanyMerged: (companyName: string) => void; downloadCompanyRound: (companyName: string, round: number) => void; emailCompanyMerged: (companyName: string) => Promise<boolean>; emailCompanyRound: (companyName: string, round: number) => Promise<boolean>; kakaoCompanyMerged: (companyName: string) => void; kakaoCompanyRound: (companyName: string, round: number) => void; adminCompanyMerged: (companyName: string) => Promise<boolean>; adminCompanyRound: (companyName: string, round: number) => Promise<boolean>; lotteCompanyMerged?: (companyName: string) => Promise<boolean>; downloadAllCompanies: () => void; getCompanyClosed: (companyName: string) => boolean; getCompanyRecorded: (companyName: string) => boolean; toggleCompanyClosed: (companyName: string) => void; toggleCompanyRecord: (companyName: string) => Promise<void>; setWorkDate: (date: string) => void; getWorkDate: () => string; uploadVendorInvoice: (files: File[]) => void; findVendorInvoiceOwners?: (file: File) => Promise<string[]>; uploadVendorInvoiceFromEmail?: (sender: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; uploadVendorInvoiceFromAdmin?: (company: string, files: File[]) => Promise<{ company: string; status: EmailInvoiceStatus }[]>; getVendorEmails?: () => string[]; getInvoiceState: () => { name: string; uploadCount: number }[]; getInvoiceMatchState?: () => { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]; downloadInvoice: (companyName: string) => void; downloadAllInvoices?: () => void; getInvoiceWorkbookFile?: () => File | null; getCompanyInvoiceWorkbookFile?: (companyName: string) => File; resetInvoiceMatching?: () => void; getLastSettlementSummaries: () => { companyName: string; kakaoText: string; excelText: string }[]; getTotalMargin?: () => number; getFakeCount?: () => number; addReshipOrder?: (companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>; removeReshipOrder?: (companyName: string, csRecordId: string) => boolean; }) => void; onRegisterReset?: (fn: () => void) => void; onWorkstationReset?: () => void; globalFakeOrderInput?: string; realShipOrderNums?: string[]; onGlobalFakeMatch?: (matched: string[]) => void; globalUnsentOrderInput?: string; fakeOrderCourierRows?: any[][]; lotteCompanyByOrder?: Record<string, string>; isPricingConfigLoaded?: boolean; onExposeOrderRows?: (header: any[] | null, dataRows: any[][]) => void; onLotteReserve?: (picks: LotteReservePick[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>; onHasWarnings?: (has: boolean, warningCompanies?: string[]) => void; externalRecordRefresh?: { date: string; n: number }; }
 
 // 드래그 가능한 행 컴포넌트
 import { DragHandleContext } from './DragHandleContext';
@@ -914,7 +914,7 @@ function autoMapProducts(
 // 가구매 명단 빈 상태 알림: 여러 사업자에 동시에 발주서가 생겨도 한 번만 띄우기 위한 공용 시각
 let lastEmptyFakeAlertAt = 0;
 
-const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, realShipOrderNums, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, isPricingConfigLoaded = true, onExposeOrderRows, onLotteReserve, onHasWarnings, externalRecordRefresh }) => {
+const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConfigChange, businessId, businessDisplayName, otherBusinesses = [], platformConfigs = {}, isActive = false, isCurrent = false, onSaved, onStatusUpdate, portalId, onRegisterActions, onRegisterMasterUpload, onRegisterReset, onWorkstationReset, globalFakeOrderInput, realShipOrderNums, onGlobalFakeMatch, globalUnsentOrderInput, fakeOrderCourierRows, lotteCompanyByOrder, isPricingConfigLoaded = true, onExposeOrderRows, onLotteReserve, onHasWarnings, externalRecordRefresh }) => {
     const businessPrefix = businessId ? (getBusinessInfo(businessId)?.displayName || businessId) : '';
     const { workspace, updateField, updateSessionField: updateWorkspaceSessionField, isReady } = useDailyWorkspace(businessId);
     const depositLedger = useDepositLedger(businessId);
@@ -4013,6 +4013,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return extras;
     }, [fakeOrderCourierRows]);
 
+    // 발주서(업체)에서 롯데 예약해 받아 온 송장 행 중 그 업체 것. 가구매가 아니라 업체 송장으로 친다.
+    const getLotteCompanyRows = useCallback((companyName: string, existingKeys: Set<string> = new Set()): any[][] => {
+        if (!fakeOrderCourierRows || !lotteCompanyByOrder) return [];
+        const seen = new Set<string>();
+        const out: any[][] = [];
+        for (const row of fakeOrderCourierRows) {
+            const key = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+            if (!key || lotteCompanyByOrder[key] !== companyName || existingKeys.has(key) || seen.has(key)) continue;
+            seen.add(key);
+            out.push(row);
+        }
+        return out;
+    }, [fakeOrderCourierRows, lotteCompanyByOrder]);
+
     const getExtraFakeCourierRows = useCallback((existingRows: any[][]): any[][] => {
         const existingKeys = new Set(existingRows.map(r => String(r[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase()));
         return getExtraFakeCourierRowsByKeys(existingKeys);
@@ -4032,6 +4046,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     count += rows.length;
                 }
             });
+            count += getLotteCompanyRows(name).length;
             if (count > 0) result.push({ name, uploadCount: count });
         });
 
@@ -4061,7 +4076,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         }
                     });
                 });
-                fakeCount += getExtraFakeCourierRowsByKeys(countedKeys).length;
+                fakeCount += getExtraFakeCourierRowsByKeys(countedKeys).filter(r => fakeNums.has(String(r[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase())).length;
                 if (fakeCount > 0) result.push({ name: '가구매', uploadCount: fakeCount });
             }
         }
@@ -4140,6 +4155,26 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     }
                 });
 
+                // 롯데 예약 송장: 발주서에 남은 주문이면 위에서 매칭으로, 발주서에서 빠진 주문이면 발주·매칭 둘 다 1건씩
+                const lotteRows = getLotteCompanyRows(name);
+                if (lotteRows.length > 0) {
+                    const lotteKeys = new Set<string>(lotteRows.map(r => norm(r[2])));
+                    const stillUnmatched = unmatchedOrders.filter(o => !lotteKeys.has(norm(o.orderNum)));
+                    const nowMatched = unmatchedOrders.length - stillUnmatched.length;
+                    unmatchedOrders.length = 0; unmatchedOrders.push(...stillUnmatched);
+                    matchedCount += nowMatched;
+                    const listed = new Set<string>();
+                    sessions.forEach(s => {
+                        const saved = sessionResults?.[s.id];
+                        const items = (allOrderItems[s.id]?.length ? allOrderItems[s.id] : saved?.orderItems) || [];
+                        items.forEach((it: any) => listed.add(norm(it.orderNumber)));
+                        ((allRowOrderNumbers[s.id]?.length ? allRowOrderNumbers[s.id] : saved?.rowOrderNumbers) || [])
+                            .forEach((v: any) => splitOrderNumbers([v]).forEach(n => listed.add(norm(n))));
+                    });
+                    const outside = [...lotteKeys].filter((k: string) => !listed.has(k)).length;
+                    orderCount += outside; matchedCount += outside;
+                }
+
                 const dedupUnmatched = Array.from(
                     new Map(unmatchedOrders.map((o, i) => [o.orderNum || `__${o.recipient}_${i}`, o])).values()
                 );
@@ -4180,7 +4215,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     }
                 });
             });
-            mergedRows.push(...getExtraFakeCourierRows(mergedRows));
+            mergedRows.push(...getExtraFakeCourierRows(mergedRows).filter(r => fakeNums.has(String(r[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase())));
             if (!mergedRows.length) return '가구매 매칭된 송장 데이터가 없습니다.';
             // 업체송장 세션이 하나도 없고 가구매 택배 행만 있는 경우 헤더가 비어 1행에 컬럼이 없는 파일이 됨 → 원본 주문서 헤더로 보강
             if (!headerRow.length) {
@@ -4212,6 +4247,15 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 mergedRows.push(...rows);
             }
         });
+        // 발주서에서 롯데 예약한 주문의 롯데 송장 (업체 송장에 이미 있는 주문은 빼고)
+        const lotteRows = getLotteCompanyRows(companyName, new Set(mergedRows.map(r => String(r[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase())));
+        if (lotteRows.length) {
+            mergedRows.push(...lotteRows);
+            if (!headerRow.length) {
+                const masterHeader = (fakeMasterOrderData ?? masterOrderData)?.[0];
+                if (masterHeader?.length) headerRow = masterHeader as any[];
+            }
+        }
         if (!mergedRows.length) return `${companyName} 송장 데이터가 없습니다.`;
         const wb = XLSX.utils.book_new();
         const aoa = headerRow.length ? [headerRow, ...mergedRows] : mergedRows;
