@@ -1618,6 +1618,18 @@ export const subscribeMissionMemoRequest = (
   });
 };
 
+// 아직 미션허브가 처리 안 한 메모 요청 — 윙_발주에서 누르자마자 확인완료·삭제된 것으로 보이게
+export type PendingMissionMemoRequest = MissionMemoRequest & { id: string };
+export const subscribePendingMissionMemoRequests = (
+  callback: (reqs: PendingMissionMemoRequest[]) => void
+): Unsubscribe => {
+  return onSnapshot(query(collection(db, 'missionHubMemoRequests'), where('status', '==', 'pending')), (snapshot) => {
+    callback(snapshot.docs.map(d => ({ ...(d.data() as MissionMemoRequest), id: d.id })));
+  }, (error) => {
+    console.error('[Firestore] 대기 중 메모 요청 구독 오류:', error);
+  });
+};
+
 export const saveUrgentNotice = async (text: string): Promise<void> => {
   const docRef = doc(db, 'config', 'urgentNotice');
   await setDoc(docRef, { text, updatedAt: Timestamp.now() });

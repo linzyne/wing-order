@@ -15,7 +15,7 @@ import { normalizeForSearch } from './components/CsEntryModal';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
 import { ChartBarIcon, PlusCircleIcon, PencilIcon, ArrowPathIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TruckIcon, HomeIcon, TrashIcon, EllipsisHorizontalIcon, DocumentArrowUpIcon, UserGroupIcon, PhoneIcon, BanknotesIcon, ClipboardDocumentListIcon, MegaphoneIcon, MagnifyingGlassIcon, CalculatorIcon, BuildingStorefrontIcon } from './components/icons';
 import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMemos } from './hooks/useFirestore';
-import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, requestMissionOrderFix, subscribeMissionOrderFix, type MissionOrderFixRequest, requestMissionMemoAction, subscribeMissionMemoRequest, type MissionMemoAction, type SettlementUploadRecord } from './services/firestoreService';
+import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, requestMissionOrderFix, subscribeMissionOrderFix, type MissionOrderFixRequest, requestMissionMemoAction, subscribeMissionMemoRequest, subscribePendingMissionMemoRequests, type PendingMissionMemoRequest, type MissionMemoAction, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
 import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder, type LotteReservePick } from './services/lotteReserve';
@@ -422,25 +422,38 @@ const App: React.FC = () => {
       : `미션허브 연동 중 · ${new Date(missionFeed.checkedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 확인`;
   // 미션허브 메모: '확인완료' 누르면 미션허브에 확인완료로 뜨고 메모 칸이 잠김, '삭제'는 미션허브 메모를 지움.
   // 확인완료 안 한 메모가 있으면 가구매 버튼에 N
-  const missionMemos = missionFeed?.memos ?? [];
+  // 미션허브가 아직 처리 안 한 요청도 바로 반영해서 보여줌(미션허브가 닫혀 있으면 열릴 때 처리됨)
+  const [pendingMemoReqs, setPendingMemoReqs] = useState<PendingMissionMemoRequest[]>([]);
+  useEffect(() => subscribePendingMissionMemoRequests(setPendingMemoReqs), []);
+  // 누른 순간(요청 저장 전)에도 바로 바뀌게 { bizId: 동작 }
+  const [memoActionLocal, setMemoActionLocal] = useState<Record<string, { action: MissionMemoAction; memo: string; at: number }>>({});
+  const memoActionFor = (bizId: string, memo: string): { action: MissionMemoAction; at: number } | null => {
+    const local = memoActionLocal[bizId];
+    if (local && local.memo === memo) return local;
+    const req = pendingMemoReqs.filter(r => r.bizId === bizId && r.memo === memo).sort((a, b) => b.clickedAt - a.clickedAt)[0];
+    return req ? { action: req.action, at: req.clickedAt } : null;
+  };
+  const missionMemos = (missionFeed?.memos ?? []).flatMap(m => {
+    const act = memoActionFor(m.bizId, m.memo);
+    if (act?.action === 'delete') return [];
+    if (act?.action === 'confirm' && !m.confirmedAt) return [{ ...m, confirmedAt: act.at }];
+    return [m];
+  });
   const unseenMissionMemos = missionMemos.filter(m => !m.confirmedAt);
-  // 처리 중인 요청 { bizId: 동작 } — 미션허브가 처리하면 피드가 바뀌어 저절로 맞게 보임
-  const [memoActionPending, setMemoActionPending] = useState<Record<string, MissionMemoAction>>({});
   const sendMissionMemoAction = async (bizId: string, bizName: string, memo: string, action: MissionMemoAction) => {
-    if (memoActionPending[bizId]) return;
     if (action === 'delete' && !window.confirm(`${bizName} 메모를 미션허브에서 삭제할까요?`)) return;
-    setMemoActionPending(prev => ({ ...prev, [bizId]: action }));
-    const done = () => setMemoActionPending(prev => { const next = { ...prev }; delete next[bizId]; return next; });
+    setMemoActionLocal(prev => ({ ...prev, [bizId]: { action, memo, at: Date.now() } }));
+    const undo = () => setMemoActionLocal(prev => { const next = { ...prev }; delete next[bizId]; return next; });
     try {
       const id = await requestMissionMemoAction(bizId, memo, action);
       const unsub = subscribeMissionMemoRequest(id, req => {
         if (!req || req.status === 'pending') return;
         unsub();
-        done();
+        undo();
         if (req.status === 'error') alert(`${bizName} 메모 ${action === 'confirm' ? '확인완료' : '삭제'} 실패: ${req.error || ''}`);
       });
     } catch (e) {
-      done();
+      undo();
       alert(`${bizName} 메모 요청 실패: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
@@ -1514,7 +1527,6 @@ const App: React.FC = () => {
               {missionMemos.length > 0 && (
                 <div className="mb-2 space-y-1.5">
                   {missionMemos.map(m => {
-                    const pending = memoActionPending[m.bizId];
                     return (
                       <div key={m.bizId} className={`rounded-lg border px-2.5 py-1.5 ${m.confirmedAt ? 'border-zinc-700 bg-zinc-900/40 opacity-60' : 'border-amber-500/30 bg-amber-950/30'}`}>
                         <div className="flex items-center gap-1.5 mb-0.5">
@@ -1524,9 +1536,9 @@ const App: React.FC = () => {
                             : <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[8px] font-black">N</span>}
                           <div className="ml-auto flex gap-1">
                             {!m.confirmedAt && (
-                              <button disabled={!!pending} onClick={() => sendMissionMemoAction(m.bizId, m.bizName, m.memo, 'confirm')} className="px-1.5 py-0.5 rounded border border-amber-500/50 text-[9px] font-bold text-amber-300 hover:bg-amber-900/40 disabled:opacity-50">{pending === 'confirm' ? '처리 중…' : '확인완료'}</button>
+                              <button onClick={() => sendMissionMemoAction(m.bizId, m.bizName, m.memo, 'confirm')} className="px-1.5 py-0.5 rounded border border-amber-500/50 text-[9px] font-bold text-amber-300 hover:bg-amber-900/40">확인완료</button>
                             )}
-                            <button disabled={!!pending} onClick={() => sendMissionMemoAction(m.bizId, m.bizName, m.memo, 'delete')} className="px-1.5 py-0.5 rounded border border-red-500/40 text-[9px] font-bold text-red-300 hover:bg-red-900/40 disabled:opacity-50">{pending === 'delete' ? '삭제 중…' : '삭제'}</button>
+                            <button onClick={() => sendMissionMemoAction(m.bizId, m.bizName, m.memo, 'delete')} className="px-1.5 py-0.5 rounded border border-red-500/40 text-[9px] font-bold text-red-300 hover:bg-red-900/40">삭제</button>
                           </div>
                         </div>
                         <p className={`text-[11px] whitespace-pre-wrap break-words ${m.confirmedAt ? 'text-zinc-500' : 'text-zinc-200'}`}>{m.memo}</p>
