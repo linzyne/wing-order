@@ -16,6 +16,12 @@
       html {
         font-size: 16px;
       }
+      /* 앱은 h-screen 안에서 패널별로 스크롤 — 문서 자체가 밀려 오른쪽·아래 흰 여백이 생기지 않게 막음 */
+      html, body {
+        height: 100%;
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
       body {
         font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
         font-size: 1rem;

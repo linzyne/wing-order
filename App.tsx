@@ -1978,7 +1978,7 @@ const App: React.FC = () => {
         <div
           ref={scrollContainerRef}
           className="flex flex-1 overflow-x-auto overflow-y-hidden"
-          style={{ scrollSnapType: 'x mandatory' }}
+          style={{ scrollSnapType: 'x mandatory', overscrollBehaviorX: 'contain' }}
         >
           {allBusinesses.map((b, i) => (
             <BusinessColumn
