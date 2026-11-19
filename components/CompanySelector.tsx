@@ -4369,6 +4369,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allRowRecipientNames, setAllRowRecipientNames] = useState<Record<string, string[]>>({});
     // allOrderRows[sessionId]와 동일한 순서/길이로 정렬된 공급가/판매가/마진 목록 (매출현황 저장용)
     const [allRowPricing, setAllRowPricing] = useState<Record<string, { supplyPrice: number; sellingPrice: number; margin: number }[]>>({});
+    // 세션별 샘플 수동발주 수량 (productKey별) — 매출현황 마진에서 뺌
+    const [allSampleCounts, setAllSampleCounts] = useState<Record<string, Record<string, number>>>({});
     const [allPreConsolidationByGroup, setAllPreConsolidationByGroup] = useState<Record<string, Record<string, number>>>({});
     // 세션별 송장 미매칭 주문 목록 (통합송장변환 패널의 미변환 현황 집계용, 세션 메모리에만 존재)
     const [allInvoiceFailures, setAllInvoiceFailures] = useState<Record<string, { orderNum: string; recipient: string; reason: string }[]>>({});
@@ -4384,7 +4386,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, []);
 
-    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowBundleNumbers?: string[], rowRecipientNames?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[], invoiceFailures?: { orderNum: string; recipient: string; reason: string }[]) => {
+    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowBundleNumbers?: string[], rowRecipientNames?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[], invoiceFailures?: { orderNum: string; recipient: string; reason: string }[], sampleOrderCounts?: Record<string, number>) => {
         // 새 발주서 생성 감지 → 토스트 (초기 복원 시 억제)
         const prevCount = prevOrderRowsRef.current[sessionId] || 0;
         const newCount = orderRows.length;
@@ -4448,6 +4450,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         else if (orderRows.length === 0) setAllRowRecipientNames(prev => ({ ...prev, [sessionId]: [] }));
         if (rowPricing) setAllRowPricing(prev => ({ ...prev, [sessionId]: rowPricing }));
         else if (orderRows.length === 0) setAllRowPricing(prev => ({ ...prev, [sessionId]: [] }));
+        if (sampleOrderCounts) setAllSampleCounts(prev => ({ ...prev, [sessionId]: sampleOrderCounts }));
+        else if (orderRows.length === 0) setAllSampleCounts(prev => ({ ...prev, [sessionId]: {} }));
         if (invoiceFailures) setAllInvoiceFailures(prev => ({ ...prev, [sessionId]: invoiceFailures }));
         else if (orderRows.length === 0) setAllInvoiceFailures(prev => ({ ...prev, [sessionId]: [] }));
     }, [addToast]);
@@ -5147,6 +5151,31 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 }
             }
         }
+        // 샘플 수동발주: 매출(공급가)은 그대로 두고 그 수량만 마진 0인 '(샘플)' 기록으로 떼어낸다
+        sortedCompanyNames.forEach(name => {
+            if (!selectedCompanyNames.has(name)) return;
+            const products = pricingConfig[name]?.products || {};
+            const byName = new Map<string, number>();
+            (companySessions[name] || []).forEach(s => {
+                Object.entries(allSampleCounts[s.id] || {}).forEach(([key, qty]) => {
+                    const p = products[key] as any;
+                    const pName = p ? (p.orderFormName || p.displayName) : key;
+                    byName.set(pName, (byName.get(pName) || 0) + (Number(qty) || 0));
+                });
+            });
+            byName.forEach((qty, pName) => {
+                const rec = recordMap.get(`${name}::${pName}`);
+                if (!rec || qty <= 0) return;
+                const moveQty = Math.min(qty, rec.count);
+                const unit = rec.supplyPrice || 0;
+                const movePrice = Math.min(rec.totalPrice, unit * moveQty);
+                rec.count -= moveQty;
+                rec.totalPrice -= movePrice;
+                rec.supplyPrice = rec.count > 0 ? Math.round(rec.totalPrice / rec.count) : unit;
+                if (rec.count <= 0) recordMap.delete(`${name}::${pName}`);
+                recordMap.set(`${name}::${pName} (샘플)`, { date: recordDate, company: name, product: `${pName} (샘플)`, count: moveQty, supplyPrice: unit, totalPrice: movePrice, margin: 0 });
+            });
+        });
         const records = Array.from(recordMap.values());
 
         // 워크스테이션에서 수동으로 추가/차감한 금액도 매출 기록에 반영 (정산요약 총합계와 일치시키기 위함)
@@ -5797,6 +5826,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                     <span className="text-[10px] font-black text-rose-500">{o.companyName}</span>
                                     <span className="text-[10px] font-bold text-zinc-300">{o.recipientName}</span>
                                     <span className="text-[9px] text-zinc-600 truncate max-w-[60px]">{o.productName}</span>
+                                    <button title={o.isSample ? '샘플 — 매출현황 마진에서 뺌 (누르면 해제)' : '샘플로 표시 (매출현황 마진에서 뺌)'} onClick={(e) => {
+                                        e.stopPropagation();
+                                        setManualOrders(prev => prev.map(m => m.id === o.id ? { ...m, isSample: !m.isSample } : m));
+                                    }} className={`text-[8px] font-black px-1 rounded transition-colors ${o.isSample ? 'bg-amber-500 text-black' : 'text-zinc-600 border border-zinc-700 hover:text-amber-400 hover:border-amber-500'}`}>샘플</button>
                                     <button title="발주서 생성" onClick={(e) => {
                                         e.stopPropagation();
                                         // 수동발주는 그 업체의 1차 세션에만 들어간다

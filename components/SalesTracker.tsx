@@ -1485,6 +1485,7 @@ const SalesTracker: React.FC<{ isActive?: boolean; businessId?: string; refreshT
                         const rowSelling = typeof matchedProduct?.sellingPrice === 'number' ? matchedProduct.sellingPrice * fields.qty : undefined;
                         const rowMargin = fake
                           ? fakePurchaseMargin(matchedProduct?.sellingPrice, fields.qty) // 가구매: 역마진
+                          : orderNumber === '수동샘플' ? 0 // 샘플: 마진 없음
                           : (typeof matchedProduct?.margin === 'number' ? matchedProduct.margin * fields.qty : undefined); // 발주: 수량 × 개당마진
                         // 쿠팡 정산완료 대조: 주문번호로 정산금액 조회. autoConsolidate 합산 주문은 콤마로 여러 개 → 각각 조회 후 합산.
                         // 같은 주문번호가 여러 행이면 첫 행에만 표기(합계 중복 방지)
