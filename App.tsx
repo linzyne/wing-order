@@ -542,7 +542,22 @@ const App: React.FC = () => {
   const lotteTemplateIdRef = useRef<string | null>(null);
   lotteTemplateIdRef.current = lotteTemplate?.id ?? null;
   const [lotteBatches, setLotteBatches] = useState<LotteBatch[]>([]);
-  useEffect(() => subscribeLotteWaybills(localYMD(), setLotteBatches), []);
+  // 구독 날짜: 앱을 켜 둔 채 날짜가 바뀌면 어제 날짜로 계속 구독해 오늘 운송장이 안 들어왔다(11/20 가구매 25건 매칭 0).
+  // 자정에 한 번, 그리고 창으로 돌아올 때 날짜를 다시 본다. 어제 것부터 받는다.
+  const [lotteToday, setLotteToday] = useState(() => localYMD());
+  useEffect(() => {
+    const sync = () => setLotteToday(prev => (prev === localYMD() ? prev : localYMD()));
+    const now = new Date();
+    const toMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5).getTime() - now.getTime();
+    const timer = setTimeout(sync, toMidnight);
+    const onVis = () => { if (document.visibilityState === 'visible') sync(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearTimeout(timer); document.removeEventListener('visibilitychange', onVis); };
+  }, [lotteToday]);
+  useEffect(() => {
+    const [y, m, d] = lotteToday.split('-').map(Number);
+    return subscribeLotteWaybills(localYMD(new Date(y, m - 1, d - 1)), setLotteBatches);
+  }, [lotteToday]);
   const lotteMapRef = useRef<Map<string, string>>(new Map());
   // 발주서(업체)에서 롯데 예약한 주문: 쿠팡 주문번호(정규화) → 업체명. 업체 송장 줄·업로드 파일에 롯데 송장을 넣는 데 씀
   const lotteCompanyByOrder = useMemo(() => {

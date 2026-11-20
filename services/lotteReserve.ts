@@ -138,9 +138,10 @@ export async function requestLotteReserve(
   });
 }
 
-/** 오늘 받은 롯데 운송장번호 (확장이 lotteWaybills에 적은 것) */
-export function subscribeLotteWaybills(date: string, onChange: (batches: LotteBatch[]) => void): () => void {
-  return onSnapshot(query(collection(db, 'lotteWaybills'), where('date', '==', date)), snap => {
+/** fromDate(YYYY-MM-DD) 이후 받은 롯데 운송장번호 (확장이 lotteWaybills에 적은 것).
+ *  어제 저녁 예약하고 오늘 아침 쿠팡에 올리는 경우도 있어 어제부터 본다. */
+export function subscribeLotteWaybills(fromDate: string, onChange: (batches: LotteBatch[]) => void): () => void {
+  return onSnapshot(query(collection(db, 'lotteWaybills'), where('date', '>=', fromDate)), snap => {
     onChange(snap.docs.map(d => {
       const x = d.data();
       let items: LotteItem[] = [];
