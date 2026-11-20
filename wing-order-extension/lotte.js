@@ -1008,6 +1008,8 @@
 
   // 미리보기 창: 왼쪽 "운송장종류"를 표준라벨E로 고른 뒤 오른쪽 위 "출력"을 누른다.
   let previewSeenAt = 0;
+  // 이 미리보기 창에서 출력을 이미 눌렀는지. 눌렀으면 다시는 누르지 않는다(다음 묶음을 잘못 출력하지 않게).
+  let iPrinted = false;
   const runPreviewWindow = async (p) => {
     if (!p.previewPrintedAt) {
       // 미리보기 창이 다 그려지기 전에 누르면 클릭이 안 먹어 발급이 안 된다(10/20 S261020-01). 뜬 뒤 3초는 기다린다.
@@ -1022,10 +1024,12 @@
         previewPrintedAt: Date.now(),
         status: `미리보기 출력 중… (운송장종류: ${how})`,
       });
+      iPrinted = true;
       realClick(printBtn);
       return;
     }
     // 출력 뒤 롯데가 발급을 마칠 시간을 넉넉히 준다(5초 만에 닫아서 발급이 안 된 일이 있었다).
+    // 보통은 이보다 먼저 목록 창이 발급된 번호를 보고 다음으로 넘어가며, 그러면 이 창은 바로 닫힌다(아래 tick).
     if (Date.now() - p.previewPrintedAt < 12000) return;
     await patch({ step: 'waybillDone', status: '운송장 출력 완료. 번호를 가져오는 중…' });
     await sleep(500);
@@ -1056,6 +1060,14 @@
     realClick(apply);
     await sleep(2500);
     return true;
+  };
+
+  // 출력을 누른 뒤 결과(미리보기 창 열림·알림·출력의심목록)를 최대 3초 기다린다. 창이 뜨면 바로 끝낸다.
+  const waitPrintResult = async (at) => {
+    for (let i = 0; i < 15; i++) {
+      await sleep(200);
+      if (lastOpen || (lastAlert && lastAlert.at >= at) || find(/^출력의심/)) break;
+    }
   };
 
   // 10개씩 묶어 출력(waybillPage에서 부름). 출력을 눌렀거나 이미 다 발급돼 번호 읽기로 넘겼으면 true,
@@ -1117,7 +1129,7 @@
       if (!printBtn) return false;
       lastOpen = null;
       realClick(printBtn);
-      await sleep(3000);
+      await waitPrintResult(at);
       if (await handleSuspect()) await patch({ status: '출력의심목록 창이 떠서 "출력 안 됨(다시 출력)"으로 적용했어요…' });
       if (lastOpen && lastOpen.blocked) {
         await patch({ step: 'manual', status: '크롬이 롯데 미리보기 창을 막았어요. 주소창 오른쪽 팝업 차단 아이콘에서 "항상 허용"을 고른 뒤 이 창 아래 [다시 조회]를 눌러 주세요' });
@@ -1128,7 +1140,7 @@
       if (!failed) {
         const diag = await printDiagText();
         await patch({
-          step: 'preview', printedAt: Date.now(), groupPrinted: reach.map((t) => t.o),
+          step: 'preview', printedAt: Date.now(), groupPrinted: reach.map((t) => t.o), pvSearchedAt: 0,
           status: `${reach.length}개 한 번에 출력 중… (${label})`,
           diag: `묶음 x ${x} · 줄높이 ${Math.round(rowH)} · ${diag}`,
         });
@@ -1188,6 +1200,8 @@
       if (IS_PREVIEW) {
         // 다른 창(예: 송장 다시 출력 창)이 연 미리보기는 건드리지 않는다.
         if (myOpenerWindowId && p.windowId && myOpenerWindowId !== p.windowId) return;
+        // 출력을 누른 뒤 목록 창이 발급된 번호를 확인하고 다음으로 넘어갔으면 이 창은 할 일이 끝났다. 바로 닫는다.
+        if (iPrinted && (['waybillDone', 'verify', 'waybills', 'manual', 'error'].includes(p.step) || (p.step === 'waybillPage' && !p.previewPrintedAt))) { window.close(); return; }
         if (['uploaded', 'waybillMenu', 'waybillPage', 'preview'].includes(p.step)) await runPreviewWindow(p);
         return;
       }
@@ -1564,7 +1578,7 @@
               }
               lastOpen = null;
               realClick(printBtn);
-              await sleep(3000);
+              await waitPrintResult(at);
               if (await handleSuspect()) await patch({ status: `${ordNo} 출력의심목록 창이 떠서 "출력 안 됨(다시 출력)"으로 적용했어요…` });
               if (lastOpen && lastOpen.blocked) {
                 await patch({
@@ -1581,6 +1595,7 @@
                 await patch({
                   step: 'preview',
                   printedAt: Date.now(),
+                  groupPrinted: null, pvSearchedAt: 0,
                   preWaybills: before,
                   openInfo: diag,
                   status: `${ordNo} 송장 출력 중…`,
@@ -1620,6 +1635,25 @@
             step: 'verify', verifyIdx: 1, verifyBatchDone: false, verifiedOk: [], verifySearchedAt: 0, verifyStartedAt: Date.now(), collected: done,
             status: `송장번호 ${done.length}건을 찾았어요. 롯데 목록과 한 번 더 대조하는 중…`,
           });
+          return;
+        }
+
+        // 미리보기에서 출력을 누른 뒤: 12초를 그냥 기다리지 않고 3초마다 다시 조회해, 이번에 출력한 박스 줄에
+        // 운송장번호가 들어온 게 보이면 바로 번호 읽기로 넘어간다(목록에 번호가 보이면 발급이 끝난 것).
+        // 출력 전엔 이 줄들에 번호가 없었으니(이미 발급된 줄은 출력하지 않음) 지금 보이는 번호는 이번에 발급된 것이다.
+        if (p.step === 'preview' && p.previewPrintedAt) {
+          const cur = ordAt(p, Number(p.boxIdx) || 1);
+          const ords = (p.groupPrinted && p.groupPrinted.includes(cur)) ? p.groupPrinted : [cur];
+          const since = p.pvSearchedAt || 0;
+          if (since > p.previewPrintedAt && ords.every((o) => { const s = byOrder.get(o); return s && s.at >= since && s.waybill.w; })) {
+            await patch({ step: 'waybillDone', searchedAt2: since, status: '운송장 발급 확인. 번호를 가져오는 중…' });
+            return;
+          }
+          if (Date.now() - since > 3000) {
+            const s = find(TEXT.search);
+            if (s) realClick(s);
+            await patch({ pvSearchedAt: Date.now() });
+          }
           return;
         }
 
