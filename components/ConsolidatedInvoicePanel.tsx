@@ -51,6 +51,12 @@ interface Props {
   onCourierDirectCoupangUpload?: (templateId: string, businessId: string, onStep?: (step: string) => void) => Promise<string | void>;
   mailWatcher?: MailInvoiceWatcher;
   adminInvoiceFetcher?: AdminInvoiceFetcher;
+  /** 쿠팡에 송장 올린 업체 (키: 사업자id::업체명 → 올린 시각) */
+  coupangUploaded?: Record<string, string>;
+  onCoupangUploaded?: (keys: string[]) => void;
+  /** 메일 송장 자동 업로드 진행 상황 (키: 사업자id::업체명) */
+  autoCoupangProgress?: Record<string, { text: string; tone: 'run' | 'ok' | 'err' }>;
+  onAutoCoupangProgressClear?: (key: string) => void;
 }
 
 function detectBusiness(filename: string, businesses: Business[]): Business | null {
@@ -195,7 +201,7 @@ const AdminInvoiceSection: React.FC<{ f: AdminInvoiceFetcher }> = ({ f }) => {
   );
 };
 
-const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, onReset, couriers, hasFakeOrders, onCourierFilesAdd, onCourierFileRemove, onCourierResultDownload, onDirectCoupangUpload, onDirectCoupangUploadCompany, onCourierDirectCoupangUpload, mailWatcher, adminInvoiceFetcher }) => {
+const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onClose, results, onResultsChange, onReset, couriers, hasFakeOrders, onCourierFilesAdd, onCourierFileRemove, onCourierResultDownload, onDirectCoupangUpload, onDirectCoupangUploadCompany, onCourierDirectCoupangUpload, mailWatcher, adminInvoiceFetcher, coupangUploaded = {}, onCoupangUploaded, autoCoupangProgress = {}, onAutoCoupangProgressClear }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; uploadCount: number }[] }[]>([]);
@@ -211,12 +217,14 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
     key: string,
     setStates: React.Dispatch<React.SetStateAction<Record<string, 'idle' | 'loading' | 'success'>>>,
     upload: (onStep: (step: string) => void) => Promise<string | void>,
+    uploadedKeys: string[] = [],
   ) => {
     setStates(prev => ({ ...prev, [key]: 'loading' }));
     setCoupangProgress(prev => ({ ...prev, [key]: { text: '프로필 확장 기다리는 중', tone: 'run' } }));
     try {
       const msg = await upload(step => setCoupangProgress(prev => ({ ...prev, [key]: { text: step, tone: 'run' } })));
       setStates(prev => ({ ...prev, [key]: 'success' }));
+      if (uploadedKeys.length > 0) onCoupangUploaded?.(uploadedKeys);
       setCoupangProgress(prev => ({ ...prev, [key]: { text: msg || '송장 올림', tone: 'ok' } }));
       setTimeout(() => setStates(prev => ({ ...prev, [key]: 'idle' })), 3000);
     } catch (e: any) {
@@ -225,8 +233,12 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
     }
   };
   const CoupangProgressLine = ({ k }: { k: string }) => {
-    const p = coupangProgress[k];
+    const p = coupangProgress[k] ?? autoCoupangProgress[k];
     if (!p) return null;
+    const clear = () => {
+      if (coupangProgress[k]) setCoupangProgress(prev => { const n = { ...prev }; delete n[k]; return n; });
+      else onAutoCoupangProgressClear?.(k);
+    };
     return (
       <div className={`mt-1 flex items-start gap-1 text-[10px] font-bold break-all ${p.tone === 'err' ? 'text-red-400' : p.tone === 'ok' ? 'text-emerald-400' : 'text-sky-400'}`}>
         {p.tone === 'run'
@@ -234,7 +246,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
           : <span className="shrink-0">{p.tone === 'ok' ? '✓' : '✕'}</span>}
         <span className="flex-1">{p.text}</span>
         {p.tone !== 'run' && (
-          <button onClick={() => setCoupangProgress(prev => { const n = { ...prev }; delete n[k]; return n; })} className="text-zinc-600 hover:text-zinc-400 shrink-0">닫기</button>
+          <button onClick={clear} className="text-zinc-600 hover:text-zinc-400 shrink-0">닫기</button>
         )}
       </div>
     );
@@ -567,8 +579,12 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                   return (
                     <div key={c.name}>
                     <div className="flex items-center gap-1.5">
-                      <span className={`text-[11px] flex-1 ${isFake ? 'text-pink-300' : 'text-white'}`}>
-                        {c.name}
+                      <span className={`text-[11px] flex-1 flex items-center gap-1 min-w-0 ${isFake ? 'text-pink-300' : 'text-white'}`}>
+                        {coupangUploaded[ck] && (
+                          <span className="shrink-0 w-3.5 h-3.5 rounded-full bg-emerald-500 text-white text-[9px] font-black flex items-center justify-center" title={`쿠팡 업로드 완료 ${coupangUploaded[ck]}`}>✓</span>
+                        )}
+                        <span className="truncate">{c.name}</span>
+                        {coupangUploaded[ck] && <span className="shrink-0 text-[9px] font-black text-emerald-400">업로드 완료</span>}
                       </span>
                       <span className="text-[12px] font-black text-zinc-300">{c.uploadCount}건</span>
                       <button
@@ -583,7 +599,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                       </button>
                       {onDirectCoupangUploadCompany && (
                         <button
-                          onClick={() => runCoupangUpload(ck, setCoupangStates, onStep => onDirectCoupangUploadCompany(biz.businessId, c.name, onStep))}
+                          onClick={() => runCoupangUpload(ck, setCoupangStates, onStep => onDirectCoupangUploadCompany(biz.businessId, c.name, onStep), [ck])}
                           disabled={coupangStates[ck] === 'loading'}
                           className={`px-2 py-0.5 text-[11px] font-black rounded-lg transition-colors border shrink-0 ${
                             coupangStates[ck] === 'loading'
@@ -613,7 +629,7 @@ const ConsolidatedInvoicePanel: React.FC<Props> = ({ businesses, uploadFns, onCl
                   </button>
                   {onDirectCoupangUpload && (
                     <button
-                      onClick={() => runCoupangUpload(biz.businessId, setCoupangStates, onStep => onDirectCoupangUpload(biz.businessId, onStep))}
+                      onClick={() => runCoupangUpload(biz.businessId, setCoupangStates, onStep => onDirectCoupangUpload(biz.businessId, onStep), biz.companies.map(c => `${biz.businessId}::${c.name}`))}
                       disabled={coupangStates[biz.businessId] === 'loading'}
                       className={`px-3 py-1 text-[11px] font-black rounded-lg transition-colors border shrink-0 ${
                         coupangStates[biz.businessId] === 'loading'

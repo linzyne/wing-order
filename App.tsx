@@ -895,15 +895,62 @@ const App: React.FC = () => {
   const mailWatcher = useMailInvoiceWatcher(uploadFnsRef.current, businessIdNamePairs, handleMailInvoicesAccepted);
   const adminInvoiceFetcher = useAdminInvoiceFetcher(uploadFnsRef.current, businessIdNamePairs, handleMailInvoicesAccepted);
 
+  // 쿠팡에 송장 올린 업체 (키: 사업자id::업체명) — 통합 송장 변환 패널에서 업체 이름 앞에 ✓. 오늘 날짜 것만 이 기기에 기억
+  const uploadedKey = `coupangInvoiceUploaded_${new Date().toLocaleDateString('en-CA')}`;
+  const [coupangUploaded, setCoupangUploaded] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem(uploadedKey) || '{}'); } catch { return {}; }
+  });
+  const markCoupangUploaded = useCallback((keys: string[]) => {
+    const t = new Date();
+    const time = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+    setCoupangUploaded(prev => {
+      const next = { ...prev };
+      keys.forEach(k => { next[k] = time; });
+      try { localStorage.setItem(uploadedKey, JSON.stringify(next)); } catch { /* noop */ }
+      return next;
+    });
+  }, [uploadedKey]);
+  // 메일 송장 변환 끝난 업체 → 쿠팡 자동 업로드 진행 상황 (키: 사업자id::업체명)
+  const [autoCoupangProgress, setAutoCoupangProgress] = useState<Record<string, { text: string; tone: 'run' | 'ok' | 'err' }>>({});
+  const autoUploadQueueRef = useRef<Record<string, Promise<void>>>({});
+  useEffect(() => {
+    const onConverted = (e: Event) => {
+      const { businessId, company } = (e as CustomEvent<{ businessId: string; company: string }>).detail || {} as any;
+      if (!businessId || !company) return;
+      const key = `${businessId}::${company}`;
+      const setP = (text: string, tone: 'run' | 'ok' | 'err') => setAutoCoupangProgress(prev => ({ ...prev, [key]: { text, tone } }));
+      setP('메일 송장 변환 완료 — 쿠팡 자동 업로드 대기', 'run');
+      // 같은 사업자(같은 크롬 프로필)는 한 번에 하나씩
+      const prevRun = autoUploadQueueRef.current[businessId] ?? Promise.resolve();
+      autoUploadQueueRef.current[businessId] = prevRun.then(async () => {
+        try {
+          const file = uploadFnsRef.current[businessId]?.getCompanyInvoiceWorkbookFile?.(company);
+          if (!file) throw new Error('송장 데이터가 없습니다.');
+          if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 새로고침 후 쿠팡 ↑ 눌러주세요.');
+          const msg = await directCoupangUploadRef.current(businessId, file, step => setP(`자동 업로드: ${step}`, 'run'));
+          setP(`자동 업로드 완료${msg ? ` · ${msg}` : ''}`, 'ok');
+          markCoupangUploaded([key]);
+        } catch (err: any) {
+          setP(`자동 업로드 실패: ${err?.message ?? err} — 쿠팡 ↑ 눌러 다시`, 'err');
+        }
+      });
+    };
+    window.addEventListener('email-invoice-converted', onConverted);
+    return () => window.removeEventListener('email-invoice-converted', onConverted);
+  }, [markCoupangUploaded]);
+
   const handleResetInvoicePanel = useCallback(() => {
     setInvoiceResults([]);
+    setAutoCoupangProgress({});
+    setCoupangUploaded({});
+    try { localStorage.removeItem(uploadedKey); } catch { /* noop */ }
     allBusinesses.forEach(b => uploadFnsRef.current[b.id]?.resetInvoiceMatching?.());
     globalCourierFilesRef.current = {};
     setGlobalCourierFiles({});
     setGlobalCourierResults({});
     setGlobalCourierMatchedRows({});
     setGlobalCourierRowsByBiz({});
-  }, [allBusinesses]);
+  }, [allBusinesses, uploadedKey]);
 
   const handleGlobalCourierResultDownload = useCallback((templateId: string) => {
     const rows = globalCourierMatchedRows[templateId];
@@ -1483,6 +1530,10 @@ const App: React.FC = () => {
             onResultsChange={setInvoiceResults}
             onReset={handleResetInvoicePanel}
             mailWatcher={mailWatcher}
+            coupangUploaded={coupangUploaded}
+            onCoupangUploaded={markCoupangUploaded}
+            autoCoupangProgress={autoCoupangProgress}
+            onAutoCoupangProgressClear={k => setAutoCoupangProgress(prev => { const n = { ...prev }; delete n[k]; return n; })}
             adminInvoiceFetcher={adminInvoiceFetcher}
             couriers={courierItemsForPanel}
             hasFakeOrders={globalFakeOrderInput.trim().length > 0 || lotteBatches.length > 0}

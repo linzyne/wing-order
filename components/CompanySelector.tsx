@@ -3011,6 +3011,11 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const uploadVendorInvoiceFromEmailRef = useRef(async (_sender: string, _files: File[]) => [] as { company: string; status: EmailInvoiceStatus }[]);
     const uploadVendorInvoiceFromAdminRef = useRef(async (_company: string, _files: File[]) => [] as { company: string; status: EmailInvoiceStatus }[]);
     const getVendorEmailsRef = useRef(() => [] as string[]);
+    // 메일로 받은 송장: 변환이 끝나면 쿠팡 자동 업로드 (업체 → 받은 시각). 변환 결과가 들어오면 잠깐 기다렸다가 App에 알림
+    const emailAutoUploadPendingRef = useRef<Map<string, number>>(new Map());
+    const emailAutoUploadTimersRef = useRef<Map<string, number>>(new Map());
+    const emailAutoUploadBizRef = useRef(businessId);
+    emailAutoUploadBizRef.current = businessId;
     const getInvoiceStateRef = useRef(() => [] as { name: string; uploadCount: number }[]);
     const getInvoiceMatchStateRef = useRef(() => [] as { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }[]);
     const downloadAllInvoicesRef = useRef(() => {});
@@ -3932,7 +3937,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const from = sender.trim().toLowerCase();
         const companies = Object.keys(pricingConfig || {}).filter(c => splitEmails(pricingConfig[c]?.email).includes(from));
         if (companies.length === 0) return [];
-        return acceptVendorInvoiceFiles(companies, files, `[메일송장] ${from}`);
+        const res = await acceptVendorInvoiceFiles(companies, files, `[메일송장] ${from}`);
+        res.filter(r => r.status === 'ok').forEach(r => emailAutoUploadPendingRef.current.set(r.company, Date.now()));
+        return res;
     };
 
     // 업체 어드민(adminplus)에서 확장이 받아 온 송장: 업체명이 정해져 있으니 그 업체 줄에만 넣는다.
@@ -4469,6 +4476,20 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         if (header || uploadInvoiceRows.length > 0 || orderRows.length === 0) {
             setAllInvoiceRows(prev => ({ ...prev, [sessionId]: invoiceRows }));
             setAllUploadInvoiceRows(prev => ({ ...prev, [sessionId]: uploadInvoiceRows }));
+            // 메일 송장 변환 완료 → 그 업체 송장 쿠팡 자동 업로드 (여러 차수가 연달아 변환되면 마지막 것 뒤에 한 번)
+            if (header && uploadInvoiceRows.length > 0) {
+                const company = sessionId.replace(/-\d+$/, '');
+                const at = emailAutoUploadPendingRef.current.get(company);
+                if (at && Date.now() - at < 10 * 60_000) {
+                    const timers = emailAutoUploadTimersRef.current;
+                    if (timers.has(company)) clearTimeout(timers.get(company));
+                    timers.set(company, window.setTimeout(() => {
+                        timers.delete(company);
+                        emailAutoUploadPendingRef.current.delete(company);
+                        window.dispatchEvent(new CustomEvent('email-invoice-converted', { detail: { businessId: emailAutoUploadBizRef.current, company } }));
+                    }, 3000));
+                }
+            }
             if (header) {
                 setAllHeaders(prev => ({ ...prev, [sessionId]: header }));
                 // 송장 처리 완료 → 불 켜기 (복원 시 억제)
