@@ -362,28 +362,26 @@ async function removeSettlementAdjustments(
 const hadReturnRecord = (record: CsRecord): boolean =>
   !record.pending && record.customerMethod === '환불' && record.deduction === 'full';
 
-/** 확정한 날 문서에 따로 들어간 반품기록(record.returnDate)을 걷어낸다 */
-async function removeReturnOnReturnDate(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
-  if (!record.returnDate || record.returnDate === date) return;
-  const { saveCsAndReturns } = await import('../services/firestoreService');
-  const ok = await saveCsAndReturns(record.returnDate, businessId, null, returns => returns.filter(r => r.csRecordId !== record.id));
-  if (ok) window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: record.returnDate } }));
+/** 반품기록(CS환불)을 걷어낸다 — 확정한 날(returnDate) 문서, 예전 건은 접수일 문서 */
+async function removeReturnRecord(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
+  if (!hadReturnRecord(record)) return;
+  const { updateReturnRecords } = await import('../services/firestoreService');
+  const dates = [...new Set([date, record.returnDate || date])];
+  await Promise.all(dates.map(async d => {
+    const ok = await updateReturnRecords(d, businessId, returns => returns.filter(r => r.csRecordId !== record.id));
+    if (ok) window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: d } }));
+  }));
 }
 
-/** CS 기록을 삭제하고, 연결된 반품기록/정산조정/수동입금 내역도 함께 정리한다 */
+/** CS 기록을 삭제하고, 연결된 반품기록/정산조정/수동입금 내역도 함께 정리한다.
+ *  목록에선 바로 사라지고 서버 저장·정리는 뒤에서 한다 (기다리지 않는다) */
 export async function deleteCsRecord(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
-  const { saveCsAndReturns } = await import('../services/firestoreService');
-  const ok = await saveCsAndReturns(
-    date, businessId,
-    records => records.filter(r => r.id !== record.id),
-    hadReturnRecord(record) ? returns => returns.filter(r => r.csRecordId !== record.id) : null,
-  );
-  if (!ok) return;
-  window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
-  await cleanUpConfirmedEffects(businessId, date, record);
+  const { deleteCsItem, trackCsSync } = await import('../services/firestoreService');
+  deleteCsItem(businessId, record).catch(() => {});
+  trackCsSync('CS 삭제 정리(반품·정산조정·입금)', cleanUpConfirmedEffects(businessId, date, record)).catch(() => {});
 }
 
-/** 확정 때 들어간 반품기록(다른 날)·정산조정·계좌환불 수동입금을 함께 걷어낸다. 서로 다른 문서·필드라 동시에 한다. */
+/** 확정 때 들어간 반품기록·정산조정·계좌환불 수동입금을 함께 걷어낸다. 서로 다른 문서·필드라 동시에 한다. */
 async function cleanUpConfirmedEffects(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
   const { getDailyWorkspace } = await import('../services/firestoreService');
   const wasRefundDeduction = hasSettlementDeduction(record);
@@ -394,7 +392,7 @@ async function cleanUpConfirmedEffects(businessId: string | undefined, date: str
   // 남겨두면 기록이 사라지거나 되돌린 뒤에도 차감만 정산요약에 남고, 다시 확정해 재생성하면 두 번 차감된다.
   const adjIds = [`cs-reship-${record.id}`, ...(wasRefundDeduction ? [`cs-adj-${record.id}`] : [])];
   await Promise.all([
-    removeReturnOnReturnDate(businessId, date, record),
+    removeReturnRecord(businessId, date, record),
     removeSettlementAdjustments(businessId, adjIds, ws),
     wasAccountRefund
       ? setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null, ws)
@@ -405,17 +403,11 @@ async function cleanUpConfirmedEffects(businessId: string | undefined, date: str
 
 /** 확정된 CS를 다시 대기 상태로 되돌리고, 확정 시점에 반영됐던 반품기록/정산조정/수동입금 내역도 함께 취소한다 */
 export async function revertCsRecordToPending(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
-  const { saveCsAndReturns } = await import('../services/firestoreService');
+  const { writeCsItem, trackCsSync } = await import('../services/firestoreService');
   // 발주서 초기화로 되돌릴 때(revertReshipCsRecordsForReset)와 같은 상태로 맞춘다.
   // poAdded를 남겨두면 다시 확정했을 때 "발주서생성됨"으로 굳어 재생성 버튼을 누를 수 없다.
-  const ok = await saveCsAndReturns(
-    date, businessId,
-    records => records.map(r => (r.id === record.id ? { ...r, pending: true, poAdded: false, returnDate: undefined } : r)),
-    hadReturnRecord(record) ? returns => returns.filter(r => r.csRecordId !== record.id) : null,
-  );
-  if (!ok) return;
-  window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
-  await cleanUpConfirmedEffects(businessId, date, record);
+  writeCsItem(businessId, date, { ...record, pending: true, poAdded: false, returnDate: undefined }).catch(() => {});
+  trackCsSync('대기로 되돌리기 정리(반품·정산조정·입금)', cleanUpConfirmedEffects(businessId, date, record)).catch(() => {});
 }
 
 interface Props {
@@ -432,8 +424,6 @@ interface Props {
 const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onChange, onClose, onSaved, editing }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // 서버 응답이 느려 저장이 오래 걸리는 중(실패 아님). 저장은 끝까지 기다렸다가 완료되면 닫는다.
-  const [slow, setSlow] = useState(false);
   const mountedRef = useRef(true);
   useEffect(() => () => { mountedRef.current = false; }, []);
 
@@ -459,13 +449,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       return;
     }
     setSaving(true);
-    setSlow(false);
     setError(null);
-    // Firestore 응답이 느려 20초를 넘기는 경우가 있는데, 실제로는 서버에 정상 저장된다.
-    // 예전엔 여기서 "저장 지연" 에러를 띄우고 버튼을 풀어 → 저장이 끝나도 모달이 안 닫히고,
-    // 다시 누르면 같은 CS가 중복 접수될 수 있었다. 이제 안내만 띄우고 끝까지 기다렸다가 완료되면 닫는다.
-    const startedAt = Date.now();
-    const watchdog = setTimeout(() => { if (mountedRef.current) setSlow(true); }, 8000);
     try {
       const product = needsProductForDeduction
         ? (pricingConfig?.[draft.company]?.products?.[draft.productKey] as any)
@@ -473,7 +457,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       const supplyPrice = product?.supplyPrice || 0;
       const marginPerUnit = product?.margin || 0;
 
-      const { saveCsAndReturns } = await import('../services/firestoreService');
+      const { writeCsItem, updateReturnRecords, trackCsSync } = await import('../services/firestoreService');
       const now = new Date();
       const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
       const targetDate = editing ? editing.date : todayStr;
@@ -541,54 +525,50 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       const transferAction = !asPending && isAccountRefund ? 'set' : wasAccountRefund ? 'remove' : null;
       const workspaceChanged = () => window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
 
-      // CS 문서·반품(매출 문서)·정산조정·수동입금은 서로 다른 문서/필드라 한꺼번에 보낸다.
-      // 예전엔 하나씩 끝나길 기다려 서버 왕복이 4~6번 쌓였다. 작업공간 문서는 한 번만 읽어 둘이 같이 쓴다.
-      let ws: Promise<DailyWorkspaceData | null> | undefined;
-      if (adjustAction || transferAction) {
-        const { getDailyWorkspace } = await import('../services/firestoreService');
-        ws = getDailyWorkspace(businessId);
-        ws.catch(() => {});
+      // CS 한 건 저장은 화면(목록 구독)에 바로 반영된다. 서버 확인은 기다리지 않고 창을 닫는다.
+      // 반품(매출 문서)·정산조정·수동입금은 서로 다른 문서라 뒤에서 한꺼번에 보낸다. 남은 건 수·실패는 CS 화면에 표시.
+      writeCsItem(businessId, targetDate, csRecord).catch(() => {});
+      const sideEffects = (async () => {
+        let ws: Promise<DailyWorkspaceData | null> | undefined;
+        if (adjustAction || transferAction) {
+          const { getDailyWorkspace } = await import('../services/firestoreService');
+          ws = getDailyWorkspace(businessId);
+          ws.catch(() => {});
+        }
+        const returnDates = touchesReturns
+          ? [...new Set([targetDate, returnRecord ? returnDate : '', prevReturnDate || ''])].filter(Boolean)
+          : [];
+        await Promise.all([
+          ...returnDates.map(date =>
+            updateReturnRecords(date, businessId, returns => withReturn(date, returns))
+              .then(ok => { if (ok) window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } })); })),
+          adjustAction === 'set'
+            ? setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice,
+                [sanitizeRecipientName(draft.recipientName), draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불', false, ws)
+                .then(workspaceChanged)
+            : adjustAction === 'remove'
+              ? setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, 0, '', true, ws).then(workspaceChanged)
+              : null,
+          transferAction === 'set'
+            ? setManualTransferForRefund(businessId, `cs-refund-${id}`, {
+                label: `${sanitizeRecipientName(draft.recipientName) || '고객'} CS환불`,
+                bankName: draft.refundBankName.trim(),
+                accountNumber: draft.refundAccountNumber.trim(),
+                amount: parseInt(draft.refundAmount, 10) || 0,
+              }, ws).then(workspaceChanged)
+            : transferAction === 'remove'
+              ? setManualTransferForRefund(businessId, `cs-refund-${id}`, null, ws).then(workspaceChanged)
+              : null,
+        ]);
+      })();
+      if (touchesReturns || adjustAction || transferAction) {
+        trackCsSync(`CS 반영 (${sanitizeRecipientName(draft.recipientName) || draft.orderNumber || '고객'}: 반품·정산조정·입금)`, sideEffects).catch(() => {});
       }
-      const extraReturnDates = [...new Set([returnRecord ? returnDate : '', prevReturnDate || ''])]
-        .filter(date => date && date !== targetDate);
-      await Promise.all([
-        saveCsAndReturns(
-          targetDate, businessId,
-          records => (editing ? records.map(r => (r.id === id ? csRecord : r)) : [...records, csRecord]),
-          touchesReturns ? returns => withReturn(targetDate, returns) : null,
-        ).then(() => { window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: targetDate } })); }),
-        ...extraReturnDates.map(date =>
-          saveCsAndReturns(date, businessId, null, returns => withReturn(date, returns))
-            .then(() => { window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } })); })),
-        adjustAction === 'set'
-          ? setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice,
-              [sanitizeRecipientName(draft.recipientName), draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불', false, ws)
-              .then(workspaceChanged)
-          : adjustAction === 'remove'
-            ? setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, 0, '', true, ws).then(workspaceChanged)
-            : null,
-        transferAction === 'set'
-          ? setManualTransferForRefund(businessId, `cs-refund-${id}`, {
-              label: `${sanitizeRecipientName(draft.recipientName) || '고객'} CS환불`,
-              bankName: draft.refundBankName.trim(),
-              accountNumber: draft.refundAccountNumber.trim(),
-              amount: parseInt(draft.refundAmount, 10) || 0,
-            }, ws).then(workspaceChanged)
-          : transferAction === 'remove'
-            ? setManualTransferForRefund(businessId, `cs-refund-${id}`, null, ws).then(workspaceChanged)
-            : null,
-      ]);
-
-      const elapsed = Date.now() - startedAt;
-      if (elapsed > 8000) console.warn(`[CS] 저장 완료까지 ${Math.round(elapsed / 1000)}초 걸림`);
       onSaved();
-      // 기다리는 사이 사용자가 창을 닫았으면 목록 갱신만 하고 onClose는 부르지 않는다(다른 모달을 닫지 않도록)
-      if (mountedRef.current) onClose();
+      onClose();
     } catch (e: any) {
       if (mountedRef.current) setError('저장 실패: ' + (e?.message || '알 수 없는 오류'));
-    } finally {
-      clearTimeout(watchdog);
-      if (mountedRef.current) { setSaving(false); setSlow(false); }
+      if (mountedRef.current) setSaving(false);
     }
   };
 
@@ -603,7 +583,7 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
   return createPortal(
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
-      onClick={() => (!saving || slow) && onClose()}
+      onClick={() => !saving && onClose()}
     >
       <div
         className="relative bg-zinc-900 border border-zinc-700 rounded-[2rem] shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col animate-fade-in"
@@ -847,11 +827,6 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
           )}
 
           {error && <p className="text-rose-400 text-xs font-bold">{error}</p>}
-          {slow && !error && (
-            <p className="text-amber-400 text-xs font-bold">
-              서버 응답이 느려 저장을 기다리는 중입니다. 다시 누르지 마세요 — 완료되면 자동으로 닫힙니다. (창을 닫아도 저장은 계속됩니다)
-            </p>
-          )}
         </div>
 
         <div className="px-6 py-4 border-t border-zinc-800 shrink-0 flex gap-2">

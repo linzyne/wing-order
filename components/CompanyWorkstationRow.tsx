@@ -1243,12 +1243,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         if (reshipIds.length === 0) return;
         setSessionAdjustments(prev => prev.filter(a => !a.id.startsWith('cs-reship-')));
         (async () => {
-            const { updateCsRecords, CS_SAVED_EVENT } = await import('../services/firestoreService');
-            const date = workDate || new Date().toLocaleDateString('en-CA');
-            const idSet = new Set(reshipIds);
-            const ok = await updateCsRecords(date, businessId, records => records.map(r => idSet.has(r.id) ? { ...r, pending: true, poAdded: false } : r));
-            if (!ok) return;
-            window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
+            const { updateCsItemsById } = await import('../services/firestoreService');
+            await updateCsItemsById(businessId, reshipIds, r => ({ ...r, pending: true, poAdded: false })).catch(() => {});
         })();
     };
 

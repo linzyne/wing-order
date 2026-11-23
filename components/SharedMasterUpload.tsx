@@ -1,6 +1,5 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { CS_SAVED_EVENT } from '../services/firestoreService';
 import { useTradingCompanies } from '../hooks/useFirestore';
 import WingFetchBar from './WingFetchBar';
 import { SentOrdersBar } from './SentOrdersBar';
@@ -286,28 +285,20 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const [pendingUrgentFiles, setPendingUrgentFiles] = useState<File[] | null>(null);
   const [pendingCsItems, setPendingCsItems] = useState<PendingCsSummary[]>([]);
 
-  // 대기저장 CS 목록: 최신 상태를 유지하다가 발주서 생성 시 팝업으로 리마인드
-  const refreshPendingCs = useCallback(async () => {
-    const { loadOpenCsHistory } = await import('../services/firestoreService');
-    const results = await Promise.all(businesses.map(async b => {
-      const history = await loadOpenCsHistory(b.id);
-      const found: PendingCsSummary[] = [];
-      history.forEach(d => {
-        (d.csRecords || []).forEach(r => {
-          if (r.pending) found.push({ businessName: b.displayName, company: r.company, recipientName: r.recipientName, orderNumber: r.orderNumber, customerMethod: r.customerMethod });
-        });
-      });
-      return found;
-    }));
-    setPendingCsItems(results.flat());
-  }, [businesses]);
-
+  // 대기저장 CS 목록: 구독으로 최신 상태를 유지하다가 발주서 생성 시 팝업으로 리마인드
   useEffect(() => {
-    refreshPendingCs();
-    const handler = () => refreshPendingCs();
-    window.addEventListener(CS_SAVED_EVENT, handler);
-    return () => window.removeEventListener(CS_SAVED_EVENT, handler);
-  }, [refreshPendingCs]);
+    const byBiz: Record<string, PendingCsSummary[]> = {};
+    let alive = true;
+    const unsubs: (() => void)[] = [];
+    import('../services/firestoreService').then(({ subscribeOpenCs }) => {
+      if (!alive) return;
+      businesses.forEach(b => unsubs.push(subscribeOpenCs(b.id, list => {
+        byBiz[b.id] = (list || []).filter(r => r.pending).map(r => ({ businessName: b.displayName, company: r.company, recipientName: r.recipientName, orderNumber: r.orderNumber, customerMethod: r.customerMethod }));
+        setPendingCsItems(businesses.flatMap(x => byBiz[x.id] || []));
+      })));
+    });
+    return () => { alive = false; unsubs.forEach(u => u()); };
+  }, [businesses]);
 
   // 마운트 시 첫 번째 사업자의 작업날짜를 가져와 표시값 동기화
   useEffect(() => {

@@ -6,7 +6,7 @@ import {
   type Unsubscribe
 } from 'firebase/firestore';
 import { isCsFullyCompleted } from '../types';
-import type { PricingConfig, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate, CompanyDeposit } from '../types';
+import type { PricingConfig, CsRecord, DailySales, PlatformConfigs, TodoItem, BusinessInfo, CourierTemplate, CompanyDeposit } from '../types';
 
 // ===== Firestore 한도 초과 감지 =====
 
@@ -230,7 +230,6 @@ const SALES_HISTORY_TTL_MS = 90 * 1000;
 const salesHistoryCache = new Map<string, { at: number; promise: Promise<DailySales[]> }>();
 const invalidateSalesHistoryCache = (businessId?: string): void => {
   salesHistoryCache.delete(getSalesCollectionName(businessId));
-  csHistoryCache.delete(getSalesCollectionName(businessId));
 };
 
 // ===== CS 전용 저장소 =====
@@ -239,7 +238,6 @@ const invalidateSalesHistoryCache = (businessId?: string): void => {
 // 문서: { date, records: CsRecord[], hasOpen } — hasOpen은 미완료·대기 CS가 하나라도 있으면 true
 type CsRecords = NonNullable<DailySales['csRecords']>;
 type ReturnRecords = NonNullable<DailySales['returnRecords']>;
-const csHistoryCache = new Map<string, { at: number; promise: Promise<DailySales[]> }>();
 const getCsCollectionName = (businessId?: string): string =>
   getSalesCollectionName(businessId).replace(/^salesHistory/, 'csHistory');
 const getCsIndexMarkerDocId = (businessId?: string): string => `csIndex_v1_${getSalesCollectionName(businessId)}`;
@@ -283,21 +281,162 @@ const ensureCsSplit = (businessId?: string): Promise<void> => {
   return ready;
 };
 
-// 미완료(접수 중) 또는 대기저장 CS가 하나라도 있는 날짜만 { date, csRecords }로 반환한다
-export const loadOpenCsHistory = async (businessId?: string): Promise<DailySales[]> => {
+// ===== CS 한 건 = 문서 하나 (csItems[_사업자]/{CS id}) =====
+// 예전 csHistory/{날짜}는 그날 CS를 배열 하나에 담아서, 한 건 저장하려 해도 서버에서 읽고 → 고치고 → 다시 쓰고
+// → 서버 확인까지 기다려야 했다(사파리에서 수십 초). 이제 한 건씩 바로 쓴다. 읽기가 없으니 기다릴 것도, 줄 세울 것도 없다.
+// 문서: CsRecord + { date(접수한 날), open(대기·미완료면 true) }. 목록은 open==true 구독.
+const getCsItemsCollectionName = (businessId?: string): string =>
+  getSalesCollectionName(businessId).replace(/^salesHistory/, 'csItems');
+const csItemRef = (businessId: string | undefined, id: string) => doc(db, getCsItemsCollectionName(businessId), id);
+const isCsOpen = (r: CsRecord): boolean => !!r.pending || !isCsFullyCompleted(r);
+// 화면용 필드(businessId 등)가 섞여 와도 CS 칸만 저장한다
+const CS_VIEW_ONLY_FIELDS = ['businessId', 'businessName', 'date', 'syncing', 'open'];
+const csItemFields = (date: string, record: CsRecord): Record<string, unknown> => {
+  const fields: Record<string, unknown> = { ...record };
+  CS_VIEW_ONLY_FIELDS.forEach(k => delete fields[k]);
+  Object.keys(fields).forEach(k => { if (fields[k] === undefined) delete fields[k]; });
+  return { ...fields, date, open: isCsOpen(record) };
+};
+
+// csHistory → csItems 사업자별 1회 옮기기. 이미 있는 건(다른 창이 먼저 옮기고 고친 것)은 건드리지 않는다
+const csItemsReady = new Map<string, Promise<void>>();
+const ensureCsItems = (businessId?: string): Promise<void> => {
   const key = getSalesCollectionName(businessId);
-  const cached = csHistoryCache.get(key);
-  if (cached && Date.now() - cached.at < SALES_HISTORY_TTL_MS) return cached.promise;
-  const promise = (async () => {
-    await ensureCsSplit(businessId);
-    const snapshot = await getDocs(query(collection(db, getCsCollectionName(businessId)), where('hasOpen', '==', true)));
-    return snapshot.docs
-      .map(d => ({ date: d.id, csRecords: (d.data().records || []) as CsRecords } as DailySales))
-      .sort((a, b) => b.date.localeCompare(a.date));
-  })();
-  csHistoryCache.set(key, { at: Date.now(), promise });
-  promise.catch(() => csHistoryCache.delete(key));
-  return promise;
+  let ready = csItemsReady.get(key);
+  if (!ready) {
+    ready = (async () => {
+      const markerRef = doc(db, 'config', `csItems_v1_${key}`);
+      if ((await getDoc(markerRef)).exists()) return;
+      await ensureCsSplit(businessId);
+      const [oldSnap, newSnap] = await Promise.all([
+        getDocs(collection(db, getCsCollectionName(businessId))),
+        getDocs(collection(db, getCsItemsCollectionName(businessId))),
+      ]);
+      const existing = new Set(newSnap.docs.map(d => d.id));
+      const items: { date: string; record: CsRecord }[] = [];
+      oldSnap.docs.forEach(d => ((d.data().records || []) as CsRecords).forEach(r => {
+        if (r?.id && !existing.has(r.id)) items.push({ date: d.id, record: r });
+      }));
+      for (let i = 0; i < items.length; i += 400) {
+        const batch = writeBatch(db);
+        items.slice(i, i + 400).forEach(({ date, record }) => batch.set(csItemRef(businessId, record.id), csItemFields(date, record)));
+        await batch.commit();
+      }
+      await setDoc(markerRef, { doneAt: Timestamp.now(), count: items.length });
+    })();
+    csItemsReady.set(key, ready);
+    ready.catch(() => csItemsReady.delete(key));
+  }
+  return ready;
+};
+
+// ----- 뒤에서 도는 저장 추적 -----
+// 저장 버튼은 서버 확인을 기다리지 않는다. 대신 아직 서버에 안 간 건 수·실패를 여기서 세서 화면에 보여주고,
+// 남은 게 있을 때 창을 닫으려 하면 경고한다(사파리는 메모리 캐시라 닫으면 못 보낸 저장이 사라짐).
+export const CS_SYNC_EVENT = 'wing:cs-sync';
+export type CsSyncState = { pending: number; failures: { label: string; message: string }[] };
+const csSync: CsSyncState = { pending: 0, failures: [] };
+export const getCsSyncState = (): CsSyncState => ({ pending: csSync.pending, failures: [...csSync.failures] });
+const emitCsSync = () => window.dispatchEvent(new CustomEvent(CS_SYNC_EVENT, { detail: getCsSyncState() }));
+export const clearCsSyncFailures = () => { csSync.failures = []; emitCsSync(); };
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', e => {
+    if (csSync.pending > 0) { e.preventDefault(); e.returnValue = ''; }
+  });
+}
+export const trackCsSync = <T,>(label: string, work: Promise<T>): Promise<T> => {
+  csSync.pending++;
+  emitCsSync();
+  work.then(
+    () => { csSync.pending--; emitCsSync(); },
+    (e: any) => {
+      csSync.pending--;
+      csSync.failures = [...csSync.failures, { label, message: e?.message || String(e) }];
+      console.error(`[CS] ${label} 실패:`, e);
+      emitCsSync();
+    },
+  );
+  return work;
+};
+
+/** CS 한 건 저장. 화면(구독)에는 즉시 반영되고, 서버 저장은 뒤에서 — 반환 약속은 서버 확인 시점 */
+export const writeCsItem = (businessId: string | undefined, date: string, record: CsRecord): Promise<void> =>
+  trackCsSync(`CS 저장 (${record.recipientName || record.orderNumber || record.id})`,
+    ensureCsItems(businessId).then(() => setDoc(csItemRef(businessId, record.id), csItemFields(date, record))));
+
+export const deleteCsItem = (businessId: string | undefined, record: CsRecord): Promise<void> =>
+  trackCsSync(`CS 삭제 (${record.recipientName || record.orderNumber || record.id})`,
+    ensureCsItems(businessId).then(() => deleteDoc(csItemRef(businessId, record.id))));
+
+/** id로 CS 몇 건을 고친다 (발주서 초기화로 재배송 CS를 대기로 되돌릴 때처럼 기록을 손에 안 들고 있을 때) */
+export const updateCsItemsById = (
+  businessId: string | undefined,
+  ids: string[],
+  mutate: (r: CsRecord) => CsRecord,
+): Promise<void> =>
+  trackCsSync('CS 상태 변경', (async () => {
+    await ensureCsItems(businessId);
+    await Promise.all(ids.map(async id => {
+      const snap = await getDoc(csItemRef(businessId, id));
+      if (!snap.exists()) return;
+      const { date, open: _open, ...rest } = snap.data() as any;
+      await setDoc(snap.ref, csItemFields(date, mutate(rest as CsRecord)));
+    }));
+  })());
+
+// ----- 미완료·대기 CS 구독 (사업자별 리스너 1개를 여러 화면이 같이 씀) -----
+export type OpenCsEntry = CsRecord & { date: string; syncing: boolean };
+type OpenCsSub = { listeners: Set<(v: OpenCsEntry[] | null) => void>; last: OpenCsEntry[] | null; unsub: Unsubscribe | null; closeTimer: ReturnType<typeof setTimeout> | null; retryTimer: ReturnType<typeof setTimeout> | null };
+const openCsSubs = new Map<string, OpenCsSub>();
+/** 콜백은 처음 받기 전엔 null, 그다음부터 목록. syncing=아직 서버에 안 간 건 */
+export const subscribeOpenCs = (businessId: string | undefined, callback: (items: OpenCsEntry[] | null) => void): Unsubscribe => {
+  const key = getSalesCollectionName(businessId);
+  let e = openCsSubs.get(key);
+  if (!e) { e = { listeners: new Set(), last: null, unsub: null, closeTimer: null, retryTimer: null }; openCsSubs.set(key, e); }
+  const entry = e;
+  if (entry.closeTimer) { clearTimeout(entry.closeTimer); entry.closeTimer = null; }
+  entry.listeners.add(callback);
+  callback(entry.last);
+  const open = () => {
+    if (entry.unsub || entry.listeners.size === 0) return;
+    entry.unsub = () => {}; // 옮기기 기다리는 동안 중복으로 안 열리게
+    ensureCsItems(businessId).then(() => {
+      if (entry.listeners.size === 0) { entry.unsub = null; return; }
+      entry.unsub = onSnapshot(
+        query(collection(db, getCsItemsCollectionName(businessId)), where('open', '==', true)),
+        { includeMetadataChanges: true },
+        snap => {
+          clearQuotaCooldown();
+          entry.last = snap.docs.map(d => {
+            const { open: _open, ...data } = d.data() as any;
+            return { ...data, id: d.id, syncing: d.metadata.hasPendingWrites } as OpenCsEntry;
+          }).sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+          entry.listeners.forEach(l => l(entry.last));
+        },
+        err => {
+          console.error('[Firestore] CS 구독 오류:', err);
+          if (isQuotaError(err)) enterQuotaCooldown();
+          entry.unsub = null;
+          retry();
+        },
+      );
+    }).catch(err => { console.error('[CS] 옮기기 실패:', err); entry.unsub = null; retry(); });
+  };
+  const retry = () => {
+    if (entry.retryTimer) return;
+    entry.retryTimer = setTimeout(() => { entry.retryTimer = null; open(); }, isQuotaCooldown() ? Math.max(quotaCooldownRemainingMs() + 1000, 30000) : 5000);
+  };
+  open();
+  return () => {
+    entry.listeners.delete(callback);
+    if (entry.listeners.size === 0 && !entry.closeTimer) {
+      entry.closeTimer = setTimeout(() => {
+        entry.unsub?.(); entry.unsub = null;
+        if (entry.retryTimer) { clearTimeout(entry.retryTimer); entry.retryTimer = null; }
+        entry.closeTimer = null;
+      }, 5 * 60 * 1000);
+    }
+  };
 };
 
 export const loadAllSalesHistory = async (businessId?: string, opts?: { fresh?: boolean }): Promise<DailySales[]> => {
@@ -392,74 +531,43 @@ export const upsertDailySales = async (
   invalidateSalesHistoryCache(businessId);
 };
 
-// CS·반품기록 저장 — CS는 csHistory 작은 문서만 고쳐 쓴다. 반품기록은 업무일지 마진에 들어가서 매출 문서에 있으므로
-// mutateReturns를 줄 때(반품을 넣거나 뺄 때)만 매출 문서를 읽고 고친다.
+// 반품기록(CS환불) 저장 — 업무일지 마진에 들어가서 매출 문서에 있다. CS 저장과 따로, 반품을 넣거나 뺄 때만 부른다.
 // 같은 날짜에 연달아 눌러도 읽기-수정-쓰기가 서로 덮어쓰지 않도록 날짜별로 순서대로 실행.
-const csWriteChains = new Map<string, Promise<unknown>>();
-export const saveCsAndReturns = (
+const returnWriteChains = new Map<string, Promise<unknown>>();
+export const updateReturnRecords = (
   date: string,
   businessId: string | undefined,
-  mutateCs: ((records: CsRecords) => CsRecords | null) | null,
-  mutateReturns?: ((records: ReturnRecords) => ReturnRecords) | null
+  mutateReturns: (records: ReturnRecords) => ReturnRecords,
 ): Promise<boolean> => {
   const key = `${getSalesCollectionName(businessId)}/${date}`;
   const run = async (): Promise<boolean> => {
-    await ensureCsSplit(businessId);
-    const batch = writeBatch(db);
-    let changed = false;
-    // CS 문서와 매출 문서는 동시에 읽는다 (차례로 읽으면 서버 왕복이 두 번 쌓임)
-    const csRef = doc(db, getCsCollectionName(businessId), date);
     const salesRef = doc(db, getSalesCollectionName(businessId), date);
-    const [csSnapshot, salesSnapshot] = await Promise.all([
-      mutateCs ? getDoc(csRef) : null,
-      mutateReturns ? getDoc(salesRef) : null,
-    ]);
-    if (mutateCs && csSnapshot) {
-      const next = mutateCs(csSnapshot.exists() ? (csSnapshot.data().records || []) as CsRecords : []);
-      if (!next) return false;
-      if (next.length > 0) { batch.set(csRef, csDocFields(date, next)); changed = true; }
-      else if (csSnapshot.exists()) { batch.delete(csRef); changed = true; }
+    const snapshot = await getDoc(salesRef);
+    const data = snapshot.exists() ? snapshot.data() : null;
+    const current = (data?.returnRecords || []) as ReturnRecords;
+    const next = mutateReturns(current);
+    if (JSON.stringify(next) === JSON.stringify(current)) return false;
+    const returnTotal = next.reduce((s, r) => s + r.totalMargin, 0);
+    if (data) {
+      await updateDoc(salesRef, {
+        returnRecords: next.length > 0 ? next : deleteField(),
+        returnTotal: returnTotal || deleteField(),
+      });
+    } else {
+      // 그날 매출 문서가 아직 없으면 빈 문서로 만든다 (deleteField는 새 문서에 못 씀)
+      const created: any = { date, records: [], totalAmount: 0, savedAt: new Date().toISOString(), returnRecords: next };
+      if (returnTotal) created.returnTotal = returnTotal;
+      await setDoc(salesRef, created);
     }
-    if (mutateReturns && salesSnapshot) {
-      const snapshot = salesSnapshot;
-      const data = snapshot.exists() ? snapshot.data() : null;
-      const current = (data?.returnRecords || []) as ReturnRecords;
-      const next = mutateReturns(current);
-      if (JSON.stringify(next) !== JSON.stringify(current)) {
-        const returnTotal = next.reduce((s, r) => s + r.totalMargin, 0);
-        if (data) {
-          batch.update(salesRef, {
-            returnRecords: next.length > 0 ? next : deleteField(),
-            returnTotal: returnTotal || deleteField(),
-          });
-        } else {
-          // 그날 매출 문서가 아직 없으면 빈 문서로 만든다 (deleteField는 새 문서에 못 씀)
-          const created: any = { date, records: [], totalAmount: 0, savedAt: new Date().toISOString(), returnRecords: next };
-          if (returnTotal) created.returnTotal = returnTotal;
-          batch.set(salesRef, created);
-        }
-        changed = true;
-      }
-    }
-    if (changed) {
-      await batch.commit();
-      invalidateSalesHistoryCache(businessId);
-    }
+    invalidateSalesHistoryCache(businessId);
     return true;
   };
-  const prev = csWriteChains.get(key) || Promise.resolve();
+  const prev = returnWriteChains.get(key) || Promise.resolve();
   const result = prev.catch(() => {}).then(run);
-  csWriteChains.set(key, result);
-  result.finally(() => { if (csWriteChains.get(key) === result) csWriteChains.delete(key); }).catch(() => {});
+  returnWriteChains.set(key, result);
+  result.finally(() => { if (returnWriteChains.get(key) === result) returnWriteChains.delete(key); }).catch(() => {});
   return result;
 };
-
-// CS 기록만 고쳐 쓰기 (상태 변경 등). 그날 CS가 없으면 false
-export const updateCsRecords = (
-  date: string,
-  businessId: string | undefined,
-  mutate: (records: CsRecords) => CsRecords | null
-): Promise<boolean> => saveCsAndReturns(date, businessId, records => (records.length > 0 ? mutate(records) : null));
 
 // ===== 주문 검색 색인 =====
 // CS 접수·주문자 검색은 발주행·주문번호·수취인·가구매만 필요하다. 매출 문서(송장행·시간대 집계 등 포함)의 1/6 정도라
@@ -502,17 +610,82 @@ const loadOrderSearchDoc = async (businessId: string | undefined, date: string, 
   return sales || null;
 };
 
-// 주문자 검색·CS 접수용 — 최근 며칠 색인만 날짜 키로 바로 읽는다.
-// 이틀 넘게 지난 날짜의 발주행은 바뀌지 않으므로 브라우저 캐시에 있으면 서버에 안 묻는다.
-export const loadRecentSalesForSearch = async (businessId: string | undefined, days: number): Promise<DailySales[]> => {
+// 주문자 검색·CS 접수용 최근 N일 색인.
+// 예전엔 날짜마다 문서를 하나씩 45번 물었다(사파리는 캐시가 없어 매번 45번 서버 왕복). 이제 날짜 범위 쿼리 한 번이고,
+// 화면이 열려 있는 동안은 구독으로 들고 있어서 업체를 바꿔도 다시 안 받는다.
+// 색인이 아직 없는 날짜만 처음 한 번 매출 문서로 만들어 둔다(만들면 구독에 저절로 들어옴).
+const recentDates = (days: number): string[] => {
   const now = new Date();
   const dates: string[] = [];
   for (let i = 0; i < days; i++) {
     const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
     dates.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`);
   }
-  const docs = await Promise.all(dates.map((date, i) => loadOrderSearchDoc(businessId, date, i >= 2)));
-  return docs.filter((d): d is DailySales => !!d);
+  return dates;
+};
+const recentSearchQuery = (businessId: string | undefined, since: string) =>
+  query(collection(db, getOrderSearchCollectionName(businessId)), where('date', '>=', since));
+const readSearchDocs = (snap: any): DailySales[] =>
+  snap.docs.filter((d: any) => !d.data().empty).map((d: any) => deserializeDailySales({ ...d.data() }))
+    .sort((a: DailySales, b: DailySales) => b.date.localeCompare(a.date));
+const backfilledSearch = new Set<string>();
+const backfillMissingSearchDocs = (businessId: string | undefined, dates: string[], snap: any): Promise<DailySales[]> => {
+  const have = new Set(snap.docs.map((d: any) => d.id));
+  const missing = dates.filter(d => !have.has(d));
+  if (missing.length === 0) return Promise.resolve([]);
+  return Promise.all(missing.map(date => loadOrderSearchDoc(businessId, date, false).catch(() => null)))
+    .then(list => list.filter((d): d is DailySales => !!d));
+};
+
+type RecentSearchSub = { listeners: Set<(v: DailySales[] | null) => void>; last: DailySales[] | null; unsub: Unsubscribe | null; closeTimer: ReturnType<typeof setTimeout> | null };
+const recentSearchSubs = new Map<string, RecentSearchSub>();
+const RECENT_SEARCH_DAYS = 45;
+/** 최근 45일 발주내역 구독. 처음 받기 전엔 null */
+export const subscribeRecentOrderSearch = (businessId: string | undefined, callback: (v: DailySales[] | null) => void): Unsubscribe => {
+  const key = getSalesCollectionName(businessId);
+  let e = recentSearchSubs.get(key);
+  if (!e) { e = { listeners: new Set(), last: null, unsub: null, closeTimer: null }; recentSearchSubs.set(key, e); }
+  const entry = e;
+  if (entry.closeTimer) { clearTimeout(entry.closeTimer); entry.closeTimer = null; }
+  entry.listeners.add(callback);
+  callback(entry.last);
+  if (!entry.unsub) {
+    const dates = recentDates(RECENT_SEARCH_DAYS);
+    entry.unsub = onSnapshot(recentSearchQuery(businessId, dates[dates.length - 1]), snap => {
+      clearQuotaCooldown();
+      entry.last = readSearchDocs(snap);
+      entry.listeners.forEach(l => l(entry.last));
+      if (!snap.metadata.fromCache && !backfilledSearch.has(key)) {
+        backfilledSearch.add(key);
+        backfillMissingSearchDocs(businessId, dates, snap).then(extra => {
+          // 색인 쓰기가 구독에 들어오기 전에 먼저 보여준다
+          if (extra.length === 0 || !entry.last) return;
+          const seen = new Set(entry.last.map(d => d.date));
+          entry.last = [...entry.last, ...extra.filter(d => !seen.has(d.date))].sort((a, b) => b.date.localeCompare(a.date));
+          entry.listeners.forEach(l => l(entry.last));
+        });
+      }
+    }, err => {
+      console.error('[Firestore] 최근 발주내역 구독 오류:', err);
+      if (isQuotaError(err)) enterQuotaCooldown();
+      entry.unsub = null;
+    });
+  }
+  return () => {
+    entry.listeners.delete(callback);
+    if (entry.listeners.size === 0 && !entry.closeTimer) {
+      entry.closeTimer = setTimeout(() => { entry.unsub?.(); entry.unsub = null; entry.closeTimer = null; }, 10 * 60 * 1000);
+    }
+  };
+};
+
+export const loadRecentSalesForSearch = async (businessId: string | undefined, days: number): Promise<DailySales[]> => {
+  const live = recentSearchSubs.get(getSalesCollectionName(businessId));
+  if (days === RECENT_SEARCH_DAYS && live?.unsub && live.last) return live.last;
+  const dates = recentDates(days);
+  const snap = await getDocs(recentSearchQuery(businessId, dates[dates.length - 1]));
+  const extra = await backfillMissingSearchDocs(businessId, dates, snap);
+  return [...readSearchDocs(snap), ...extra].sort((a, b) => b.date.localeCompare(a.date));
 };
 
 // 전체 기간 주문 검색 — 처음 1회는 매출 문서 전체로 색인을 다 만들고, 그다음부터는 색인만 읽는다

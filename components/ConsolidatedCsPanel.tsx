@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import CsEntryModal, { type CsDraft, resolveOrderRowFields, refineOrderRowFieldsByValue, normalizeForSearch, buildCsDraft, buildCsDraftFromRecord, deleteCsRecord, revertCsRecordToPending } from './CsEntryModal';
 import { getHeaderForCompany, inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
 import type { CsRecord, PricingConfig, ManualOrder } from '../types';
 import { getCsVendorStatus, getCsCustomerStatus, isCsFullyCompleted } from '../types';
-import { CS_SAVED_EVENT } from '../services/firestoreService';
+import { CS_SYNC_EVENT, getCsSyncState, clearCsSyncFailures, subscribeOpenCs, subscribeRecentOrderSearch, writeCsItem, type CsSyncState, type OpenCsEntry } from '../services/firestoreService';
+import type { DailySales } from '../types';
 
 interface Business { id: string; displayName: string; themeColor?: string; }
 
@@ -18,7 +19,27 @@ interface OpenCsItem extends CsRecord {
   date: string;
   businessId: string;
   businessName: string;
+  /** 아직 서버에 안 간 저장이 있음 */
+  syncing?: boolean;
 }
+
+type OrderRowEntry = { company: string; row: any[]; orderNumber: string; recipientName: string };
+const flattenOrderRows = (history: DailySales[]): OrderRowEntry[] => {
+  const rows: OrderRowEntry[] = [];
+  history.forEach(d => {
+    if (d.companyOrderRows) {
+      Object.entries(d.companyOrderRows).forEach(([company, companyRows]) => {
+        // companyOrderNumbers/companyRecipientNames[company]는 companyOrderRows[company]와 동일한 순서/길이
+        const nums = d.companyOrderNumbers?.[company] || [];
+        const names = d.companyRecipientNames?.[company] || [];
+        (companyRows as any[][]).forEach((row, i) => rows.push({ company, row, orderNumber: nums[i] || '', recipientName: names[i] || '' }));
+      });
+    } else if (d.orderRows) {
+      d.orderRows.forEach(row => rows.push({ company: '', row, orderNumber: '', recipientName: '' }));
+    }
+  });
+  return rows;
+};
 
 interface Props {
   businesses: Business[];
@@ -162,9 +183,6 @@ const OrderDetailModal: React.FC<{ item: OpenCsItem; onClose: () => void }> = ({
 };
 
 const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePurchaseOrder, onRemovePurchaseOrder }) => {
-  const [items, setItems] = useState<OpenCsItem[]>([]);
-  const [pendingItems, setPendingItems] = useState<OpenCsItem[]>([]);
-  const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [sentId, setSentId] = useState<string | null>(null);
   const [creatingPoId, setCreatingPoId] = useState<string | null>(null);
@@ -173,75 +191,84 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
 
   // 검색용: 사업자 먼저 선택 → 그 사업자의 발주내역만 대상으로 검색 (사업자마다 같은 주문번호가 있을 수 있어 섞으면 안 됨)
   const [selectedBusinessId, setSelectedBusinessId] = useState('');
-  const [businessOrderRows, setBusinessOrderRows] = useState<{ company: string; row: any[]; orderNumber: string; recipientName: string }[]>([]);
-  const [businessPricingConfig, setBusinessPricingConfig] = useState<PricingConfig | null>(null);
-  const [loadingBusinessData, setLoadingBusinessData] = useState(false);
   const [search, setSearch] = useState('');
   // 기본은 최근 45일 발주내역만 (전체 이력은 문서 수백 개라 느림). 못 찾으면 전체로 넓힌다.
   const [searchAllHistory, setSearchAllHistory] = useState(false);
+  const [allHistoryRows, setAllHistoryRows] = useState<OrderRowEntry[] | null>(null);
   const [manualCompany, setManualCompany] = useState('');
   const [csDraft, setCsDraft] = useState<CsDraft | null>(null);
   const [editing, setEditing] = useState<{ date: string; record: OpenCsItem; businessId: string } | null>(null);
   const [editingPricingConfig, setEditingPricingConfig] = useState<PricingConfig | undefined>(undefined);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const { loadOpenCsHistory } = await import('../services/firestoreService');
-    const results = await Promise.all(businesses.map(async b => {
-      const history = await loadOpenCsHistory(b.id);
-      const open: OpenCsItem[] = [];
-      const pending: OpenCsItem[] = [];
-      history.forEach(d => {
-        (d.csRecords || []).forEach(r => {
-          if (r.pending) pending.push({ ...r, date: d.date, businessId: b.id, businessName: b.displayName });
-          else if (!isCsFullyCompleted(r)) open.push({ ...r, date: d.date, businessId: b.id, businessName: b.displayName });
-        });
-      });
-      return { open, pending };
-    }));
-    setItems(results.flatMap(r => r.open).sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
-    setPendingItems(results.flatMap(r => r.pending).sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
-    setLoading(false);
+  // 패널이 열리면 모든 사업자의 미완료 CS·최근 45일 발주내역·품목설정을 한꺼번에 받아 둔다(구독).
+  // 업체 드롭다운을 바꿀 땐 받아 둔 것에서 고르기만 해서 기다릴 게 없다.
+  const [openCsByBiz, setOpenCsByBiz] = useState<Record<string, OpenCsEntry[] | null>>({});
+  const [recentByBiz, setRecentByBiz] = useState<Record<string, DailySales[] | null>>({});
+  const [pricingByBiz, setPricingByBiz] = useState<Record<string, PricingConfig | null | undefined>>({});
+  useEffect(() => {
+    const t0 = performance.now();
+    const logged = new Set<string>();
+    const logOnce = (k: string) => { if (!logged.has(k)) { logged.add(k); console.info(`[CS 속도] ${k} ${Math.round(performance.now() - t0)}ms`); } };
+    const unsubs = businesses.flatMap(b => [
+      subscribeOpenCs(b.id, list => {
+        if (list) logOnce(`${b.displayName} CS 목록`);
+        setOpenCsByBiz(prev => ({ ...prev, [b.id]: list }));
+      }),
+      subscribeRecentOrderSearch(b.id, list => {
+        if (list) logOnce(`${b.displayName} 최근 45일 발주내역`);
+        setRecentByBiz(prev => ({ ...prev, [b.id]: list }));
+      }),
+    ]);
+    let cancelled = false;
+    import('../services/firestoreService').then(({ loadPricingConfig }) => {
+      businesses.forEach(b => loadPricingConfig(b.id).then(r => {
+        if (!cancelled) setPricingByBiz(prev => ({ ...prev, [b.id]: r.config }));
+      }));
+    });
+    return () => { cancelled = true; unsubs.forEach(u => u()); };
   }, [businesses]);
 
-  useEffect(() => { load(); }, [load]);
+  const loading = businesses.some(b => !openCsByBiz[b.id]);
+  const { items, pendingItems } = useMemo(() => {
+    const open: OpenCsItem[] = [];
+    const pending: OpenCsItem[] = [];
+    businesses.forEach(b => (openCsByBiz[b.id] || []).forEach(r => {
+      const item: OpenCsItem = { ...r, businessId: b.id, businessName: b.displayName };
+      if (r.pending) pending.push(item);
+      else if (!isCsFullyCompleted(r)) open.push(item);
+    }));
+    const byCreated = (a: OpenCsItem, b: OpenCsItem) => (a.createdAt || '').localeCompare(b.createdAt || '');
+    return { items: open.sort(byCreated), pendingItems: pending.sort(byCreated) };
+  }, [businesses, openCsByBiz]);
 
+  // 뒤에서 서버로 보내는 중인 저장 수·실패
+  const [sync, setSync] = useState<CsSyncState>(getCsSyncState);
   useEffect(() => {
-    if (!selectedBusinessId) {
-      setBusinessOrderRows([]);
-      setBusinessPricingConfig(null);
-      return;
-    }
+    const handler = (e: Event) => setSync((e as CustomEvent<CsSyncState>).detail);
+    window.addEventListener(CS_SYNC_EVENT, handler);
+    return () => window.removeEventListener(CS_SYNC_EVENT, handler);
+  }, []);
+
+  useEffect(() => { setSearch(''); setManualCompany(''); setAllHistoryRows(null); }, [selectedBusinessId]);
+  useEffect(() => {
+    if (!selectedBusinessId || !searchAllHistory) return;
     let cancelled = false;
-    setLoadingBusinessData(true);
-    if (!searchAllHistory) { setSearch(''); setManualCompany(''); }
-    (async () => {
-      const { loadAllOrderSearch, loadRecentSalesForSearch, loadPricingConfig } = await import('../services/firestoreService');
-      const [history, configResult] = await Promise.all([
-        searchAllHistory ? loadAllOrderSearch(selectedBusinessId) : loadRecentSalesForSearch(selectedBusinessId, 45),
-        loadPricingConfig(selectedBusinessId),
-      ]);
-      if (cancelled) return;
-      const rows: { company: string; row: any[]; orderNumber: string; recipientName: string }[] = [];
-      history.forEach(d => {
-        if (d.companyOrderRows) {
-          Object.entries(d.companyOrderRows).forEach(([company, companyRows]) => {
-            // companyOrderNumbers/companyRecipientNames[company]는 companyOrderRows[company]와 동일한 순서/길이
-            const nums = d.companyOrderNumbers?.[company] || [];
-            const names = d.companyRecipientNames?.[company] || [];
-            (companyRows as any[][]).forEach((row, i) => rows.push({ company, row, orderNumber: nums[i] || '', recipientName: names[i] || '' }));
-          });
-        } else if (d.orderRows) {
-          d.orderRows.forEach(row => rows.push({ company: '', row, orderNumber: '', recipientName: '' }));
-        }
-      });
-      setBusinessOrderRows(rows);
-      setBusinessPricingConfig(configResult.config);
-      setLoadingBusinessData(false);
-    })();
+    setAllHistoryRows(null);
+    import('../services/firestoreService').then(({ loadAllOrderSearch }) => loadAllOrderSearch(selectedBusinessId)).then(history => {
+      if (!cancelled) setAllHistoryRows(flattenOrderRows(history));
+    });
     return () => { cancelled = true; };
   }, [selectedBusinessId, searchAllHistory]);
+
+  const recentRows = useMemo(() => {
+    const history = recentByBiz[selectedBusinessId];
+    return history ? flattenOrderRows(history) : null;
+  }, [recentByBiz, selectedBusinessId]);
+  const businessOrderRows = (searchAllHistory ? allHistoryRows : recentRows) || [];
+  const businessPricingConfig = pricingByBiz[selectedBusinessId] ?? null;
+  const loadingBusinessData = !!selectedBusinessId
+    && ((searchAllHistory ? allHistoryRows : recentRows) === null || pricingByBiz[selectedBusinessId] === undefined);
 
   // 검색 색인: 표시에 쓸 필드와 검색용 문자열을 한 번만 만들어 둔다 (타이핑마다 재계산 방지).
   // 이름 소스 우선순위: 저장된 수취인 이름 → 값 기반 보정 → 헤더 추측.
@@ -271,41 +298,19 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     return set;
   }, [items, selectedBusinessId]);
 
-  // 누르는 즉시 화면에 반영하고 저장은 뒤에서 진행 (실패하면 되돌림)
-  const handleToggleSide = async (item: OpenCsItem, side: 'vendor' | 'customer') => {
+  // 누르는 즉시 화면(구독)에 반영되고 서버 저장은 뒤에서
+  const handleToggleSide = (item: OpenCsItem, side: 'vendor' | 'customer') => {
     const isVendor = side === 'vendor';
     const now = new Date().toISOString();
-    const toggle = (r: CsRecord): CsRecord => {
-      const currentStatus = isVendor ? getCsVendorStatus(r) : getCsCustomerStatus(r);
-      const nextStatus = currentStatus === '접수' ? '완료' as const : '접수' as const;
-      return {
-        ...r,
-        vendorStatus: isVendor ? nextStatus : getCsVendorStatus(r),
-        customerStatus: isVendor ? getCsCustomerStatus(r) : nextStatus,
-        vendorCompletedAt: isVendor ? (nextStatus === '완료' ? now : undefined) : r.vendorCompletedAt,
-        customerCompletedAt: isVendor ? r.customerCompletedAt : (nextStatus === '완료' ? now : undefined),
-      };
-    };
-    const isSame = (i: OpenCsItem) => i.id === item.id && i.businessId === item.businessId;
-    const nextItem = { ...item, ...toggle(item) };
-    if (isCsFullyCompleted(nextItem)) {
-      setItems(prev => prev.filter(i => !isSame(i)));
-    } else {
-      setItems(prev => prev.map(i => isSame(i) ? nextItem : i));
-    }
-    try {
-      const { updateCsRecords } = await import('../services/firestoreService');
-      await updateCsRecords(item.date, item.businessId, records => {
-        if (!records.some(r => r.id === item.id)) return null;
-        return records.map(r => r.id === item.id ? toggle(r) : r);
-      });
-      window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId: item.businessId, date: item.date } }));
-    } catch (e) {
-      console.error('[CS] 처리상태 저장 실패:', e);
-      // 이 건만 원래 상태로 되돌림 (그사이 다른 건 변경은 유지)
-      setItems(prev => [...prev.filter(i => !isSame(i)), item].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
-      alert('처리 상태 저장에 실패했습니다. 다시 시도해주세요.');
-    }
+    const currentStatus = isVendor ? getCsVendorStatus(item) : getCsCustomerStatus(item);
+    const nextStatus = currentStatus === '접수' ? '완료' as const : '접수' as const;
+    writeCsItem(item.businessId, item.date, {
+      ...item,
+      vendorStatus: isVendor ? nextStatus : getCsVendorStatus(item),
+      customerStatus: isVendor ? getCsCustomerStatus(item) : nextStatus,
+      vendorCompletedAt: isVendor ? (nextStatus === '완료' ? now : undefined) : item.vendorCompletedAt,
+      customerCompletedAt: isVendor ? item.customerCompletedAt : (nextStatus === '완료' ? now : undefined),
+    }).catch(() => {});
   };
 
   const handleSendToVendor = async (item: OpenCsItem) => {
@@ -341,8 +346,8 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
     const key = `${item.businessId}-${item.id}`;
     setCreatingPoId(key);
     try {
-      const { loadPricingConfig, updateCsRecords } = await import('../services/firestoreService');
-      const { config } = await loadPricingConfig(item.businessId);
+      const config = pricingByBiz[item.businessId]
+        ?? (await (await import('../services/firestoreService')).loadPricingConfig(item.businessId)).config;
       const row = item.orderRowSnapshot || [];
       const fields = resolveOrderRowFields(item.company, row, config || undefined);
       const { phone, address } = resolvePhoneAddress(item.company, row, config || undefined);
@@ -364,16 +369,15 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         alert('발주서 추가에 실패했습니다. 해당 사업자 탭이 열려있는지 확인해주세요.');
         return;
       }
-      await updateCsRecords(item.date, item.businessId, records => records.map(r => r.id === item.id ? { ...r, poAdded: true } : r));
-      setItems(prev => prev.map(i => (i.id === item.id && i.businessId === item.businessId) ? { ...i, poAdded: true } : i));
+      writeCsItem(item.businessId, item.date, { ...item, poAdded: true }).catch(() => {});
     } finally {
       setCreatingPoId(null);
     }
   };
 
   const handleEdit = async (item: OpenCsItem) => {
-    const { loadPricingConfig } = await import('../services/firestoreService');
-    const { config } = await loadPricingConfig(item.businessId);
+    const config = pricingByBiz[item.businessId]
+      ?? (await (await import('../services/firestoreService')).loadPricingConfig(item.businessId)).config;
     setEditingPricingConfig(config || undefined);
     setEditing({ date: item.date, record: item, businessId: item.businessId });
     setCsDraft(buildCsDraftFromRecord(item));
@@ -388,8 +392,6 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
       // (기록이 없는 예전 건, 또는 해당 사업자 발주 화면이 안 열린 경우에는 지워지지 않으므로 그때만 안내한다)
       const poRemoved = item.poAdded ? (onRemovePurchaseOrder?.(item.businessId, item.company, item.id) ?? false) : true;
       await revertCsRecordToPending(item.businessId, item.date, item);
-      setItems(prev => prev.filter(i => !(i.id === item.id && i.businessId === item.businessId)));
-      setPendingItems(prev => [...prev, { ...item, pending: true, poAdded: false }].sort((a, b) => a.createdAt.localeCompare(b.createdAt)));
       if (!poRemoved) {
         alert('공급가차감과 "발주서생성됨" 표시는 풀었지만, 발주서에 추가된 재배송 행은 자동으로 지우지 못했습니다.\n해당 사업자의 발주 화면을 열어둔 상태에서 되돌리거나, 발주서에서 그 행을 직접 지운 뒤 다시 확정해주세요.');
       }
@@ -406,7 +408,6 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
       // 되돌리기와 동일하게, 이 CS로 발주서에 덧붙였던 재배송 행도 함께 걷어낸다
       if (item.poAdded) onRemovePurchaseOrder?.(item.businessId, item.company, item.id);
       await deleteCsRecord(item.businessId, item.date, item);
-      setItems(prev => prev.filter(i => !(i.id === item.id && i.businessId === item.businessId)));
     } finally {
       setDeletingKey(null);
     }
@@ -436,6 +437,22 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
         <button onClick={onClose} className="text-zinc-600 hover:text-white transition-colors text-2xl leading-none w-7 h-7 flex items-center justify-center rounded-lg hover:bg-zinc-800">×</button>
       </div>
 
+      {(sync.pending > 0 || sync.failures.length > 0) && (
+        <div className="px-2 mb-3 space-y-1">
+          {sync.pending > 0 && (
+            <p className="text-amber-400 text-[11px] font-black">서버로 보내는 중 {sync.pending}건 · 끝나기 전에 창을 닫지 마세요</p>
+          )}
+          {sync.failures.length > 0 && (
+            <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2">
+              {sync.failures.map((f, i) => (
+                <p key={i} className="text-rose-400 text-[11px] font-black">저장 실패: {f.label} — {f.message}</p>
+              ))}
+              <button onClick={clearCsSyncFailures} className="mt-1 text-[10px] font-black text-zinc-400 hover:text-white">확인했음</button>
+            </div>
+          )}
+        </div>
+      )}
+
       {pendingItems.length > 0 && (
         <div className="px-2 mb-3">
           <p className="text-zinc-500 text-[10px] font-black uppercase tracking-widest mb-1.5">대기중 CS ({pendingItems.length}건)</p>
@@ -447,6 +464,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
                   <div className="min-w-0">
                     <div className="font-black text-sm truncate text-white">
                       {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}
+                      {item.syncing && <span className="ml-1 text-[10px] text-amber-400">저장 중</span>}
                     </div>
                     <div className="text-xs font-black truncate mt-0.5">
                       <span style={{ color: businessColorById[item.businessId] || '#a78bfa' }}>{item.businessName || '사업자없음'}</span>
@@ -609,6 +627,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
                 </div>
                 <div className="text-white font-black text-sm">
                   {item.recipientName || '이름없음'} · {item.orderNumber || '주문번호없음'}
+                  {item.syncing && <span className="ml-1 text-[10px] text-amber-400">저장 중</span>}
                 </div>
                 <div className="text-zinc-500 text-xs font-bold mt-0.5">{item.reason}</div>
                 <div className="text-xs font-black mt-0.5">
@@ -695,7 +714,7 @@ const ConsolidatedCsPanel: React.FC<Props> = ({ businesses, onClose, onCreatePur
           draft={csDraft}
           onChange={setCsDraft}
           onClose={closeCsModal}
-          onSaved={load}
+          onSaved={() => {}}
           editing={editing ? { date: editing.date, record: editing.record } : undefined}
         />
       )}
