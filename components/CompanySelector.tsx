@@ -3620,6 +3620,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setManualInput(prev => ({ ...prev, recipientName: person.name, phone: person.phone, address: person.address }));
     };
 
+    const handleRemoveRedirectedManualOrders = useCallback((ids: string[]) => {
+        const drop = new Set(ids);
+        setManualOrders(prev => prev.filter(o => !drop.has(o.id)));
+        setSelectedManualOrderIds(prev => new Set([...prev].filter(id => !drop.has(id))));
+    }, []);
+
     const handleRemoveManualOrder = (id: string) => {
         setManualOrders(prev => prev.filter(o => o.id !== id));
         setSelectedManualOrderIds(prev => { const next = new Set(prev); next.delete(id); return next; });
@@ -5929,6 +5935,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     manualOrders={manualOrders}
                     onAddOrders={handleAddServiceOrders}
                     onRedirectedOrdersChange={setRegularRedirectedInput}
+                    onRemoveOrders={handleRemoveRedirectedManualOrders}
                 />
 
                 {/* 1-2) 수동 입금 추가 */}

@@ -17,6 +17,8 @@ interface Props {
     onAddOrders: (orders: ServiceOrderDraft[]) => void;
     /** 대신 보내기로 이 사업자 발주서에서 뺄 주문 ("이름 주문번호" 줄들) */
     onRedirectedOrdersChange?: (text: string) => void;
+    /** 대신 보내기로 다른 사업자에 넘긴 수동발주를 이 사업자에서 지운다 */
+    onRemoveOrders?: (ids: string[]) => void;
 }
 
 interface RegularMatch {
@@ -101,28 +103,38 @@ const addressMatches = (customerAddr: string, orderAddr: string): boolean => {
 // 쿠팡 안심번호(050x)는 주문마다 바뀌어 단골 식별에 쓸 수 없다
 const isSafeNumber = (d: string) => d.startsWith('050');
 
-export const findRegularMatches = (customers: RegularCustomer[], rows: any[][]): RegularMatch[] => {
-    if (customers.length === 0 || rows.length === 0) return [];
+const groupByName = (customers: RegularCustomer[]) => {
     const byName = new Map<string, RegularCustomer[]>();
     customers.forEach(c => {
         const n = normName(c.name);
         if (!n) return;
         byName.set(n, [...(byName.get(n) || []), c]);
     });
+    return byName;
+};
+
+/** 이름 + (전화번호 또는 주소)로 단골을 찾는다 */
+const findCustomer = (byName: Map<string, RegularCustomer[]>, recipientName: string, phone: string, address: string): RegularCustomer | undefined => {
+    const candidates = byName.get(normName(recipientName));
+    if (!candidates) return undefined;
+    const phoneDigits = digits(phone);
+    return candidates.find(c => {
+        const cPhone = digits(c.phone);
+        if (cPhone && phoneDigits && !isSafeNumber(phoneDigits) && cPhone === phoneDigits) return true;
+        return addressMatches(c.address, address);
+    });
+};
+
+export const findRegularMatches = (customers: RegularCustomer[], rows: any[][]): RegularMatch[] => {
+    if (customers.length === 0 || rows.length === 0) return [];
+    const byName = groupByName(customers);
     const result = new Map<string, RegularMatch>();
     for (const row of rows) {
         if (!row) continue;
         const recipientName = String(row[26] ?? '').trim();
-        const candidates = byName.get(normName(recipientName));
-        if (!candidates) continue;
         const address = String(row[29] ?? '').trim();
         const phone = String(row[27] ?? '').trim();
-        const phoneDigits = digits(phone);
-        const customer = candidates.find(c => {
-            const cPhone = digits(c.phone);
-            if (cPhone && phoneDigits && !isSafeNumber(phoneDigits) && cPhone === phoneDigits) return true;
-            return addressMatches(c.address, address);
-        });
+        const customer = findCustomer(byName, recipientName, phone, address);
         if (!customer) continue;
         const orderNumber = String(row[2] ?? '').trim();
         const key = `${customer.id}|${orderNumber || normAddr(address)}`;
@@ -155,7 +167,7 @@ const saveAlerted = (businessId: string | undefined, keys: Set<string>) => {
 
 const inputCls = 'bg-zinc-900 border border-zinc-800 rounded-xl px-2.5 py-2 text-xs font-bold text-white focus:ring-1 focus:ring-amber-500/30 outline-none';
 
-const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, orderRows, pricingConfig, manualOrders, onAddOrders, onRedirectedOrdersChange }) => {
+const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, orderRows, pricingConfig, manualOrders, onAddOrders, onRedirectedOrdersChange, onRemoveOrders }) => {
     const fromBizId = businessId || '안군농원';
     const bizName = (id: string) => getBusinessInfo(id)?.displayName || id;
     const [businesses, setBusinesses] = useState<{ id: string; displayName: string }[]>([]);
@@ -244,6 +256,64 @@ const RegularCustomerPanel: React.FC<Props> = ({ businessId, businessName, order
             }
         });
     }, [redirectPlans, fromBizId, businessName]);
+
+    // 수동발주도 대신 보내기: 이 사업자 수동발주에 단골(대신 보내기 설정된) 주문이 있으면
+    // 대신 보낼 사업자 수동발주로 옮기고 여기서는 지운다. 대신 보내기로 넘어온 주문은 다시 넘기지 않는다
+    const manualRedirectPlans = useMemo(() => {
+        const withRedirect = customers.filter(c => c.redirect && c.redirect.businessId !== fromBizId);
+        if (withRedirect.length === 0 || manualOrders.length === 0) return [];
+        const byName = groupByName(withRedirect);
+        return manualOrders.flatMap(o => {
+            if (o.redirectKey) return [];
+            const c = findCustomer(byName, o.recipientName, o.phone, o.address);
+            const r = c?.redirect;
+            if (!c || !r || !keywordHit(r.keyword, o.productName)) return [];
+            return [{ order: o, customer: c, redirect: r, redirectKey: `${fromBizId}|mo:${o.id}` }];
+        });
+    }, [customers, manualOrders, fromBizId]);
+    const triedManualRedirectRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const todo = manualRedirectPlans.filter(p => !triedManualRedirectRef.current.has(p.redirectKey));
+        if (todo.length === 0) return;
+        todo.forEach(p => triedManualRedirectRef.current.add(p.redirectKey));
+        const byTarget = new Map<string, typeof todo>();
+        todo.forEach(p => byTarget.set(p.redirect.businessId, [...(byTarget.get(p.redirect.businessId) || []), p]));
+        byTarget.forEach(async (plans, target) => {
+            try {
+                const needConfig = plans.some(p => !p.redirect.productKey);
+                const targetConfig = needConfig ? (await loadPricingConfig(target)).config : null;
+                const orders = plans.map(p => {
+                    const { order: o, redirect: r } = p;
+                    const pick = r.productKey
+                        ? { key: r.productKey, name: r.productName || r.productKey }
+                        : pickProductByWeight(targetConfig, r.companyName, o.productName);
+                    const qty = r.productKey ? o.qty * (r.qty || 1) : o.qty;
+                    return {
+                        id: `mo-rd-${fromBizId}-${o.id}`,
+                        redirectKey: p.redirectKey,
+                        redirectFrom: businessName || fromBizId,
+                        companyName: r.companyName,
+                        recipientName: o.recipientName,
+                        phone: o.phone,
+                        address: o.address,
+                        productName: pick ? pick.name : o.productName,
+                        ...(pick ? { productKey: pick.key } : {}),
+                        qty,
+                        memo: pick ? (o.memo || '') : `[품목 확인] ${o.memo || ''}`.trim(),
+                        ...(o.isSample ? { isSample: true } : {}),
+                    };
+                });
+                await appendRedirectedManualOrders(target, orders);
+                onRemoveOrders?.(plans.map(p => p.order.id));
+                const unmatched = orders.filter(o => !o.productKey).length;
+                alert(`수동발주 ${plans.length}건을 ${bizName(target)} 수동발주로 대신 보냈습니다.\n${orders.map(o => `· ${o.recipientName} — ${o.companyName} ${o.productName} x${o.qty}`).join('\n')}${unmatched ? `\n\n품목 못 맞춘 ${unmatched}건은 ${bizName(target)} 수동발주에서 품목을 고쳐 주세요.` : ''}`);
+            } catch (e) {
+                console.error('[단골 대신 보내기] 수동발주 넘기기 실패:', e);
+                plans.forEach(p => triedManualRedirectRef.current.delete(p.redirectKey));
+                alert(`단골 대신 보내기 실패 — 수동발주를 ${bizName(target)}(으)로 넘기지 못했습니다. 새로고침 후 다시 확인해 주세요.`);
+            }
+        });
+    }, [manualRedirectPlans, fromBizId, businessName, onRemoveOrders]);
 
     // 대신 보내기 설정창
     const [redirectEdit, setRedirectEdit] = useState<RegularCustomer | null>(null);
