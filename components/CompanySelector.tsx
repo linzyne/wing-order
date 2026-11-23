@@ -4006,6 +4006,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     };
 
+    // 같은 주문서 줄인지(택배사·송장 칸은 빼고 비교). 한 주문에 품목이 둘이면 주문번호가 같은 줄이 둘이라 주문번호로 거르면 한 줄만 남는다.
+    const courierRowIdentity = (row: any[]) => JSON.stringify(row.map((v, i) => (i === 3 || i === 4 ? '' : v)));
+
     // 가구매 택배(App 레벨 통합 패널)에서 매칭된 운송장 행 중, 이미 다른 경로로 매칭된 주문번호(existingKeys)와 겹치지 않는 것만 반환
     const getExtraFakeCourierRowsByKeys = useCallback((existingKeys: Set<string>): any[][] => {
         if (!fakeOrderCourierRows || fakeOrderCourierRows.length === 0) return [];
@@ -4013,8 +4016,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const extras: any[][] = [];
         for (const row of fakeOrderCourierRows) {
             const key = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-            if (!key || existingKeys.has(key) || seen.has(key)) continue;
-            seen.add(key);
+            const id = courierRowIdentity(row);
+            if (!key || existingKeys.has(key) || seen.has(id)) continue;
+            seen.add(id);
             extras.push(row);
         }
         return extras;
@@ -4027,8 +4031,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         const out: any[][] = [];
         for (const row of fakeOrderCourierRows) {
             const key = String(row[2] || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-            if (!key || lotteCompanyByOrder[key] !== companyName || existingKeys.has(key) || seen.has(key)) continue;
-            seen.add(key);
+            const id = courierRowIdentity(row);
+            if (!key || lotteCompanyByOrder[key] !== companyName || existingKeys.has(key) || seen.has(id)) continue;
+            seen.add(id);
             out.push(row);
         }
         return out;

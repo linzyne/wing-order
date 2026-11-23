@@ -730,7 +730,11 @@ const App: React.FC = () => {
       const matchedRows: any[][] = [header];
       const rowsByBiz: Record<string, any[][]> = {};
       const notFoundOrders: string[] = [];
+      // 한 주문에 품목이 둘이면 주문서에 같은 주문번호 줄이 둘 — 줄마다 송장을 넣어야 쿠팡에 다 올라간다.
+      // 그래서 같은 줄(내용까지 같음)만 건너뛰고, 건수는 주문번호로 센다.
+      const seenRows = new Set<string>();
       const seenOrderNums = new Set<string>();
+      const matchedOrderNums = new Set<string>();
       const matchedBizIds = new Set<string>();
       let lotteOnly = 0; // 가구매 명단엔 없고 롯데 예약만 한 주문(발주서에서 고른 것)
 
@@ -740,10 +744,13 @@ const App: React.FC = () => {
           const orderNum = String(row[2] || '').trim().replace(/[^A-Z0-9]/gi, '').toUpperCase();
           const isFake = fakeOrderNums.has(orderNum);
           if (!isFake && !lotteMap.has(orderNum)) continue;
-          if (seenOrderNums.has(orderNum)) continue;
+          const rowKey = JSON.stringify(row);
+          if (seenRows.has(rowKey)) continue;
+          seenRows.add(rowKey);
+          const firstOfOrder = !seenOrderNums.has(orderNum);
           seenOrderNums.add(orderNum);
           matchedBizIds.add(bizId);
-          if (!isFake) lotteOnly++;
+          if (!isFake && firstOfOrder) lotteOnly++;
           const tracking = trackingMap.get(orderNum) || lotteMap.get(orderNum);
           if (tracking) {
             const newRow = [...row];
@@ -751,14 +758,15 @@ const App: React.FC = () => {
             newRow[3] = template.name;
             newRow[4] = tracking;
             matchedRows.push(newRow);
+            matchedOrderNums.add(orderNum);
             (rowsByBiz[bizId] || (rowsByBiz[bizId] = [])).push(newRow);
-          } else {
+          } else if (firstOfOrder) {
             notFoundOrders.push(String(row[2] || ''));
           }
         }
       }
 
-      const matchedCount = matchedRows.length - 1;
+      const matchedCount = matchedOrderNums.size;
       setGlobalCourierResults(prev => ({ ...prev, [template.id]: { matched: matchedCount, total: fakeOrderNums.size + lotteOnly, notFound: notFoundOrders, bizIds: [...matchedBizIds] } }));
       if (matchedCount > 0) {
         setGlobalCourierMatchedRows(prev => ({ ...prev, [template.id]: matchedRows }));
