@@ -318,7 +318,7 @@ export const useInvoiceMerger = () => {
             }
 
             // 서한푸드 등: 송장 칸이 매번 달라(헤더도 '비워둠') 행마다 "0000-0000-0000" 값을 찾는다
-            if (DASHED_TRACKING_COMPANIES.some(n => companyName.includes(n)) && !vKeyIndices.includes(-1)) {
+            if ((DASHED_TRACKING_COMPANIES.some(n => companyName.includes(n)) || vInvIdx === -1) && !vKeyIndices.includes(-1)) {
                 const dashedMap = buildMapFromDashedTracking(vendorAoa, vKeyIndices, vHeaders, row => {
                     const parts = vKeyIndices.map(idx => normalizeMatchValue(row[idx]));
                     return parts.some(p => !p) ? '' : parts.join('|');
@@ -447,6 +447,16 @@ export const useInvoiceMerger = () => {
                 }
             }
             if (vInvIdx !== -1) console.log(`[송장] 업체: ${companyName}, 송장열 폴백 감지 → ${vInvIdx}`);
+            // 그래도 못 찾으면: 지정 칸이 비고 제목 없는 다른 칸에 "6016-3354-2050"처럼 적어 보낸 경우(나리찬 등)
+            // → 서한푸드처럼 행마다 0000-0000-0000 형식 값을 찾는다
+            if (vInvIdx === -1) {
+                const dashedMap = buildMapFromDashedOrderCol(vendorAoa, vOrderIdx, vHeaders);
+                if (dashedMap.size > 0) {
+                    buildMap = (orderIdx: number) => buildMapFromDashedOrderCol(vendorAoa, orderIdx, vHeaders);
+                    vInvIdx = -2;
+                    console.log(`[송장] 업체: ${companyName}, 송장열 못 찾음 → 0000-0000-0000 형식으로 행별 감지`);
+                }
+            }
         }
 
         const invoiceMap = buildMap(vOrderIdx);
