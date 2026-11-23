@@ -407,17 +407,21 @@ export const saveCsAndReturns = (
     await ensureCsSplit(businessId);
     const batch = writeBatch(db);
     let changed = false;
-    if (mutateCs) {
-      const csRef = doc(db, getCsCollectionName(businessId), date);
-      const snapshot = await getDoc(csRef);
-      const next = mutateCs(snapshot.exists() ? (snapshot.data().records || []) as CsRecords : []);
+    // CS 문서와 매출 문서는 동시에 읽는다 (차례로 읽으면 서버 왕복이 두 번 쌓임)
+    const csRef = doc(db, getCsCollectionName(businessId), date);
+    const salesRef = doc(db, getSalesCollectionName(businessId), date);
+    const [csSnapshot, salesSnapshot] = await Promise.all([
+      mutateCs ? getDoc(csRef) : null,
+      mutateReturns ? getDoc(salesRef) : null,
+    ]);
+    if (mutateCs && csSnapshot) {
+      const next = mutateCs(csSnapshot.exists() ? (csSnapshot.data().records || []) as CsRecords : []);
       if (!next) return false;
       if (next.length > 0) { batch.set(csRef, csDocFields(date, next)); changed = true; }
-      else if (snapshot.exists()) { batch.delete(csRef); changed = true; }
+      else if (csSnapshot.exists()) { batch.delete(csRef); changed = true; }
     }
-    if (mutateReturns) {
-      const salesRef = doc(db, getSalesCollectionName(businessId), date);
-      const snapshot = await getDoc(salesRef);
+    if (mutateReturns && salesSnapshot) {
+      const snapshot = salesSnapshot;
       const data = snapshot.exists() ? snapshot.data() : null;
       const current = (data?.returnRecords || []) as ReturnRecords;
       const next = mutateReturns(current);
@@ -492,7 +496,9 @@ const loadOrderSearchDoc = async (businessId: string | undefined, date: string, 
   }
   if (data) return data.empty ? null : deserializeDailySales({ ...data });
   const sales = await loadDailySales(date, businessId);
-  await setDoc(ref, sales ? orderSearchFields(sales) : { date, empty: true });
+  // 색인 쓰기는 기다리지 않는다 — 검색 결과는 방금 읽은 매출 문서로 바로 보여준다
+  setDoc(ref, sales ? orderSearchFields(sales) : { date, empty: true })
+    .catch(e => console.warn('[주문검색] 색인 저장 실패:', date, e));
   return sales || null;
 };
 

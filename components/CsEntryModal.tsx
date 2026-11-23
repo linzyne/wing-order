@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getHeaderForCompany, inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
 import { CS_SAVED_EVENT, WORKSPACE_ADJUSTMENT_EVENT } from '../services/firestoreService';
+import type { DailyWorkspaceData } from '../services/firestoreService';
 import type { CompanyConfig, CsRecord, DailySales, PricingConfig, ReturnRecord } from '../types';
 
 export interface CsDraft {
@@ -289,10 +290,11 @@ async function setSettlementAdjustment(
   id: string,
   amount: number,
   label: string,
-  remove: boolean
+  remove: boolean,
+  ws?: Promise<DailyWorkspaceData | null>
 ) {
   const { getDailyWorkspace, updateDailyWorkspaceSessionField } = await import('../services/firestoreService');
-  const workspace = await getDailyWorkspace(businessId);
+  const workspace = await (ws || getDailyWorkspace(businessId));
   // 이미 이 id가 들어있는 세션이 있으면 그 세션을 그대로 사용(수정 시 원래 위치 유지)
   let sessionId: string | null = null;
   if (workspace?.sessionAdjustments) {
@@ -324,14 +326,36 @@ async function setSettlementAdjustment(
 async function setManualTransferForRefund(
   businessId: string | undefined,
   id: string,
-  entry: { label: string; bankName: string; accountNumber: string; amount: number } | null
+  entry: { label: string; bankName: string; accountNumber: string; amount: number } | null,
+  ws?: Promise<DailyWorkspaceData | null>
 ) {
   const { getDailyWorkspace, updateDailyWorkspaceField } = await import('../services/firestoreService');
-  const workspace = await getDailyWorkspace(businessId);
+  const workspace = await (ws || getDailyWorkspace(businessId));
   const existing = workspace?.manualTransfers || [];
+  if (!entry && !existing.some((t: any) => t.id === id)) return;
   const withoutOld = existing.filter((t: any) => t.id !== id);
   const next = entry ? [...withoutOld, { id, ...entry }] : withoutOld;
   await updateDailyWorkspaceField('manualTransfers', next, businessId);
+}
+
+/** 정산조정 여러 개를 한 번 읽고 세션별로 한 번씩만 써서 걷어낸다 (삭제·되돌리기용) */
+async function removeSettlementAdjustments(
+  businessId: string | undefined,
+  ids: string[],
+  ws: Promise<DailyWorkspaceData | null>
+) {
+  const { updateDailyWorkspaceSessionField } = await import('../services/firestoreService');
+  const workspace = await ws;
+  const writes = Object.entries(workspace?.sessionAdjustments || {})
+    .filter(([, list]) => (list as any[]).some(a => ids.includes(a.id)))
+    .map(async ([sessionId, list]) => {
+      const nextAdj = (list as any[]).filter(a => !ids.includes(a.id));
+      await updateDailyWorkspaceSessionField(`sessionAdjustments.${sessionId}`, nextAdj, businessId);
+      window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, {
+        detail: { businessId, sessionId, adjustments: nextAdj },
+      }));
+    });
+  await Promise.all(writes);
 }
 
 /** 확정된 고객환불·전액차감 CS만 반품기록(CS환불)이 있다 — 아니면 반품을 건드릴 일이 없어 매출 문서를 안 읽는다 */
@@ -356,15 +380,27 @@ export async function deleteCsRecord(businessId: string | undefined, date: strin
   );
   if (!ok) return;
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
-  await removeReturnOnReturnDate(businessId, date, record);
+  await cleanUpConfirmedEffects(businessId, date, record);
+}
 
+/** 확정 때 들어간 반품기록(다른 날)·정산조정·계좌환불 수동입금을 함께 걷어낸다. 서로 다른 문서·필드라 동시에 한다. */
+async function cleanUpConfirmedEffects(businessId: string | undefined, date: string, record: CsRecord): Promise<void> {
+  const { getDailyWorkspace } = await import('../services/firestoreService');
   const wasRefundDeduction = hasSettlementDeduction(record);
   const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
-  if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
-  if (wasAccountRefund) await setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null);
-  // 재배송 발주서생성으로 붙었던 공급가차감도 함께 제거 (기록이 사라졌는데 차감만 남는 것 방지)
-  await setSettlementAdjustment(businessId, record.company, `cs-reship-${record.id}`, 0, '', true);
-  if (wasAccountRefund) window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
+  const ws = getDailyWorkspace(businessId);
+  ws.catch(() => {});
+  // 재배송 발주서생성으로 붙었던 공급가차감(cs-reship-*)도 함께 걷어낸다.
+  // 남겨두면 기록이 사라지거나 되돌린 뒤에도 차감만 정산요약에 남고, 다시 확정해 재생성하면 두 번 차감된다.
+  const adjIds = [`cs-reship-${record.id}`, ...(wasRefundDeduction ? [`cs-adj-${record.id}`] : [])];
+  await Promise.all([
+    removeReturnOnReturnDate(businessId, date, record),
+    removeSettlementAdjustments(businessId, adjIds, ws),
+    wasAccountRefund
+      ? setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null, ws)
+          .then(() => { window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } })); })
+      : null,
+  ]);
 }
 
 /** 확정된 CS를 다시 대기 상태로 되돌리고, 확정 시점에 반영됐던 반품기록/정산조정/수동입금 내역도 함께 취소한다 */
@@ -379,16 +415,7 @@ export async function revertCsRecordToPending(businessId: string | undefined, da
   );
   if (!ok) return;
   window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
-  await removeReturnOnReturnDate(businessId, date, record);
-
-  const wasRefundDeduction = hasSettlementDeduction(record);
-  const wasAccountRefund = record.customerMethod === '환불' && record.refundMethod === '계좌환불';
-  if (wasRefundDeduction) await setSettlementAdjustment(businessId, record.company, `cs-adj-${record.id}`, 0, '', true);
-  if (wasAccountRefund) await setManualTransferForRefund(businessId, `cs-refund-${record.id}`, null);
-  // 재배송 발주서생성으로 붙었던 공급가차감(cs-reship-*)도 함께 걷어낸다.
-  // 남겨두면 되돌린 뒤에도 차감만 정산요약에 계속 남고, 다시 확정해 발주서를 재생성하면 두 번 차감된다.
-  await setSettlementAdjustment(businessId, record.company, `cs-reship-${record.id}`, 0, '', true);
-  if (wasAccountRefund) window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
+  await cleanUpConfirmedEffects(businessId, date, record);
 }
 
 interface Props {
@@ -507,43 +534,50 @@ const CsEntryModal: React.FC<Props> = ({ businessId, pricingConfig, draft, onCha
       };
       // 반품을 넣거나(이번 확정) 빼야 할 때(예전에 반품이 있던 건 수정)만 매출 문서를 건드린다
       const touchesReturns = !!returnRecord || (!!editing && hadReturnRecord(editing.record));
-      await saveCsAndReturns(
-        targetDate, businessId,
-        records => (editing ? records.map(r => (r.id === id ? csRecord : r)) : [...records, csRecord]),
-        touchesReturns ? returns => withReturn(targetDate, returns) : null,
-      );
-      window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: targetDate } }));
-      for (const date of new Set([returnRecord ? returnDate : '', prevReturnDate || ''])) {
-        if (!date || date === targetDate) continue;
-        await saveCsAndReturns(date, businessId, null, returns => withReturn(date, returns));
-        window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } }));
-      }
-
       const wasRefundDeduction = editing ? (hasSettlementDeduction(editing.record) && !editing.record.pending) : false;
       const wasAccountRefund = editing ? (editing.record.customerMethod === '환불' && editing.record.refundMethod === '계좌환불' && !editing.record.pending) : false;
-
       const isVendorRefundDeduction = !asPending && isVendorRefund;
-      if (isVendorRefundDeduction && supplyPrice > 0) {
-        const deductionLabel = [sanitizeRecipientName(draft.recipientName), draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불';
-        await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice, deductionLabel, false);
-        window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
-      } else if (wasRefundDeduction) {
-        await setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, 0, '', true);
-        window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
-      }
+      const adjustAction = isVendorRefundDeduction && supplyPrice > 0 ? 'set' : wasRefundDeduction ? 'remove' : null;
+      const transferAction = !asPending && isAccountRefund ? 'set' : wasAccountRefund ? 'remove' : null;
+      const workspaceChanged = () => window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
 
-      if (!asPending && isAccountRefund) {
-        await setManualTransferForRefund(businessId, `cs-refund-${id}`, {
-          label: `${sanitizeRecipientName(draft.recipientName) || '고객'} CS환불`,
-          bankName: draft.refundBankName.trim(),
-          accountNumber: draft.refundAccountNumber.trim(),
-          amount: parseInt(draft.refundAmount, 10) || 0,
-        });
-        window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
-      } else if (wasAccountRefund) {
-        await setManualTransferForRefund(businessId, `cs-refund-${id}`, null);
-        window.dispatchEvent(new CustomEvent(WORKSPACE_ADJUSTMENT_EVENT, { detail: { businessId } }));
+      // CS 문서·반품(매출 문서)·정산조정·수동입금은 서로 다른 문서/필드라 한꺼번에 보낸다.
+      // 예전엔 하나씩 끝나길 기다려 서버 왕복이 4~6번 쌓였다. 작업공간 문서는 한 번만 읽어 둘이 같이 쓴다.
+      let ws: Promise<DailyWorkspaceData | null> | undefined;
+      if (adjustAction || transferAction) {
+        const { getDailyWorkspace } = await import('../services/firestoreService');
+        ws = getDailyWorkspace(businessId);
+        ws.catch(() => {});
       }
+      const extraReturnDates = [...new Set([returnRecord ? returnDate : '', prevReturnDate || ''])]
+        .filter(date => date && date !== targetDate);
+      await Promise.all([
+        saveCsAndReturns(
+          targetDate, businessId,
+          records => (editing ? records.map(r => (r.id === id ? csRecord : r)) : [...records, csRecord]),
+          touchesReturns ? returns => withReturn(targetDate, returns) : null,
+        ).then(() => { window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date: targetDate } })); }),
+        ...extraReturnDates.map(date =>
+          saveCsAndReturns(date, businessId, null, returns => withReturn(date, returns))
+            .then(() => { window.dispatchEvent(new CustomEvent(CS_SAVED_EVENT, { detail: { businessId, date } })); })),
+        adjustAction === 'set'
+          ? setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, -supplyPrice,
+              [sanitizeRecipientName(draft.recipientName), draft.deductionReason.trim()].filter(Boolean).join(' ') || '업체환불', false, ws)
+              .then(workspaceChanged)
+          : adjustAction === 'remove'
+            ? setSettlementAdjustment(businessId, draft.company, `cs-adj-${id}`, 0, '', true, ws).then(workspaceChanged)
+            : null,
+        transferAction === 'set'
+          ? setManualTransferForRefund(businessId, `cs-refund-${id}`, {
+              label: `${sanitizeRecipientName(draft.recipientName) || '고객'} CS환불`,
+              bankName: draft.refundBankName.trim(),
+              accountNumber: draft.refundAccountNumber.trim(),
+              amount: parseInt(draft.refundAmount, 10) || 0,
+            }, ws).then(workspaceChanged)
+          : transferAction === 'remove'
+            ? setManualTransferForRefund(businessId, `cs-refund-${id}`, null, ws).then(workspaceChanged)
+            : null,
+      ]);
 
       const elapsed = Date.now() - startedAt;
       if (elapsed > 8000) console.warn(`[CS] 저장 완료까지 ${Math.round(elapsed / 1000)}초 걸림`);
