@@ -1315,8 +1315,8 @@ const App: React.FC = () => {
   }, []);
 
   return (
-    // h-screen + overflow-hidden 으로 전체를 뷰포트에 가두고, 스크롤 컨텍스트를 패널별로 분리
-    <div className="h-screen overflow-hidden flex flex-col bg-zinc-950">
+    // fixed inset-0: 사파리에서 100vh(h-screen)가 보이는 창보다 커서 문서가 밀리고, scrollIntoView가 문서까지 내려 상단 메뉴가 가려지던 것 — 창에 딱 맞춰 문서가 넘칠 일이 없게
+    <div className="fixed inset-0 overflow-hidden flex flex-col bg-zinc-950">
       <SentOrderToast />
 
       {/* 상단 네비게이션 — 항상 한 줄 (줄바꿈 금지).
