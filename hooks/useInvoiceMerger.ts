@@ -170,7 +170,7 @@ const buildMapFromColumns = (vendorAoa: any[][], vOrderIdx: number, vInvIdx: num
  * 서한푸드는 송장번호를 K열·L열 등 매번 다른 칸에 적어 보낸다 → 행마다 그 형식 값을 찾아 쓴다.
  */
 const DASHED_TRACKING_COMPANIES = ['서한'];
-const DASHED_TRACKING_RE = /^[1-9]\d{3}-\d{4}-\d{4}$/; // 0으로 시작하면 안심번호(0504-…) 등 전화번호
+const DASHED_TRACKING_RE = /^[1-9]\d{3}-?\d{4}-?\d{4}$/; // 0000-0000-0000 또는 000000000000. 0으로 시작하면 안심번호(0504-…) 등 전화번호
 
 /**
  * 행마다 "0000-0000-0000" 형식 칸을 송장번호로 써서 invoiceMap을 빌드 (키 열·연락처 열 제외).
@@ -179,13 +179,17 @@ const DASHED_TRACKING_RE = /^[1-9]\d{3}-\d{4}-\d{4}$/; // 0으로 시작하면 �
 const buildMapFromDashedTracking = (vendorAoa: any[][], vKeyIndices: number[], vHeaders: any[], makeKey: (row: any[]) => string): Map<string, string[]> => {
     const invoiceMap = new Map<string, string[]>();
     const isPhoneCol = (ci: number) => /연락|전화|휴대|핸드폰|hp|phone/i.test(String(vHeaders[ci] || '').replace(/\s+/g, ''));
+    // 하이픈 없는 12자리는 상품번호·옵션ID 같은 다른 번호 칸일 수 있어 그런 제목 칸은 뺀다
+    const isIdCol = (ci: number) => /주문|상품|옵션|id|코드|바코드|사업자|등록/i.test(String(vHeaders[ci] || '').replace(/\s+/g, ''));
     for (const row of vendorAoa) {
         if (!row) continue;
         const key = makeKey(row);
         if (!key) continue;
         for (let ci = 0; ci < row.length; ci++) {
             if (vKeyIndices.includes(ci) || isPhoneCol(ci)) continue;
-            if (!DASHED_TRACKING_RE.test(String(row[ci] ?? '').trim()) || isPhoneLikeValue(row[ci])) continue;
+            const raw = String(row[ci] ?? '').trim();
+            if (!DASHED_TRACKING_RE.test(raw) || isPhoneLikeValue(raw)) continue;
+            if (!raw.includes('-') && isIdCol(ci)) continue;
             const val = normalizeValue(row[ci]);
             const existing = invoiceMap.get(key) || [];
             if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
