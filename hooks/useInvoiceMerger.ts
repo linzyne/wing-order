@@ -21,11 +21,18 @@ const isRowMatchingCompany = (row: any[], keywords: string[]): boolean => {
 
 const normalizeValue = (val: any): string => val == null ? '' : String(val).replace(/\s+/g, '').trim().toUpperCase();
 
-/** 운송장번호처럼 보이는 값인지 — 숫자 위주 9자리 이상이고 날짜가 아님 */
+/** 전화번호(안심번호 050x-…, 휴대폰 01x-…)인지 — 0000-0000-0000 모양이어도 송장이 아니다 */
+const isPhoneLikeValue = (val: any): boolean => {
+    const d = String(val ?? '').replace(/[^0-9]/g, '');
+    return /^050\d{8,9}$/.test(d) || /^01[016789]\d{7,8}$/.test(d);
+};
+
+/** 운송장번호처럼 보이는 값인지 — 숫자 위주 9자리 이상이고 날짜·전화번호가 아님 */
 const isTrackingLikeValue = (val: any): boolean => {
     if (val == null) return false;
     const s = String(val).trim();
     if (!s) return false;
+    if (isPhoneLikeValue(s)) return false;
     if (/^\d{4}\s?[-.\/]\s?\d{1,2}\s?[-.\/]\s?\d{1,2}/.test(s)) return false; // 2026-07-03 ...
     const digitsOnly = s.replace(/[^0-9]/g, '');
     if (digitsOnly.length === 8 && /^20\d{6}$/.test(digitsOnly)) return false; // yyyymmdd
@@ -150,7 +157,7 @@ const buildMapFromColumns = (vendorAoa: any[][], vOrderIdx: number, vInvIdx: num
         if (!row || row.length <= Math.max(vOrderIdx, vInvIdx)) continue;
         const key = normalizeOrderNum(row[vOrderIdx]);
         const val = normalizeValue(row[vInvIdx]);
-        if (key && val.length >= 5) {
+        if (key && val.length >= 5 && !isPhoneLikeValue(val)) {
             const existing = invoiceMap.get(key) || [];
             if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
         }
@@ -178,7 +185,7 @@ const buildMapFromDashedTracking = (vendorAoa: any[][], vKeyIndices: number[], v
         if (!key) continue;
         for (let ci = 0; ci < row.length; ci++) {
             if (vKeyIndices.includes(ci) || isPhoneCol(ci)) continue;
-            if (!DASHED_TRACKING_RE.test(String(row[ci] ?? '').trim())) continue;
+            if (!DASHED_TRACKING_RE.test(String(row[ci] ?? '').trim()) || isPhoneLikeValue(row[ci])) continue;
             const val = normalizeValue(row[ci]);
             const existing = invoiceMap.get(key) || [];
             if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
@@ -199,7 +206,7 @@ const buildMapFromMultiColumns = (vendorAoa: any[][], vKeyIndices: number[], vIn
         if (keyParts.some(p => !p)) continue;
         const key = keyParts.join('|');
         const val = normalizeValue(row[vInvIdx]);
-        if (key && val.length >= 5) {
+        if (key && val.length >= 5 && !isPhoneLikeValue(val)) {
             const existing = invoiceMap.get(key) || [];
             if (!existing.includes(val)) invoiceMap.set(key, [...existing, val]);
         }
@@ -307,7 +314,7 @@ export const useInvoiceMerger = () => {
                     for (let ci = 0; ci < dataRow.length; ci++) {
                         if (vKeyIndices.includes(ci)) continue;
                         const cellVal = String(dataRow[ci] || '').replace(/\s/g, '');
-                        if (/^\d{10,}$/.test(cellVal)) { vInvIdx = ci; break; }
+                        if (/^\d{10,}$/.test(cellVal) && !isPhoneLikeValue(cellVal)) { vInvIdx = ci; break; }
                     }
                     if (vInvIdx !== -1) break;
                 }
@@ -361,7 +368,7 @@ export const useInvoiceMerger = () => {
                     for (let ci = 0; ci < dataRow.length; ci++) {
                         if (ci === vOrderIdx) continue;
                         const cellVal = String(dataRow[ci] || '').replace(/\s/g, '');
-                        if (/^\d{10,}$/.test(cellVal)) { vInvIdx = ci; break; }
+                        if (/^\d{10,}$/.test(cellVal) && !isPhoneLikeValue(cellVal)) { vInvIdx = ci; break; }
                     }
                     if (vInvIdx !== -1) break;
                 }
@@ -441,7 +448,7 @@ export const useInvoiceMerger = () => {
                     for (let ci = 0; ci < dataRow.length; ci++) {
                         if (ci === vOrderIdx) continue;
                         const cellVal = String(dataRow[ci] || '').replace(/\s/g, '');
-                        if (/^\d{10,}$/.test(cellVal)) { vInvIdx = ci; break; }
+                        if (/^\d{10,}$/.test(cellVal) && !isPhoneLikeValue(cellVal)) { vInvIdx = ci; break; }
                     }
                     if (vInvIdx !== -1) break;
                 }
