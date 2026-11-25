@@ -4,6 +4,7 @@ import {
   type ManualOrderLogEntry, type ManualTransferLogEntry,
 } from './firestoreService';
 import type { DailySales } from '../types';
+import { getAddressChanges } from './addressChanges';
 
 // 발주전확인: 발주서 메일을 보내기 전에, 손으로 넣은 것들이 오늘 발주서·입금목록에 다 들어갔는지 사업자 전체를 한 번에 본다.
 //  1) CS: 대기(접수확인 안 누름)로 남은 건, 재배송인데 발주서에 안 넣은 건
@@ -22,6 +23,7 @@ export interface PreOrderCheckResult {
   cs: CheckIssue[];
   manualOrders: CheckIssue[];
   transfers: CheckIssue[];
+  addresses: CheckIssue[];
   /** 확인한 것 (문제가 없을 때 무엇을 봤는지 보여주려고) */
   checked: { cs: number; manualOrders: number; transfers: number };
 }
@@ -87,7 +89,7 @@ const openCsOnce = (businessId: string): Promise<OpenCsEntry[]> =>
 
 const checkBusiness = async (b: Business, today: string) => {
   const since = Date.now() - 7 * DAY;
-  const [openCs, todayCs, pending, orderLog, sessions, workspace, transferLog, history] = await Promise.all([
+  const [openCs, todayCs, pending, orderLog, sessions, workspace, transferLog, history, addrChanges] = await Promise.all([
     openCsOnce(b.id),
     loadCsItemsByDate(b.id, today).catch(() => [] as OpenCsEntry[]),
     loadManualOrders(b.id),
@@ -96,11 +98,13 @@ const checkBusiness = async (b: Business, today: string) => {
     getDailyWorkspace(b.id).catch(() => null),
     loadManualTransferLogSince(b.id, today ? new Date(`${today}T00:00:00`).getTime() : since).catch(() => [] as ManualTransferLogEntry[]),
     loadRecentOrderSearchOnce(b.id).catch(() => [] as DailySales[]),
+    getAddressChanges(b.id).catch(() => []),
   ]);
 
   const cs: CheckIssue[] = [];
   const manualOrders: CheckIssue[] = [];
   const transfers: CheckIssue[] = [];
+  const addresses: CheckIssue[] = [];
   const who = (r: { company?: string; recipientName?: string }) => [r.company, r.recipientName || '이름없음'].filter(Boolean).join(' · ');
 
   // ── 1) CS ──
@@ -161,8 +165,24 @@ const checkBusiness = async (b: Business, today: string) => {
         detail: '오늘 접수한 계좌환불이 입금목록에 없어요' });
     });
 
+  // ── 4) 주소변경: 아직 새 주소로 안 들어갔는데 발주서는 이미 만들어졌거나 나간 주문 ──
+  const todayNums = new Set<string>();
+  Object.values(sessions || {}).forEach((data: any) => asArray(data?.rowOrderNumbers)
+    .forEach(n => String(n ?? '').split(/[,\s]+/).filter(Boolean).forEach(x => todayNums.add(norm(x)))));
+  const pastNums = new Map<string, string>();
+  history.forEach(d => Object.values(d.companyOrderNumbers || {}).forEach(nums => (nums as string[])
+    .forEach(n => String(n || '').split(/[,\s]+/).filter(Boolean).forEach(x => { if (d.date !== today && !pastNums.has(norm(x))) pastNums.set(norm(x), d.date); }))));
+  addrChanges.filter(c => !c.appliedAt).forEach(c => {
+    const k = norm(c.orderNumber);
+    const title = `${c.recipientName || c.orderNumber} → ${c.newAddress}`;
+    if (todayNums.has(k)) addresses.push({ level: 'error', businessName: b.displayName, title,
+      detail: '오늘 발주서에 옛 주소로 들어가 있어요 — 발주서를 다시 만들어 주세요' });
+    else if (pastNums.has(k)) addresses.push({ level: 'error', businessName: b.displayName, title,
+      detail: `${md(pastNums.get(k)!)} 발주서로 옛 주소가 이미 나갔어요 — 업체에 직접 연락` });
+  });
+
   return {
-    cs, manualOrders, transfers,
+    cs, manualOrders, transfers, addresses,
     checked: { cs: openCs.length, manualOrders: pending.length + orderLog.length, transfers: wsTransfers.length },
   };
 };
@@ -172,12 +192,13 @@ export const runPreOrderCheck = async (businesses: Business[]): Promise<PreOrder
   const all = await Promise.all(businesses.map(b => checkBusiness(b, today).catch(err => {
     console.error('[발주전확인] 실패', b.displayName, err);
     const fail: CheckIssue = { level: 'error', businessName: b.displayName, title: '확인 실패', detail: String(err?.message || err) };
-    return { cs: [fail], manualOrders: [], transfers: [], checked: { cs: 0, manualOrders: 0, transfers: 0 } };
+    return { cs: [fail], manualOrders: [], transfers: [], addresses: [], checked: { cs: 0, manualOrders: 0, transfers: 0 } };
   })));
   return {
     cs: all.flatMap(r => r.cs),
     manualOrders: all.flatMap(r => r.manualOrders),
     transfers: all.flatMap(r => r.transfers),
+    addresses: all.flatMap(r => r.addresses),
     checked: {
       cs: all.reduce((s, r) => s + r.checked.cs, 0),
       manualOrders: all.reduce((s, r) => s + r.checked.manualOrders, 0),

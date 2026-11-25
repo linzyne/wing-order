@@ -8,6 +8,7 @@ import AutoWatcherPanel from './AutoWatcherPanel';
 import BatchInvoicePanel from './BatchInvoicePanel';
 import RegularCustomerPanel, { type ServiceOrderDraft } from './RegularCustomerPanel';
 import ManualOrderLogModal from './ManualOrderLogModal';
+import AddressChangePanel from './AddressChangePanel';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo, resolveSenderColumns, readCourierTrackingMap, getOrderMethod } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
@@ -5954,6 +5955,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                     )}
                     </div>
                 </details>
+
+                {/* 1-0) 주소 변경: 주문번호로 등록해 두면 발주서 만들 때 새 주소로 들어감 */}
+                <AddressChangePanel businessId={businessId} masterRows={allMasterDataRows} />
 
                 {/* 1-1) 단골 관리 + 오늘 단골 주문 알림 + 서비스 추가 */}
                 <RegularCustomerPanel

@@ -8,10 +8,11 @@ interface Props {
   businesses: { id: string; displayName: string }[];
 }
 
-const SECTIONS: { key: 'cs' | 'manualOrders' | 'transfers'; label: string; okText: string }[] = [
+const SECTIONS: { key: 'cs' | 'manualOrders' | 'transfers' | 'addresses'; label: string; okText: string }[] = [
   { key: 'cs', label: 'CS 접수', okText: '대기 중인 CS 없음' },
   { key: 'manualOrders', label: '수동발주', okText: '대기 목록이 모두 오늘 발주서에 들어감' },
   { key: 'transfers', label: '수동입금', okText: '오늘 넣은 입금이 모두 입금목록에 있음' },
+  { key: 'addresses', label: '주소변경', okText: '옛 주소로 나간 주문 없음' },
 ];
 
 const PreOrderCheckButton: React.FC<Props> = ({ businesses }) => {
@@ -32,8 +33,8 @@ const PreOrderCheckButton: React.FC<Props> = ({ businesses }) => {
     }
   };
 
-  const errors = result ? [...result.cs, ...result.manualOrders, ...result.transfers].filter(i => i.level === 'error').length : 0;
-  const warns = result ? [...result.cs, ...result.manualOrders, ...result.transfers].filter(i => i.level === 'warn').length : 0;
+  const errors = result ? [...result.cs, ...result.manualOrders, ...result.transfers, ...result.addresses].filter(i => i.level === 'error').length : 0;
+  const warns = result ? [...result.cs, ...result.manualOrders, ...result.transfers, ...result.addresses].filter(i => i.level === 'warn').length : 0;
 
   const row = (i: CheckIssue, idx: number) => (
     <div key={idx} className={`rounded-xl border px-3 py-2 ${i.level === 'error' ? 'border-rose-500/40 bg-rose-950/20' : 'border-amber-500/40 bg-amber-950/20'}`}>
@@ -51,7 +52,7 @@ const PreOrderCheckButton: React.FC<Props> = ({ businesses }) => {
         onClick={run}
         disabled={running}
         className="w-full mb-1 px-3 py-2 rounded-xl text-[12px] font-black btn-accent text-white disabled:opacity-60"
-        title="CS 대기·수동발주·수동입금이 오늘 발주서와 입금목록에 다 들어갔는지 확인"
+        title="CS 대기·수동발주·수동입금·주소변경이 오늘 발주서와 입금목록에 다 들어갔는지 확인"
       >
         {running ? '확인 중…' : '✅ 발주전확인'}
       </button>

@@ -1,5 +1,6 @@
 
 import { useState, useCallback, useEffect } from 'react';
+import { getAddressChanges, applyAddressChanges, markAddressChangesApplied } from '../services/addressChanges';
 import { GoogleGenAI } from "@google/genai";
 import type { ProcessingStatus, AnalysisResult, PricingConfig, CompanyConfig, ProductPricing, ExcludedOrder, ManualOrder, UnmatchedOrder, OrderFormFieldKey, VendorInvoiceFieldKey } from '../types';
 import { BUSINESS_INFO, getBusinessInfo } from '../types';
@@ -1583,6 +1584,14 @@ export const useConsolidatedOrderConverter = (pricingConfig: PricingConfig, busi
             const localExcluded: ExcludedOrder[] = [];
             const localUnmatched: UnmatchedOrder[] = [];
             const localSent: ExcludedOrder[] = [];
+            // 주소변경 등록된 주문은 새 주소로 바꿔 넣는다 (주문번호 기준)
+            const addrChanges = await getAddressChanges(businessId).catch(() => []);
+            const addr = applyAddressChanges(json, addrChanges);
+            json = addr.json;
+            if (addr.applied.length) {
+                console.log(`[발주처리] ${targetCompanyName} 주소변경 ${addr.applied.length}건 반영`);
+                markAddressChangesApplied(addr.applied, targetCompanyName, workDate || new Date().toLocaleDateString('en-CA'));
+            }
             const [, result] = await generateWorkbookForCompany(ai, geminiProductCache, pricingConfig, json, targetCompanyName, fakeOrderNumbers, localExcluded, manualOrders, localUnmatched, businessId, workDate, sentNumbers, localSent);
 
             return { result, excluded: localExcluded, unmatched: localUnmatched, sentExcluded: localSent };
