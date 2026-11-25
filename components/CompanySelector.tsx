@@ -7,13 +7,14 @@ import FileUpload from './FileUpload';
 import AutoWatcherPanel from './AutoWatcherPanel';
 import BatchInvoicePanel from './BatchInvoicePanel';
 import RegularCustomerPanel, { type ServiceOrderDraft } from './RegularCustomerPanel';
+import ManualOrderLogModal from './ManualOrderLogModal';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo, resolveSenderColumns, readCourierTrackingMap, getOrderMethod } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
 import { getKeywordsForCompany, matchCustomGroupColCompany, getHeaderForCompany, sortRowsByProductName, findProductNameColIdx, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
-import { subscribeManualOrders, saveManualOrders, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, logManualOrderChanges, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
 import { sendOrderEmail, renderMailTemplate, DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY, ORDER_MAIL_NOTICE } from '../services/emailService';
 import { splitEmails } from '../services/invoiceMailService';
@@ -1225,6 +1226,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [bulkText, setBulkText] = useState('');
 
     const [manualOrders, setManualOrders] = useState<ManualOrder[]>([]);
+    const [manualLogOpen, setManualLogOpen] = useState(false);
     const [selectedManualOrderIds, setSelectedManualOrderIds] = useState<Set<string>>(new Set());
     const lastWrittenManualOrdersRef = useRef('[]');
 
@@ -1424,11 +1426,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     // 수동발주 변경 → Firestore에 저장
     const isInitialManualOrdersLoad = useRef(true);
+    /** 다음 저장 때 빠진 건에 적을 까닭 (비우면 '목록에서 빠짐') */
+    const manualRemoveReasonRef = useRef('');
     useEffect(() => {
         if (isInitialManualOrdersLoad.current) { isInitialManualOrdersLoad.current = false; return; }
         const currentStr = JSON.stringify(manualOrders);
         if (currentStr === lastWrittenManualOrdersRef.current) return;
+        let prevOrders: ManualOrder[] = [];
+        try { prevOrders = JSON.parse(lastWrittenManualOrdersRef.current || '[]'); } catch { /* 처음 */ }
         lastWrittenManualOrdersRef.current = currentStr;
+        // 건별 기록: 등록·수정·빠짐을 따로 남긴다(대기 목록은 통째로 덮어써서 빠진 기록이 안 남으니까)
+        logManualOrderChanges(prevOrders, manualOrders, businessId, manualRemoveReasonRef.current);
+        manualRemoveReasonRef.current = '';
         saveManualOrders(manualOrders, businessId).catch(e => console.error('[Firestore] 수동발주 저장 실패:', e));
     }, [manualOrders, businessId]);
 
@@ -3628,11 +3637,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
 
     const handleRemoveRedirectedManualOrders = useCallback((ids: string[]) => {
         const drop = new Set(ids);
+        manualRemoveReasonRef.current = '대신 보내기로 옮김';
         setManualOrders(prev => prev.filter(o => !drop.has(o.id)));
         setSelectedManualOrderIds(prev => new Set([...prev].filter(id => !drop.has(id))));
     }, []);
 
     const handleRemoveManualOrder = (id: string) => {
+        manualRemoveReasonRef.current = '직접 지움';
         setManualOrders(prev => prev.filter(o => o.id !== id));
         setSelectedManualOrderIds(prev => { const next = new Set(prev); next.delete(id); return next; });
     };
@@ -5792,6 +5803,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                         <span className="text-zinc-600 text-[10px] transition-transform group-open/manual:rotate-180">▼</span>
                     </summary>
                     <div className="px-4 pb-4">
+                    <button type="button" onClick={() => setManualLogOpen(true)} className="mb-3 px-2.5 py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 rounded-lg text-[10px] font-black text-zinc-300 transition-colors">📜 수동발주 기록 보기 (발주서 들어갔는지)</button>
+                    {manualLogOpen && (
+                        <ManualOrderLogModal businessId={businessId} businessName={businessDisplayName} currentOrders={manualOrders} onClose={() => setManualLogOpen(false)} />
+                    )}
                     <div className="flex flex-wrap gap-1.5 mb-3">
                         <span className="text-zinc-600 text-[9px] font-black uppercase self-center mr-0.5">빠른 선택 :</span>
                         {quickRecipients.map(p => (

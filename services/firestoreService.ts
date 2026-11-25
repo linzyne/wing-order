@@ -2,7 +2,7 @@ import { db } from '../firebase';
 import {
   doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, orderBy, where, getDocs,
-  onSnapshot, getDocFromServer, getDocFromCache, Timestamp, deleteField, writeBatch, runTransaction,
+  onSnapshot, getDocFromServer, getDocFromCache, Timestamp, deleteField, writeBatch, runTransaction, limit,
   type Unsubscribe
 } from 'firebase/firestore';
 import { isCsFullyCompleted } from '../types';
@@ -1431,7 +1431,7 @@ export const appendRedirectedManualOrders = async (
     const existing: any[] = ordersSnap.exists() ? (ordersSnap.data().orders || []) : [];
     const done: Record<string, string> = doneSnap.exists() ? (doneSnap.data().keys || {}) : {};
     const fresh = orders.filter(o => !done[o.redirectKey] && !existing.some(e => e.id === o.id));
-    if (fresh.length === 0) return 0;
+    if (fresh.length === 0) return [] as typeof fresh;
     const now = new Date().toISOString();
     const nextDone = { ...done };
     fresh.forEach(o => { nextDone[o.redirectKey] = now; });
@@ -1440,7 +1440,94 @@ export const appendRedirectedManualOrders = async (
     Object.keys(nextDone).forEach(k => { if (Date.parse(nextDone[k]) < cutoff) delete nextDone[k]; });
     tx.set(ordersRef, { orders: [...existing, ...fresh], updatedAt: Timestamp.now() });
     tx.set(doneRef, { keys: nextDone, updatedAt: Timestamp.now() });
+    return fresh;
+  }).then(fresh => {
+    if (fresh.length) logManualOrderChanges([], fresh, targetBusinessId, '');
     return fresh.length;
+  });
+};
+
+// ===== 수동발주 등록 기록 (지워도 남는 기록) =====
+// 대기 목록(pendingManualOrders)은 발주 뒤 지우고, 목록 전체를 한 문서에 덮어써서 무엇이 언제 빠졌는지 남지 않았다.
+// 그래서 건마다 문서 하나(manualOrderLog[_사업자]/{주문 id})로 등록·수정·빠짐을 따로 적는다. 목록이 덮어써져도 이 기록은 그대로 있다.
+
+export interface ManualOrderLogEntry {
+  id: string;
+  companyName: string;
+  recipientName: string;
+  phone: string;
+  address: string;
+  productName: string;
+  qty: number;
+  memo?: string;
+  isSample?: boolean;
+  redirectFrom?: string;
+  csRecordId?: string;
+  regularCustomerId?: string;
+  createdAt: number;
+  updatedAt: number;
+  /** 대기 목록에서 빠진 때. 없으면 아직 대기 중 */
+  removedAt?: number;
+  /** 빠진 까닭: 직접 지움 / 대신 보내기로 옮김 / 목록에서 빠짐(직접 지우지 않았는데 사라짐) */
+  removedReason?: string;
+}
+
+const getManualOrderLogCollectionName = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'manualOrderLog' : `manualOrderLog_${businessId}`;
+
+const logFields = (o: any) => {
+  const f: Record<string, unknown> = {
+    companyName: o.companyName || '', recipientName: o.recipientName || '', phone: o.phone || '',
+    address: o.address || '', productName: o.productName || '', qty: Number(o.qty) || 0,
+    memo: o.memo || '', isSample: !!o.isSample,
+  };
+  if (o.redirectFrom) f.redirectFrom = o.redirectFrom;
+  if (o.csRecordId) f.csRecordId = o.csRecordId;
+  if (o.regularCustomerId) f.regularCustomerId = o.regularCustomerId;
+  return f;
+};
+
+/**
+ * 대기 목록이 prev → next로 바뀐 것을 건별 기록에 적는다. 새로 생긴 건은 등록, 내용이 바뀐 건은 수정,
+ * 없어진 건은 빠진 때와 까닭(removedReason, 비우면 '목록에서 빠짐')을 남긴다. 저장은 기다리지 않는다.
+ */
+export const logManualOrderChanges = (prev: any[], next: any[], businessId: string | undefined, removedReason: string): void => {
+  const col = getManualOrderLogCollectionName(businessId);
+  const prevById = new Map(prev.filter(o => o?.id).map(o => [o.id, o]));
+  const nextById = new Map(next.filter(o => o?.id).map(o => [o.id, o]));
+  const now = Date.now();
+  const batch = writeBatch(db);
+  let n = 0;
+  nextById.forEach((o, id) => {
+    const before = prevById.get(id);
+    if (!before) {
+      batch.set(doc(db, col, id), { ...logFields(o), createdAt: now, updatedAt: now, removedAt: deleteField(), removedReason: deleteField() }, { merge: true });
+      n++;
+    } else if (JSON.stringify(logFields(before)) !== JSON.stringify(logFields(o))) {
+      batch.set(doc(db, col, id), { ...logFields(o), updatedAt: now }, { merge: true });
+      n++;
+    }
+  });
+  prevById.forEach((o, id) => {
+    if (nextById.has(id)) return;
+    batch.set(doc(db, col, id), { ...logFields(o), updatedAt: now, removedAt: now, removedReason: removedReason || '목록에서 빠짐' }, { merge: true });
+    n++;
+  });
+  if (n === 0) return;
+  batch.commit().catch(e => console.error('[Firestore] 수동발주 기록 저장 실패:', e));
+};
+
+/** 최근 수동발주 등록 기록 (최근 등록 순, 500건까지) */
+export const subscribeManualOrderLog = (
+  businessId: string | undefined,
+  callback: (entries: ManualOrderLogEntry[] | null) => void
+): Unsubscribe => {
+  const q = query(collection(db, getManualOrderLogCollectionName(businessId)), orderBy('createdAt', 'desc'), limit(500));
+  return onSnapshot(q, snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<ManualOrderLogEntry, 'id'>) })));
+  }, err => {
+    console.error('[Firestore] 수동발주 기록 구독 오류:', err);
+    callback(null);
   });
 };
 
