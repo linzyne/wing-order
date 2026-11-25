@@ -4,6 +4,8 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
 import { getSentBatches, sentNumbersBefore, subscribeSentBatches } from '../services/sentOrders';
+import { inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
+import type { AddressChange } from '../services/addressChanges';
 import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, findProductNameColIdx, findQtyColIdx, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines, PARCEL_SUFFIX } from '../hooks/useConsolidatedOrderConverter';
 import {
     ArrowDownTrayIcon, CheckIcon, UploadIcon, BoltIcon,
@@ -158,6 +160,8 @@ interface CompanyWorkstationRowProps {
     registerAddAdjustment?: (fn: (amount: number, label: string, csRecordId?: string) => void) => void;
     /** CS 되돌리기 시 그 CS로 덧붙인 재배송 행을 이 세션에서 제거 (기록이 있을 때만 true) */
     registerRemoveReshipRow?: (fn: (csRecordId: string) => boolean) => void;
+    /** 주소변경: 이미 만든 이 세션 발주서에서 그 주문 줄의 주소를 바로 고치는 함수를 등록 (고친 줄 수를 돌려줌) */
+    registerPatchAddress?: (fn: (change: AddressChange) => number) => void;
     registerGenerateManual?: (fn: (orderId: string) => void) => void; // 수동발주 칩의 '발주서 생성' 아이콘
     /** 발주서 미리보기에서 고른 주문을 롯데 예약 (확장이 가져가면 onClaimed로 그 줄들을 발주서에서 뺀다) */
     onLotteReserve?: (picks: LotteReservePick[], companyName: string, onClaimed: (sent: string[]) => void) => Promise<boolean>;
@@ -194,6 +198,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     registerAppendRow,
     registerAddAdjustment,
     registerRemoveReshipRow,
+    registerPatchAddress,
     registerGenerateManual,
     onLotteReserve,
 }) => {
@@ -1452,6 +1457,69 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     };
     const removeReshipRowRef = useRef(removeReshipRowFn);
     removeReshipRowRef.current = removeReshipRowFn;
+    /**
+     * 주소변경: 이미 만든 발주서에서 그 주문번호 줄의 받는분 주소(·우편번호·전화)를 새 값으로 바꾼다.
+     * 칸은 업체 발주서 양식 제목으로 찾는다. 주소 칸이 둘 이상이면(보내는 쪽 주소가 같이 있는 양식) 보내는 사람 주소가 아닌 마지막 칸.
+     */
+    const patchAddressFn = (change: AddressChange): number => {
+        const companyConfig = pricingConfig[companyName] || {} as any;
+        const header = getHeaderForCompany(companyName, companyConfig);
+        const fieldMap = companyConfig.orderFormFieldMap || {};
+        const idxOf = (field: string) => header.map((h: string, i: number) => ((fieldMap[i] || inferFieldFromHeader(String(h || ''))) === field ? i : -1)).filter((i: number) => i >= 0);
+        const addrIdx = idxOf('recipientAddress');
+        const zipIdx = idxOf('recipientZipcode');
+        const phoneIdx = idxOf('recipientPhone');
+        if (addrIdx.length === 0) return 0;
+        // 같은 종류 칸이 여럿이면 '받는분/수취인'이 붙고 '기타'가 아닌 칸 (없으면 마지막 칸)
+        const pickRecipientCol = (cols: number[]) => {
+            const h = (i: number) => String(header[i] || '').replace(/\s+/g, '');
+            return cols.find(i => /받는|수취/.test(h(i)) && !/기타|보내는|송하인/.test(h(i)))
+                ?? cols.filter(i => !/기타|보내는|송하인/.test(h(i))).slice(-1)[0]
+                ?? cols[cols.length - 1];
+        };
+        const senderAddr = String(getBusinessInfo(businessId || '')?.address || '').replace(/\s+/g, '');
+        const target = String(change.orderNumber).replace(/\s+/g, '');
+        const isTarget = (on: unknown) => String(on ?? '').split(/[,\s]+/).some(n => n.replace(/\s+/g, '') === target);
+        const patchRows = (rows: any[][], ons: string[]): { rows: any[][]; n: number } => {
+            let n = 0;
+            const out = rows.map((row, i) => {
+                if (!Array.isArray(row) || !isTarget(ons[i])) return row;
+                const r = [...row];
+                const cands = addrIdx.filter((ci: number) => String(r[ci] ?? '').replace(/\s+/g, '') !== senderAddr || !senderAddr);
+                const ai = (cands.length ? cands : addrIdx)[(cands.length ? cands : addrIdx).length - 1];
+                r[ai] = change.newAddress;
+                if (change.newZipcode && zipIdx.length) r[pickRecipientCol(zipIdx)] = change.newZipcode;
+                if (change.newPhone && phoneIdx.length) r[pickRecipientCol(phoneIdx)] = change.newPhone;
+                n++;
+                return r;
+            });
+            return { rows: out, n };
+        };
+        // (A) 이 기기에서 처리한 결과가 있으면 그걸 고친다 (저장 effect가 서버에 반영)
+        if (localResult?.rows?.length) {
+            const { rows, n } = patchRows(localResult.rows, localResult.rowOrderNumbers || []);
+            if (n > 0) {
+                setLocalResult({ ...localResult, rows });
+                hasCompletedLocalProcessingRef.current = true;
+            }
+            return n;
+        }
+        // (B) 새로고침 뒤처럼 서버에 저장된 결과만 있으면 그걸 고쳐 쓴다
+        const synced = sessionResults?.[sessionId];
+        if (!synced) return 0;
+        const syncedRows: any[][] = typeof synced.orderRows === 'string' ? JSON.parse(synced.orderRows as any) : (synced.orderRows || []);
+        const ons: string[] = typeof synced.rowOrderNumbers === 'string' ? JSON.parse(synced.rowOrderNumbers as any) : (synced.rowOrderNumbers || []);
+        const { rows, n } = patchRows(syncedRows, ons);
+        if (n > 0) onSaveSessionResult(sessionId, { ...synced, orderRows: JSON.stringify(rows) as any });
+        return n;
+    };
+    const patchAddressRef = useRef(patchAddressFn);
+    patchAddressRef.current = patchAddressFn;
+    useEffect(() => {
+        registerPatchAddress?.((change: AddressChange) => patchAddressRef.current(change));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     useEffect(() => {
         registerRemoveReshipRow?.((csRecordId: string) => removeReshipRowRef.current(csRecordId));
     // eslint-disable-next-line react-hooks/exhaustive-deps

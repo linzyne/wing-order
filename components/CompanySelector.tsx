@@ -9,6 +9,7 @@ import BatchInvoicePanel from './BatchInvoicePanel';
 import RegularCustomerPanel, { type ServiceOrderDraft } from './RegularCustomerPanel';
 import ManualOrderLogModal from './ManualOrderLogModal';
 import AddressChangePanel from './AddressChangePanel';
+import { markAddressChangesApplied, type AddressChange } from '../services/addressChanges';
 import type { PricingConfig, ManualOrder, ExcludedOrder, MarginRecord, SalesRecord, DailySales, ExpenseRecord, ReturnRecord, PlatformConfigs, PlatformConfig, CourierTemplate } from '../types';
 import { getBusinessInfo, resolveSenderColumns, readCourierTrackingMap, getOrderMethod } from '../types';
 import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, PlusCircleIcon, BoltIcon, ClipboardDocumentCheckIcon, ArrowPathIcon, CheckIcon, PhoneIcon, DocumentCheckIcon, DocumentArrowUpIcon, ChartBarIcon, Cog6ToothIcon, HomeIcon, TruckIcon, PencilIcon, XMarkIcon } from './icons';
@@ -1049,6 +1050,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const addAdjustmentFnsRef = useRef<Record<string, (amount: number, label: string, csRecordId?: string) => void>>({});
     // 세션별 "재배송 행 제거" 함수 등록소 — CS를 대기로 되돌릴 때 그 CS로 붙은 행을 걷어낸다
     const removeReshipRowFnsRef = useRef<Record<string, (csRecordId: string) => boolean>>({});
+    // 주소변경: 세션마다 '이미 만든 발주서 주소 고치기' 함수
+    const patchAddressFnsRef = useRef<Record<string, (change: AddressChange) => number>>({});
     const generateManualFnsRef = useRef<Record<string, (orderId: string) => void>>({});
 
     const [workstationResetKey, setWorkstationResetKey] = useState(0);
@@ -3644,6 +3647,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setManualInput(prev => ({ ...prev, recipientName: person.name, phone: person.phone, address: person.address }));
     };
 
+    // 주소변경을 이미 만든 오늘 발주서에 바로 반영: 모든 업체·차수 세션에 물어보고, 그 주문 줄이 있는 세션이 고친다
+    const applyAddressToMadePOs = (change: AddressChange): { rows: number; companies: string[] } => {
+        let rows = 0;
+        const companies: string[] = [];
+        Object.entries(companySessions).forEach(([name, sessions]) => {
+            let n = 0;
+            ((sessions || []) as SessionData[]).forEach(sess => { n += patchAddressFnsRef.current[sess.id]?.(change) || 0; });
+            if (n > 0) { rows += n; companies.push(name); markAddressChangesApplied([change], name, workDate); }
+        });
+        return { rows, companies };
+    };
+
     const handleRemoveRedirectedManualOrders = useCallback((ids: string[]) => {
         const drop = new Set(ids);
         manualRemoveReasonRef.current = '대신 보내기로 옮김';
@@ -5957,7 +5972,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 </details>
 
                 {/* 1-0) 주소 변경: 주문번호로 등록해 두면 발주서 만들 때 새 주소로 들어감 */}
-                <AddressChangePanel businessId={businessId} masterRows={allMasterDataRows} />
+                <AddressChangePanel businessId={businessId} masterRows={allMasterDataRows} onApplyToMade={applyAddressToMadePOs} />
 
                 {/* 1-1) 단골 관리 + 오늘 단골 주문 알림 + 서비스 추가 */}
                 <RegularCustomerPanel
@@ -7591,6 +7606,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     registerAppendRow={(fn) => { appendRowFnsRef.current[session.id] = fn; }}
                                                     registerAddAdjustment={(fn) => { addAdjustmentFnsRef.current[session.id] = fn; }}
                                                     registerRemoveReshipRow={(fn) => { removeReshipRowFnsRef.current[session.id] = fn; }}
+                                                    registerPatchAddress={(fn) => { patchAddressFnsRef.current[session.id] = fn; }}
                                                     registerGenerateManual={(fn) => { generateManualFnsRef.current[session.id] = fn; }}
                                                 />
                                             </React.Fragment>

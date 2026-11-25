@@ -10,6 +10,8 @@ interface Props {
   businessId?: string;
   /** 오늘 올린 쿠팡 주문서 행 (헤더 뺀 것). 1=주문번호, 26=수취인, 27=전화, 28=우편번호, 29=주소 */
   masterRows: any[][];
+  /** 이미 만든 오늘 발주서에서 그 주문 주소를 바로 고친다. 고친 줄 수·업체를 돌려줌 */
+  onApplyToMade?: (change: AddressChange) => { rows: number; companies: string[] };
 }
 
 const norm = (s: unknown) => String(s ?? '').replace(/\s+/g, '');
@@ -23,13 +25,14 @@ const asArray = (v: any): any[] => {
 type Found = { orderNumber: string; name: string; phone: string; zip: string; address: string; product: string };
 const EMPTY = { orderNumber: '', recipientName: '', oldAddress: '', newAddress: '', newZipcode: '', newPhone: '', memo: '' };
 
-const AddressChangePanel: React.FC<Props> = ({ businessId, masterRows }) => {
+const AddressChangePanel: React.FC<Props> = ({ businessId, masterRows, onApplyToMade }) => {
   const [changes, setChanges] = useState<AddressChange[]>([]);
   const [recent, setRecent] = useState<DailySales[] | null>(null);
   const [sessions, setSessions] = useState<Record<string, SessionResultData> | null>(null);
   const [lookup, setLookup] = useState('');
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useState('');
 
   useEffect(() => subscribeAddressChanges(businessId, setChanges), [businessId]);
   useEffect(() => subscribeRecentOrderSearch(businessId, setRecent), [businessId]);
@@ -78,15 +81,15 @@ const AddressChangePanel: React.FC<Props> = ({ businessId, masterRows }) => {
     return map;
   }, [recent, sessions]);
 
-  const statusOf = (c: AddressChange): { tone: 'ok' | 'wait' | 'bad'; text: string } => {
+  const statusOf = (c: AddressChange): { tone: 'ok' | 'wait' | 'bad'; text: string; today?: boolean } => {
     const sent = (sentIn.get(norm(c.orderNumber)) || []).sort((a, b) => b.date.localeCompare(a.date));
     if (c.appliedAt) return { tone: 'ok', text: `✓ ${md(c.appliedDate || '')} ${c.appliedCompany || ''} 발주서에 새 주소로 들어감` };
     if (sent.length) {
       const s = sent[0];
       const today = new Date().toLocaleDateString('en-CA');
-      return { tone: 'bad', text: s.date === today
-        ? `오늘 ${s.company} 발주서가 이미 만들어져 있어요 — 발주서를 다시 만들거나, 보냈으면 업체에 직접 연락`
-        : `${md(s.date)} ${s.company} 발주서로 이미 나갔어요 — 업체에 직접 주소변경 연락` };
+      return s.date === today
+        ? { tone: 'bad', today: true, text: `오늘 ${s.company} 발주서에 옛 주소로 들어가 있어요 — 아래 버튼으로 고치세요 (이미 보냈으면 업체에도 연락)` }
+        : { tone: 'bad', text: `${md(s.date)} ${s.company} 발주서로 이미 나갔어요 — 업체에 직접 주소변경 연락` };
     }
     return { tone: 'wait', text: '대기 — 다음 발주서 만들 때 새 주소로 들어가요' };
   };
@@ -99,7 +102,7 @@ const AddressChangePanel: React.FC<Props> = ({ businessId, masterRows }) => {
     const existing = changes.find(c => norm(c.orderNumber) === norm(form.orderNumber));
     setSaving(true);
     try {
-      await saveAddressChange({
+      const change: AddressChange = {
         id: existing?.id || `addr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         businessId: businessId || '안군농원',
         orderNumber: form.orderNumber.trim(),
@@ -110,7 +113,12 @@ const AddressChangePanel: React.FC<Props> = ({ businessId, masterRows }) => {
         newPhone: form.newPhone.trim() || undefined,
         memo: form.memo.trim() || undefined,
         createdAt: Date.now(),
-      });
+      };
+      await saveAddressChange(change);
+      // 오늘 발주서가 이미 만들어져 있으면 그 줄 주소를 바로 고친다
+      const res = onApplyToMade?.(change);
+      if (res && res.rows > 0) setNotice(`이미 만든 ${res.companies.join(', ')} 발주서 ${res.rows}줄의 주소를 바로 고쳤어요. 이미 보낸 발주서면 업체에 따로 알려 주세요.`);
+      else setNotice('');
       setForm(EMPTY);
     } catch (err: any) {
       alert(`주소변경 저장 실패: ${err?.message || err}`);
@@ -161,6 +169,7 @@ const AddressChangePanel: React.FC<Props> = ({ businessId, masterRows }) => {
             {saving ? '저장 중…' : '주소변경 등록'}
           </button>
         </form>
+        {notice && <div className="text-[10px] font-black text-emerald-400 px-1">{notice}</div>}
         {changes.length > 0 && (
           <div className="flex flex-col gap-1.5 mt-1">
             {changes.map(c => {
@@ -175,6 +184,12 @@ const AddressChangePanel: React.FC<Props> = ({ businessId, masterRows }) => {
                   <div className="text-[10px] text-zinc-300 mt-0.5">→ {c.newAddress}{c.newZipcode ? ` (${c.newZipcode})` : ''}{c.newPhone ? ` · ${c.newPhone}` : ''}</div>
                   {c.memo && <div className="text-[10px] text-zinc-500">{c.memo}</div>}
                   <div className={`text-[10px] font-black mt-0.5 ${st.tone === 'bad' ? 'text-rose-300' : st.tone === 'ok' ? 'text-emerald-400' : 'text-sky-400'}`}>{st.text}</div>
+                  {st.today && onApplyToMade && (
+                    <button type="button" onClick={() => {
+                      const res = onApplyToMade(c);
+                      setNotice(res.rows > 0 ? `${res.companies.join(', ')} 발주서 ${res.rows}줄의 주소를 고쳤어요.` : '오늘 발주서에서 이 주문 줄을 못 찾았어요.');
+                    }} className="mt-1 px-2 py-1 rounded-lg text-[10px] font-black bg-rose-600 text-white">오늘 발주서 주소 바로 고치기</button>
+                  )}
                 </div>
               );
             })}
