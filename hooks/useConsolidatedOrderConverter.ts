@@ -340,6 +340,25 @@ const parseHourFromRow = (row: any[], dateColIdx: number): number | undefined =>
     return h >= 0 && h <= 23 ? h : undefined;
 };
 
+/** 같은 kg 후보가 여럿일 때(예: 3kg 소과(2S) / 3kg 로얄과(S~M)) 품목 이름의 낱말(2글자 이상)이
+ *  주문 상품명·옵션에 몇 개 들어 있는지로 고른다. 1등이 하나면 그것만, 동점이면 그대로 돌려준다. */
+const narrowByOptionWords = <T,>(cands: T[], getEntry: (c: T) => [string, ProductPricing], text: string): T[] => {
+    if (cands.length <= 1) return cands;
+    const norm = (s: string) => s.toLowerCase().replace(/\s+/g, '');
+    const hay = norm(text);
+    const score = (c: T) => {
+        const [key, p] = getEntry(c);
+        const words = new Set(`${p.displayName || ''} ${key}`.toLowerCase().split(/[^0-9a-z가-힣]+/).filter(w => w.length >= 2 && !/^\d+(\.\d+)?kg$/.test(w)));
+        let n = 0;
+        words.forEach(w => { if (hay.includes(w)) n++; });
+        return n;
+    };
+    const scored = cands.map(c => ({ c, s: score(c) }));
+    const max = Math.max(...scored.map(x => x.s));
+    const top = scored.filter(x => x.s === max).map(x => x.c);
+    return top.length < cands.length ? top : cands;
+};
+
 const findBestMatchForProduct = async (
     ai: GoogleGenAI | null,
     cache: Map<string, [string, ProductPricing] | null>,
@@ -411,11 +430,14 @@ const findBestMatchForProduct = async (
                                 .map(m => m.replace(/\s/g, '').toLowerCase());
                             return kg.some(k => kgInOption.includes(k));
                         });
-                        if (kgMatched.length > 0) {
-                            const result: [string, ProductPricing] = [kgMatched[0][0], kgMatched[0][1]];
+                        // 같은 kg가 여럿(소과/로얄과 등)이면 옵션 낱말로 고르고, 그래도 못 고르면 아무거나 찍지 않고 아래 매칭으로 넘긴다
+                        const picked = narrowByOptionWords(kgMatched, e => e, optionText);
+                        if (picked.length === 1) {
+                            const result: [string, ProductPricing] = [picked[0][0], picked[0][1]];
                             cache.set(cacheKey, result);
                             return result;
                         }
+                        if (picked.length > 1) availableEntries = picked;
                     }
 
                     // kg 매칭 실패 — typeMatched로 좁히지 않고 기존 매칭으로 fallthrough
@@ -511,6 +533,8 @@ const findBestMatchForProduct = async (
                 tied = nonConflicting;
             }
         }
+        // ③ 그래도 동점이면 옵션 낱말(소과/로얄과 등)로
+        if (tied.length > 1) tied = narrowByOptionWords(tied, c => c.entry, `${regOptionValue || ''} ${rawProductName}`);
         return [tied[0].entry[0], tied[0].entry[1]];
     };
 
