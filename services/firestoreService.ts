@@ -1415,6 +1415,35 @@ export const saveManualOrders = async (orders: any[], businessId?: string): Prom
 };
 
 /**
+ * 통합 수동발주 창용: 대기 목록을 서버에서 읽고 → 고치고 → 쓰는 것을 한 번에(트랜잭션) 한다.
+ * 화면에 들고 있던 옛 목록으로 덮어쓰지 않으니, 다른 창에서 그사이 넣은 건이 지워지지 않는다. 바뀐 건은 건별 기록에도 남긴다.
+ */
+const editManualOrdersTx = async (
+  businessId: string | undefined,
+  edit: (orders: any[]) => any[],
+  removedReason = ''
+): Promise<void> => {
+  const ref = doc(db, 'config', getManualOrdersDocId(businessId));
+  const [prev, next] = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(ref);
+    const existing: any[] = snap.exists() ? (snap.data().orders || []) : [];
+    const updated = edit(existing);
+    tx.set(ref, { orders: updated, updatedAt: Timestamp.now() });
+    return [existing, updated] as const;
+  });
+  logManualOrderChanges(prev, next, businessId, removedReason);
+};
+
+export const addManualOrdersTx = (businessId: string | undefined, orders: any[]) =>
+  editManualOrdersTx(businessId, existing => [...existing, ...orders.filter(o => !existing.some(e => e.id === o.id))]);
+
+export const removeManualOrderTx = (businessId: string | undefined, id: string) =>
+  editManualOrdersTx(businessId, existing => existing.filter(o => o.id !== id), '직접 지움');
+
+export const updateManualOrderTx = (businessId: string | undefined, id: string, patch: Record<string, any>) =>
+  editManualOrdersTx(businessId, existing => existing.map(o => (o.id === id ? { ...o, ...patch } : o)));
+
+/**
  * 단골 대신 보내기: 다른 사업자의 수동발주에 주문을 넣는다. 한 번 넣은 주문(redirectKey)은
  * config/regularRedirectsDone에 적어 두어, 그쪽에서 발주 후 지워도 다시 들어가지 않는다.
  * 돌려준 값 = 새로 넣은 건수.

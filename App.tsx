@@ -10,6 +10,7 @@ import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from '
 import { useMailInvoiceWatcher, type EmailInvoiceStatus } from './hooks/useMailInvoiceWatcher';
 import { useAdminInvoiceFetcher } from './hooks/useAdminInvoiceFetcher';
 import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
+import ManualOrderHubPanel from './components/ManualOrderHubPanel';
 import OrdererSearchPanel from './components/OrdererSearchPanel';
 import { normalizeForSearch } from './components/CsEntryModal';
 import RegisteredProductCounter from './components/RegisteredProductCounter';
@@ -118,6 +119,7 @@ const App: React.FC = () => {
   const [showGlobalFake, setShowGlobalFake] = useState(false);
   const [showSupplierLibrary, setShowSupplierLibrary] = useState(false);
   const [showCs, setShowCs] = useState(false);
+  const [showManualHub, setShowManualHub] = useState(false);
   const [showOrdererSearch, setShowOrdererSearch] = useState(false);
   const [showRegCounter, setShowRegCounter] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -1056,6 +1058,7 @@ const App: React.FC = () => {
     invoice: setShowInvoice,
     fake: setShowGlobalFake,
     cs: setShowCs,
+    manual: setShowManualHub,
     orderer: setShowOrdererSearch,
     regCounter: setShowRegCounter,
     coupang: setShowCoupang,
@@ -1427,6 +1430,15 @@ const App: React.FC = () => {
             {unseenMissionMemos.length > 0 && <span className="px-1 rounded bg-amber-400 text-zinc-900 text-[9px] font-black">N</span>}
             <span>가구매{globalFakeOrderInput.trim() ? ` (${globalFakeLineStats.total}${globalFakeLineStats.matched > 0 ? `/${globalFakeLineStats.matched}` : ''})` : ''}</span>
             {globalFakeDuplicates.length > 0 && <span className="px-1 rounded bg-pink-500 text-black text-[9px] font-black">중복 {globalFakeDuplicates.length}</span>}
+          </button>
+
+          <button
+            onClick={() => togglePanel('manual')}
+            className={`px-2.5 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 ${showManualHub ? 'bg-zinc-700 text-white border-zinc-600' : 'text-zinc-500 hover:text-white border-zinc-700/50 hover:border-zinc-600 hover:bg-zinc-800'}`}
+            title="전체 사업자 수동발주 추가·대기 목록"
+          >
+            <PlusCircleIcon className="w-3.5 h-3.5 text-rose-400" />
+            <span>수동발주</span>
           </button>
 
           <div className="w-px h-5 bg-zinc-800 mx-0.5" />
@@ -2004,6 +2016,13 @@ const App: React.FC = () => {
               onCreatePurchaseOrder={async (businessId, company, mo) => (await uploadFnsRef.current[businessId]?.addReshipOrder?.(company, mo)) ?? false}
               onRemovePurchaseOrder={(businessId, company, csRecordId) => uploadFnsRef.current[businessId]?.removeReshipOrder?.(company, csRecordId) ?? false}
             />
+          )}
+        </div>
+
+        {/* 통합 수동발주 (전체 사업자) */}
+        <div className={`absolute right-4 top-full mt-2 z-50 w-[440px] menu-panel bg-zinc-950 border-2 border-zinc-700 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showManualHub ? '' : 'hidden'}`}>
+          {showManualHub && (
+            <ManualOrderHubPanel businesses={businessIdNamePairs} active={showManualHub} onClose={() => setShowManualHub(false)} />
           )}
         </div>
 
