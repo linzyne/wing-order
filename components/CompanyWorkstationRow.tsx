@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import { useInvoiceMerger, type PlatformUploadResult } from '../hooks/useInvoiceMerger';
 import { getSentBatches, sentNumbersBefore, subscribeSentBatches } from '../services/sentOrders';
+import { saveSessionSourceFile, loadSessionSourceFile, deleteSessionSourceFile } from '../utils/sessionSourceFiles';
 import { inferFieldFromHeader } from '../hooks/useConsolidatedOrderConverter';
 import type { AddressChange } from '../services/addressChanges';
 import { useConsolidatedOrderConverter, ProcessedResult, getKeywordsForCompany, getHeaderForCompany, sortRowsByProductName, findProductNameColIdx, findQtyColIdx, pushManualToOutputRows, isParcelEntryName, groupParcelByRate, renderParcelKakaoLines, PARCEL_SUFFIX } from '../hooks/useConsolidatedOrderConverter';
@@ -768,6 +769,27 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     }, [companyMarginTotal, isLastSession]);
 
     const { status: mergeStatus, error: mergeError, processFiles, reset: resetMerge, results: mergeResults } = useInvoiceMerger();
+    // 발주서엔 있는데 송장 변환(업로드 파일)에서 빠진 주문 — 업체 송장이 왔는데도 빠지면 주문서가 옛것일 수 있음
+    const missingFromInvoice = React.useMemo(() => {
+        if (!mergeResults || !localResult) return [] as { num: string; name: string }[];
+        const nums = localResult.rowBundleNumbers?.length ? localResult.rowBundleNumbers : (localResult.rowOrderNumbers || []);
+        const names = localResult.rowRecipientNames || [];
+        const clean = (v: any) => String(v ?? '').replace(/[^0-9A-Za-z]/g, '').toUpperCase();
+        const done = new Set<string>();
+        [...(mergeResults.rows || []), ...(mergeResults.uploadRows || [])].forEach(r => (r || []).forEach((c: any) => { const k = clean(c); if (k.length >= 8) done.add(k); }));
+        // 주문서에는 있는데 업체가 아직 송장을 안 준 건(송장 미매칭)은 따로 나오니 빼고, 주문서에서 아예 빠진 것만
+        (mergeResults.companyStats?.[companyName]?.failures || []).forEach(f => done.add(clean(f.orderNum)));
+        const out: { num: string; name: string }[] = [];
+        const seen = new Set<string>();
+        nums.forEach((n, i) => {
+            const k = clean(n);
+            if (k.length < 8 || seen.has(k) || done.has(k)) return;
+            seen.add(k);
+            out.push({ num: String(n), name: String(names[i] || '') });
+        });
+        return out;
+    }, [mergeResults, localResult, companyName]);
+
     const { processSingleCompanyFile } = useConsolidatedOrderConverter(pricingConfig, businessId);
 
     // Firestore 동기화 - 값 비교로 에코 방지
@@ -988,8 +1010,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // 정산내역 텍스트를 역파싱해 itemSummary 도출 (공통 업로드 경로의 매칭 오류 방지)
         const parsedFromExcel = parseSummaryFromExcelText(effectiveExcel);
         const itemSummaryForUpdate = Object.keys(parsedFromExcel).length > 0 ? parsedFromExcel : effectiveSummary;
-        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, itemSummaryForUpdate, localResult.orderItems, localResult.preConsolidationByGroup, localResult.rowOrderNumbers, localResult.rowBundleNumbers, localResult.rowRecipientNames, localResult.rowPricing, mergeResults?.companyStats?.[companyName]?.failures, localResult.sampleOrderCounts || {});
-    }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments, summaryOverride, pricingConfig]);
+        const baseFailures = mergeResults?.companyStats?.[companyName]?.failures;
+        const extraFailures = missingFromInvoice.filter(m => !baseFailures?.some(f => f.orderNum.replace(/\D/g, '') === m.num.replace(/\D/g, ''))).map(m => ({ orderNum: m.num, recipient: m.name || '알수없음', reason: '발주서엔 있는데 송장 변환 주문서에 없음' }));
+        const failuresForUpdate = mergeResults ? [...(baseFailures || []), ...extraFailures] : undefined;
+        onDataUpdate(sessionId, localResult.rows || [], mergeResults?.rows || [], mergeResults?.uploadRows || [], effectiveExcel, mergeResults?.header, localResult.registeredProductNames, itemSummaryForUpdate, localResult.orderItems, localResult.preConsolidationByGroup, localResult.rowOrderNumbers, localResult.rowBundleNumbers, localResult.rowRecipientNames, localResult.rowPricing, failuresForUpdate, localResult.sampleOrderCounts || {});
+    }, [localResult, mergeResults, excludedList, sessionId, onResultUpdate, onDataUpdate, sessionAdjustments, summaryOverride, pricingConfig, missingFromInvoice]);
 
     // Firestore에 처리 결과 저장 (크로스 디바이스 동기화)
     const saveResultDebounceRef = useRef<ReturnType<typeof setTimeout>>();
@@ -1174,6 +1199,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const effectiveFakeOrders = overrideFakeOrders !== undefined ? overrideFakeOrders : fakeOrderNumbers;
             const sentNumbers = businessId && workDate ? sentNumbersBefore(await getSentBatches(), businessId, workDate) : undefined;
             const processResponse = await processSingleCompanyFile(file, companyName, effectiveFakeOrders, ordersToInclude, workDate, sentNumbers);
+            // 이 발주서를 만든 주문서를 세션에 보관 — 나중에 송장 변환이 옛 공통 주문서로 돌아 새 주문이 빠지지 않게
+            if (processResponse?.result && file) saveSessionSourceFile(sessionId, file);
             if (processResponse) {
                 setLocalResult(processResponse.result);
                 setExcludedList(processResponse.excluded);
@@ -1229,11 +1256,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         });
     }, [sentExcludedList, businessId, workDate]);
 
-    const handleRunMerge = () => {
+    const handleRunMerge = async () => {
         // batchFile: localFile이 아직 null일 때(첫 렌더 타이밍) masterFile 대신 batchFile 사용
         const activeFile = localFile || batchFile || masterFile;
         if (activeFile && vendorFiles.length > 0) {
-            processFiles(vendorFiles, activeFile, companyName, false, pricingConfig, orderPlatformMap, platformConfigs, businessId);
+            // 발주서를 만든 주문서도 같이 넣는다. 업체 줄에 넣은 주문서는 줄이 다시 그려지면 사라져
+            // 옛 공통 주문서로만 변환하면 그 뒤 들어온 주문 송장이 업로드 파일에서 빠졌다.
+            const sourceFile = await loadSessionSourceFile(sessionId);
+            const orderFiles = sourceFile && sourceFile !== activeFile ? [activeFile, sourceFile] : activeFile;
+            processFiles(vendorFiles, orderFiles, companyName, false, pricingConfig, orderPlatformMap, platformConfigs, businessId);
         }
     };
 
@@ -1256,6 +1287,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const resetLocalFile = () => {
         revertReshipCsRecordsForReset();
         manualOnlyProcessedRef.current = false;
+        deleteSessionSourceFile(sessionId);
         setLocalFile(null);
         setLocalResult(null);
         setExcludedList([]);
@@ -2294,6 +2326,15 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                     </div>
                 </td>
             </tr>
+
+            {missingFromInvoice.length > 0 && vendorFiles.length > 0 && (
+                <tr className="bg-red-950/30 border-none">
+                    <td colSpan={3} className="px-6 py-2 text-[10px] font-black text-red-400">
+                        ⚠ 발주서엔 있는데 송장 변환 주문서에 없는 주문 {missingFromInvoice.length}건: {missingFromInvoice.map(m => `${m.name || '?'}(${m.num})`).join(', ')}
+                        <div className="text-red-300/70 font-bold mt-0.5">업로드 파일에 안 들어갑니다 — 이 줄에 발주서 만든 주문서를 다시 넣고 변환하세요.</div>
+                    </td>
+                </tr>
+            )}
 
             {showExcluded && (excludedList.length > 0 || (syncedData?.excludedDetails?.length || 0) > 0) && (
                 <tr className="bg-rose-950/10 border-none animate-fade-in">

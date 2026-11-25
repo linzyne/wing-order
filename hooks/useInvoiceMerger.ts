@@ -536,8 +536,27 @@ export const useInvoiceMerger = () => {
                         const rowStr = (aoa[i] || []).join('');
                         if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { subHeaderIdx = i; break; }
                     }
+                    // 칸 순서가 다른 파일이면 머리글 이름으로 첫 파일 칸에 맞춰 옮긴다. 못 맞추면 그 파일은 건너뜀
+                    let firstHeaderIdx = 0;
+                    for (let i = 0; i < Math.min(orderAoa.length, 30); i++) {
+                        const rowStr = (orderAoa[i] || []).join('');
+                        if (rowStr.includes('주문번호') || rowStr.includes('주문정보') || rowStr.includes('받는분') || rowStr.includes('수취인')) { firstHeaderIdx = i; break; }
+                    }
+                    const norm = (v: any) => String(v ?? '').replace(/\s+/g, '');
+                    const firstHeader = (orderAoa[firstHeaderIdx] || []).map(norm);
+                    const subHeader = (aoa[subHeaderIdx] || []).map(norm);
+                    const sameHeader = firstHeader.length === subHeader.length && firstHeader.every((h, k) => h === subHeader[k]);
+                    let colMap: number[] | null = null; // 첫 파일 칸 k ← 이 파일 칸 colMap[k]
+                    if (!sameHeader) {
+                        colMap = firstHeader.map(h => (h ? subHeader.indexOf(h) : -1));
+                        if (!firstHeader.some(h => /주문번호|묶음배송/.test(h)) || colMap.filter(x => x !== -1).length < firstHeader.filter(Boolean).length * 0.8) {
+                            console.warn(`[송장] 주문서 ${file.name} 칸이 첫 주문서와 달라 건너뜀`);
+                            continue;
+                        }
+                    }
                     for (let i = subHeaderIdx + 1; i < aoa.length; i++) {
-                        if (aoa[i]?.some((c: any) => c != null && c !== '')) orderAoa.push(aoa[i]);
+                        if (!aoa[i]?.some((c: any) => c != null && c !== '')) continue;
+                        orderAoa.push(colMap ? colMap.map(j => (j === -1 ? '' : aoa[i][j])) : aoa[i]);
                     }
                 }
             }
@@ -887,7 +906,8 @@ export const useInvoiceMerger = () => {
                     // 그룹체크 폴백으로 전체 행을 도는 경우, 이 품목과 무관한 행까지 미매칭으로 잡히지 않도록
                     // 키워드로 이 품목에 해당하는 행만 실패로 기록
                     const belongsToCompany = !effectiveSkipGroupCheck || skipGroupCheck || isRowMatchingCompany(row, targetKeywords);
-                    if (belongsToCompany) {
+                    // 주문서 여러 개를 합치면 같은 주문이 두 번 나올 수 있어 한 번만 기록
+                    if (belongsToCompany && !failures.some(f => f.orderNum === orderNum)) {
                         failures.push({ orderNum, recipient: String(row[26] || '알수없음'), reason: '송장 미매칭' });
                     }
                 }
