@@ -5,6 +5,7 @@ import WingFetchBar from './WingFetchBar';
 import { SentOrdersBar } from './SentOrdersBar';
 import { ORDER_METHODS } from '../types';
 import WingCountBadge from './WingCountBadge';
+import PreOrderCheckButton from './PreOrderCheckButton';
 import NetMarginBadge, { useAdSpends, findAdSpend } from './NetMarginBadge';
 
 export interface UploadResult {
@@ -761,6 +762,8 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
               hasOrders={downloadSnapshot.length > 0}
               workDate={globalWorkDate}
             />
+            {/* 발주전확인: 이메일 묶음 바로 위 — CS 대기·수동발주·수동입금이 오늘 발주서/입금목록에 다 들어갔는지 */}
+            <PreOrderCheckButton businesses={businesses} />
             {downloadSnapshot.length === 0 ? (
               <p className="text-[10px] text-zinc-600 text-center py-2">발주 데이터가 없습니다</p>
             ) : (() => {

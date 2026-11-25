@@ -14,7 +14,7 @@ import { BuildingStorefrontIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, TrashIcon, 
 import { getKeywordsForCompany, matchCustomGroupColCompany, getHeaderForCompany, sortRowsByProductName, findProductNameColIdx, clearProductMatchCache, preSetProductMatchCache } from '../hooks/useConsolidatedOrderConverter';
 import { useDailyWorkspace, useCourierTemplates, useDepositLedger, useCompanyDeposits } from '../hooks/useFirestore';
 import { deleteField } from 'firebase/firestore';
-import { subscribeManualOrders, saveManualOrders, logManualOrderChanges, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
+import { subscribeManualOrders, saveManualOrders, logManualOrderChanges, logManualTransferChanges, upsertDailySales, loadCompanyOrder, saveCompanyOrder, loadDividerColors, saveDividerColors, loadQuickRecipients, saveQuickRecipients, clearSessionResults, loadSessionResults, saveSessionResult, deleteSessionResult, saveSessionTimeLabel, setDepositLedgerBalance, removeDepositLedgerBalance, WORKSPACE_ADJUSTMENT_EVENT, type QuickRecipientData, type SessionResultData } from '../services/firestoreService';
 import { buildDepositInfo, balanceBeforeSettlement, hasDepositLedger } from '../services/depositUtils';
 import { sendOrderEmail, renderMailTemplate, DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY, ORDER_MAIL_NOTICE } from '../services/emailService';
 import { splitEmails } from '../services/invoiceMailService';
@@ -1690,12 +1690,19 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     }, [unsentOrderInput, updateField]);
 
     // manualTransfers 변경 → Firestore에 저장
+    /** 다음 저장 때 빠진 수동입금에 적을 까닭 (비우면 '목록에서 빠짐') */
+    const transferRemoveReasonRef = useRef('');
     useEffect(() => {
         if (!isReadyRef.current) return;
         const currentStr = JSON.stringify(manualTransfers);
         if (currentStr === lastWrittenTransfersRef.current) return;
         savingFieldsUntil.current['manualTransfers'] = Date.now() + 30000;
+        let prevTransfers: ManualTransfer[] = [];
+        try { prevTransfers = JSON.parse(lastWrittenTransfersRef.current || '[]') || []; } catch { /* 처음 */ }
         lastWrittenTransfersRef.current = currentStr;
+        // 건별 기록: 발주전확인이 소리 없이 빠진 수동입금을 찾을 수 있게
+        logManualTransferChanges(prevTransfers, manualTransfers, businessId, transferRemoveReasonRef.current);
+        transferRemoveReasonRef.current = '';
         updateField('manualTransfers', manualTransfers)
             .then(() => { setTimeout(() => { savingFieldsUntil.current['manualTransfers'] = 0; }, 1500); })
             .catch(e => { savingFieldsUntil.current['manualTransfers'] = 0; console.error('[Firestore] manualTransfers 저장 실패:', e); });
@@ -2436,6 +2443,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const transferList = manualTransfers.map(t => `  • ${t.label || '수동 입금'} - ${t.amount.toLocaleString()}원`).join('\n');
                 const totalAmount = manualTransfers.reduce((sum, t) => sum + t.amount, 0);
                 if (!confirm(`기존 수동 입금내역 ${manualTransfers.length}건 (총 ${totalAmount.toLocaleString()}원)이 있습니다.\n포함하시겠습니까?\n\n${transferList}\n\n[확인] 유지  |  [취소] 삭제`)) {
+                    transferRemoveReasonRef.current = '주문서 올릴 때 삭제';
                     setManualTransfers([]);
                 }
             }
@@ -3739,7 +3747,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         setManualTransfers(prev => [...prev, transfer]);
     };
 
-    const handleDeleteManualTransfer = (id: string) => setManualTransfers(prev => prev.filter(t => t.id !== id));
+    const handleDeleteManualTransfer = (id: string) => { transferRemoveReasonRef.current = '직접 지움'; setManualTransfers(prev => prev.filter(t => t.id !== id)); };
 
     const handleResetSessionData = (companyName: string, sessionId: string, round: number) => {
         if (!confirm(`${companyName} ${round}차의 정산 데이터를 초기화할까요?`)) return;
@@ -6787,7 +6795,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         {!exp.isAuto && (
                                             <button onClick={() => {
                                                 setExpenses(prev => prev.filter(e => e.id !== exp.id));
-                                                if (exp.depositTransferId) setManualTransfers(prev => prev.filter(t => t.id !== exp.depositTransferId));
+                                                if (exp.depositTransferId) { transferRemoveReasonRef.current = '직접 지움'; setManualTransfers(prev => prev.filter(t => t.id !== exp.depositTransferId)); }
                                             }} className="text-zinc-700 hover:text-rose-500 transition-colors">
                                                 <TrashIcon className="w-3.5 h-3.5" />
                                             </button>
@@ -7015,7 +7023,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                             <span className="text-[10px] font-mono font-bold text-violet-400">{ret.totalMargin.toLocaleString()}원</span>
                                             <button onClick={() => {
                                                 setReturns(prev => prev.filter((_, idx) => idx !== originalIndex));
-                                                if (ret.depositTransferId) setManualTransfers(prev => prev.filter(t => t.id !== ret.depositTransferId));
+                                                if (ret.depositTransferId) { transferRemoveReasonRef.current = '직접 지움'; setManualTransfers(prev => prev.filter(t => t.id !== ret.depositTransferId)); }
                                             }} className="text-zinc-700 hover:text-violet-400 transition-colors">
                                                 <TrashIcon className="w-3.5 h-3.5" />
                                             </button>

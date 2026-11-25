@@ -1517,6 +1517,96 @@ export const logManualOrderChanges = (prev: any[], next: any[], businessId: stri
   batch.commit().catch(e => console.error('[Firestore] 수동발주 기록 저장 실패:', e));
 };
 
+/** 이 시각 이후 등록된 수동발주 기록 (발주전확인용, 한 번 읽기) */
+export const loadManualOrderLogSince = async (businessId: string | undefined, sinceMs: number): Promise<ManualOrderLogEntry[]> => {
+  const snap = await getDocs(query(collection(db, getManualOrderLogCollectionName(businessId)), where('createdAt', '>=', sinceMs)));
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<ManualOrderLogEntry, 'id'>) }));
+};
+
+// ===== 수동입금 등록 기록 (지워도 남는 기록) =====
+// 수동입금(manualTransfers)도 하루 작업공간 문서에 배열 통째로 덮어써서, 다른 창의 옛 목록이 덮으면 소리 없이 빠졌다.
+// 건마다 문서 하나(manualTransferLog[_사업자]/{입금 id})로 등록·빠짐을 남겨 발주전확인이 빠진 건을 찾는다.
+export interface ManualTransferLogEntry {
+  id: string;
+  label: string;
+  bankName: string;
+  accountNumber: string;
+  amount: number;
+  companyName?: string;
+  /** 넣은 작업공간 날짜 (YYYY-MM-DD) */
+  workspaceDate: string;
+  createdAt: number;
+  updatedAt: number;
+  removedAt?: number;
+  removedReason?: string;
+}
+
+const getManualTransferLogCollectionName = (businessId?: string): string =>
+  (!businessId || businessId === '안군농원') ? 'manualTransferLog' : `manualTransferLog_${businessId}`;
+
+const transferLogFields = (t: any) => {
+  const f: Record<string, unknown> = {
+    label: t.label || '', bankName: t.bankName || '', accountNumber: t.accountNumber || '', amount: Number(t.amount) || 0,
+  };
+  if (t.companyName) f.companyName = t.companyName;
+  return f;
+};
+
+/** 수동입금 목록이 prev → next로 바뀐 것을 건별 기록에 적는다 (logManualOrderChanges와 같은 방식) */
+export const logManualTransferChanges = (prev: any[], next: any[], businessId: string | undefined, removedReason: string): void => {
+  const col = getManualTransferLogCollectionName(businessId);
+  const prevById = new Map(prev.filter(t => t?.id).map(t => [t.id, t]));
+  const nextById = new Map(next.filter(t => t?.id).map(t => [t.id, t]));
+  const now = Date.now();
+  const batch = writeBatch(db);
+  let n = 0;
+  nextById.forEach((t, id) => {
+    const before = prevById.get(id);
+    if (!before) {
+      batch.set(doc(db, col, id), { ...transferLogFields(t), workspaceDate: getTodayDocId(), createdAt: now, updatedAt: now, removedAt: deleteField(), removedReason: deleteField() }, { merge: true });
+      n++;
+    } else if (JSON.stringify(transferLogFields(before)) !== JSON.stringify(transferLogFields(t))) {
+      batch.set(doc(db, col, id), { ...transferLogFields(t), updatedAt: now }, { merge: true });
+      n++;
+    }
+  });
+  prevById.forEach((t, id) => {
+    if (nextById.has(id)) return;
+    batch.set(doc(db, col, id), { ...transferLogFields(t), updatedAt: now, removedAt: now, removedReason: removedReason || '목록에서 빠짐' }, { merge: true });
+    n++;
+  });
+  if (n === 0) return;
+  batch.commit().catch(e => console.error('[Firestore] 수동입금 기록 저장 실패:', e));
+};
+
+export const loadManualTransferLogSince = async (businessId: string | undefined, sinceMs: number): Promise<ManualTransferLogEntry[]> => {
+  const snap = await getDocs(query(collection(db, getManualTransferLogCollectionName(businessId)), where('createdAt', '>=', sinceMs)));
+  return snap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<ManualTransferLogEntry, 'id'>) }));
+};
+
+/** 그날 접수한 CS (발주전확인용, 한 번 읽기) */
+export const loadCsItemsByDate = async (businessId: string | undefined, date: string): Promise<OpenCsEntry[]> => {
+  await ensureCsItems(businessId);
+  const snap = await getDocs(query(collection(db, getCsItemsCollectionName(businessId)), where('date', '==', date)));
+  return snap.docs.map(d => {
+    const { open: _open, ...data } = d.data() as any;
+    return { ...data, id: d.id, syncing: false } as OpenCsEntry;
+  });
+};
+
+/** 오늘 날짜 문서 id (YYYY-MM-DD) — 작업공간·발주서 결과가 쓰는 날짜 */
+export const todayDocId = (): string => getTodayDocId();
+
+/** 최근 45일 발주내역을 한 번만 받아 온다 (구독을 같이 쓰고 첫 값이 오면 끊음) */
+export const loadRecentOrderSearchOnce = (businessId: string | undefined): Promise<DailySales[]> =>
+  new Promise(resolve => {
+    let done = false;
+    let unsub: Unsubscribe | null = null;
+    const finish = (v: DailySales[]) => { if (done) return; done = true; resolve(v); setTimeout(() => unsub?.(), 0); };
+    unsub = subscribeRecentOrderSearch(businessId, v => { if (v !== null) finish(v); });
+    setTimeout(() => finish([]), 20000); // 못 받으면 빈 목록으로 (확인 창이 멈추지 않게)
+  });
+
 /** 최근 수동발주 등록 기록 (최근 등록 순, 500건까지) */
 export const subscribeManualOrderLog = (
   businessId: string | undefined,
