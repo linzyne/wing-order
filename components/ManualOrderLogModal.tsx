@@ -171,7 +171,7 @@ const ManualOrderLogModal: React.FC<Props> = ({ businessId, businessName, curren
             {FILTERS.map(f => (
               <button key={f.key} onClick={() => setFilter(f.key)}
                 className={`text-left px-2.5 py-2 rounded-lg text-[11px] font-black border transition-colors ${filter === f.key
-                  ? (f.key === 'missing' ? 'bg-rose-500 text-white border-rose-500' : 'bg-zinc-200 text-black border-zinc-200')
+                  ? (f.key === 'missing' ? 'bg-rose-600 text-white border-rose-600' : 'btn-accent text-white border-transparent')
                   : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}>
                 {f.label}
                 <span className={`ml-1 ${f.key === 'missing' && counts.missing > 0 && filter !== f.key ? 'text-rose-400' : ''}`}>{counts[f.key]}</span>
