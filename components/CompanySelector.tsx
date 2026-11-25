@@ -1753,17 +1753,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             foundDetails[cleanNum] = ex;
         });
 
-        // 마스터 주문서에서 모든 주문번호 추출 (가구매용 마스터 우선)
-        const effectiveMasterData = fakeMasterOrderData ?? masterOrderData;
+        // 오늘 이 사업자 주문서 전체(1차 원본 + 추가 차수 + 가구매용 주문서)에서 주문번호 추출.
+        // 예전엔 가구매용 주문서가 있으면 그것만, 없으면 1차 원본만 봐서 추가 차수에 든 주문이나
+        // 차수를 다시 만든 뒤의 주문이 미매칭으로 떴다. 택배예약 파일과 같은 행을 본다.
         const masterOrderNumbers = new Set<string>();
-        if (effectiveMasterData && effectiveMasterData.length > 1) {
-            for (let i = 1; i < effectiveMasterData.length; i++) {
-                const row = effectiveMasterData[i];
-                if (!row) continue;
-                const orderNum = String(row[2] || '').trim();
-                if (orderNum) masterOrderNumbers.add(orderNum);
-            }
-        }
+        const addMasterRows = (rows: any[][]) => rows.forEach(row => {
+            if (!row) return;
+            const orderNum = String(row[2] || '').trim();
+            if (orderNum) masterOrderNumbers.add(orderNum);
+        });
+        if (masterOrderData) addMasterRows(masterOrderData.slice(1));
+        if (fakeMasterOrderData) addMasterRows(fakeMasterOrderData.slice(1));
+        (Object.values(batchMasterRows) as any[][][]).forEach(addMasterRows);
 
         // 주문번호로만 매칭. 단, 같은 주문번호를 서로 다른 이름 2명이 주장하는 경우
         // (duplicates) 누가 진짜인지 이름으로 역추적할 수 없으므로 매칭 처리하지 않고
@@ -1859,11 +1860,16 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         return dataRows;
     }, [masterOrderData, batchMasterRows]);
 
-    // 공통 택배 기능용: 주문 행 데이터를 App.tsx로 전달
+    // 공통 택배 기능용: 주문 행 데이터를 App.tsx로 전달.
+    // 가구매용 주문서도 함께 — 안 넣으면 가구매 매칭은 되는데 전체 가구매 택배예약 파일에선 그 사업자 주문이 다 빠졌다.
+    const exposedOrderRows = useMemo(
+        () => fakeMasterOrderData ? [...allMasterDataRows, ...fakeMasterOrderData.slice(1)] : allMasterDataRows,
+        [allMasterDataRows, fakeMasterOrderData]
+    );
     useEffect(() => {
         if (!onExposeOrderRows) return;
-        onExposeOrderRows(masterOrderData?.[0] ?? null, allMasterDataRows);
-    }, [masterOrderData, allMasterDataRows, onExposeOrderRows]);
+        onExposeOrderRows(masterOrderData?.[0] ?? fakeMasterOrderData?.[0] ?? null, exposedOrderRows);
+    }, [masterOrderData, fakeMasterOrderData, exposedOrderRows, onExposeOrderRows]);
 
     // 가구매 수량 미매칭 여부: 명단 주문번호 수 vs 실제 제외된 주문번호 수
     const fakeMismatch = useMemo(() => {
