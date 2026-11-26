@@ -118,6 +118,7 @@ const App: React.FC = () => {
   const [showUpload, setShowUpload] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
   const [showStatus, setShowStatus] = useState(false);
+  const [hubTab, setHubTab] = useState<'status' | 'order' | 'invoice'>('status');
   const [showGlobalFake, setShowGlobalFake] = useState(false);
   const [showSupplierLibrary, setShowSupplierLibrary] = useState(false);
   const [showCs, setShowCs] = useState(false);
@@ -1575,20 +1576,76 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* 발주 → 송장 → 쿠팡 현황 */}
+        {/* 현황 창: 현황 + 주문서·송장 창 복사본 (기존 주문서·송장 창은 그대로 따로 있음) */}
         {showStatus && (
-          <div className="absolute right-4 top-full mt-2 z-50 w-[440px] menu-panel bg-emerald-950 border-2 border-emerald-800 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
-            <OrderInvoiceStatusPanel
-              businesses={businessIdNamePairs}
-              uploadFns={uploadFnsRef.current as any}
-              coupangUploaded={coupangUploaded}
-              onCoupangUploaded={markCoupangUploaded}
-              onUploadCompanyToCoupang={uploadCompanyInvoiceToCoupang}
-              onOpenOrderPanel={() => togglePanel('upload')}
-              onOpenInvoicePanel={() => togglePanel('invoice')}
-              onClose={() => setShowStatus(false)}
-              refreshKey={`${uploadResults.length}_${invoiceResults.length}`}
-            />
+          <div className={`absolute right-4 top-full mt-2 z-50 w-[540px] menu-panel border-2 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${hubTab === 'order' ? 'bg-sky-950 border-sky-800' : hubTab === 'invoice' ? 'bg-orange-950 border-orange-800' : 'bg-emerald-950 border-emerald-800'}`}>
+            <div className="flex">
+              <div className="w-[84px] shrink-0 p-2 pr-0 flex flex-col gap-1.5 sticky top-0 self-start">
+                <button onClick={() => setHubTab('status')} className={`w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-black border transition-colors ${hubTab === 'status' ? 'bg-emerald-600 text-white border-emerald-400' : 'text-emerald-300 border-emerald-800 hover:bg-emerald-900'}`}>현황</button>
+                <button onClick={() => setHubTab('order')} className={`w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-black border transition-colors ${hubTab === 'order' ? 'bg-sky-600 text-white border-sky-400' : 'text-sky-300 border-sky-800 hover:bg-sky-900'}`}>주문서</button>
+                <button onClick={() => setHubTab('invoice')} className={`w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-black border transition-colors ${hubTab === 'invoice' ? 'bg-orange-600 text-white border-orange-400' : 'text-orange-300 border-orange-800 hover:bg-orange-900'}`}>송장</button>
+              </div>
+              <div className="flex-1 min-w-0">
+                {hubTab === 'status' && (
+                  <OrderInvoiceStatusPanel
+                    businesses={businessIdNamePairs}
+                    uploadFns={uploadFnsRef.current as any}
+                    coupangUploaded={coupangUploaded}
+                    onCoupangUploaded={markCoupangUploaded}
+                    onUploadCompanyToCoupang={uploadCompanyInvoiceToCoupang}
+                    onOpenOrderPanel={() => setHubTab('order')}
+                    onOpenInvoicePanel={() => setHubTab('invoice')}
+                    onClose={() => setShowStatus(false)}
+                    refreshKey={`${uploadResults.length}_${invoiceResults.length}`}
+                  />
+                )}
+                {hubTab === 'order' && (
+                  <SharedMasterUpload
+                    businesses={businessIdNamePairs}
+                    uploadFns={uploadFnsRef.current}
+                    onClose={() => setShowStatus(false)}
+                    results={uploadResults}
+                    onResultsChange={setUploadResults}
+                    warningBusinessIds={new Set(Object.keys(businessWarnings).filter(id => businessWarnings[id]))}
+                    warningCompanyIds={new Set(Object.entries(businessWarningCompanies).flatMap(([bizId, companies]) => (companies as string[]).map(c => `${bizId}_${c}`)))}
+                    urgentNotice={globalUrgentNotice}
+                    companyMemos={companyMemos}
+                    onCompanyMemoChange={updateCompanyMemo}
+                    onCompanyMemoDelete={removeCompanyMemo}
+                  />
+                )}
+                {/* 송장 복사본은 현황 창이 열려 있는 동안 계속 띄워 둬서 탭을 오가도 진행 상황이 남게 */}
+                <div className={hubTab === 'invoice' ? '' : 'hidden'}>
+                  <ConsolidatedInvoicePanel
+                  businesses={businessIdNamePairs}
+                  uploadFns={uploadFnsRef.current}
+                  onClose={() => setShowStatus(false)}
+                  results={invoiceResults}
+                  onResultsChange={setInvoiceResults}
+                  onReset={handleResetInvoicePanel}
+                  mailWatcher={mailWatcher}
+                  coupangUploaded={coupangUploaded}
+                  onCoupangUploaded={markCoupangUploaded}
+                  autoCoupangProgress={autoCoupangProgress}
+                  onAutoCoupangProgressClear={k => setAutoCoupangProgress(prev => { const n = { ...prev }; delete n[k]; return n; })}
+                  adminInvoiceFetcher={adminInvoiceFetcher}
+                  couriers={courierItemsForPanel}
+                  hasFakeOrders={globalFakeOrderInput.trim().length > 0 || lotteBatches.length > 0}
+                  onCourierFilesAdd={handleCourierFilesAddForPanel}
+                  onCourierFileRemove={handleCourierFileRemoveForPanel}
+                  onCourierResultDownload={handleGlobalCourierResultDownload}
+                  onCourierDirectCoupangUpload={handleCourierDirectCoupangUpload}
+                  onDirectCoupangUpload={async (businessId, onStep) => {
+                    const file = uploadFnsRef.current[businessId]?.getInvoiceWorkbookFile?.();
+                    if (!file) throw new Error('송장 데이터가 없습니다. 먼저 송장 파일을 업로드해주세요.');
+                    if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
+                    return directCoupangUploadRef.current(businessId, file, onStep);
+                  }}
+                  onDirectCoupangUploadCompany={uploadCompanyInvoiceToCoupang}
+                />
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

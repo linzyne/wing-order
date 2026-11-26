@@ -160,24 +160,19 @@ const OrderInvoiceStatusPanel: React.FC<Props> = ({
   };
 
   const byBiz = businesses.map(b => ({ b, list: visible.filter(r => r.businessId === b.id) })).filter(x => x.list.length > 0);
-  const sideBtn = 'w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-black border transition-colors';
 
   return (
     <div className="p-3 flex gap-3">
-      {/* 왼쪽: 버튼 세로 */}
-      <div className="w-[92px] shrink-0 flex flex-col gap-1.5">
-        <button onClick={onOpenOrderPanel} className={`${sideBtn} bg-sky-900/50 text-sky-200 border-sky-700/60 hover:bg-sky-800`}>주문서 창</button>
-        <button onClick={onOpenInvoicePanel} className={`${sideBtn} bg-orange-900/50 text-orange-200 border-orange-700/60 hover:bg-orange-800`}>송장 창</button>
-        <button onClick={load} className={`${sideBtn} text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800`}>다시 읽기</button>
-        <label className="flex items-center gap-1.5 mt-1 text-[11px] font-bold text-zinc-400 cursor-pointer">
-          <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} />
-          안 끝난 것만
-        </label>
-        <button onClick={onClose} className="mt-auto text-[11px] text-zinc-600 hover:text-white font-black text-left px-2">닫기 ×</button>
-      </div>
-
       {/* 오른쪽: 업체별 세 단계 */}
       <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-2">
+          <button onClick={load} className="px-2 py-0.5 rounded-md text-[11px] font-black border text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800">다시 읽기</button>
+          <label className="flex items-center gap-1 text-[11px] font-bold text-zinc-400 cursor-pointer">
+            <input type="checkbox" checked={onlyPending} onChange={e => setOnlyPending(e.target.checked)} />
+            안 끝난 것만
+          </label>
+          <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-white text-sm font-black">×</button>
+        </div>
         <div className="flex gap-3 text-[11px] font-black mb-2">
           <span className="text-zinc-400">발주 <span className={nSend === total ? 'text-emerald-400' : 'text-rose-300'}>{nSend}/{total}</span></span>
           <span className="text-zinc-400">송장 <span className={nInv === total ? 'text-emerald-400' : 'text-rose-300'}>{nInv}/{total}</span></span>
