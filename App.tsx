@@ -7,6 +7,7 @@ import CoupangDownloader from './components/CoupangDownloader';
 import PricingEditor from './components/PricingEditor';
 import SharedMasterUpload, { type UploadResult } from './components/SharedMasterUpload';
 import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from './components/ConsolidatedInvoicePanel';
+import OrderInvoiceStatusPanel from './components/OrderInvoiceStatusPanel';
 import { useMailInvoiceWatcher, type EmailInvoiceStatus } from './hooks/useMailInvoiceWatcher';
 import { useAdminInvoiceFetcher } from './hooks/useAdminInvoiceFetcher';
 import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
@@ -116,6 +117,7 @@ const App: React.FC = () => {
   const [showCoupang, setShowCoupang] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [showInvoice, setShowInvoice] = useState(false);
+  const [showStatus, setShowStatus] = useState(false);
   const [showGlobalFake, setShowGlobalFake] = useState(false);
   const [showSupplierLibrary, setShowSupplierLibrary] = useState(false);
   const [showCs, setShowCs] = useState(false);
@@ -925,6 +927,13 @@ const App: React.FC = () => {
   const [coupangUploaded, setCoupangUploaded] = useState<Record<string, string>>(() => {
     try { return JSON.parse(localStorage.getItem(uploadedKey) || '{}'); } catch { return {}; }
   });
+  // 업체 하나의 송장만 쿠팡에 올리기 — 송장 창과 현황 창이 같이 쓴다
+  const uploadCompanyInvoiceToCoupang = useCallback(async (businessId: string, companyName: string, onStep?: (step: string) => void) => {
+    const file = uploadFnsRef.current[businessId]?.getCompanyInvoiceWorkbookFile?.(companyName);
+    if (!file) throw new Error('송장 데이터가 없습니다. 먼저 송장 파일을 업로드해주세요.');
+    if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
+    return directCoupangUploadRef.current(businessId, file, onStep);
+  }, []);
   const markCoupangUploaded = useCallback((keys: string[]) => {
     const t = new Date();
     const time = `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
@@ -1056,6 +1065,7 @@ const App: React.FC = () => {
   const panelSetters = useMemo(() => ({
     upload: setShowUpload,
     invoice: setShowInvoice,
+    status: setShowStatus,
     fake: setShowGlobalFake,
     cs: setShowCs,
     manual: setShowManualHub,
@@ -1096,10 +1106,10 @@ const App: React.FC = () => {
 
   // 드롭다운 외부 클릭 감지 — overlay 대신 document mousedown으로 처리 (overlay는 스크롤을 막으므로)
   useEffect(() => {
-    if (!showCoupang && !showUpload && !showInvoice && !showGlobalFake && !showSupplierLibrary && !showCs && !showUrgentNotice && !showOrdererSearch && !showRegCounter && !showMoreMenu) return;
+    if (!showCoupang && !showUpload && !showInvoice && !showStatus && !showGlobalFake && !showSupplierLibrary && !showCs && !showUrgentNotice && !showOrdererSearch && !showRegCounter && !showMoreMenu) return;
     document.addEventListener('mousedown', closeAllPanels);
     return () => document.removeEventListener('mousedown', closeAllPanels);
-  }, [showCoupang, showUpload, showInvoice, showGlobalFake, showSupplierLibrary, showCs, showUrgentNotice, showOrdererSearch, showRegCounter, showMoreMenu, closeAllPanels]);
+  }, [showCoupang, showUpload, showInvoice, showStatus, showGlobalFake, showSupplierLibrary, showCs, showUrgentNotice, showOrdererSearch, showRegCounter, showMoreMenu, closeAllPanels]);
 
   const handleDeleteBusiness = async (businessId: string) => {
     const label = allBusinesses.find(b => b.id === businessId)?.displayName;
@@ -1445,6 +1455,15 @@ const App: React.FC = () => {
           <div className="w-px h-5 bg-zinc-800 mx-0.5" />
 
           <button
+            onClick={() => togglePanel('status')}
+            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-white ${showStatus ? 'bg-emerald-500 border-emerald-300 ring-2 ring-emerald-400/40' : 'bg-emerald-700 border-emerald-600 hover:bg-emerald-600 shadow-sm shadow-emerald-900/50'}`}
+            title="업체별 발주 → 송장 → 쿠팡 현황"
+          >
+            <ClipboardDocumentListIcon className="w-3.5 h-3.5 text-emerald-100" />
+            <span>현황</span>
+          </button>
+
+          <button
             onClick={() => togglePanel('upload')}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-white ${showUpload ? 'bg-sky-500 border-sky-300 ring-2 ring-sky-400/40' : 'bg-sky-600 border-sky-500 hover:bg-sky-500 shadow-sm shadow-sky-900/50'}`}
           >
@@ -1556,6 +1575,23 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {/* 발주 → 송장 → 쿠팡 현황 */}
+        {showStatus && (
+          <div className="absolute right-4 top-full mt-2 z-50 w-[440px] menu-panel bg-emerald-950 border-2 border-emerald-800 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
+            <OrderInvoiceStatusPanel
+              businesses={businessIdNamePairs}
+              uploadFns={uploadFnsRef.current as any}
+              coupangUploaded={coupangUploaded}
+              onCoupangUploaded={markCoupangUploaded}
+              onUploadCompanyToCoupang={uploadCompanyInvoiceToCoupang}
+              onOpenOrderPanel={() => togglePanel('upload')}
+              onOpenInvoicePanel={() => togglePanel('invoice')}
+              onClose={() => setShowStatus(false)}
+              refreshKey={`${uploadResults.length}_${invoiceResults.length}`}
+            />
+          </div>
+        )}
+
         {/* 통합 송장 변환 */}
         <div className={`absolute right-4 top-full mt-2 z-50 w-[420px] menu-panel bg-orange-950 border-2 border-orange-800 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto ${showInvoice ? '' : 'hidden'}`}>
           <ConsolidatedInvoicePanel
@@ -1583,12 +1619,7 @@ const App: React.FC = () => {
               if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
               return directCoupangUploadRef.current(businessId, file, onStep);
             }}
-            onDirectCoupangUploadCompany={async (businessId, companyName, onStep) => {
-              const file = uploadFnsRef.current[businessId]?.getCompanyInvoiceWorkbookFile?.(companyName);
-              if (!file) throw new Error('송장 데이터가 없습니다. 먼저 송장 파일을 업로드해주세요.');
-              if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았습니다. 페이지를 새로고침 후 다시 시도해주세요.');
-              return directCoupangUploadRef.current(businessId, file, onStep);
-            }}
+            onDirectCoupangUploadCompany={uploadCompanyInvoiceToCoupang}
           />
         </div>
 

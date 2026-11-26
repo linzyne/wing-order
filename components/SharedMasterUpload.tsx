@@ -27,7 +27,7 @@ interface MasterUploadHandlers {
   deleteBatchRound?: (round: number) => boolean;
   clearMaster?: () => void;
   getCompanyInfos?: () => { name: string; orderMethod?: string; phone?: string }[];
-  getOrderState?: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; matchedCount?: number; realShipCount?: number; timeLabel?: string }[] }[];
+  getOrderState?: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; realShipCount?: number; timeLabel?: string }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
   emailCompanyMerged?: (companyName: string) => Promise<boolean> | void;
@@ -104,9 +104,6 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
   return null;
 }
 
-// 미변환/매칭완료 배지: 매칭 건수 계산이 아직 정확하지 않아(매칭된 건도 미변환으로 표시되는 버그) 임시로 비활성화.
-// 계산 로직(matchedCount)은 그대로 두었으니, 원인 파악 후 이 값만 true로 되돌리면 다시 켜진다.
-const SHOW_MATCH_BADGE = false;
 
 // 발주서 칩 안의 전송 아이콘 — 이모지 대신 단색 아이콘으로 칩 색을 따라가게
 // 발주방식 묶음 머리 색 (이메일·어드민·카톡·미지정)
@@ -887,9 +884,6 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                       {bizEntries.map(({ biz, company }) => {
                         const totalCount = company.rounds.reduce((s, r) => s + (r.count ?? 0), 0);
                         const totalRealShip = company.rounds.reduce((s, r) => s + (r.realShipCount ?? 0), 0);
-                        const hasMatchData = company.rounds.some(r => r.matchedCount !== undefined);
-                        const totalMatched = company.rounds.reduce((s, r) => s + (r.matchedCount ?? 0), 0);
-                        const totalUnmatched = Math.max(0, totalCount - totalMatched);
                         const hasWarning = warningCompanyIds?.has(`${biz.businessId}_${companyName}`) ?? false;
                         return (
                           <div key={biz.businessId} className="flex items-start gap-1.5 pt-1 first:pt-0">
@@ -913,7 +907,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                               };
                               const renderChip = (opts: {
                                 key: string; downloaded: boolean; color: string; label: string; sub?: string;
-                                onDownload: () => void; sends: React.ReactNode[]; badge?: React.ReactNode; mailed?: boolean; real?: number;
+                                onDownload: () => void; sends: React.ReactNode[]; mailed?: boolean; real?: number;
                               }) => (
                                 <div key={opts.key} className="flex flex-col items-center gap-0.5">
                                   <div className={`inline-flex items-stretch rounded-lg border overflow-hidden shadow-sm transition-colors ${opts.mailed ? 'bg-emerald-900 text-emerald-200 border-emerald-700' : opts.downloaded ? 'bg-zinc-900 text-zinc-500 border-zinc-800' : opts.color}`}>
@@ -928,7 +922,6 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                     </button>
                                     {opts.sends}
                                   </div>
-                                  {!opts.mailed && opts.badge}
                                 </div>
                               );
                               // 발주방식이 어드민인 업체는 메일 대신 어드민 올리기 버튼 (완료 표시는 메일과 같이 초록 ✓)
@@ -959,17 +952,11 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                       : fns?.emailCompanyMerged && renderSend(mergedMailKey, 'mail', '합산 발주서 메일 전송', () => fns?.emailCompanyMerged?.(companyName)),
                                     fns?.lotteCompanyMerged && renderSend(`${mergedKey}_lotte_${totalCount}`, 'lotte', '합산 발주서를 사무실 롯데택배로 예약 (그 사업자 크롬 프로필의 윙 확장이 롯데에 올리고 송장번호까지 받아 와 통합송장 사무실(롯데)에 넣음)', () => fns?.lotteCompanyMerged?.(companyName)),
                                   ] : [],
-                                  badge: SHOW_MATCH_BADGE && hasMatchData && totalCount > 0 && (
-                                    <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${totalUnmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                                      {totalUnmatched > 0 ? `미변환 ${totalUnmatched}` : '매칭완료'}
-                                    </span>
-                                  ),
                                 })}
                                 </div>
                                 {rounds.length > 0 && (
                                 <div className="flex items-start gap-1 flex-wrap">
                                 {rounds.map(r => {
-                                  const unmatched = Math.max(0, (r.count ?? 0) - (r.matchedCount ?? 0));
                                   const roundKey = `${biz.businessId}_${companyName}_${r.round}`;
                                   const roundMailKey = `${roundKey}_mail_${r.count}`;
                                   return renderChip({
@@ -986,11 +973,6 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                                         ? fns?.adminCompanyRound && renderSend(roundMailKey, 'admin', `${r.round}차 발주서 어드민에 올리기 (크롬 어드민 탭의 확장이 엑셀 내용 확인까지 진행)`, () => fns?.adminCompanyRound?.(companyName, r.round))
                                         : fns?.emailCompanyRound && renderSend(roundMailKey, 'mail', `${r.round}차 발주서 메일 전송`, () => fns?.emailCompanyRound?.(companyName, r.round)),
                                     ],
-                                    badge: SHOW_MATCH_BADGE && r.matchedCount !== undefined && r.count > 0 && (
-                                      <span className={`text-[8px] font-black px-1.5 rounded-full whitespace-nowrap ${unmatched > 0 ? 'bg-rose-500 text-white' : 'bg-emerald-500/20 text-emerald-500'}`}>
-                                        {unmatched > 0 ? `미변환 ${unmatched}` : '매칭완료'}
-                                      </span>
-                                    ),
                                   });
                                 })}
                                 </div>
