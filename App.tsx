@@ -22,6 +22,7 @@ import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
 import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder, type LotteReservePick } from './services/lotteReserve';
 import { SentOrderToast } from './components/SentOrdersBar';
+import WorkTimeline from './components/WorkTimeline';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
 import { resolveSenderColumns, readCourierTrackingMap } from './types';
@@ -1340,6 +1341,9 @@ const App: React.FC = () => {
     // overflow-clip: overflow-hidden은 화면엔 안 보여도 scrollIntoView·focus로 스크롤돼 루트가 통째로 밀려 상단 메뉴가 가려졌다(11/26) — clip은 코드로도 스크롤 불가. 혹시 밀리면 onScroll에서 바로 되돌림
     <div className="fixed inset-0 overflow-clip flex flex-col bg-zinc-950" onScroll={e => { const el = e.currentTarget; if (e.target === el && (el.scrollTop || el.scrollLeft)) { el.scrollTop = 0; el.scrollLeft = 0; } }}>
       <SentOrderToast />
+
+      {/* 하루 업무 타임라인 — 끝낸 단계 체크 (날짜별, PC 간 공유) */}
+      <WorkTimeline />
 
       {/* 상단 네비게이션 — 항상 한 줄 (줄바꿈 금지).
           relative: 아래 드롭다운 패널 전부가 이 헤더를 기준으로 "오른쪽 아래 같은 자리"에서 열린다. */}
