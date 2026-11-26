@@ -143,7 +143,6 @@ const OrderInvoiceStatusPanel: React.FC<Props> = ({
   const [rows, setRows] = useState<Row[]>([]);
   const [onlyPending, setOnlyPending] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [section, setSection] = useState<'' | 'fetch' | 'mail'>('');
   const [progress, setProgress] = useState<Record<string, { text: string; tone: 'run' | 'ok' | 'err' }>>({});
   const [sending, setSending] = useState<string | null>(null);
   const [log, setLog] = useState<{ text: string; tone: 'ok' | 'err' | 'run' }[]>([]);
@@ -360,10 +359,6 @@ const OrderInvoiceStatusPanel: React.FC<Props> = ({
       <div className="w-[104px] shrink-0 flex flex-col gap-1.5">
         <DropBox label="주문서" sub="드롭·클릭" tone="border-sky-700 text-sky-200 hover:bg-sky-900/40" onFiles={handleOrderFiles} />
         <DropBox label="송장" sub="업체·가구매 택배" tone="border-orange-700 text-orange-200 hover:bg-orange-900/40" onFiles={handleInvoiceFiles} />
-        <button onClick={() => setSection(s => s === 'fetch' ? '' : 'fetch')} className={sideBtn(section === 'fetch')}>쿠팡에서 받기</button>
-        <button onClick={() => setSection(s => s === 'mail' ? '' : 'mail')} className={sideBtn(section === 'mail')}>
-          메일·어드민 송장{mailWatcher?.enabled && <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 align-middle" />}
-        </button>
         <div className="h-1" />
         <button onClick={onOpenOrderPanel} className={sideBtn(false)}>주문서 창</button>
         <button onClick={onOpenInvoicePanel} className={sideBtn(false)}>송장 창</button>
@@ -380,15 +375,12 @@ const OrderInvoiceStatusPanel: React.FC<Props> = ({
           <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-white text-sm font-black">×</button>
         </div>
 
-        {section === 'fetch' && (
-          <div className="mb-2"><WingFetchBar businesses={businesses} getNextRound={id => uploadFns[id]?.getNextRound?.() ?? 1} /></div>
-        )}
-        {section === 'mail' && (
-          <div className="mb-2 flex flex-col gap-2">
-            {mailWatcher && <MailWatchSection w={mailWatcher} />}
-            {adminInvoiceFetcher && <AdminInvoiceSection f={adminInvoiceFetcher} />}
-          </div>
-        )}
+        {/* 받아오기: 쿠팡 주문서 받기 + 메일·어드민 송장 가져오기를 한곳에 */}
+        <div className="mb-2 flex flex-col gap-2 pb-2 border-b border-zinc-800">
+          <WingFetchBar businesses={businesses} getNextRound={id => uploadFns[id]?.getNextRound?.() ?? 1} />
+          {mailWatcher && <MailWatchSection w={mailWatcher} />}
+          {adminInvoiceFetcher && <AdminInvoiceSection f={adminInvoiceFetcher} />}
+        </div>
 
         {log.length > 0 && (
           <div className="mb-2 flex flex-col gap-0.5">
