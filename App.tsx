@@ -1319,7 +1319,8 @@ const App: React.FC = () => {
 
   return (
     // fixed inset-0: 사파리에서 100vh(h-screen)가 보이는 창보다 커서 문서가 밀리고, scrollIntoView가 문서까지 내려 상단 메뉴가 가려지던 것 — 창에 딱 맞춰 문서가 넘칠 일이 없게
-    <div className="fixed inset-0 overflow-hidden flex flex-col bg-zinc-950">
+    // overflow-clip: overflow-hidden은 화면엔 안 보여도 scrollIntoView·focus로 스크롤돼 루트가 통째로 밀려 상단 메뉴가 가려졌다(11/26) — clip은 코드로도 스크롤 불가. 혹시 밀리면 onScroll에서 바로 되돌림
+    <div className="fixed inset-0 overflow-clip flex flex-col bg-zinc-950" onScroll={e => { const el = e.currentTarget; if (e.target === el && (el.scrollTop || el.scrollLeft)) { el.scrollTop = 0; el.scrollLeft = 0; } }}>
       <SentOrderToast />
 
       {/* 상단 네비게이션 — 항상 한 줄 (줄바꿈 금지).
