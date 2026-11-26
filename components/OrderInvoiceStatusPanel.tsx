@@ -4,6 +4,7 @@ import { detectBusiness, MailWatchSection, AdminInvoiceSection, type InvoiceResu
 import type { UploadResult } from './SharedMasterUpload';
 import type { MailInvoiceWatcher } from '../hooks/useMailInvoiceWatcher';
 import type { AdminInvoiceFetcher } from '../hooks/useAdminInvoiceFetcher';
+import { ORDER_METHODS } from '../types';
 
 // 주문서 + 송장 한 화면: 왼쪽에 주문서·송장 올리기, 오른쪽에 업체 한 줄마다 발주 → 송장 → 쿠팡.
 // 숫자는 새로 세지 않고 기존 창들이 쓰는 값을 그대로 읽는다.
@@ -349,7 +350,20 @@ const OrderInvoiceStatusPanel: React.FC<Props> = ({
     );
   };
 
-  const byBiz = businesses.map(b => ({ b, list: visible.filter(r => r.businessId === b.id) })).filter(x => x.list.length > 0);
+  // 주문서 창과 같은 목록: 업체 기준(사업자 순서·업체 순서 그대로)으로 모아 발주방식별(이메일 → 어드민 → 카톡 → 미지정) 묶음
+  const companyOrder: string[] = [];
+  for (const b of businesses) for (const r of withCoupang) if (r.businessId === b.id && !companyOrder.includes(r.name)) companyOrder.push(r.name);
+  const methodOf = (name: string) => withCoupang.find(r => r.name === name && r.orderMethod)?.orderMethod ?? '';
+  const groups = [...ORDER_METHODS, { key: '', label: '미지정' }]
+    .map(g => ({
+      ...g,
+      companies: companyOrder
+        .filter(n => methodOf(n) === g.key)
+        .map(n => ({ name: n, list: businesses.flatMap(b => visible.filter(r => r.businessId === b.id && r.name === n)) }))
+        .filter(c => c.list.length > 0),
+    }))
+    .filter(g => g.companies.length > 0);
+  const bizName = (id: string) => businesses.find(b => b.id === id)?.displayName ?? '';
   const sideBtn = (on: boolean) => `w-full text-left px-2 py-1.5 rounded-lg text-[11px] font-black border transition-colors ${on ? 'bg-zinc-700 text-white border-zinc-500' : 'text-zinc-400 border-zinc-700 hover:text-white hover:bg-zinc-800'}`;
   const grid = 'grid grid-cols-[minmax(0,1fr)_72px_54px_64px] gap-1.5';
 
@@ -401,12 +415,18 @@ const OrderInvoiceStatusPanel: React.FC<Props> = ({
         </div>
 
         {total === 0 && <p className="text-[11px] text-zinc-600 text-center py-4">주문서를 올리면 업체가 여기에 나와요</p>}
-        {total > 0 && byBiz.length === 0 && <p className="text-[11px] text-emerald-400 text-center py-4 font-black">전부 끝났어요 ✓</p>}
+        {total > 0 && groups.length === 0 && <p className="text-[11px] text-emerald-400 text-center py-4 font-black">전부 끝났어요 ✓</p>}
 
-        {byBiz.map(({ b, list }) => (
-          <div key={b.id} className="mt-2">
-            {businesses.length > 1 && <div className="text-[12px] font-black text-white mb-0.5">{b.displayName}</div>}
-            {list.map(r => {
+        {groups.map(g => (
+          <div key={g.key || 'none'} className="mt-2">
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="inline-flex items-center gap-1.5 pl-2.5 pr-1 py-0.5 rounded-full text-[11px] font-black bg-zinc-800 text-zinc-300">
+                {g.label}
+                <span className="px-1.5 rounded-full bg-zinc-950/80 text-[10px] tabular-nums">{g.companies.length}곳</span>
+              </span>
+              <div className="flex-1 border-t border-dashed border-zinc-800" />
+            </div>
+            {g.companies.flatMap(c => c.list).map(r => {
               const unmatched = r.match?.unmatchedOrders ?? [];
               const p = progress[r.key];
               return (
@@ -416,7 +436,7 @@ const OrderInvoiceStatusPanel: React.FC<Props> = ({
                       onClick={() => r.orderCount > 0 && uploadFns[r.businessId]?.downloadCompanyMerged?.(r.name)}
                       className={`text-left text-[11px] font-bold truncate hover:underline ${r.name === '가구매' ? 'text-pink-300' : 'text-zinc-100'}`}
                       title={r.orderCount ? `${r.name} · 발주 ${r.orderCount}줄 — 누르면 합산 발주서 다운로드` : r.name}
-                    >{r.name}</button>
+                    >{r.name}{businesses.length > 1 && <span className="ml-1 text-[10px] text-zinc-500 font-bold">{bizName(r.businessId)}</span>}</button>
                     {sendChip(r)}
                     {invoiceChip(r)}
                     {coupangChip(r)}
