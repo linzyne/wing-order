@@ -1905,9 +1905,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="flex items-center justify-center gap-4">
                                         <div className={`font-black text-xl ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-pink-400'}`}>{companyTotalOrders || Object.entries(localResult.summary).reduce((a:any, [k, b]:any) => isParcelEntryName(k) ? a : a + b.count, 0)}<span className="text-[11px] font-bold ml-0.5">행</span></div>
                                         <div className="h-6 w-px bg-zinc-800" />
-                                        {onDownloadMergedOrder && getMergedOrderRows && (
-                                            <button onClick={() => setMergedPreviewRows(getMergedOrderRows())} className="p-1 text-zinc-500 hover:text-cyan-400 transition-colors" title="합산 발주서 미리보기 (모든 차수)"><EyeIcon className="w-3.5 h-3.5" /></button>
-                                        )}
+                                        {/* 차수가 하나뿐이면 합산 = 1차라 1차 발주서 미리보기를 연다 */}
+                                        <button onClick={() => (onDownloadMergedOrder && getMergedOrderRows) ? setMergedPreviewRows(getMergedOrderRows()) : setShowOrderPreview(true)} className="p-1 text-zinc-500 hover:text-cyan-400 transition-colors" title="합산 발주서 미리보기 (모든 차수)"><EyeIcon className="w-3.5 h-3.5" /></button>
                                         {onDownloadMergedOrder ? (
                                             <button onClick={() => triggerDownloadWithMemoCheck(() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); })} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${mergedOrderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-cyan-900/50 text-cyan-300 hover:bg-cyan-800/70 hover:text-cyan-100 border-cyan-700/50 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         ) : (
