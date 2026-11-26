@@ -14,7 +14,7 @@ import type { AdminInvoiceFetcher } from '../hooks/useAdminInvoiceFetcher';
 
 interface Round { round: number; hasData: boolean; count?: number }
 interface OrderCompany { name: string; orderMethod?: string; rounds: Round[] }
-interface MatchCompany { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[] }
+interface MatchCompany { name: string; orderCount: number; matchedCount: number; unmatchedCount: number; unmatchedOrders: { orderNum: string; recipient: string }[]; manualCount?: number }
 interface Handlers {
   getOrderState?: () => OrderCompany[];
   getInvoiceMatchState?: () => MatchCompany[];
@@ -421,6 +421,11 @@ const OrderInvoiceStatusPanel: React.FC<Props> = ({
                     {invoiceChip(r)}
                     {coupangChip(r)}
                   </div>
+                  {r.match && (r.match.matchedCount > 0 || (r.match.manualCount ?? 0) > 0) && (
+                    <div className="text-[10px] text-zinc-500 font-bold pl-2 mt-0.5">
+                      송장 주문서 <span className="text-zinc-300">{r.match.matchedCount}개</span> / 수동 <span className="text-zinc-300">{r.match.manualCount ?? 0}개</span>
+                    </div>
+                  )}
                   {(r.match?.unmatchedCount ?? 0) > 0 && (
                     <button onClick={() => setExpanded(e => e === r.key ? null : r.key)} className="text-[10px] text-rose-400 font-bold pl-2 mt-0.5">
                       미입력 {r.match!.unmatchedCount}건 {expanded === r.key ? '▴' : '▾'}

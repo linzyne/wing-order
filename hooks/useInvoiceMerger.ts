@@ -27,6 +27,17 @@ const isPhoneLikeValue = (val: any): boolean => {
     return /^050\d{8,9}$/.test(d) || /^01[016789]\d{7,8}$/.test(d);
 };
 
+/** 업체 송장 파일에서 송장번호가 적힌 수동발주 줄 키 (칸 하나가 '수동'·'수동샘플'이고 송장번호 모양 값이 있는 줄) */
+const collectManualInvoiceKeys = (aoa: any[][], into: Set<string>) => {
+    for (const row of aoa) {
+        if (!Array.isArray(row)) continue;
+        const cells = row.map(c => String(c ?? '').replace(/\s+/g, ''));
+        if (!cells.some(c => c === '수동' || c === '수동샘플')) continue;
+        const track = cells.map(c => c.replace(/-/g, '')).find(c => /^[1-9]\d{9,13}$/.test(c) && !isPhoneLikeValue(c));
+        if (track) into.add(`${track}|${cells.join('|')}`);
+    }
+};
+
 /** 운송장번호처럼 보이는 값인지 — 숫자 위주 9자리 이상이고 날짜·전화번호가 아님 */
 const isTrackingLikeValue = (val: any): boolean => {
     if (val == null) return false;
@@ -123,6 +134,8 @@ export interface FailureDetail {
 export interface CompanyStat {
     mgmt: number;
     upload: number;
+    /** 업체 송장 파일에서 송장번호가 들어온 수동발주 줄 수 (발주서 주문번호 칸 '수동'·'수동샘플') */
+    manual?: number;
     failures: FailureDetail[];
 }
 
@@ -676,8 +689,13 @@ export const useInvoiceMerger = () => {
 
             // 업체 파일(들) → invoiceMap 빌드 (여러 파일이면 합침)
             const invoiceMap = new Map<string, string[]>();
+            const manualKeys = new Set<string>();
             for (const vf of vendorFiles) {
                 const vendorBuffer = await vf.arrayBuffer();
+                try {
+                    const vwb = XLSX.read(vendorBuffer, { type: 'array' });
+                    collectManualInvoiceKeys(XLSX.utils.sheet_to_json(vwb.Sheets[vwb.SheetNames[0]], { header: 1 }), manualKeys);
+                } catch { /* 수동 개수만 못 셈 */ }
                 const partialMap = await buildInvoiceMap(vendorBuffer, companyName, pricingConfig, orderKeys);
                 for (const [key, vals] of partialMap) {
                     const existing = invoiceMap.get(key) || [];
@@ -995,7 +1013,7 @@ export const useInvoiceMerger = () => {
                 uploadWorkbook: uploadWb,
                 mgmtFileName: `${dateStr} [송장] ${bizShort ? bizShort + ' ' : ''}${companyName} 기록용.xlsx`,
                 uploadFileName: `${dateStr} [송장] ${bizShort ? bizShort + ' ' : ''}${companyName}.xlsx`,
-                companyStats: { [companyName]: { mgmt: mgmtCount, upload: uploadCount, failures } },
+                companyStats: { [companyName]: { mgmt: mgmtCount, upload: uploadCount, failures, manual: manualKeys.size } },
                 header: invoiceHeader,
                 rows: mgmtRows.slice(1),
                 uploadRows: uploadRows.slice(1),

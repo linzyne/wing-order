@@ -4229,9 +4229,10 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                 const unmatchedCount = fallbackUsed
                     ? Math.max(Math.max(0, orderCount - matchedCount), dedupUnmatched.length)
                     : Math.max(0, orderCount - matchedCount);
-                return { name, orderCount, matchedCount, unmatchedCount, unmatchedOrders: dedupUnmatched };
+                const manualCount = sessions.reduce((n, s) => n + (allManualInvoiceCounts[s.id] || 0), 0);
+                return { name, orderCount, matchedCount, unmatchedCount, unmatchedOrders: dedupUnmatched, manualCount };
             })
-            .filter(c => c.orderCount > 0);
+            .filter(c => c.orderCount > 0 || c.manualCount > 0);
     };
 
     // 항상 최신 state를 참조하는 ref 기반 다운로드 함수 (stale closure 방지)
@@ -4464,6 +4465,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const [allSampleCounts, setAllSampleCounts] = useState<Record<string, Record<string, number>>>({});
     const [allPreConsolidationByGroup, setAllPreConsolidationByGroup] = useState<Record<string, Record<string, number>>>({});
     // 세션별 송장 미매칭 주문 목록 (통합송장변환 패널의 미변환 현황 집계용, 세션 메모리에만 존재)
+    // 세션별 송장 들어온 수동발주 줄 수 (현황 창 '주문서 N · 수동 M')
+    const [allManualInvoiceCounts, setAllManualInvoiceCounts] = useState<Record<string, number>>({});
     const [allInvoiceFailures, setAllInvoiceFailures] = useState<Record<string, { orderNum: string; recipient: string; reason: string }[]>>({});
 
     // 수동발주 취소/승인 상태 (업체별)
@@ -4477,7 +4480,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         });
     }, []);
 
-    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowBundleNumbers?: string[], rowRecipientNames?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[], invoiceFailures?: { orderNum: string; recipient: string; reason: string }[], sampleOrderCounts?: Record<string, number>) => {
+    const handleDataUpdate = useCallback((sessionId: string, orderRows: any[][], invoiceRows: any[][], uploadInvoiceRows: any[][], summaryExcel: string, header?: any[], registeredProductNames?: Record<string, string>, itemSummary?: Record<string, { count: number; totalPrice: number }>, orderItems?: { registeredProductName: string; registeredOptionName: string; matchedProductKey: string; qty: number; recipientName: string; orderNumber: string; bundleNumber: string }[], preConsolidationByGroup?: Record<string, number>, rowOrderNumbers?: string[], rowBundleNumbers?: string[], rowRecipientNames?: string[], rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[], invoiceFailures?: { orderNum: string; recipient: string; reason: string }[], sampleOrderCounts?: Record<string, number>, manualInvoiceCount?: number) => {
         // 새 발주서 생성 감지 → 토스트 (초기 복원 시 억제)
         const prevCount = prevOrderRowsRef.current[sessionId] || 0;
         const newCount = orderRows.length;
@@ -4559,6 +4562,8 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
         else if (orderRows.length === 0) setAllSampleCounts(prev => ({ ...prev, [sessionId]: {} }));
         if (invoiceFailures) setAllInvoiceFailures(prev => ({ ...prev, [sessionId]: invoiceFailures }));
         else if (orderRows.length === 0) setAllInvoiceFailures(prev => ({ ...prev, [sessionId]: [] }));
+        if (manualInvoiceCount !== undefined) setAllManualInvoiceCounts(prev => ({ ...prev, [sessionId]: manualInvoiceCount }));
+        else if (orderRows.length === 0) setAllManualInvoiceCounts(prev => ({ ...prev, [sessionId]: 0 }));
     }, [addToast]);
 
     // 발주서 생성 후 가구매 명단에 새로 미매칭이 생기면 팝업 (초기 복원 시 억제, 동일한 미매칭 상태로는 재알림 안 함)
