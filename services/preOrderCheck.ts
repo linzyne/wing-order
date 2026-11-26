@@ -44,10 +44,10 @@ const manualRowName = (row: any[], num: string, name: string): string | null => 
   return name || cells.find(c => /^[가-힣]{2,4}$/.test(c) && c !== '수동' && c !== '수동샘플' && !/(농원|푸드|상회|무역|상사)$/.test(c)) || '';
 };
 
-type ManualHit = { company: string; name: string; date: string };
+export type ManualHit = { company: string; name: string; date: string };
 
 /** 오늘 발주서(세션 결과)의 수동 줄 */
-const todayManualRows = (sessions: Record<string, any> | null, today: string): ManualHit[] => {
+export const todayManualRows = (sessions: Record<string, any> | null, today: string): ManualHit[] => {
   const out: ManualHit[] = [];
   Object.entries(sessions || {}).forEach(([sid, data]) => {
     const company = sid.replace(/-(batch-\d+-\d+|\d+)$/, '');
@@ -63,7 +63,7 @@ const todayManualRows = (sessions: Record<string, any> | null, today: string): M
 };
 
 /** 최근 발주내역(기록된 발주서)의 수동 줄 */
-const recentManualRows = (history: DailySales[]): ManualHit[] => {
+export const recentManualRows = (history: DailySales[]): ManualHit[] => {
   const out: ManualHit[] = [];
   history.forEach(d => {
     Object.entries(d.companyOrderRows || {}).forEach(([company, rows]) => {

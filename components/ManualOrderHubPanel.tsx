@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import type { ManualOrder, PricingConfig } from '../types';
 import {
-  subscribeManualOrders, addManualOrdersTx, removeManualOrderTx, updateManualOrderTx,
-  loadPricingConfig, loadQuickRecipients, type QuickRecipientData,
+  subscribeManualOrders, addManualOrdersTx, removeManualOrderTx, removeManualOrdersTx, updateManualOrderTx,
+  loadPricingConfig, loadQuickRecipients, subscribeSessionResults, subscribeRecentOrderSearch, todayDocId, type QuickRecipientData,
 } from '../services/firestoreService';
+import { todayManualRows, recentManualRows } from '../services/preOrderCheck';
+import type { DailySales } from '../types';
 import ManualOrderLogModal from './ManualOrderLogModal';
 
 // 상단 '수동발주' 통합 창: 사업자를 왼쪽에서 고르고, 오른쪽에서 수동발주를 넣고 대기 목록을 본다.
@@ -28,6 +30,9 @@ const ManualOrderHubPanel: React.FC<Props> = ({ businesses, active, onClose }) =
   const [products, setProducts] = useState<{ productKey: string; productName: string; qty: string }[]>([]);
   const [saving, setSaving] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
+  const [sessions, setSessions] = useState<Record<string, any> | null>(null);
+  const [recent, setRecent] = useState<DailySales[] | null>(null);
+  const [cleaning, setCleaning] = useState(false);
 
   useEffect(() => { if (!bizId && businesses[0]) setBizId(businesses[0].id); }, [businesses, bizId]);
 
@@ -48,11 +53,47 @@ const ManualOrderHubPanel: React.FC<Props> = ({ businesses, active, onClose }) =
 
   useEffect(() => { setDraft(EMPTY); setProducts([]); }, [bizId]);
 
+  // 고른 사업자의 오늘 발주서·최근 기록된 발주서 — 대기 목록 건이 발주서에 들어갔는지 보려고 (구독)
+  useEffect(() => {
+    if (!active || !bizId) return;
+    setSessions(null); setRecent(null);
+    const u1 = subscribeSessionResults(setSessions, bizId);
+    const u2 = subscribeRecentOrderSearch(bizId, setRecent);
+    return () => { u1(); u2(); };
+  }, [active, bizId]);
+
   const config = pricing[bizId] || {};
   const companies = useMemo(() => Object.keys(config).filter(n => config[n]?.products && Object.keys(config[n].products).length > 0).sort((a, b) => a.localeCompare(b, 'ko')), [config]);
   const companyProducts = draft.companyName ? Object.entries((config[draft.companyName]?.products || {}) as Record<string, any>) : [];
   const orders = ordersByBiz[bizId] || [];
   const bizName = businesses.find(b => b.id === bizId)?.displayName || '';
+
+  // 건마다 발주서에 들어갔는지: 같은 업체·같은 받는분 수동 줄이, 넣은 날(주문 id의 시각) 이후 발주서에 있으면 들어간 것
+  const sentOf = useMemo(() => {
+    const today = todayDocId();
+    const hits = [...todayManualRows(sessions, today), ...recentManualRows(recent || [])];
+    const nm = (s: string) => String(s || '').replace(/\s+/g, '');
+    const res: Record<string, string | null> = {};
+    orders.forEach(o => {
+      const ts = Number(String(o.id).split('-')[1]) || 0;
+      const from = ts ? new Date(ts).toLocaleDateString('en-CA') : '0000-00-00';
+      const dates = hits.filter(h => h.company === o.companyName && nm(h.name) === nm(o.recipientName) && h.date >= from).map(h => h.date).sort();
+      res[o.id] = dates.length ? dates[dates.length - 1] : null;
+    });
+    return res;
+  }, [orders, sessions, recent]);
+  const sentIds = orders.filter(o => sentOf[o.id]).map(o => o.id);
+  const statusLoaded = sessions !== null || recent !== null;
+  const md = (d: string) => { const [, m, dd] = d.split('-'); return d === todayDocId() ? '오늘' : `${Number(m)}/${Number(dd)}`; };
+
+  const cleanSent = async () => {
+    if (sentIds.length === 0) return;
+    if (!confirm(`발주서에 이미 들어간 ${sentIds.length}건을 목록에서 지울까요? (기록 보기에는 남아요)`)) return;
+    setCleaning(true);
+    try { await removeManualOrdersTx(bizId, sentIds, '발주서 들어가서 정리'); }
+    catch (err: any) { alert(`정리 실패: ${err?.message || err}`); }
+    finally { setCleaning(false); }
+  };
 
   const addProduct = (key: string) => {
     if (!key) return;
@@ -106,7 +147,7 @@ const ManualOrderHubPanel: React.FC<Props> = ({ businesses, active, onClose }) =
               <button key={b.id} onClick={() => setBizId(b.id)}
                 className={`text-left px-2 py-2 rounded-lg text-[11px] font-black border transition-colors ${on ? 'btn-accent text-white border-transparent' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}>
                 <div className="truncate">{b.displayName}</div>
-                {n > 0 && <div className={`text-[10px] ${on ? 'text-white/80' : 'text-rose-400'}`}>대기 {n}</div>}
+                {n > 0 && <div className={`text-[10px] ${on ? 'text-white/80' : 'text-rose-400'}`}>목록 {n}</div>}
               </button>
             );
           })}
@@ -153,9 +194,14 @@ const ManualOrderHubPanel: React.FC<Props> = ({ businesses, active, onClose }) =
           </form>
 
           <div className="flex items-center justify-between mt-1">
-            <span className="text-[11px] font-black text-zinc-300">{bizName} 대기 {orders.length}건</span>
+            <span className="text-[11px] font-black text-zinc-300">{bizName} 목록 {orders.length}건{sentIds.length ? ` · 발주서 들어감 ${sentIds.length}` : ''}</span>
             <button type="button" onClick={() => setLogOpen(true)} className="text-[10px] font-black text-zinc-400 hover:text-white">📜 기록 보기</button>
           </div>
+          {sentIds.length > 0 && (
+            <button type="button" onClick={cleanSent} disabled={cleaning} className="w-full rounded-xl text-[11px] font-black py-1.5 bg-emerald-600 text-white disabled:opacity-50">
+              {cleaning ? '정리 중…' : `✓ 발주서 들어간 ${sentIds.length}건 정리`}
+            </button>
+          )}
           {orders.length === 0 && <div className="text-[10px] text-zinc-600">대기 중인 수동발주가 없어요</div>}
           <div className="flex flex-col gap-1">
             {orders.map(o => (
@@ -166,6 +212,9 @@ const ManualOrderHubPanel: React.FC<Props> = ({ businesses, active, onClose }) =
                     <span className="text-rose-400">{o.companyName}</span> <span className="text-white">{o.recipientName}</span>
                   </div>
                   <div className="text-[10px] text-zinc-500 truncate">{o.productName} ×{o.qty}{o.memo ? ` · ${o.memo}` : ''}</div>
+                  <div className={`text-[10px] font-black ${sentOf[o.id] ? 'text-emerald-500' : 'text-amber-500'}`}>
+                    {!statusLoaded ? '확인 중…' : sentOf[o.id] ? `✓ ${md(sentOf[o.id]!)} ${o.companyName} 발주서에 들어감` : '아직 발주서 없음'}
+                  </div>
                 </div>
                 <button type="button" title="샘플 (매출현황 마진에서 뺌)" onClick={() => updateManualOrderTx(bizId, o.id, { isSample: !o.isSample }).catch(err => alert(`저장 실패: ${err?.message || err}`))}
                   className={`text-[9px] font-black px-1 rounded ${o.isSample ? 'bg-amber-500 text-black' : 'text-zinc-500 border border-zinc-700'}`}>샘플</button>

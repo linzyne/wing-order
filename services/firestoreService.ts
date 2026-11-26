@@ -1440,6 +1440,12 @@ export const addManualOrdersTx = (businessId: string | undefined, orders: any[])
 export const removeManualOrderTx = (businessId: string | undefined, id: string) =>
   editManualOrdersTx(businessId, existing => existing.filter(o => o.id !== id), '직접 지움');
 
+/** 여러 건을 한 번에 지운다 (발주서에 들어간 건 정리 등) */
+export const removeManualOrdersTx = (businessId: string | undefined, ids: string[], reason: string) => {
+  const drop = new Set(ids);
+  return editManualOrdersTx(businessId, existing => existing.filter(o => !drop.has(o.id)), reason);
+};
+
 export const updateManualOrderTx = (businessId: string | undefined, id: string, patch: Record<string, any>) =>
   editManualOrdersTx(businessId, existing => existing.map(o => (o.id === id ? { ...o, ...patch } : o)));
 
