@@ -22,7 +22,7 @@ import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
 import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder, type LotteReservePick } from './services/lotteReserve';
 import { SentOrderToast } from './components/SentOrdersBar';
-import WorkTimeline from './components/WorkTimeline';
+import WorkTimeline, { resetWorkTimeline } from './components/WorkTimeline';
 import { migrateLocalStorageToFirestore } from './services/migration';
 import type { CourierTemplate, CompanyConfig, ManualOrder } from './types';
 import { resolveSenderColumns, readCourierTrackingMap } from './types';
@@ -1368,12 +1368,13 @@ const App: React.FC = () => {
           </button>
           <button
             onClick={() => {
-              if (!window.confirm('모든 사업자의 워크스테이션을 초기화하시겠습니까?')) return;
+              if (!window.confirm('모든 사업자의 워크스테이션과 오늘 타임라인을 초기화하시겠습니까?')) return;
               allBusinesses.forEach(b => resetFnsRef.current[b.id]?.());
               setUploadResults([]);
+              resetWorkTimeline();
             }}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-800 hover:bg-rose-900/60 active:bg-rose-900 active:scale-95 transition-all duration-150"
-            title="초기화 — 모든 사업자의 워크스테이션을 비웁니다"
+            title="초기화 — 모든 사업자의 워크스테이션과 오늘 타임라인 체크를 비웁니다"
           >
             <TrashIcon className="w-3.5 h-3.5 text-zinc-300" />
             <span className="text-[10px] font-black text-zinc-300">초기화</span>

@@ -20,6 +20,11 @@ const hhmm = (ms: number) => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
+// 윙 '초기화' 버튼에서 부름 — 오늘 체크 전부 지움 (구독 중인 모든 PC에 바로 반영)
+export const resetWorkTimeline = () =>
+  setDoc(doc(db, 'workTimeline', localYMD(new Date())), { checks: {} })
+    .catch(err => console.error('[업무 타임라인] 초기화 실패', err));
+
 // 날짜별 문서 workTimeline/{YYYY-MM-DD} 하나를 구독 — 다른 PC에서 체크해도 바로 같이 보임
 const WorkTimeline: React.FC = () => {
   const [now, setNow] = useState(() => new Date());
