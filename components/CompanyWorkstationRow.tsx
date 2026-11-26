@@ -122,6 +122,8 @@ interface CompanyWorkstationRowProps {
     onToggleClosed?: () => void;
     isActive?: boolean;
     onDownloadMergedOrder?: () => void;
+    /** 합산 발주서 미리보기용: 그 업체 모든 차수 발주서 줄 (차수 표시용 round 포함) */
+    getMergedOrderRows?: () => { round: number; row: any[] }[];
     onDownloadMergedInvoice?: (type: 'mgmt' | 'upload') => void;
     previousRoundItems?: { round: number; summary: Record<string, { count: number; totalPrice: number }> }[];
     previousSessionIds?: string[];
@@ -172,7 +174,7 @@ interface CompanyWorkstationRowProps {
 
 const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     sessionId, companyName, roundNumber, isFirstSession, isLastSession, pricingConfig, vendorFiles, masterFile, batchFile, isDetected, fakeOrderNumbers, manualOrders = [], realShipSet,
-    isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, onDownloadMergedInvoice,
+    isSelected, onSelectToggle, onVendorFileChange, onResultUpdate, onDataUpdate, onAddSession, onRemoveSession, onAddAdjustment, onDownloadMergedOrder, getMergedOrderRows, onDownloadMergedInvoice,
     companySummaryBar,
     previousRoundItems = [],
     previousSessionIds = [],
@@ -242,6 +244,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
     const [showConsolidationLog, setShowConsolidationLog] = useState(false);
     const [showSizeMismatch, setShowSizeMismatch] = useState(false);
     const [showOrderPreview, setShowOrderPreview] = useState(false);
+    const [mergedPreviewRows, setMergedPreviewRows] = useState<{ round: number; row: any[] }[] | null>(null);
     const [orderDownloaded, setOrderDownloaded] = useState(false);
     const [mergedOrderDownloaded, setMergedOrderDownloaded] = useState(false);
 
@@ -1902,6 +1905,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     <div className="flex items-center justify-center gap-4">
                                         <div className={`font-black text-xl ${(orderDownloaded || mergedOrderDownloaded) ? 'text-zinc-700' : 'text-pink-400'}`}>{companyTotalOrders || Object.entries(localResult.summary).reduce((a:any, [k, b]:any) => isParcelEntryName(k) ? a : a + b.count, 0)}<span className="text-[11px] font-bold ml-0.5">행</span></div>
                                         <div className="h-6 w-px bg-zinc-800" />
+                                        {onDownloadMergedOrder && getMergedOrderRows && (
+                                            <button onClick={() => setMergedPreviewRows(getMergedOrderRows())} className="p-1 text-zinc-500 hover:text-cyan-400 transition-colors" title="합산 발주서 미리보기 (모든 차수)"><EyeIcon className="w-3.5 h-3.5" /></button>
+                                        )}
                                         {onDownloadMergedOrder ? (
                                             <button onClick={() => triggerDownloadWithMemoCheck(() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); })} className={`px-2 py-0.5 rounded font-black text-[9px] flex items-center border transition-all ${mergedOrderDownloaded ? 'bg-zinc-800 text-zinc-600 border-transparent' : 'bg-cyan-900/50 text-cyan-300 hover:bg-cyan-800/70 hover:text-cyan-100 border-cyan-700/50 shadow-md'}`}><ArrowDownTrayIcon className="w-3 h-3" /></button>
                                         ) : (
@@ -2618,6 +2624,83 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                         </div>
                     </td>
                 </tr>
+            )}
+
+            {/* 합산 발주서 미리보기 모달 (보기 전용 — 고치기는 각 차수 미리보기에서) */}
+            {mergedPreviewRows && createPortal(
+                <div
+                    style={{ position:'fixed', top:0, left:0, right:0, bottom:0, zIndex:99999, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.75)' }}
+                    onClick={() => setMergedPreviewRows(null)}
+                >
+                    <div
+                        style={{ background:'#18181b', borderRadius:'16px', padding:'20px', width:'92vw', maxWidth:'1200px', maxHeight:'85vh', display:'flex', flexDirection:'column', border:'1px solid #3f3f46', boxShadow:'0 25px 60px rgba(0,0,0,0.6)' }}
+                        onClick={e => e.stopPropagation()}
+                    >
+                        {(() => {
+                            const headers = getHeaderForCompany(companyName, pricingConfig[companyName] || {} as any);
+                            const prodCol = findProductNameColIdx(headers, pricingConfig[companyName]?.orderFormFieldMap);
+                            // 다운로드와 같은 순서(품목명 정렬)로 보여준다. 차수는 줄 객체로 따라가게 정렬 후 다시 찾는다.
+                            const sortedRows = sortRowsByProductName(headers, mergedPreviewRows.map(m => m.row), companyName, pricingConfig[companyName]?.orderFormFieldMap);
+                            const roundOf = new Map<any[], number>(mergedPreviewRows.map(m => [m.row, m.round] as [any[], number]));
+                            const roundColor = (r: number) => r === 1 ? '#a78bfa' : r === 2 ? '#7dd3fc' : r === 3 ? '#6ee7b7' : r === 4 ? '#fcd34d' : '#fda4af';
+                            const rounds: number[] = Array.from(new Set<number>(mergedPreviewRows.map(m => m.round))).sort((a, b) => a - b);
+                            return (
+                                <>
+                                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexShrink:0 }}>
+                                        <div>
+                                            <div style={{ color:'#fff', fontWeight:800, fontSize:'14px' }}>{companyName} 합산 발주서 미리보기</div>
+                                            <div style={{ color:'#71717a', fontSize:'11px', marginTop:'2px' }}>
+                                                {rounds.map(r => `${r}차 ${mergedPreviewRows.filter(m => m.round === r).length}`).join(' + ')} = {sortedRows.length}건 · 수정은 각 차수 미리보기에서
+                                            </div>
+                                        </div>
+                                        <div style={{ display:'flex', gap:'8px', alignItems:'center' }}>
+                                            {onDownloadMergedOrder && (
+                                                <button onClick={() => triggerDownloadWithMemoCheck(() => { onDownloadMergedOrder(); setMergedOrderDownloaded(true); })} style={{ background:'#0891b2', color:'#fff', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'none', cursor:'pointer' }}>
+                                                    합산 다운로드
+                                                </button>
+                                            )}
+                                            <button onClick={() => setMergedPreviewRows(null)} style={{ background:'#27272a', color:'#a1a1aa', fontWeight:700, fontSize:'11px', padding:'6px 14px', borderRadius:'8px', border:'1px solid #3f3f46', cursor:'pointer' }}>
+                                                닫기
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div style={{ overflowX:'auto', overflowY:'auto', flex:1, borderRadius:'8px', border:'1px solid #27272a' }}>
+                                        {sortedRows.length === 0 ? (
+                                            <div style={{ padding:'24px', color:'#71717a', fontSize:'12px', textAlign:'center' }}>합산할 발주 데이터가 없습니다.</div>
+                                        ) : (
+                                        <table style={{ borderCollapse:'collapse', fontSize:'11px', whiteSpace:'nowrap', width:'100%' }}>
+                                            <thead>
+                                                <tr style={{ background:'#27272a', position:'sticky', top:0 }}>
+                                                    <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center', minWidth:'32px' }}>#</th>
+                                                    <th style={{ padding:'6px 10px', color:'#71717a', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'center' }}>차수</th>
+                                                    {headers.map((h, i) => (
+                                                        <th key={i} style={{ padding:'6px 10px', color:'#a1a1aa', fontWeight:700, borderRight:'1px solid #3f3f46', textAlign:'left', minWidth: i === prodCol ? '280px' : undefined }}>{h}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {sortedRows.map((row, ri) => {
+                                                    const r: number | undefined = roundOf.get(row);
+                                                    return (
+                                                        <tr key={ri} style={{ borderBottom:'1px solid #27272a', background: ri % 2 === 0 ? 'transparent' : 'rgba(39,39,42,0.4)' }}>
+                                                            <td style={{ padding:'5px 10px', color:'#52525b', textAlign:'center', borderRight:'1px solid #27272a' }}>{ri + 1}</td>
+                                                            <td style={{ padding:'5px 10px', color: r ? roundColor(r) : '#52525b', fontWeight:800, textAlign:'center', borderRight:'1px solid #27272a' }}>{r ? `${r}차` : ''}</td>
+                                                            {headers.map((_, ci) => (
+                                                                <td key={ci} style={{ padding:'5px 10px', color:'#e4e4e7', borderRight:'1px solid #27272a', maxWidth: ci === prodCol ? undefined : '220px', overflow:'hidden', textOverflow:'ellipsis' }}>{row?.[ci] ?? ''}</td>
+                                                            ))}
+                                                        </tr>
+                                                    );
+                                                })}
+                                            </tbody>
+                                        </table>
+                                        )}
+                                    </div>
+                                </>
+                            );
+                        })()}
+                    </div>
+                </div>,
+                document.body
             )}
 
             {/* 발주서 미리보기 모달 */}

@@ -7565,6 +7565,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                                     isClosed={closedCompanies.has(company)} onToggleClosed={() => handleToggleClosed(company)}
                                                     isActive={companyHasOrders}
                                                     onDownloadMergedOrder={(companySessions[company] || []).length > 1 ? () => handleDownloadMergedOrder(company) : undefined}
+                                                    getMergedOrderRows={(companySessions[company] || []).length > 1 ? () => ((companySessions[company] || []) as SessionData[]).flatMap(s => (allOrderRows[s.id] || []).map(row => ({ round: s.round, row }))) : undefined}
                                                     onDownloadMergedInvoice={(companySessions[company] || []).length > 1 ? (type: 'mgmt' | 'upload') => handleDownloadMergedInvoice(company, type) : undefined}
                                                     previousRoundItems={prevItems}
                                                     previousSessionIds={prevSessionIds}
