@@ -254,10 +254,15 @@
     try {
       res = await chrome.runtime.sendMessage({ type: 'TAKE', company: names.company, business: names.business });
     } catch (e) {
-      return; // 확장을 다시 불러온 직후 등
+      // 확장 본체와 연결이 끊김(확장을 다시 불러옴 등). 예전엔 조용히 넘어가 '기다리는 중'만 보여 헷갈렸다.
+      L(`확장 연결 끊김: ${e?.message || e}`);
+      show('확장 연결 끊김\n이 탭 새로고침', '#dc2626');
+      return;
     }
-    if (res?.error) { L(`목록 실패: ${res.error}`); return; }
-    if (res?.item) {
+    if (!res) { L('확장 응답 없음'); show('확장 응답 없음\nchrome://extensions ↻ 뒤 새로고침', '#dc2626'); return; }
+    if (res.error) { L(`목록 실패: ${res.error}`); show(`발주서 목록 실패\n${res.error}`, '#dc2626'); return; }
+    if (!res.item && /실패|끊김|응답/.test($('msg').textContent)) show('기다리는 중');
+    if (res.item) {
       await upload(res.item);
       // 같은 업체 앞으로 하나 더 와 있을 수 있다
       poll();
@@ -267,6 +272,8 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'OUTBOX_CHANGED') { poll(); checkInvoiceRequests(); }
   });
+  // 이 탭으로 돌아올 때도 한 번 확인한다(알림을 놓쳤어도 탭을 보면 바로 가져감)
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
 
   // ── 윙발주 '송장 가져오기': 배송중 목록 엑셀을 받아 윙발주로 돌려준다 ──
   // 엑셀 파일은 admin-main.js(화면 쪽)가 어드민의 파일 주소를 가로채 읽어 넘겨준다.
