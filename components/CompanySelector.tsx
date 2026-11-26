@@ -5959,7 +5959,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
                                         if (!fn) { alert(`[${o.companyName}] 업체 작업줄을 찾을 수 없습니다.`); return; }
                                         if (!selectedManualOrderIds.has(o.id)) handleToggleManualOrderSelection(o.id);
                                         fn(o.id);
-                                        document.getElementById(`session-${firstSession.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                        document.getElementById(`session-${businessId || ''}-${firstSession.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                                     }} className="text-emerald-500 hover:text-emerald-300 transition-colors"><DocumentArrowUpIcon className="w-3 h-3" /></button>
                                     <button onClick={(e) => { e.stopPropagation(); handleStartEditManualOrder(o); }} className="text-amber-500 hover:text-amber-300 transition-colors"><PencilIcon className="w-3 h-3" /></button>
                                     <button onClick={(e) => { e.stopPropagation(); handleRemoveManualOrder(o.id); }} className="text-zinc-700 hover:text-rose-500 transition-colors"><TrashIcon className="w-3 h-3" /></button>

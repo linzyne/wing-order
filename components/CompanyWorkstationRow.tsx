@@ -961,12 +961,28 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             const fileToReprocess = lastProcessedMasterRef.current || lastProcessedBatchRef.current;
             handleLocalFileChange(fileToReprocess);
         } else if (hasManualOrdersChanged) {
-            // 수동주문 변경: 이미 팝업으로 확인한 경우에만 재처리 (확인 전이면 무시)
+            // 수동주문 변경: 이미 팝업으로 확인했거나, 발주서를 만든 뒤 새로 들어온 건이 있으면 재처리
+            const prevManualStr = lastManualOrdersRef.current;
             lastFakeOrdersRef.current = fakeOrderNumbers;
             lastManualOrdersRef.current = manualOrdersStr;
             // 단골 대신 보내기로 넘어온 주문은 확인 없이도 반영 (원래 주문 대신 나가는 것이라 빠지면 안 됨)
             const hasRedirected = manualOrders.some(o => o.redirectKey) || lastManualOrdersRef.current.includes('"redirectKey"');
-            if ((confirmedManualOrderIdsRef.current !== null || hasRedirected) && (lastProcessedMasterRef.current || manualOnlyProcessedRef.current)) {
+            // 발주서를 이미 만든 뒤 새로 들어온 수동발주(통합 창·다른 PC)는 팝업 없이 바로 넣는다.
+            // 만들 때 수동발주가 없어 팝업을 안 거쳤으면(확인 목록 null) 예전엔 새 건이 무시됐다.
+            const madeAlready = !!(lastProcessedMasterRef.current || manualOnlyProcessedRef.current);
+            let addedNew = false;
+            if (madeAlready) {
+                let prevIds = new Set<string>();
+                try { prevIds = new Set((JSON.parse(prevManualStr || '[]') as ManualOrder[]).map(o => o.id)); } catch { /* 처음 */ }
+                const fresh = manualOrders.filter(o => !prevIds.has(o.id));
+                if (fresh.length > 0) {
+                    const ids = new Set(confirmedManualOrderIdsRef.current || []);
+                    fresh.forEach(o => ids.add(o.id));
+                    confirmedManualOrderIdsRef.current = ids;
+                    addedNew = true;
+                }
+            }
+            if ((confirmedManualOrderIdsRef.current !== null || hasRedirected || addedNew) && madeAlready) {
                 handleLocalFileChange(lastProcessedMasterRef.current);
             }
         } else if (hasFileChangedButEvicted) {
@@ -1700,7 +1716,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     return (
         <>
-            <tr id={`session-${sessionId}`} className={`transition-all duration-500 border-none ${isActive ? (isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10') : 'opacity-60'}`}>
+            <tr id={`session-${businessId || ''}-${sessionId}`} className={`transition-all duration-500 border-none ${isActive ? (isAllDone ? 'bg-emerald-950/20' : (workflow.order || workflow.deposit || workflow.invoice) ? 'bg-zinc-900/40' : 'bg-transparent hover:bg-zinc-800/10') : 'opacity-60'}`}>
                 <td className={`px-6 min-w-[360px] ${isFirstSession ? 'py-2' : 'py-0.5'}`}>
                     <div className="flex flex-col gap-2">
                         {isFirstSession ? (
