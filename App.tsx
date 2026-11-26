@@ -1084,14 +1084,22 @@ const App: React.FC = () => {
 
   // 크롬 확장이 윙에서 받아 보낸 주문서 → 주문서 업로드 패널을 열고 그대로 올린다
   const [incomingWingFiles, setIncomingWingFiles] = useState<{ file: File; note?: UploadResult['note']; source?: string }[]>([]);
+  const [statusIncomingFiles, setStatusIncomingFiles] = useState<{ file: File; note?: UploadResult['note']; source?: string }[]>([]);
+  const showStatusRef = useRef(false);
+  showStatusRef.current = showStatus;
   useEffect(() => subscribeWingInbox(({ file, wingCount, fileCount, source }) => {
     const note = wingCount == null || fileCount < 0
       ? { text: `확장으로 받음 · 파일 주문 ${Math.max(fileCount, 0)}건`, warn: false }
       : wingCount === fileCount
         ? { text: `윙 ${wingCount}건 = 파일 ${fileCount}건 ✓`, warn: false }
         : { text: `⚠ 윙 ${wingCount}건 ≠ 파일 ${fileCount}건 — 윙 화면 확인`, warn: true };
-    setIncomingWingFiles(prev => [...prev, { file, note, source }]);
-    (Object.keys(panelSetters) as PanelKey[]).forEach(k => panelSetters[k](k === 'upload'));
+    // 현황 창이 열려 있으면 거기서 올리고(창 유지), 아니면 지금처럼 주문서 창을 열어 올린다
+    if (showStatusRef.current) {
+      setStatusIncomingFiles(prev => [...prev, { file, note, source }]);
+    } else {
+      setIncomingWingFiles(prev => [...prev, { file, note, source }]);
+      (Object.keys(panelSetters) as PanelKey[]).forEach(k => panelSetters[k](k === 'upload'));
+    }
     // 결과 목록 글씨는 작아서 놓치기 쉬우니 건수가 다르면 알림창으로 한 번 더 알린다
     if (note.warn) setTimeout(() => alert(`${file.name}\n\n윙 상품준비중 ${wingCount}건인데 받은 파일은 주문 ${fileCount}건이에요.\n윙 화면을 확인해 주세요.`), 300);
   }), [panelSetters]);
@@ -1577,7 +1585,7 @@ const App: React.FC = () => {
 
         {/* 발주 → 송장 → 쿠팡 현황 */}
         {showStatus && (
-          <div className="absolute right-4 top-full mt-2 z-50 w-[440px] menu-panel bg-emerald-950 border-2 border-emerald-800 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
+          <div className="absolute right-4 top-full mt-2 z-50 w-[520px] menu-panel bg-emerald-950 border-2 border-emerald-800 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
             <OrderInvoiceStatusPanel
               businesses={businessIdNamePairs}
               uploadFns={uploadFnsRef.current as any}
@@ -1587,7 +1595,17 @@ const App: React.FC = () => {
               onOpenOrderPanel={() => togglePanel('upload')}
               onOpenInvoicePanel={() => togglePanel('invoice')}
               onClose={() => setShowStatus(false)}
-              refreshKey={`${uploadResults.length}_${invoiceResults.length}`}
+              uploadResults={uploadResults}
+              onUploadResultsChange={setUploadResults}
+              invoiceResults={invoiceResults}
+              onInvoiceResultsChange={setInvoiceResults}
+              urgentNotice={globalUrgentNotice}
+              couriers={courierItemsForPanel}
+              onCourierFilesAdd={handleCourierFilesAddForPanel}
+              mailWatcher={mailWatcher}
+              adminInvoiceFetcher={adminInvoiceFetcher}
+              incomingFiles={statusIncomingFiles}
+              onIncomingTaken={taken => setStatusIncomingFiles(prev => prev.filter(x => !taken.includes(x)))}
             />
           </div>
         )}

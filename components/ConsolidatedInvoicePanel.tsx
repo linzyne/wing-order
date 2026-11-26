@@ -59,7 +59,7 @@ interface Props {
   onAutoCoupangProgressClear?: (key: string) => void;
 }
 
-function detectBusiness(filename: string, businesses: Business[]): Business | null {
+export function detectBusiness(filename: string, businesses: Business[]): Business | null {
   const nameWithoutExt = filename.normalize('NFC').replace(/\.[^.]+$/, '');
   const lower = nameWithoutExt.toLowerCase().replace(/\s/g, '');
   const fileTokens = nameWithoutExt.toLowerCase()
@@ -82,7 +82,7 @@ function detectBusiness(filename: string, businesses: Business[]): Business | nu
 }
 
 /** 업체 송장 메일 자동 가져오기 — 품목/업체 탭에 저장된 업체 이메일에서 온 송장만 그 업체 줄로 */
-const MailWatchSection: React.FC<{ w: MailInvoiceWatcher }> = ({ w }) => {
+export const MailWatchSection: React.FC<{ w: MailInvoiceWatcher }> = ({ w }) => {
   const [hasToken, setHasToken] = useState(() => !!getInvoiceMailToken());
   const [tokenInput, setTokenInput] = useState('');
   const [showLog, setShowLog] = useState(false);
@@ -167,7 +167,7 @@ const MailWatchSection: React.FC<{ w: MailInvoiceWatcher }> = ({ w }) => {
 };
 
 /** 어드민 송장 가져오기 — 업체 어드민(adminplus) 탭의 확장이 배송중 엑셀을 받아 그 업체 줄로 */
-const AdminInvoiceSection: React.FC<{ f: AdminInvoiceFetcher }> = ({ f }) => {
+export const AdminInvoiceSection: React.FC<{ f: AdminInvoiceFetcher }> = ({ f }) => {
   const [showLog, setShowLog] = useState(false);
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-950/60 px-3 py-2 flex flex-col gap-1.5">
