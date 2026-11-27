@@ -20,7 +20,7 @@ import { useSharedSuppliers, useCourierTemplates, useUrgentNotice, useCompanyMem
 import { mergeSettlementMap, loadSettlementUploads, undoSettlementUpload, subscribeMissionHubFeed, fetchMissionHubFeedFromServer, type MissionHubFeed, requestMissionClear, subscribeMissionClearRequest, type MissionClearRequest, requestMissionOrderFix, subscribeMissionOrderFix, type MissionOrderFixRequest, requestMissionMemoAction, subscribeMissionMemoRequest, subscribePendingMissionMemoRequests, type PendingMissionMemoRequest, type MissionMemoAction, type SettlementUploadRecord } from './services/firestoreService';
 import { useBusinessList } from './hooks/useBusinessList';
 import { subscribeWingInbox } from './services/wingInbox';
-import { requestLotteReserve, subscribeLotteWaybills, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder, type LotteReservePick } from './services/lotteReserve';
+import { requestLotteReserve, subscribeLotteWaybills, claimLotteAutoUpload, finishLotteAutoUpload, lotteTrackingMap, findLotteTemplate, localYMD, type LotteBatch, type LotteOrder, type LotteReservePick } from './services/lotteReserve';
 import { SentOrderToast } from './components/SentOrdersBar';
 import WorkTimeline, { resetWorkTimeline } from './components/WorkTimeline';
 import { migrateLocalStorageToFirestore } from './services/migration';
@@ -973,6 +973,74 @@ const App: React.FC = () => {
     window.addEventListener('email-invoice-converted', onConverted);
     return () => window.removeEventListener('email-invoice-converted', onConverted);
   }, [markCoupangUploaded]);
+
+  // 가구매 롯데 예약 운송장이 들어오면(lotteWaybills 구독) 그 사업자 윙에 가구매 주문 송장을 바로 올린다.
+  // 발주서에서 고른 롯데 주문(source 'order')은 업체 송장에 합쳐 따로 올라가므로 여기선 가구매만.
+  // 주문서가 이 PC에 없으면 잡지 않고 넘김(주문서가 있는 PC가 올림). 여러 PC는 lotteAutoUploads 트랜잭션으로 한 곳만.
+  const [lotteAutoStatus, setLotteAutoStatus] = useState<Record<string, { state: 'running' | 'done' | 'error'; message: string }>>({});
+  const lotteAutoTabIdRef = useRef(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+  const lotteAutoTriedRef = useRef<Record<string, number>>({}); // batchId → 이 탭에서 시도한 운송장 수
+  useEffect(() => {
+    if (!lotteTemplate) return;
+    // 이 기능을 넣기 전 배치(이미 손으로 올렸을 수 있음)는 건드리지 않는다
+    const SINCE = new Date('2026-11-27T12:00:00+09:00').getTime();
+    const norm = (s: string) => String(s || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    for (const batch of lotteBatches) {
+      if (batch.at < SINCE) continue;
+      const fake = batch.items.filter(it => it.source === 'fake' && it.waybill);
+      if (fake.length === 0) continue;
+      if ((lotteAutoTriedRef.current[batch.batchId] ?? 0) >= fake.length) continue;
+      const biz = allBusinesses.find(b => b.displayName === batch.businessName);
+      if (!biz || !directCoupangUploadRef.current) continue;
+      const waybillOf = new Map<string, string>();
+      fake.forEach(it => [it.orderNumber, ...(it.orderNumbers || [])].forEach(n => waybillOf.set(norm(n), it.waybill!)));
+      const { header = [], dataRows = [] } = (globalMasterRowsRef.current as Record<string, { header: any[]; dataRows: any[][] }>)[biz.id] || {};
+      // 한 주문에 품목이 둘이면 줄도 둘 — 줄마다 송장을 넣는다 (같은 내용 줄만 건너뜀)
+      const rows: any[][] = [];
+      const seen = new Set<string>();
+      const found = new Set<string>();
+      for (const row of dataRows) {
+        if (!row) continue;
+        const k = norm(row[2]);
+        const wb = waybillOf.get(k);
+        if (!wb) continue;
+        const rk = JSON.stringify(row);
+        if (seen.has(rk)) continue;
+        seen.add(rk);
+        const r = [...row];
+        while (r.length <= 4) r.push('');
+        r[3] = lotteTemplate.name;
+        r[4] = wb;
+        rows.push(r);
+        found.add(k);
+      }
+      if (rows.length === 0) continue; // 주문서가 아직 없음 — 주문서가 올라오면(orderRowsTick) 다시 봄
+      lotteAutoTriedRef.current[batch.batchId] = fake.length;
+      const missing = fake.filter(it => !found.has(norm(it.orderNumber))).map(it => it.orderNumber);
+      const setS = (state: 'running' | 'done' | 'error', message: string) => setLotteAutoStatus(prev => ({ ...prev, [biz.id]: { state, message } }));
+      const prevRun = autoUploadQueueRef.current[biz.id] ?? Promise.resolve();
+      autoUploadQueueRef.current[biz.id] = prevRun.then(async () => {
+        if (!(await claimLotteAutoUpload(batch.batchId, fake.length, lotteAutoTabIdRef.current))) return; // 다른 PC가 올림
+        setS('running', `쿠팡 자동 업로드 ${found.size}건 준비…`);
+        try {
+          const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+          const wb = XLSX.utils.book_new();
+          XLSX.utils.book_append_sheet(wb, ws, '주문서');
+          const bin: ArrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+          const file = new File([bin], `${localYMD()} ${biz.displayName} 가구매 롯데 ${batch.batchId} 운송장완료.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          if (!directCoupangUploadRef.current) throw new Error('쿠팡 업로더가 초기화되지 않았어요 — 새로고침 후 쿠팡 ↑');
+          const msg = await directCoupangUploadRef.current(biz.id, file, step => setS('running', `쿠팡 자동 업로드: ${step}`));
+          const text = `✅ 가구매 롯데 ${found.size}건 쿠팡 자동 업로드${msg ? ` · ${msg}` : ''}${missing.length ? ` (주문서에 없음 ${missing.length}건: ${missing.join(', ')})` : ''}`;
+          setS('done', text);
+          finishLotteAutoUpload(batch.batchId, 'done', text);
+        } catch (err: any) {
+          const text = `⛔ 쿠팡 자동 업로드 실패: ${err?.message ?? err} — 송장 변환 창에서 쿠팡 ↑`;
+          setS('error', text);
+          finishLotteAutoUpload(batch.batchId, 'error', text);
+        }
+      });
+    }
+  }, [lotteBatches, lotteTemplate, orderRowsTick, allBusinesses]);
 
   const handleResetInvoicePanel = useCallback(() => {
     setInvoiceResults([]);
@@ -1976,7 +2044,7 @@ const App: React.FC = () => {
                               {allBusinesses.map(b => {
                                 const count = courierFakeLineCount(perBusinessFakeInput[b.id]);
                                 const st = lotteStatus[b.id];
-                                if (count === 0 && !st) return null;
+                                if (count === 0 && !st && !lotteAutoStatus[b.id]) return null;
                                 return (
                                   <div key={b.id} className="flex flex-col gap-0.5">
                                     {count > 0 && (
@@ -1993,6 +2061,11 @@ const App: React.FC = () => {
                                     {st && (
                                       <span className={`text-[8px] font-bold break-all ${st.state === 'error' ? 'text-rose-400' : st.state === 'done' ? 'text-emerald-400' : 'text-zinc-400'}`}>
                                         {b.displayName}: {st.message}
+                                      </span>
+                                    )}
+                                    {lotteAutoStatus[b.id] && (
+                                      <span className={`text-[8px] font-bold break-all ${lotteAutoStatus[b.id].state === 'error' ? 'text-rose-400' : lotteAutoStatus[b.id].state === 'done' ? 'text-emerald-400' : 'text-sky-300'}`}>
+                                        {b.displayName}: {lotteAutoStatus[b.id].message}
                                       </span>
                                     )}
                                   </div>

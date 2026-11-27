@@ -1,4 +1,4 @@
-import { collection, onSnapshot, addDoc, deleteDoc, query, where, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, deleteDoc, query, where, serverTimestamp, doc, runTransaction, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import type { CourierTemplate } from '../types';
 import { resolveSenderColumns } from '../types';
@@ -41,6 +41,7 @@ export interface LotteBatch {
   batchId: string;
   businessName: string;
   date: string;
+  at: number;             // 운송장번호를 적은 시각 (ms)
   items: LotteItem[];
 }
 
@@ -146,7 +147,7 @@ export function subscribeLotteWaybills(fromDate: string, onChange: (batches: Lot
       const x = d.data();
       let items: LotteItem[] = [];
       try { items = JSON.parse(x.items || '[]'); } catch { items = []; }
-      return { batchId: x.batchId || d.id, businessName: x.businessName || '', date: x.date || '', items };
+      return { batchId: x.batchId || d.id, businessName: x.businessName || '', date: x.date || '', at: x.at?.toMillis?.() ?? 0, items };
     }));
   }, err => console.error('[롯데 운송장] 구독 실패', err));
 }
@@ -160,4 +161,31 @@ export function lotteTrackingMap(batches: LotteBatch[]): Map<string, string> {
     (it.orderNumbers || []).forEach(n => map.set(normOrderNum(n), it.waybill!));
   }
   return map;
+}
+
+// ── 가구매 롯데 운송장 → 쿠팡 자동 업로드 ──
+// 앱을 켠 PC가 여럿이면 같은 배치를 여러 번 올리게 되므로 lotteAutoUploads/{batchId}를 트랜잭션으로 잡은 한 곳만 올린다.
+// count: 올릴 운송장 수 — 롯데 창을 이어서 해 운송장이 더 붙으면(count가 커지면) 다시 잡아 올린다.
+export async function claimLotteAutoUpload(batchId: string, count: number, by: string): Promise<boolean> {
+  const ref = doc(db, 'lotteAutoUploads', batchId);
+  try {
+    return await runTransaction(db, async tx => {
+      const cur = (await tx.get(ref)).data();
+      if (cur && (cur.count ?? 0) >= count) {
+        // 맡은 PC가 10분 넘게 끝내지 못했으면(창을 닫는 등) 다시 잡는다
+        const stale = cur.state === 'running' && Date.now() - (cur.claimedAt?.toMillis?.() ?? 0) > 10 * 60 * 1000;
+        if (!stale) return false;
+      }
+      tx.set(ref, { batchId, count, by, state: 'running', message: '', claimedAt: serverTimestamp() });
+      return true;
+    });
+  } catch (err) {
+    console.error('[롯데 자동 업로드] 잡기 실패', err);
+    return false;
+  }
+}
+
+export function finishLotteAutoUpload(batchId: string, state: 'done' | 'error', message: string) {
+  return setDoc(doc(db, 'lotteAutoUploads', batchId), { state, message, finishedAt: serverTimestamp() }, { merge: true })
+    .catch(err => console.error('[롯데 자동 업로드] 결과 저장 실패', err));
 }
