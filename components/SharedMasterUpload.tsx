@@ -27,7 +27,7 @@ interface MasterUploadHandlers {
   deleteBatchRound?: (round: number) => boolean;
   clearMaster?: () => void;
   getCompanyInfos?: () => { name: string; orderMethod?: string; phone?: string }[];
-  getOrderState?: () => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; realShipCount?: number; timeLabel?: string }[] }[];
+  getOrderState?: () => { name: string; orderMethod?: string; deadline?: string; rounds: { round: number; hasData: boolean; count: number; realShipCount?: number; timeLabel?: string }[] }[];
   downloadCompanyMerged?: (companyName: string) => void;
   downloadCompanyRound?: (companyName: string, round: number) => void;
   emailCompanyMerged?: (companyName: string) => Promise<boolean> | void;
@@ -246,7 +246,7 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
   const [isDragging, setIsDragging] = useState(false);
   const [showDownload, setShowDownload] = useState(true);
   const adSpends = useAdSpends();
-  const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count: number; timeLabel?: string }[] }[] }[]>([]);
+  const [downloadSnapshot, setDownloadSnapshot] = useState<{ businessId: string; displayName: string; companies: { name: string; orderMethod?: string; deadline?: string; rounds: { round: number; hasData: boolean; count: number; timeLabel?: string }[] }[] }[]>([]);
   const [nextRounds, setNextRounds] = useState<Record<string, number>>({});
   const [companyClosedMap, setCompanyClosedMap] = useState<Record<string, boolean>>({});
   const [companyRecordedMap, setCompanyRecordedMap] = useState<Record<string, boolean>>({});
@@ -995,8 +995,22 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                 }
                 return '';
               };
-              const groups = [...ORDER_METHODS, { key: '', label: '미지정' }]
-                .map(g => ({ ...g, names: companyOrder.filter(n => methodOf(n) === g.key) }))
+              // 마감 시간(업체 설정)으로 먼저 묶고(이른 시간 → 늦은 시간 → 시간 없음), 그 안에서 발주방식으로 묶는다
+              const deadlineOf = (name: string) => {
+                for (const biz of downloadSnapshot) {
+                  const d = biz.companies.find(c => c.name === name)?.deadline?.trim();
+                  if (d) return d;
+                }
+                return '';
+              };
+              const deadlineMin = (d: string) => {
+                const m = d.match(/(\d{1,2})\s*[:시]\s*(\d{0,2})/);
+                return m ? Number(m[1]) * 60 + Number(m[2] || 0) : Infinity;
+              };
+              const deadlines = [...new Set(companyOrder.map(deadlineOf))]
+                .sort((a, b) => (a === '' ? 1 : 0) - (b === '' ? 1 : 0) || deadlineMin(a) - deadlineMin(b) || a.localeCompare(b));
+              const methodGroups = (names: string[]) => [...ORDER_METHODS, { key: '', label: '미지정' }]
+                .map(g => ({ ...g, names: names.filter(n => methodOf(n) === g.key) }))
                 .filter(g => g.names.length > 0);
               // 전체 전송: 이 묶음 업체들의 합산 발주서 중 아직 안 보낸(✓ 없는) 것을 한꺼번에 메일/어드민으로 보낸다
               const pendingMerged = (names: string[], kind: 'email' | 'admin') => {
@@ -1016,8 +1030,19 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                 }
                 return jobs;
               };
-              return groups.map(g => (
-                <div key={g.key || 'none'} className="flex flex-col gap-1">
+              return deadlines.map(dl => {
+                const dlNames = companyOrder.filter(n => deadlineOf(n) === dl);
+                return (
+                <div key={`dl_${dl || 'none'}`} className="flex flex-col gap-1">
+                  <div className="flex items-center gap-2 pt-2">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[12px] font-black bg-pink-500/10 text-pink-400 border border-pink-500/30">
+                      {dl ? `마감 ${dl}` : '마감 미지정'}
+                      <span className="px-1.5 rounded-full bg-zinc-950/80 text-[10px] tabular-nums">{dlNames.length}곳</span>
+                    </span>
+                    <div className="flex-1 border-t border-zinc-700" />
+                  </div>
+                  {methodGroups(dlNames).map(g => (
+                <div key={`${dl}_${g.key || 'none'}`} className="flex flex-col gap-1 pl-2">
                   <div className="flex items-center gap-2 pt-1">
                     <span className={`inline-flex items-center gap-1.5 pl-2.5 pr-1 py-0.5 rounded-full text-[11px] font-black ${METHOD_STYLE[g.key] ?? METHOD_STYLE['']}`}>
                       {g.label}
@@ -1048,7 +1073,10 @@ const SharedMasterUpload: React.FC<Props> = ({ businesses, uploadFns, onClose, r
                   </div>
                   {g.names.map(renderCompany)}
                 </div>
-              ));
+                  ))}
+                </div>
+                );
+              });
             })()}
             <button
               onClick={refreshDownloadSnapshot}

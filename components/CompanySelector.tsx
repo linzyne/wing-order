@@ -3009,7 +3009,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
     const getNextRoundRef = useRef<() => number>(() => 1);
     const deleteBatchRoundRef = useRef<(round: number) => boolean>(() => false);
     const clearMasterRef = useRef<() => void>(() => {});
-    const getOrderStateRef = useRef<() => { name: string; orderMethod?: string; rounds: { round: number; hasData: boolean; count?: number; realShipCount?: number; timeLabel?: string }[] }[]>(() => []);
+    const getOrderStateRef = useRef<() => { name: string; orderMethod?: string; deadline?: string; rounds: { round: number; hasData: boolean; count?: number; realShipCount?: number; timeLabel?: string }[] }[]>(() => []);
     const getCompanyInfosRef = useRef<() => { name: string; orderMethod?: string; phone?: string }[]>(() => []);
     const addReshipOrderRef = useRef<(companyName: string, mo: Omit<ManualOrder, 'id' | 'companyName'>) => Promise<boolean>>(async () => false);
     const removeReshipOrderRef = useRef<(companyName: string, csRecordId: string) => boolean>(() => false);
@@ -3064,6 +3064,7 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ pricingConfig, onConf
             .map(companyName => ({
                 name: companyName,
                 orderMethod: getOrderMethod(pricingConfig[companyName]),
+                deadline: pricingConfig[companyName]?.deadline,
                 rounds: (companySessions[companyName] as SessionData[]).map(s => {
                     // 실배 줄 수 (합산 줄은 주문번호가 콤마로 이어져 있어 하나라도 실배면 1줄)
                     const realSet = realShipSetRef.current;
