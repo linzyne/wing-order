@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PricingConfig, CompanyConfig, CompanyDeposit, ProductPricing, PlatformConfigs, PlatformConfig, PlatformColumnMapping, PlatformInvoiceMapping } from '../types';
 import type { OrderMethod } from '../types';
-import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES, ORDER_METHODS } from '../types';
+import { ORDER_FORM_FIELD_TYPES, VENDOR_INVOICE_FIELD_TYPES, ORDER_METHODS, getOrderMethod } from '../types';
 import { inferFieldFromHeader, inferVendorInvoiceField, DEFAULT_GROUP_COL_IDX, colIdxToLetter } from '../hooks/useConsolidatedOrderConverter';
 import { useCompanyDeposits } from '../hooks/useFirestore';
 import { DEFAULT_ORDER_MAIL_SUBJECT, DEFAULT_ORDER_MAIL_BODY } from '../services/emailService';
@@ -1557,11 +1557,12 @@ const CompanyCard: React.FC<{
                         <div className="flex items-center gap-3 bg-zinc-950 px-4 py-3 rounded-xl border border-zinc-800 shadow-inner" title="발주방식 — 주문서 패널에서 업체를 이 기준으로 묶어 보여줍니다">
                             <span className="text-sm shrink-0">📮</span>
                             <select
-                                value={companyConfig.orderMethod ?? ''}
+                                value={getOrderMethod(companyConfig) ?? ''}
                                 onChange={(e) => props.onUpdateOrderMethod(e.target.value as OrderMethod | '')}
                                 className="bg-transparent text-sm font-bold text-zinc-400 focus:outline-none w-full"
                             >
-                                <option value="">{companyConfig.email?.trim() ? '발주방식 (이메일)' : '발주방식 미지정'}</option>
+                                {/* 정한 값이 없고 이메일도 없을 때만 보이는 자리 표시 (고를 수는 없음) */}
+                                {!getOrderMethod(companyConfig) && <option value="" disabled>발주방식 미지정</option>}
                                 {ORDER_METHODS.map(m => <option key={m.key} value={m.key}>{m.label}</option>)}
                             </select>
                         </div>
