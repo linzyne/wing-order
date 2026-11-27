@@ -7,7 +7,6 @@ import CoupangDownloader from './components/CoupangDownloader';
 import PricingEditor from './components/PricingEditor';
 import SharedMasterUpload, { type UploadResult } from './components/SharedMasterUpload';
 import ConsolidatedInvoicePanel, { type InvoiceResult, type CourierItem } from './components/ConsolidatedInvoicePanel';
-import OrderInvoiceStatusPanel from './components/OrderInvoiceStatusPanel';
 import { useMailInvoiceWatcher, type EmailInvoiceStatus } from './hooks/useMailInvoiceWatcher';
 import { useAdminInvoiceFetcher } from './hooks/useAdminInvoiceFetcher';
 import ConsolidatedCsPanel from './components/ConsolidatedCsPanel';
@@ -1536,15 +1535,6 @@ const App: React.FC = () => {
           <div className="w-px h-5 bg-zinc-800 mx-0.5" />
 
           <button
-            onClick={() => togglePanel('status')}
-            className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-white ${showStatus ? 'bg-emerald-500 border-emerald-300 ring-2 ring-emerald-400/40' : 'bg-emerald-700 border-emerald-600 hover:bg-emerald-600 shadow-sm shadow-emerald-900/50'}`}
-            title="업체별 발주 → 송장 → 쿠팡 현황"
-          >
-            <ClipboardDocumentListIcon className="w-3.5 h-3.5 text-emerald-100" />
-            <span>현황</span>
-          </button>
-
-          <button
             onClick={() => togglePanel('upload')}
             className={`px-3 py-1 rounded-full text-[11px] font-black transition-all duration-200 border active:scale-95 whitespace-nowrap flex items-center gap-1 text-white ${showUpload ? 'bg-sky-500 border-sky-300 ring-2 ring-sky-400/40' : 'bg-sky-600 border-sky-500 hover:bg-sky-500 shadow-sm shadow-sky-900/50'}`}
           >
@@ -1652,33 +1642,6 @@ const App: React.FC = () => {
               onCompanyMemoDelete={removeCompanyMemo}
               incomingFiles={incomingWingFiles}
               onIncomingTaken={taken => setIncomingWingFiles(prev => prev.filter(x => !taken.includes(x)))}
-            />
-          </div>
-        )}
-
-        {/* 발주 → 송장 → 쿠팡 현황 */}
-        {showStatus && (
-          <div className="absolute right-4 top-full mt-2 z-50 w-[520px] menu-panel bg-emerald-950 border-2 border-emerald-800 rounded-2xl shadow-2xl max-h-[calc(100vh-70px)] overflow-y-auto">
-            <OrderInvoiceStatusPanel
-              businesses={businessIdNamePairs}
-              uploadFns={uploadFnsRef.current as any}
-              coupangUploaded={coupangUploaded}
-              onCoupangUploaded={markCoupangUploaded}
-              onUploadCompanyToCoupang={uploadCompanyInvoiceToCoupang}
-              onOpenOrderPanel={() => togglePanel('upload')}
-              onOpenInvoicePanel={() => togglePanel('invoice')}
-              onClose={() => setShowStatus(false)}
-              uploadResults={uploadResults}
-              onUploadResultsChange={setUploadResults}
-              invoiceResults={invoiceResults}
-              onInvoiceResultsChange={setInvoiceResults}
-              urgentNotice={globalUrgentNotice}
-              couriers={courierItemsForPanel}
-              onCourierFilesAdd={handleCourierFilesAddForPanel}
-              mailWatcher={mailWatcher}
-              adminInvoiceFetcher={adminInvoiceFetcher}
-              incomingFiles={statusIncomingFiles}
-              onIncomingTaken={taken => setStatusIncomingFiles(prev => prev.filter(x => !taken.includes(x)))}
             />
           </div>
         )}
