@@ -4,7 +4,7 @@ import type { PricingConfig, PlatformConfigs, TodoItem, CourierTemplate, Company
 import {
   subscribePricingConfig,
   loadPricingConfig,
-  savePricingConfigToFirestore,
+  savePricingConfigChanges,
   subscribeDailyWorkspace,
   updateDailyWorkspaceField,
   updateDailyWorkspaceSessionField,
@@ -72,6 +72,8 @@ export const usePricingConfig = (businessId?: string) => {
   const pendingSaves = useRef(0);
   const saveGraceUntil = useRef(0);
   const hasLoadedRef = useRef(false);
+  // 이 창이 마지막으로 안 설정(서버에서 받았거나 저장한 것) — 저장할 때 바뀐 칸을 가리는 기준
+  const latestRef = useRef<PricingConfig>(defaultConfig);
 
   useEffect(() => {
     hasLoadedRef.current = false;
@@ -84,6 +86,7 @@ export const usePricingConfig = (businessId?: string) => {
           return;
         }
         hasLoadedRef.current = true;
+        latestRef.current = firestoreConfig;
         setConfig(firestoreConfig);
         setConfigSource('firestore');
         savePricingBackup(firestoreConfig, businessId);
@@ -115,12 +118,16 @@ export const usePricingConfig = (businessId?: string) => {
       return;
     }
     pendingSaves.current++;
+    const base = latestRef.current;
+    latestRef.current = newConfig;
     setConfig(newConfig);
     try {
-      await savePricingConfigToFirestore(newConfig, businessId);
+      // 바뀐 칸만 서버 최신본에 얹는다(통째 덮어쓰기로 다른 창이 고친 단가가 되돌아가지 않게)
+      const merged = await savePricingConfigChanges(base, newConfig, businessId);
       hasLoadedRef.current = true;
+      if (pendingSaves.current === 1) { latestRef.current = merged; setConfig(merged); }
       saveGraceUntil.current = Date.now() + 3000;
-      savePricingBackup(newConfig, businessId);
+      savePricingBackup(merged, businessId);
     } catch (e) {
       console.error('[Config] Firestore 저장 실패:', e);
       saveGraceUntil.current = Date.now() + 10000;

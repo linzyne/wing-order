@@ -220,6 +220,57 @@ export const savePricingConfigToFirestore = async (
   });
 };
 
+// 단가 설정 바뀐 칸만 저장.
+// 예전엔 창이 들고 있던 설정 전체를 덮어써서, 옛 단가를 들고 있던 다른 창·PC가 아무 칸이나 저장하면
+// 다른 사람이 고친 값(신선담다 배송비 3,500 → 4,000)이 되돌아갔다.
+// base(이 창이 알던 설정)와 next를 비교해 바뀐 칸만 뽑고, 서버 최신본에 그 칸만 얹어 트랜잭션으로 쓴다.
+type PricingPatch = { path: string[]; value: unknown; del: boolean };
+const isPlainObj = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v);
+const diffPricing = (a: unknown, b: unknown, path: string[], out: PricingPatch[]) => {
+  if (isPlainObj(a) && isPlainObj(b)) {
+    for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      if (!(k in b) || b[k] === undefined) { if (k in a && a[k] !== undefined) out.push({ path: [...path, k], value: undefined, del: true }); }
+      else diffPricing(a[k], b[k], [...path, k], out);
+    }
+    return;
+  }
+  if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ path, value: b, del: false });
+};
+const applyPricingPatch = (target: Record<string, unknown>, p: PricingPatch) => {
+  let cur = target;
+  for (let i = 0; i < p.path.length - 1; i++) {
+    const k = p.path[i];
+    if (!isPlainObj(cur[k])) { if (p.del) return; cur[k] = {}; }
+    cur = cur[k] as Record<string, unknown>;
+  }
+  const last = p.path[p.path.length - 1];
+  if (p.del) delete cur[last];
+  else cur[last] = JSON.parse(JSON.stringify(p.value ?? null));
+};
+
+export const savePricingConfigChanges = async (
+  base: PricingConfig,
+  next: PricingConfig,
+  businessId?: string
+): Promise<PricingConfig> => {
+  const patches: PricingPatch[] = [];
+  diffPricing(base, next, [], patches);
+  const docRef = doc(db, 'config', getConfigDocId(businessId));
+  return runTransaction(db, async (tx) => {
+    const snap = await tx.get(docRef);
+    if (!snap.exists()) {
+      tx.set(docRef, { data: next, updatedAt: Timestamp.now() });
+      return next;
+    }
+    const server = JSON.parse(JSON.stringify(snap.data().data || {})) as Record<string, unknown>;
+    if (patches.length === 0) return server as PricingConfig;
+    patches.forEach(p => applyPricingPatch(server, p));
+    tx.set(docRef, { data: server, updatedAt: Timestamp.now() });
+    return server as PricingConfig;
+  });
+};
+
 // ===== Sales History =====
 
 // loadAllSalesHistory는 사업자별 매출 문서 전체(수십~수백 건)를 매번 읽는다.
