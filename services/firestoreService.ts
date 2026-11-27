@@ -804,6 +804,8 @@ export interface DailyWorkspaceData {
   sessionMemos?: Record<string, string>;
   sessionSummary?: Record<string, { orderCount: number }>;
   summaryOverrides?: Record<string, Record<string, { count: number; totalPrice: number }>>;
+  /** 발주서 미리보기에서 지운 줄 (세션별) — 발주서를 다시 만들어도 다시 빼려고 저장 */
+  previewRemovedRows?: Record<string, { ord: string; sig: string }[]>;
   companySessionRounds?: Record<string, { id: string; round: number }[]>;
   updatedAt?: any;
 }

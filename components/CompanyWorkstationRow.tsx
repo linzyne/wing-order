@@ -1221,7 +1221,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // 이 발주서를 만든 주문서를 세션에 보관 — 나중에 송장 변환이 옛 공통 주문서로 돌아 새 주문이 빠지지 않게
             if (processResponse?.result && file) saveSessionSourceFile(sessionId, file);
             if (processResponse) {
-                setLocalResult(processResponse.result);
+                setLocalResult(applyPreviewRemovals(processResponse.result, previewRemovedRef.current));
                 setExcludedList(processResponse.excluded);
                 setSentExcludedList(processResponse.sentExcluded || []);
                 setUnmatchedList(processResponse.unmatched || []);
@@ -1319,6 +1319,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         suppressSyncRef.current = true;
         // Firestore 세션 결과도 함께 제거
         onDeleteSessionResult(sessionId);
+        // 미리보기에서 지운 줄 기록도 비움 (새 주문서로 다시 시작)
+        previewRemovedRef.current = [];
+        if (workspace?.previewRemovedRows?.[sessionId]) updateSessionField(`previewRemovedRows.${sessionId}`, deleteField());
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
         if (currentSummary[sessionId]) {
             delete currentSummary[sessionId];
@@ -1328,6 +1331,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
 
     const resetSyncedData = () => {
         revertReshipCsRecordsForReset();
+        // 미리보기에서 지운 줄 기록도 비움 (새 주문서로 다시 시작)
+        previewRemovedRef.current = [];
+        if (workspace?.previewRemovedRows?.[sessionId]) updateSessionField(`previewRemovedRows.${sessionId}`, deleteField());
         suppressSyncRef.current = true;
         onDeleteSessionResult(sessionId);
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
@@ -1605,6 +1611,98 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         registerAddAdjustment?.((amount: number, label: string, csRecordId?: string) => addAdjustmentRef.current(amount, label, csRecordId));
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // 미리보기 줄 고치기·빼기에 쓰는 셈 (미리보기와, 다시 만든 발주서에 지웠던 줄을 다시 뺄 때 같이 씀)
+    const buildRowOps = () => {
+        const previewHeaders = getHeaderForCompany(companyName, pricingConfig[companyName] || {} as any);
+        const companyCfg = pricingConfig[companyName];
+        const prodCol = findProductNameColIdx(previewHeaders, companyCfg?.orderFormFieldMap);
+        const qtyCol = findQtyColIdx(previewHeaders, companyCfg?.orderFormFieldMap);
+        const rowProductCounts = (row: any[] | undefined): Record<string, number> | null => {
+            const text = String(row?.[prodCol] ?? '').trim();
+            if (!text) return {};
+            const products = companyCfg?.products || {};
+            const find = (name: string) => (Object.entries(products) as [string, ProductPricing][]).find(([, p]) => (p.orderFormName || p.displayName) === name || p.displayName === name);
+            const parts = text.split(/\s*,\s*/);
+            const out: Record<string, number> = {};
+            for (const part of parts) {
+                let hit = find(part);
+                let qty = 0;
+                if (hit) qty = parts.length === 1 ? (parseInt(String(row?.[qtyCol] ?? ''), 10) || 1) : 1;
+                else {
+                    // 행 합치기 발주서는 "3kg 4개"처럼 이름 뒤에 개수가 붙는다
+                    const m = part.match(/^(.*\S)\s*(\d+)\s*개$/);
+                    if (m) { hit = find(m[1]); qty = parseInt(m[2], 10); }
+                }
+                if (!hit || ((hit[1].orderSplitCount || 1) > 1)) return null;
+                out[hit[0]] = (out[hit[0]] || 0) + qty;
+            }
+            return out;
+        };
+        // 행 하나가 oldRow → newRow로 바뀐 만큼 정산요약을 옮긴 결과 (셀 수 없으면 그대로)
+        const withRowDelta = (prev: ProcessedResult, oldRow: any[] | undefined, newRow: any[] | undefined): ProcessedResult => {
+                if (prodCol === -1) return prev;
+                const before = rowProductCounts(oldRow);
+                const after = rowProductCounts(newRow);
+                if (!before || !after) return prev;
+                const products = companyCfg?.products || {};
+                const split = !!companyCfg?.shippingSettlementSplit;
+                const deltas: Record<string, number> = {};
+                for (const [k, q] of Object.entries(before)) deltas[k] = (deltas[k] || 0) - q;
+                for (const [k, q] of Object.entries(after)) deltas[k] = (deltas[k] || 0) + q;
+                if (Object.values(deltas).every(d => d === 0)) return prev;
+                const summary = { ...prev.summary };
+                const bump = (key: string, d: number, unit: number) => {
+                    const cur = summary[key] || { count: 0, totalPrice: 0 };
+                    const count = cur.count + d;
+                    if (count > 0) summary[key] = { count, totalPrice: cur.totalPrice + d * unit };
+                    else delete summary[key];
+                };
+                for (const [k, d] of Object.entries(deltas)) {
+                    if (d === 0) continue;
+                    bump(k, d, products[k]?.supplyPrice || 0);
+                    if (split) bump(`${k}${PARCEL_SUFFIX}`, d, products[k]?.shippingCost || 0);
+                }
+                return {
+                    ...prev,
+                    summary,
+                    depositSummary: buildDepositTextFromSummary(summary, prev.depositSummary),
+                    depositSummaryExcel: buildDepositExcelFromSummary(summary, prev.depositSummaryExcel),
+                };
+        };
+        // 행을 빼면 행과 나란한 목록(주문번호·묶음번호·받는사람·가격)도 같이 빼야 줄이 안 어긋난다
+        const dropRows = (prev: ProcessedResult, drop: (idx: number) => boolean): ProcessedResult => {
+            const keep = <T,>(arr?: T[]) => arr ? arr.filter((_, idx) => !drop(idx)) : arr;
+            return {
+                ...prev,
+                rows: prev.rows.filter((_, idx) => !drop(idx)),
+                rowOrderNumbers: keep(prev.rowOrderNumbers),
+                rowBundleNumbers: keep(prev.rowBundleNumbers),
+                rowRecipientNames: keep(prev.rowRecipientNames),
+                rowPricing: keep(prev.rowPricing),
+            };
+        };
+        return { companyCfg, prodCol, qtyCol, withRowDelta, dropRows };
+    };
+    const normRowOrd = (s: any) => String(s ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    const rowSig = (row: any[] | undefined) => (row || []).map(c => String(c ?? '').trim()).join('\u0001');
+    /** 저장된 '미리보기에서 지운 줄'을 새로 만든 발주서에서 다시 뺀다 — 같은 내용 줄 먼저, 없으면 같은 주문번호 줄 하나 */
+    const applyPreviewRemovals = (res: ProcessedResult | null, removed: { ord: string; sig: string }[] | undefined): ProcessedResult | null => {
+        if (!res || !removed?.length) return res;
+        const { withRowDelta, dropRows } = buildRowOps();
+        const gone = new Set<number>();
+        for (const r of removed) {
+            let idx = res.rows.findIndex((row, i) => !gone.has(i) && rowSig(row) === r.sig);
+            if (idx === -1 && r.ord) idx = res.rows.findIndex((_, i) => !gone.has(i) && normRowOrd(res.rowOrderNumbers?.[i]) === r.ord);
+            if (idx !== -1) gone.add(idx);
+        }
+        if (gone.size === 0) return res;
+        let next = res;
+        res.rows.forEach((row, i) => { if (gone.has(i)) next = withRowDelta(next, row, undefined); });
+        return dropRows(next, i => gone.has(i));
+    };
+    const previewRemovedRef = useRef<{ ord: string; sig: string }[]>([]);
+    if (workspace?.previewRemovedRows?.[sessionId]) previewRemovedRef.current = workspace.previewRemovedRows[sessionId];
 
     const handleDownloadOrder = () => {
         if (localResult) {
@@ -2726,75 +2824,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             };
                             // 미리보기에서 품목명/수량을 고치거나 행을 지우면 그 행 몫만큼 정산요약도 옮긴다.
                             // 품목명이 등록 품목과 정확히 같을 때만 셈 — 모르는 이름이나 분할 품목(행 수 ≠ 주문 수)이 끼면 손대지 않는다.
-                            const companyCfg = pricingConfig[companyName];
-                            const prodCol = findProductNameColIdx(previewHeaders, companyCfg?.orderFormFieldMap);
-                            const qtyCol = findQtyColIdx(previewHeaders, companyCfg?.orderFormFieldMap);
-                            const rowProductCounts = (row: any[] | undefined): Record<string, number> | null => {
-                                const text = String(row?.[prodCol] ?? '').trim();
-                                if (!text) return {};
-                                const products = companyCfg?.products || {};
-                                const find = (name: string) => (Object.entries(products) as [string, ProductPricing][]).find(([, p]) => (p.orderFormName || p.displayName) === name || p.displayName === name);
-                                const parts = text.split(/\s*,\s*/);
-                                const out: Record<string, number> = {};
-                                for (const part of parts) {
-                                    let hit = find(part);
-                                    let qty = 0;
-                                    if (hit) qty = parts.length === 1 ? (parseInt(String(row?.[qtyCol] ?? ''), 10) || 1) : 1;
-                                    else {
-                                        // 행 합치기 발주서는 "3kg 4개"처럼 이름 뒤에 개수가 붙는다
-                                        const m = part.match(/^(.*\S)\s*(\d+)\s*개$/);
-                                        if (m) { hit = find(m[1]); qty = parseInt(m[2], 10); }
-                                    }
-                                    if (!hit || ((hit[1].orderSplitCount || 1) > 1)) return null;
-                                    out[hit[0]] = (out[hit[0]] || 0) + qty;
-                                }
-                                return out;
-                            };
-                            // 행 하나가 oldRow → newRow로 바뀐 만큼 정산요약을 옮긴 결과 (셀 수 없으면 그대로)
-                            const withRowDelta = (prev: ProcessedResult, oldRow: any[] | undefined, newRow: any[] | undefined): ProcessedResult => {
-                                    if (prodCol === -1) return prev;
-                                    const before = rowProductCounts(oldRow);
-                                    const after = rowProductCounts(newRow);
-                                    if (!before || !after) return prev;
-                                    const products = companyCfg?.products || {};
-                                    const split = !!companyCfg?.shippingSettlementSplit;
-                                    const deltas: Record<string, number> = {};
-                                    for (const [k, q] of Object.entries(before)) deltas[k] = (deltas[k] || 0) - q;
-                                    for (const [k, q] of Object.entries(after)) deltas[k] = (deltas[k] || 0) + q;
-                                    if (Object.values(deltas).every(d => d === 0)) return prev;
-                                    const summary = { ...prev.summary };
-                                    const bump = (key: string, d: number, unit: number) => {
-                                        const cur = summary[key] || { count: 0, totalPrice: 0 };
-                                        const count = cur.count + d;
-                                        if (count > 0) summary[key] = { count, totalPrice: cur.totalPrice + d * unit };
-                                        else delete summary[key];
-                                    };
-                                    for (const [k, d] of Object.entries(deltas)) {
-                                        if (d === 0) continue;
-                                        bump(k, d, products[k]?.supplyPrice || 0);
-                                        if (split) bump(`${k}${PARCEL_SUFFIX}`, d, products[k]?.shippingCost || 0);
-                                    }
-                                    return {
-                                        ...prev,
-                                        summary,
-                                        depositSummary: buildDepositTextFromSummary(summary, prev.depositSummary),
-                                        depositSummaryExcel: buildDepositExcelFromSummary(summary, prev.depositSummaryExcel),
-                                    };
-                            };
+                            const { companyCfg, prodCol, qtyCol, withRowDelta, dropRows } = buildRowOps();
                             const applyRowSummaryDelta = (oldRow: any[] | undefined, newRow: any[] | undefined) => {
                                 setLocalResult(prev => prev ? withRowDelta(prev, oldRow, newRow) : prev);
-                            };
-                            // 행을 빼면 행과 나란한 목록(주문번호·묶음번호·받는사람·가격)도 같이 빼야 줄이 안 어긋난다
-                            const dropRows = (prev: ProcessedResult, drop: (idx: number) => boolean): ProcessedResult => {
-                                const keep = <T,>(arr?: T[]) => arr ? arr.filter((_, idx) => !drop(idx)) : arr;
-                                return {
-                                    ...prev,
-                                    rows: prev.rows.filter((_, idx) => !drop(idx)),
-                                    rowOrderNumbers: keep(prev.rowOrderNumbers),
-                                    rowBundleNumbers: keep(prev.rowBundleNumbers),
-                                    rowRecipientNames: keep(prev.rowRecipientNames),
-                                    rowPricing: keep(prev.rowPricing),
-                                };
                             };
                             const normOrd = (s: any) => String(s ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
                             // [빼기]: 체크한 주문의 줄을 모두 발주서에서 빼고 정산요약도 그만큼 줄인다 (롯데 예약만으로는 안 뺌)
@@ -2870,6 +2902,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 });
                             };
                             const removeOrderRow = (ri: number) => {
+                                // 지운 줄을 저장 — 수동발주·가구매 변경 등으로 발주서를 다시 만들어도 다시 빼게 (11/26 신선담다 허하은이 되살아나 발주됨)
+                                const entry = { ord: normOrd(localResult.rowOrderNumbers?.[ri]), sig: rowSig(localResult.rows[ri]) };
+                                const list = [...previewRemovedRef.current, entry];
+                                previewRemovedRef.current = list;
+                                updateSessionField(`previewRemovedRows.${sessionId}`, list);
                                 applyRowSummaryDelta(localResult.rows[ri], undefined);
                                 setLocalResult(prev => prev ? dropRows(prev, idx => idx === ri) : prev);
                             };
