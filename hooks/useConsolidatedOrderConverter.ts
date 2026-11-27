@@ -39,6 +39,7 @@ export type ProcessedResult = {
     rowBundleNumbers?: string[]; // rows와 동일한 순서/길이의 묶음배송번호 목록 (저장용)
     rowRecipientNames?: string[]; // rows와 동일한 순서/길이의 수취인 이름 목록 (저장용 — 업체 발주양식에 이름 칸이 없어도 검색되도록)
     rowPricing?: { supplyPrice: number; sellingPrice: number; margin: number }[]; // rows와 동일한 순서/길이의 공급가/판매가/마진 목록 (저장용)
+    rowKeys?: string[]; // rows와 나란한 줄 이름표 — 미리보기 작업(수정·추가·삭제)을 다시 만든 발주서에 다시 적용할 때 줄을 찾는 데 씀
     registeredProductNames: Record<string, string>;
     orderItems: OrderItem[];
     includedOrderNumbers: string[];

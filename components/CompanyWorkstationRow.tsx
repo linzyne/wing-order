@@ -18,7 +18,7 @@ import type { CompanyDepositInfo } from '../services/depositUtils';
 import { DragHandleContext } from './DragHandleContext';
 import { getBusinessInfo } from '../types';
 import { deleteField } from 'firebase/firestore';
-import type { SessionResultData, DailyWorkspaceData } from '../services/firestoreService';
+import type { SessionResultData, DailyWorkspaceData, PreviewEdit } from '../services/firestoreService';
 import { WORKSPACE_ADJUSTMENT_EVENT } from '../services/firestoreService';
 
 declare var XLSX: any;
@@ -1221,7 +1221,7 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             // 이 발주서를 만든 주문서를 세션에 보관 — 나중에 송장 변환이 옛 공통 주문서로 돌아 새 주문이 빠지지 않게
             if (processResponse?.result && file) saveSessionSourceFile(sessionId, file);
             if (processResponse) {
-                setLocalResult(applyPreviewRemovals(processResponse.result, previewRemovedRef.current));
+                setLocalResult(reapplyPreviewWork(processResponse.result));
                 setExcludedList(processResponse.excluded);
                 setSentExcludedList(processResponse.sentExcluded || []);
                 setUnmatchedList(processResponse.unmatched || []);
@@ -1322,6 +1322,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // 미리보기에서 지운 줄 기록도 비움 (새 주문서로 다시 시작)
         previewRemovedRef.current = [];
         if (workspace?.previewRemovedRows?.[sessionId]) updateSessionField(`previewRemovedRows.${sessionId}`, deleteField());
+        previewEditsRef.current = [];
+        if (workspace?.previewEdits?.[sessionId]) updateSessionField(`previewEdits.${sessionId}`, deleteField());
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
         if (currentSummary[sessionId]) {
             delete currentSummary[sessionId];
@@ -1334,6 +1336,8 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         // 미리보기에서 지운 줄 기록도 비움 (새 주문서로 다시 시작)
         previewRemovedRef.current = [];
         if (workspace?.previewRemovedRows?.[sessionId]) updateSessionField(`previewRemovedRows.${sessionId}`, deleteField());
+        previewEditsRef.current = [];
+        if (workspace?.previewEdits?.[sessionId]) updateSessionField(`previewEdits.${sessionId}`, deleteField());
         suppressSyncRef.current = true;
         onDeleteSessionResult(sessionId);
         const currentSummary = { ...(workspace?.sessionSummary || {}) };
@@ -1465,9 +1469,21 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
             }
             const nextEntries = { ...(localResult.reshipEntries || {}) };
             delete nextEntries[csRecordId];
+            // 줄 이름표도 남은 줄 것만 (미리보기 작업이 엉뚱한 줄을 가리키지 않게)
+            let keysFinal: string[] | undefined;
+            if (localResult.rowKeys && localResult.rowKeys.length === localResult.rows.length) {
+                keysFinal = [];
+                let j = 0;
+                for (const r of rowsFinal) {
+                    while (j < localResult.rows.length && localResult.rows[j] !== r) j++;
+                    if (j >= localResult.rows.length) { keysFinal = undefined; break; }
+                    keysFinal.push(localResult.rowKeys[j++]);
+                }
+            }
             setLocalResult({
                 ...localResult,
                 rows: rowsFinal,
+                rowKeys: keysFinal,
                 summary,
                 depositSummary: buildDepositTextFromSummary(summary, localResult.depositSummary),
                 depositSummaryExcel: buildDepositExcelFromSummary(summary, localResult.depositSummaryExcel),
@@ -1680,9 +1696,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                 rowBundleNumbers: keep(prev.rowBundleNumbers),
                 rowRecipientNames: keep(prev.rowRecipientNames),
                 rowPricing: keep(prev.rowPricing),
+                rowKeys: keep(prev.rowKeys),
             };
         };
-        return { companyCfg, prodCol, qtyCol, withRowDelta, dropRows };
+        return { previewHeaders, companyCfg, prodCol, qtyCol, withRowDelta, dropRows };
     };
     const normRowOrd = (s: any) => String(s ?? '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
     const rowSig = (row: any[] | undefined) => (row || []).map(c => String(c ?? '').trim()).join('\u0001');
@@ -1702,7 +1719,126 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
         return dropRows(next, i => gone.has(i));
     };
     const previewRemovedRef = useRef<{ ord: string; sig: string }[]>([]);
-    if (workspace?.previewRemovedRows?.[sessionId]) previewRemovedRef.current = workspace.previewRemovedRows[sessionId];
+    if (workspace) previewRemovedRef.current = workspace.previewRemovedRows?.[sessionId] || [];
+    /** 줄 이름표: 주문번호(없으면 줄 내용) + 같은 것 중 몇 번째 — 원본에서 다시 만들어도 같은 줄이 같은 이름표를 받는다 */
+    const withRowKeys = (res: ProcessedResult): ProcessedResult => {
+        if (res.rowKeys && res.rowKeys.length === res.rows.length) return res;
+        const seen: Record<string, number> = {};
+        // 뒤에 줄만 덧붙은 경우(CS 재배송 등)는 있던 이름표를 그대로 두고 새 줄 것만 붙인다
+        const keep = res.rowKeys && res.rowKeys.length < res.rows.length ? res.rowKeys : [];
+        for (const k of keep) { const b = k.replace(/#\d+$/, ''); seen[b] = Math.max(seen[b] || 0, parseInt(k.slice(b.length + 1), 10) || 0); }
+        const rowKeys = res.rows.map((row, i) => {
+            if (i < keep.length) return keep[i];
+            const ord = normRowOrd(res.rowOrderNumbers?.[i]);
+            const base = ord ? `o:${ord}` : `s:${rowSig(row)}`;
+            seen[base] = (seen[base] || 0) + 1;
+            return `${base}#${seen[base]}`;
+        });
+        return { ...res, rowKeys };
+    };
+    /** 미리보기 작업 하나를 발주서에 적용 (정산요약도 같이) — 줄을 못 찾으면 건너뜀 */
+    const applyPreviewEdit = (res: ProcessedResult, e: PreviewEdit, ops: ReturnType<typeof buildRowOps>): ProcessedResult => {
+        const cur = withRowKeys(res);
+        const idx = cur.rowKeys!.indexOf(e.k);
+        if (e.t === 'add') {
+            if (idx !== -1) return cur;
+            return { ...cur, rows: [...cur.rows, new Array(ops.previewHeaders.length).fill('')], rowKeys: [...cur.rowKeys!, e.k] };
+        }
+        if (idx === -1) return cur;
+        const oldRow = cur.rows[idx];
+        if (e.t === 'del') return ops.dropRows(ops.withRowDelta(cur, oldRow, undefined), i => i === idx);
+        const newRow = oldRow.map((c, ci) => ci === e.ci ? e.v : c);
+        while (newRow.length <= e.ci) newRow.push(newRow.length === e.ci ? e.v : '');
+        return ops.withRowDelta({ ...cur, rows: cur.rows.map((r, i) => i === idx ? newRow : r) }, oldRow, newRow);
+    };
+    const previewEditsRef = useRef<PreviewEdit[]>([]);
+    const [, setPreviewEditsVer] = useState(0);
+    const [showPreviewEdits, setShowPreviewEdits] = useState(true);
+    // 저장은 바로 화면 workspace에도 반영되므로 workspace가 기준 (다른 PC에서 되돌린 것도 따라옴)
+    if (workspace) previewEditsRef.current = workspace.previewEdits?.[sessionId] || [];
+    /** 새로 만든 발주서에 저장된 미리보기 작업을 순서대로 다시 적용 */
+    const reapplyPreviewWork = (res: ProcessedResult | null): ProcessedResult | null => {
+        if (!res) return res;
+        let cur: ProcessedResult = withRowKeys(applyPreviewRemovals(withRowKeys(res), previewRemovedRef.current)!);
+        const edits = previewEditsRef.current;
+        if (!edits.length) return cur;
+        const ops = buildRowOps();
+        for (const e of edits) cur = applyPreviewEdit(cur, e, ops);
+        return cur;
+    };
+    /** 미리보기 작업을 기록(저장)하고 화면 발주서에도 적용 */
+    const savePreviewEdits = (all: PreviewEdit[]) => {
+        previewEditsRef.current = all;
+        updateSessionField(`previewEdits.${sessionId}`, all.length ? all : deleteField());
+        setPreviewEditsVer(v => v + 1);
+    };
+    /** 줄을 사람이 알아볼 이름: 받는분 → 주문번호 → 앞쪽 칸 */
+    const describeRow = (res: ProcessedResult, idx: number): string => {
+        const nm = String(res.rowRecipientNames?.[idx] ?? '').trim();
+        const ord = String(res.rowOrderNumbers?.[idx] ?? '').trim();
+        if (nm) return ord ? `${nm} (${ord})` : nm;
+        if (ord) return ord;
+        return (res.rows[idx] || []).map(c => String(c ?? '').trim()).filter(Boolean).slice(0, 3).join(' · ') || `${idx + 1}번 줄`;
+    };
+    /** 되돌리기: 칸 수정은 그 칸 기록을 다 지우고 처음 값으로, 추가는 그 줄과 그 줄 수정을 다 지움, 삭제는 지운 줄을 제자리에 다시 넣음 */
+    const undoPreviewCell = (k: string, ci: number) => {
+        const all = previewEditsRef.current;
+        const mine = all.filter(e => e.t === 'set' && e.k === k && e.ci === ci) as Extract<PreviewEdit, { t: 'set' }>[];
+        if (!mine.length) return;
+        savePreviewEdits(all.filter(e => !mine.includes(e as any)));
+        const ops = buildRowOps();
+        setLocalResult(prev => prev ? applyPreviewEdit(withRowKeys(prev), { t: 'set', k, ci, v: mine[0].old ?? '' }, ops) : prev);
+    };
+    const undoPreviewAdd = (k: string) => {
+        savePreviewEdits(previewEditsRef.current.filter(e => e.k !== k));
+        const ops = buildRowOps();
+        setLocalResult(prev => prev ? applyPreviewEdit(withRowKeys(prev), { t: 'del', k }, ops) : prev);
+    };
+    const undoPreviewDel = (e: Extract<PreviewEdit, { t: 'del' }>) => {
+        savePreviewEdits(previewEditsRef.current.filter(x => x !== e));
+        if (!e.row) return; // 줄 내용을 기억 못 한 옛 기록 — 다음에 발주서를 다시 만들 때 돌아옴
+        const ops = buildRowOps();
+        setLocalResult(prev => {
+            if (!prev) return prev;
+            const cur = withRowKeys(prev);
+            if (cur.rowKeys!.includes(e.k)) return cur;
+            const pos = Math.min(Math.max(e.pos ?? cur.rows.length, 0), cur.rows.length);
+            const ins = <T,>(arr: T[] | undefined, v: T) => arr ? [...arr.slice(0, pos), v, ...arr.slice(pos)] : arr;
+            const next: ProcessedResult = {
+                ...cur,
+                rows: ins(cur.rows, e.row as any[])!,
+                rowKeys: ins(cur.rowKeys, e.k),
+                rowOrderNumbers: ins(cur.rowOrderNumbers, e.ord ?? ''),
+                rowBundleNumbers: ins(cur.rowBundleNumbers, e.bundle ?? ''),
+                rowRecipientNames: ins(cur.rowRecipientNames, e.recipient ?? ''),
+                rowPricing: ins(cur.rowPricing, (e.pricing || { supplyPrice: 0, sellingPrice: 0, margin: 0 })),
+            };
+            return ops.withRowDelta(next, undefined, e.row);
+        });
+    };
+    const recordPreviewEdits = (list: PreviewEdit[], applyNow = true) => {
+        if (!list.length) return;
+        const at = Date.now();
+        // 삭제는 되돌릴 수 있게 지우기 전 줄을 통째로 기억
+        const cur = localResult ? withRowKeys(localResult) : null;
+        list = list.map(e => {
+            const idx = cur ? cur.rowKeys!.indexOf(e.k) : -1;
+            if (e.t === 'del' && cur && idx !== -1) {
+                return { ...e, at, name: describeRow(cur, idx), pos: idx, row: (cur.rows[idx] || []).map(c => String(c ?? '')),
+                    ord: String(cur.rowOrderNumbers?.[idx] ?? ''), bundle: String(cur.rowBundleNumbers?.[idx] ?? ''),
+                    recipient: String(cur.rowRecipientNames?.[idx] ?? ''), pricing: cur.rowPricing?.[idx] || null };
+            }
+            if (e.t === 'set' && cur && idx !== -1) {
+                return { ...e, at, name: e.name ?? describeRow(cur, idx), old: e.old ?? String(cur.rows[idx]?.[e.ci] ?? '') };
+            }
+            return { ...e, at };
+        });
+        savePreviewEdits([...previewEditsRef.current, ...list]);
+        if (applyNow) {
+            const ops = buildRowOps();
+            setLocalResult(prev => prev ? list.reduce((r, e) => applyPreviewEdit(r, e, ops), withRowKeys(prev)) : prev);
+        }
+    };
 
     const handleDownloadOrder = () => {
         if (localResult) {
@@ -2819,8 +2955,10 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                     return { ...prev, rows: newRows };
                                 });
                             };
+                            // 미리보기 작업은 모두 기록 — 수동발주·가구매 변경 등으로 발주서를 원본에서 다시 만들어도 그대로 다시 적용
+                            const keyOf = (ri: number) => withRowKeys(localResult).rowKeys![ri];
                             const addOrderRow = () => {
-                                setLocalResult(prev => prev ? { ...prev, rows: [...prev.rows, new Array(previewHeaders.length).fill('')] } : prev);
+                                recordPreviewEdits([{ t: 'add', k: `a:${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}` }]);
                             };
                             // 미리보기에서 품목명/수량을 고치거나 행을 지우면 그 행 몫만큼 정산요약도 옮긴다.
                             // 품목명이 등록 품목과 정확히 같을 때만 셈 — 모르는 이름이나 분할 품목(행 수 ≠ 주문 수)이 끼면 손대지 않는다.
@@ -2832,14 +2970,9 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                             // [빼기]: 체크한 주문의 줄을 모두 발주서에서 빼고 정산요약도 그만큼 줄인다 (롯데 예약만으로는 안 뺌)
                             lotteRemoveRef.current = (sent: string[]) => {
                                 const want = new Set(sent.map(normOrd));
-                                setLocalResult(prev => {
-                                    if (!prev) return prev;
-                                    const ons = prev.rowOrderNumbers || [];
-                                    const hit = (idx: number) => want.has(normOrd(ons[idx]));
-                                    let next = prev;
-                                    prev.rows.forEach((row, idx) => { if (hit(idx)) next = withRowDelta(next, row, undefined); });
-                                    return dropRows(next, hit);
-                                });
+                                const cur = withRowKeys(localResult);
+                                const ons = cur.rowOrderNumbers || [];
+                                recordPreviewEdits(cur.rowKeys!.filter((_, idx) => want.has(normOrd(ons[idx]))).map(k => ({ t: 'del' as const, k })));
                             };
                             const lotteOrderOf = (ri: number) => normOrd(localResult.rowOrderNumbers?.[ri]);
                             const canLotte = !!onLotteReserve && (localResult.rowOrderNumbers?.length ?? 0) > 0;
@@ -2880,13 +3013,23 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 setLotteMsg(`체크한 ${n}건을 발주서에서 뺐어요`);
                             };
                             // 타자 칠 때마다 셈하면 "3kg"→"kg"→"1kg" 중간 상태에서 어긋나므로, 칸에 들어갈 때 행을 기억해 두고 나올 때 한 번 셈한다.
-                            const startCellEdit = (ri: number, ci: number) => {
-                                previewEditStartRef.current = (ci === prodCol || ci === qtyCol) ? { ri, row: [...(localResult.rows[ri] || [])] } : null;
+                            // 칸에서 나올 때 바뀐 칸을 기록하고 정산요약도 한 번에 옮긴다
+                            const startCellEdit = (ri: number, _ci: number) => {
+                                previewEditStartRef.current = { ri, row: [...(localResult.rows[ri] || [])] };
                             };
                             const finishCellEdit = (ri: number) => {
                                 const start = previewEditStartRef.current;
                                 previewEditStartRef.current = null;
-                                if (start && start.ri === ri) applyRowSummaryDelta(start.row, localResult.rows[ri]);
+                                if (!start || start.ri !== ri) return;
+                                const now = localResult.rows[ri] || [];
+                                const k = keyOf(ri);
+                                const changed: PreviewEdit[] = [];
+                                for (let ci = 0; ci < Math.max(now.length, start.row.length); ci++) {
+                                    if (String(now[ci] ?? '') !== String(start.row[ci] ?? '')) changed.push({ t: 'set', k, ci, v: String(now[ci] ?? ''), old: String(start.row[ci] ?? '') });
+                                }
+                                if (!changed.length) return;
+                                recordPreviewEdits(changed, false);
+                                applyRowSummaryDelta(start.row, now);
                             };
                             // 품목명 칸 ▾: 등록 품목 목록에서 골라 바꾸고 정산요약도 바로 옮긴다
                             const productOptions = [...new Set((Object.values(companyCfg?.products || {}) as ProductPricing[])
@@ -2894,21 +3037,11 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                 .sort((x, y) => x.localeCompare(y, 'ko'));
                             const pickProduct = (ri: number, name: string) => {
                                 if (!name) return;
-                                setLocalResult(prev => {
-                                    if (!prev) return prev;
-                                    const oldRow = prev.rows[ri];
-                                    const newRow = oldRow.map((cell, cidx) => cidx === prodCol ? name : cell);
-                                    return withRowDelta({ ...prev, rows: prev.rows.map((r, idx) => idx === ri ? newRow : r) }, oldRow, newRow);
-                                });
+                                recordPreviewEdits([{ t: 'set', k: keyOf(ri), ci: prodCol, v: name }]);
                             };
                             const removeOrderRow = (ri: number) => {
-                                // 지운 줄을 저장 — 수동발주·가구매 변경 등으로 발주서를 다시 만들어도 다시 빼게 (11/26 신선담다 허하은이 되살아나 발주됨)
-                                const entry = { ord: normOrd(localResult.rowOrderNumbers?.[ri]), sig: rowSig(localResult.rows[ri]) };
-                                const list = [...previewRemovedRef.current, entry];
-                                previewRemovedRef.current = list;
-                                updateSessionField(`previewRemovedRows.${sessionId}`, list);
-                                applyRowSummaryDelta(localResult.rows[ri], undefined);
-                                setLocalResult(prev => prev ? dropRows(prev, idx => idx === ri) : prev);
+                                // (11/26 신선담다 허하은: 지운 줄이 발주서 재생성으로 되살아나 발주됨)
+                                recordPreviewEdits([{ t: 'del', k: keyOf(ri) }]);
                             };
                             return (
                                 <>
@@ -2950,6 +3083,56 @@ const CompanyWorkstationRow: React.FC<CompanyWorkstationRowProps> = ({
                                             </button>
                                         </div>
                                     </div>
+                                    {(() => {
+                                        // 미리보기 작업 내역: 칸 수정은 칸별로 묶고(처음 값 → 지금 값), 추가한 줄은 그 줄 하나로
+                                        const edits = previewEditsRef.current;
+                                        if (!edits.length) return null;
+                                        const added = new Set(edits.filter(e => e.t === 'add').map(e => e.k));
+                                        const cur = withRowKeys(localResult);
+                                        type Item = { key: string; at: number; text: string; undo: () => void };
+                                        const items: Item[] = [];
+                                        const cellSeen = new Map<string, Item>();
+                                        for (const e of edits) {
+                                            if (e.t === 'add') {
+                                                const idx = cur.rowKeys!.indexOf(e.k);
+                                                const content = idx === -1 ? '(지운 줄)' : (cur.rows[idx] || []).map(c => String(c ?? '').trim()).filter(Boolean).slice(0, 4).join(' · ') || '(빈 줄)';
+                                                items.push({ key: `a${e.k}`, at: e.at || 0, text: `➕ 줄 추가: ${content}`, undo: () => undoPreviewAdd(e.k) });
+                                            } else if (e.t === 'del') {
+                                                if (added.has(e.k)) continue;
+                                                items.push({ key: `d${e.k}${e.at}`, at: e.at || 0, text: `🗑 삭제: ${e.name || e.k}`, undo: () => undoPreviewDel(e) });
+                                            } else {
+                                                if (added.has(e.k)) continue;
+                                                const ck = `${e.k}|${e.ci}`;
+                                                const prevItem = cellSeen.get(ck);
+                                                const label = previewHeaders[e.ci] || `${e.ci + 1}번째 칸`;
+                                                const first = edits.find(x => x.t === 'set' && x.k === e.k && x.ci === e.ci) as Extract<PreviewEdit, { t: 'set' }>;
+                                                const text = `✏️ ${e.name || first.name || e.k} · ${label}: ${first.old || '(빈칸)'} → ${e.v || '(빈칸)'}`;
+                                                if (prevItem) { prevItem.text = text; prevItem.at = e.at || prevItem.at; continue; }
+                                                const it: Item = { key: `s${ck}`, at: e.at || 0, text, undo: () => undoPreviewCell(e.k, e.ci) };
+                                                cellSeen.set(ck, it);
+                                                items.push(it);
+                                            }
+                                        }
+                                        const hhmm = (t: number) => t ? new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false }) : '';
+                                        return (
+                                            <div style={{ marginBottom:'10px', border:'1px solid #3f3f46', borderRadius:'8px', background:'#0f0f12', flexShrink:0, maxWidth:'720px' }}>
+                                                <button onClick={() => setShowPreviewEdits(v => !v)} style={{ width:'100%', textAlign:'left', background:'transparent', border:'none', color:'#fbbf24', fontWeight:800, fontSize:'11px', padding:'6px 10px', cursor:'pointer' }}>
+                                                    {showPreviewEdits ? '▾' : '▸'} 미리보기에서 고친 것 {items.length}건 — 발주서가 다시 만들어져도 그대로 남아요
+                                                </button>
+                                                {showPreviewEdits && (
+                                                    <div style={{ maxHeight:'150px', overflowY:'auto', padding:'0 10px 8px' }}>
+                                                        {items.map(it => (
+                                                            <div key={it.key} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'3px 0', borderTop:'1px solid #1f1f23' }}>
+                                                                <button onClick={() => { if (confirm(`이 작업을 원래대로 돌릴까요?\n\n${it.text}`)) it.undo(); }} style={{ flexShrink:0, background:'#27272a', color:'#e4e4e7', fontWeight:700, fontSize:'10px', padding:'2px 8px', borderRadius:'6px', border:'1px solid #52525b', cursor:'pointer' }}>원래대로</button>
+                                                                <span style={{ color:'#52525b', fontSize:'10px', flexShrink:0 }}>{hhmm(it.at)}</span>
+                                                                <span style={{ color:'#d4d4d8', fontSize:'11px', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }} title={it.text}>{it.text}</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                     <div style={{ overflowX:'auto', overflowY:'auto', flex:1, borderRadius:'8px', border:'1px solid #27272a' }}>
                                         <table style={{ borderCollapse:'collapse', fontSize:'11px', whiteSpace:'nowrap', width:'100%' }}>
                                             <thead>

@@ -795,6 +795,12 @@ export interface SessionResultData {
   reshipEntries?: string;
 }
 
+/** 발주서 미리보기 작업 하나. name=보여줄 줄 이름(받는분 등), at=한 시각. 되돌리기용으로 old(고치기 전 값)·del은 지운 줄 통째로 기억 */
+export type PreviewEdit =
+  | { t: 'del'; k: string; name?: string; at?: number; row?: string[]; pos?: number; ord?: string; bundle?: string; recipient?: string; pricing?: { supplyPrice: number; sellingPrice: number; margin: number } | null }
+  | { t: 'add'; k: string; at?: number }
+  | { t: 'set'; k: string; ci: number; v: string; old?: string; name?: string; at?: number };
+
 export interface DailyWorkspaceData {
   fakeOrderInput: string;
   manualTransfers: any[];
@@ -806,6 +812,8 @@ export interface DailyWorkspaceData {
   summaryOverrides?: Record<string, Record<string, { count: number; totalPrice: number }>>;
   /** 발주서 미리보기에서 지운 줄 (세션별) — 발주서를 다시 만들어도 다시 빼려고 저장 */
   previewRemovedRows?: Record<string, { ord: string; sig: string }[]>;
+  /** 발주서 미리보기에서 한 작업 순서대로 (세션별) — 발주서를 다시 만들어도 그대로 다시 적용 */
+  previewEdits?: Record<string, PreviewEdit[]>;
   companySessionRounds?: Record<string, { id: string; round: number }[]>;
   updatedAt?: any;
 }
